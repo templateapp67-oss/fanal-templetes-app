@@ -10,6 +10,8 @@ import { LoyaltyManagement } from './LoyaltyManagement';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
 
+import { BookingManager } from './BookingManager';
+
 interface SaaSDashboardProps {
   profile: SalonProfile;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
@@ -231,9 +233,28 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   LIVE SALON SITE
                 </span>
               </div>
-              <p className="text-xs text-gray-500 font-mono mt-0.5">
-                https://{profile?.subdomain || 'salon'}.nexora.in • {profile?.city || 'India'}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <a 
+                  href={profile.customDomain ? `https://${profile.customDomain}` : `https://${profile?.subdomain || 'salon'}.nexora.in`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-blue-600 hover:underline font-mono"
+                >
+                  {profile.customDomain ? `https://${profile.customDomain}` : `https://${profile?.subdomain || 'salon'}.nexora.in`}
+                </a>
+                <span className="text-xs text-gray-500 font-mono">• {profile?.city || 'India'}</span>
+                <button
+                  onClick={() => {
+                    const url = profile.customDomain ? `https://${profile.customDomain}` : `https://${profile?.subdomain || 'salon'}.nexora.in`;
+                    navigator.clipboard.writeText(url);
+                    alert("Website Link Copied: " + url);
+                  }}
+                  className="p-1 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
+                  title="Copy Website Link"
+                >
+                  <span className="material-symbols-outlined text-sm">content_copy</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -415,24 +436,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
         {/* TAB CONTENT: APPOINTMENTS */}
         {activeTab === 'calendar' && (
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
-            <h2 className="font-display font-bold text-xl mb-4">Calendar & Appointment Schedule</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {appointments.map((apt) => (
-                <div key={apt.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex justify-between items-center">
-                  <div>
-                    <div className="font-bold text-sm">{apt.clientName}</div>
-                    <div className="text-xs text-gray-500">{apt.serviceName} with {apt.stylistName}</div>
-                    <div className="text-xs font-mono font-bold text-[#b0004a] mt-1">{apt.date} @ {apt.time}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-base">₹{apt.servicePrice.toLocaleString('en-IN')}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">Paid Advance: ₹{apt.amountPaid}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <BookingManager primaryAccentColor={currentPrimaryColor} />
         )}
 
         {/* TAB CONTENT: SERVICES */}
@@ -1163,6 +1167,43 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   onChange={(e) => setProfile((prev) => ({ ...prev, postalCode: e.target.value }))}
                   className="w-full p-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-gray-400 outline-none"
                 />
+              </div>
+            </div>
+            
+            <div className="border-t border-gray-200 my-2 pt-6">
+              <h3 className="font-bold text-gray-900 mb-4">White Label & Custom Domain</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                    Custom Domain
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. www.mysalon.com"
+                    value={profile.customDomain || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, customDomain: e.target.value }))}
+                    className="w-full p-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-gray-400 outline-none"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">Leave empty to use default subdomain.</p>
+                </div>
+                <div className="flex items-center">
+                  <label className="flex items-center cursor-pointer">
+                    <div className="relative">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only" 
+                        checked={profile.whiteLabelEnabled || false}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, whiteLabelEnabled: e.target.checked }))}
+                      />
+                      <div className={`block w-10 h-6 rounded-full transition-colors ${profile.whiteLabelEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}></div>
+                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${profile.whiteLabelEnabled ? 'transform translate-x-4' : ''}`}></div>
+                    </div>
+                    <div className="ml-3">
+                      <span className="text-sm font-bold text-gray-800">Remove Nexora Branding</span>
+                      <p className="text-[10px] text-gray-500">Hide 'Powered by Nexora' from your website.</p>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
 

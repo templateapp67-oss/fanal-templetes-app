@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
@@ -31,6 +32,25 @@ export default function App() {
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
   const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
+
+  // Sync Supabase Realtime Data
+  useEffect(() => {
+    const fetchSyncData = async () => {
+      try {
+        const { data: apts } = await supabase.from('appointments').select('*').order('date', { ascending: false });
+        if (apts && apts.length > 0) setAppointments(apts);
+        
+        const { data: clis } = await supabase.from('clients').select('*').order('lastVisit', { ascending: false });
+        if (clis && clis.length > 0) setClients(clis);
+      } catch (err) {
+        console.warn('Could not sync with Supabase', err);
+      }
+    };
+
+    fetchSyncData();
+    const interval = setInterval(fetchSyncData, 3000); // Polling for mock mode support and fast sync
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-save profile (including logoUrl and coverImageUrl) to localStorage
   useEffect(() => {
@@ -78,7 +98,8 @@ export default function App() {
     }
   };
 
-  const handleAddAppointment = (newApt: Appointment) => {
+  const handleAddAppointment = async (newApt: Appointment) => {
+    // 1. Optimistic Update of Local State
     setAppointments((prev) => [newApt, ...prev]);
 
     // Calculate loyalty points earned: base visit points + spend points * multiplier
@@ -86,8 +107,10 @@ export default function App() {
     const baseVisitPoints = loyaltyConfig.pointsPerVisit;
     const earnedPoints = baseVisitPoints + spendPoints;
 
-    // Also sync to CRM clients list if new
     const existingClient = clients.find((c) => c.phone === newApt.clientPhone);
+    let updatedClient: ClientRecord | null = null;
+    let newClientRecord: ClientRecord | null = null;
+
     if (existingClient) {
       setClients((prev) =>
         prev.map((c) => {
@@ -109,7 +132,7 @@ export default function App() {
             type: 'spend_earned' as const,
           };
 
-          return {
+          updatedClient = {
             ...c,
             totalVisits: c.totalVisits + 1,
             totalSpent: c.totalSpent + newApt.servicePrice,
@@ -119,12 +142,13 @@ export default function App() {
             loyaltyTier: newTier,
             pointHistory: [newTx, ...(c.pointHistory || [])],
           };
+          return updatedClient;
         })
       );
     } else {
       const initialPoints = earnedPoints;
       const initialTier = calculateLoyaltyTier(initialPoints, loyaltyConfig.tierThresholds);
-      const newClientRecord: ClientRecord = {
+      newClientRecord = {
         id: `cli-${Date.now()}`,
         name: newApt.clientName,
         phone: newApt.clientPhone,
@@ -147,7 +171,28 @@ export default function App() {
           },
         ],
       };
-      setClients((prev) => [newClientRecord, ...prev]);
+      setClients((prev) => [newClientRecord as ClientRecord, ...prev]);
+    }
+
+    // 2. Sync to Supabase in Background
+    try {
+      await supabase.from('appointments').insert([newApt]);
+
+      if (updatedClient) {
+        await supabase.from('clients').update({
+          totalVisits: updatedClient.totalVisits,
+          totalSpent: updatedClient.totalSpent,
+          lastVisit: updatedClient.lastVisit,
+          points: updatedClient.points,
+          lifetimePoints: updatedClient.lifetimePoints,
+          loyaltyTier: updatedClient.loyaltyTier,
+          pointHistory: updatedClient.pointHistory
+        }).eq('id', updatedClient.id);
+      } else if (newClientRecord) {
+        await supabase.from('clients').insert([newClientRecord]);
+      }
+    } catch (err) {
+      console.warn('Supabase real-time sync failed for add appointment, relying on mock fallback.', err);
     }
   };
 

@@ -30,7 +30,7 @@ import {
   Facebook,
   Youtube
 } from 'lucide-react';
-import { SalonProfile, BusinessTypeId, SalonService } from '../types';
+import { SalonProfile, BusinessTypeId, SalonService, SocialVideo } from '../types';
 import { InteractiveMapSetup } from './InteractiveMapSetup';
 import { ACCENT_PALETTES, AccentPaletteKey } from '../themeAccents';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
@@ -352,7 +352,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Share2 className="w-3.5 h-3.5 text-teal-600" />
-          <span className="text-[9px]">Social</span>
+          <span className="text-[9px]">Sync</span>
         </button>
 
         <button
@@ -873,6 +873,44 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                 themePrimaryColor={primaryAccentColor}
               />
             </div>
+            
+            {/* Home Service Settings */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                  Home Service
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setProfile((prev) => ({ 
+                    ...prev, 
+                    homeService: prev.homeService?.enabled ? { ...prev.homeService, enabled: false } : { enabled: true, baseCharge: 200, radiusLimitKm: 10 } 
+                  }))}
+                  className={`w-10 h-5 rounded-full p-1 transition-colors ${profile.homeService?.enabled ? 'bg-teal-600' : 'bg-slate-300'}`}
+                >
+                  <div className={`w-3 h-3 bg-white rounded-full transition-transform ${profile.homeService?.enabled ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+
+              {profile.homeService?.enabled && (
+                <div className="space-y-2 animate-in fade-in pt-2 border-t border-slate-200">
+                  <label className="block text-[11px] font-bold text-slate-500">Base Extra Charge (INR)</label>
+                  <input
+                    type="number"
+                    value={profile.homeService.baseCharge}
+                    onChange={(e) => setProfile(prev => ({...prev, homeService: {...prev.homeService!, baseCharge: Number(e.target.value)}}))}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300"
+                  />
+                  <label className="block text-[11px] font-bold text-slate-500">Service Radius Limit (km)</label>
+                  <input
+                    type="number"
+                    value={profile.homeService.radiusLimitKm}
+                    onChange={(e) => setProfile(prev => ({...prev, homeService: {...prev.homeService!, radiusLimitKm: Number(e.target.value)}}))}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300"
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Phone */}
             <div>
@@ -1007,6 +1045,78 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 text-slate-900 focus:border-teal-600 focus:outline-none"
                 placeholder="https://g.page/r/pinkynails/review"
               />
+            </div>
+
+            {/* Reel Video Showcase */}
+            <div className="pt-4 border-t border-slate-100 space-y-2">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Youtube className="w-3.5 h-3.5 text-red-600" />
+                Add YouTube Shorts URL
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  placeholder="Paste YouTube Shorts URL..."
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] outline-none focus:border-teal-600 font-mono"
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      const url = e.currentTarget.value;
+                      const videoId = url.split('/').pop()?.split('?')[0] || '';
+                      
+                      let title = 'YouTube Shorts';
+                      let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/0.jpg`;
+                      
+                      try {
+                        const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+                        if (response.ok) {
+                          const data = await response.json();
+                          title = data.title;
+                          thumbnailUrl = data.thumbnail_url;
+                        }
+                      } catch (err) {
+                        console.error('Could not fetch video metadata', err);
+                      }
+
+                      const newVideo: SocialVideo = {
+                          id: `video-${Date.now()}`,
+                          youtubeUrl: url,
+                          videoId: videoId,
+                          title: title,
+                          thumbnailUrl: thumbnailUrl,
+                          categoryTag: 'SHORT',
+                          isOwnerVideo: true
+                      };
+                      setProfile((prev) => ({ ...prev, socialVideos: [...(prev.socialVideos || []), newVideo] }));
+                      e.currentTarget.value = '';
+                    }
+                  }}
+                />
+              </div>
+              {(profile.socialVideos || []).map((video, index) => (
+                <div key={video.id} className="flex gap-1.5 items-center bg-slate-50 p-2 rounded-lg">
+                  <img src={video.thumbnailUrl} alt="thumb" className="w-10 h-10 object-cover rounded" />
+                  <input
+                    type="text"
+                    value={video.title}
+                    onChange={(e) => {
+                      const newVideos = [...(profile.socialVideos || [])];
+                      newVideos[index] = { ...video, title: e.target.value };
+                      setProfile((prev) => ({ ...prev, socialVideos: newVideos }));
+                    }}
+                    className="flex-1 bg-transparent border-none text-[11px] outline-none font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                        const newVideos = (profile.socialVideos || []).filter((_, i) => i !== index);
+                        setProfile((prev) => ({ ...prev, socialVideos: newVideos }));
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -563,7 +563,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700">
-                <span className="font-bold">{activeProfile.subdomain}.nexora.in</span>
+                <span className="font-bold">
+                  {activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`}
+                </span>
                 <span className="text-slate-400">•</span>
                 <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200">
                   INR (₹) Live
@@ -1060,7 +1062,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       color: heroAIStyling.primaryBtnText 
                     }}
                   >
-                    <span>Book Now in INR (₹)</span>
+                    <span>Book Now</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
 
@@ -1855,11 +1857,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </div>
                     <div>
                       <div className="font-bold text-slate-900 text-sm">Studio Address</div>
-                      <div className="text-slate-700 font-medium text-xs mt-0.5">
+                      <div className="text-slate-900 font-medium text-xs mt-0.5">
                         {activeProfile.address}, {activeProfile.city} - {activeProfile.postalCode}
                       </div>
                       {standardData.landmark && (
-                        <div className="text-[11px] text-amber-800 mt-1 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200/50 inline-block">
+                        <div className="text-[11px] text-slate-800 mt-1 font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block">
                           Landmark: {standardData.landmark}
                         </div>
                       )}
@@ -1872,10 +1874,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </div>
                     <div>
                       <div className="font-bold text-slate-900 text-sm">Operating Hours</div>
-                      <div className="text-slate-700 font-mono text-[11.5px] mt-0.5 font-semibold">
+                      <div className="text-slate-900 font-mono text-[11.5px] mt-0.5 font-semibold">
                         Monday – Saturday: {standardData.openHourText} – {standardData.closeHourText}
                       </div>
-                      <div className="text-slate-700 font-mono text-[11.5px] font-semibold mt-0.5">
+                      <div className="text-slate-900 font-mono text-[11.5px] font-semibold mt-0.5">
                         Sunday: 10:00 AM – 07:00 PM (By Advance Booking)
                       </div>
                     </div>
@@ -1887,15 +1889,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </div>
                     <div>
                       <div className="font-bold text-slate-900 text-sm">Phone & Instant WhatsApp</div>
-                      {activeProfile.phone === activeProfile.whatsapp ? (
-                        <div className="text-slate-700 font-mono font-semibold text-xs mt-0.5">
-                          {activeProfile.phone}
-                        </div>
-                      ) : (
-                        <div className="text-slate-700 font-mono font-semibold text-xs mt-0.5">
-                          Phone: {activeProfile.phone} | WhatsApp: {activeProfile.whatsapp}
-                        </div>
-                      )}
+                      <div className="text-slate-900 font-mono font-semibold text-xs mt-0.5">
+                        {activeProfile.phone || activeProfile.whatsapp}
+                      </div>
                       
                       {/* Social Links in Contact Section */}
                       <div className="flex items-center gap-2 mt-3">
@@ -1952,6 +1948,59 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           </section>
         )}
 
+        {/* 7.5 Social Proof & Reels Showcase */}
+        {sectionVisibility.gallery && (
+          <section className={`p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
+            <div className="max-w-7xl mx-auto">
+                <h2 className={`text-2xl md:text-3xl font-extrabold mb-8 ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>Social Proof & Reels Showcase</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+                    {(activeProfile.socialVideos || []).map((video) => (
+                        <div 
+                          key={video.id} 
+                          className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer"
+                          onMouseEnter={(e) => {
+                            const iframe = e.currentTarget.querySelector('iframe');
+                            if (iframe && iframe.src) {
+                              const url = new URL(iframe.src);
+                              url.searchParams.set('autoplay', '1');
+                              url.searchParams.set('mute', '1');
+                              url.searchParams.set('loop', '1');
+                              iframe.src = url.toString();
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            const iframe = e.currentTarget.querySelector('iframe');
+                            if (iframe && iframe.src) {
+                              const url = new URL(iframe.src);
+                              url.searchParams.set('autoplay', '0');
+                              url.searchParams.delete('mute');
+                              url.searchParams.delete('loop');
+                              iframe.src = url.toString();
+                            }
+                          }}
+                          onClick={() => window.open(video.youtubeUrl, '_blank')}
+                        >
+                            <iframe
+                                src={video.youtubeUrl.replace('watch?v=', 'embed/') + '?autoplay=0'}
+                                className="w-full aspect-[9/16]"
+                                title={video.title}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            />
+                            <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-[10px] font-bold text-white flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                {video.views || '1.2K'} views
+                            </div>
+                        </div>
+                    ))}
+                    {(activeProfile.socialVideos || []).length === 0 && (
+                        <p className="col-span-full text-center text-slate-500 py-10">No videos added yet.</p>
+                    )}
+                </div>
+            </div>
+          </section>
+        )}
+
         {/* 8. FOOTER WITH DYNAMIC SOCIAL LINKS */}
         <footer className={`py-8 px-6 md:px-12 border-t text-center ${
           isDarkCanvas ? 'bg-[#0b0b0e] border-neutral-900 text-neutral-400' : 'bg-slate-50 border-slate-200 text-slate-500'
@@ -1968,6 +2017,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
             {/* Social Links Bar */}
             <div className="flex items-center gap-2 flex-wrap justify-center">
+              {/* ... social links remain the same ... */}
               {activeProfile.instagramHandle && (
                 <a
                   href={`https://instagram.com/${activeProfile.instagramHandle.replace('@', '')}`}
@@ -2031,6 +2081,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               )}
             </div>
           </div>
+          
+          {!activeProfile.whiteLabelEnabled && (
+            <div className={`mt-6 text-[10px] font-medium opacity-50 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+              Powered by Nexora Salon Platform
+            </div>
+          )}
         </footer>
 
       </div>

@@ -137,6 +137,38 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     { day: 'Sunday', enabled: true, fromTime: '10:00 AM', toTime: '04:00 PM' }
   ]);
 
+  // Photo Handlers
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setUploadedPreviewUrl(url);
+      setSelectedPhoto(url);
+    }
+  };
+
+  const handleRemoveUploadedPhoto = () => {
+    if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(uploadedPreviewUrl);
+    }
+    setUploadedPreviewUrl(null);
+    setSelectedPhoto(PRESET_AVATARS[0]);
+  };
+
+  const handleSelectPreset = (url: string) => {
+    setSelectedPhoto(url);
+    setCustomPhotoUrl(url);
+    if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(uploadedPreviewUrl);
+    }
+    setUploadedPreviewUrl(null);
+  };
+
+  const handleCustomPhotoChange = (url: string) => {
+    setCustomPhotoUrl(url);
+    setSelectedPhoto(url);
+  };
+
   // Clean up any active Blob URL on component unmount
   useEffect(() => {
     return () => {

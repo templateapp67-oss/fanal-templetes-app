@@ -117,6 +117,12 @@ export interface SocialVideo {
   transformationTag?: string;
 }
 
+export interface HomeServiceConfig {
+  enabled: boolean;
+  baseCharge: number;
+  radiusLimitKm: number;
+}
+
 export interface SalonProfile {
   businessType: BusinessTypeId;
   businessName: string;
@@ -142,6 +148,7 @@ export interface SalonProfile {
   state?: string;
   latitude?: number;
   longitude?: number;
+  homeService?: HomeServiceConfig; // Added this
   instagramHandle: string;
   facebookPage?: string;
   youtubeChannel?: string;
@@ -157,6 +164,7 @@ export interface SalonProfile {
   workingHoursMonFri?: string;
   workingHoursSat?: string;
   workingHoursSun?: string;
+  whiteLabelEnabled?: boolean;
 }
 
 export interface SalonService {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppView } from '../types';
+import { NotificationBell } from './NotificationBell';
 
 interface HeaderProps {
   currentView: AppView;
@@ -77,6 +78,8 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Actions */}
         <div className="flex items-center gap-md">
+          <NotificationBell userEmail="owner@salon.com" />
+          
           <span className="hidden md:inline-block font-body-sm text-on-surface-variant">
             Already have a website?
           </span>

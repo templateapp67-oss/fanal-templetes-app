@@ -58,7 +58,7 @@ export interface BookingModalProps {
   onConfirmBooking?: (bookingData: any) => void;
 }
 
-type BookingStep = 'service' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
+type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
 
 const ANY_SPECIALIST: Stylist = {
   id: 'any_available',
@@ -141,6 +141,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       icon: 'sparkles'
     }
   );
+  const [selectedUpgrades, setSelectedUpgrades] = useState<SalonService[]>([]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(
     initialStylist || (stylists && stylists[0]) || ANY_SPECIALIST
   );
@@ -159,6 +160,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [guestPhoneError, setGuestPhoneError] = useState<string>('');
   const [rememberGuest, setRememberGuest] = useState<boolean>(true);
   const [isPrefilled, setIsPrefilled] = useState<boolean>(false);
+  
+  // Home Service State
+  const [bookingType, setBookingType] = useState<'salon' | 'home'>('salon');
+  const [homeServiceAddress, setHomeServiceAddress] = useState<string>('');
+  const [homeServicePinCode, setHomeServicePinCode] = useState<string>('');
+  const [distanceInfo, setDistanceInfo] = useState<{distance: number, ok: boolean, message: string} | null>(null);
 
   // Step 4: Mock OTP (Static Code: '1234')
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
@@ -360,12 +367,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  // Calculate advance token amount (20%)
-  const advanceTokenAmount = Math.round((selectedService.price * 20) / 100);
-  const remainingAmount = selectedService.price - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
+  // Calculate advance token amount (25%)
+  const homeServiceCharge = bookingType === 'home' ? (profile.homeService?.baseCharge || 0) : 0;
+  const upgradesPrice = selectedUpgrades.reduce((sum, upgrade) => sum + upgrade.price, 0);
+  const totalAmount = selectedService.price + homeServiceCharge + upgradesPrice;
+  const advanceTokenAmount = Math.round((totalAmount * 25) / 100);
+  const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
 
   // Confirm booking & generate reference
-  const handleFinalSubmitBooking = () => {
+  const handleFinalSubmitBooking = async () => {
     const cleanPhone = sanitizeIndianPhone(guestPhone);
     const cityCode = profile.city?.toUpperCase().includes('BENGALURU') ? 'BLR'
       : profile.city?.toUpperCase().includes('MUMBAI') ? 'BOM'
@@ -379,6 +389,42 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const refNum = `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
     setBookingRef(refNum);
 
+    // Call Supabase API Endpoint
+    try {
+      const response = await fetch('/api/bookings/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking: {
+            customer_name: guestName.trim() || 'Guest Client',
+            customer_phone: cleanPhone,
+            customer_email: guestEmail.trim() || `${cleanPhone}@guest.in`,
+            service_id: selectedService.id,
+            service_name: selectedService.name,
+            booking_date: bookingDate,
+            time_slot: bookingTime,
+            total_amount: totalAmount,
+            advance_paid_amount: paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0,
+            status: 'pending',
+            payment_status: paymentMethod === 'pay_advance_token' ? 'paid_deposit' : 'pending',
+            payment_id: refNum,
+          },
+          notifications: [
+            {
+              user_email: profile.email || 'owner@salon.com',
+              title: 'New Booking Request',
+              message: `New booking from ${guestName} for ${selectedService.name} on ${bookingDate}. 25% Advance Paid: ₹${advanceTokenAmount}`,
+            }
+          ]
+        })
+      });
+      if (!response.ok) {
+        console.error('Failed to create booking in Supabase');
+      }
+    } catch (e) {
+      console.error('API Error:', e);
+    }
+
     const newApt: Appointment = {
       id: `apt-${Date.now()}`,
       clientName: guestName.trim() || 'Guest Client',
@@ -386,12 +432,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       clientEmail: guestEmail.trim() || `${cleanPhone}@guest.in`,
       serviceId: selectedService.id,
       serviceName: selectedService.name,
-      servicePrice: selectedService.price,
+      servicePrice: totalAmount,
       stylistId: selectedStylist.id,
       stylistName: selectedStylist.name,
       date: bookingDate,
       time: bookingTime,
-      status: 'confirmed',
+      status: 'pending', // Set initial status to pending
       paymentStatus: paymentMethod === 'pay_advance_token' ? 'paid_deposit' : 'pay_at_salon',
       amountPaid: paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0,
       createdAt: new Date().toISOString()
@@ -406,13 +452,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (onShowToast) {
       onShowToast({
         id: String(Date.now()),
-        title: 'Appointment Confirmed! Confirmation email sent.',
+        title: 'Booking Pending Approval. 25% Deposit Paid.',
         clientName: newApt.clientName,
         serviceName: newApt.serviceName,
         stylistName: newApt.stylistName,
         dateTime: `${bookingDate} at ${bookingTime}`,
         refCode: refNum,
-        price: selectedService.price
+        price: totalAmount
       });
     }
   };
@@ -430,11 +476,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const msg = `Namaste ${guestName}! Your booking with ${profile.businessName} is confirmed!\n\n` +
       `📅 Date: ${bookingDate}\n` +
       `⏰ Time: ${bookingTime} IST\n` +
-      `💇 Service: ${selectedService.name} (₹${selectedService.price})\n` +
+      `💇 Service: ${selectedService.name}${selectedUpgrades.length > 0 ? ` + Add-ons (${selectedUpgrades.map(u => u.name).join(', ')})` : ''} (Total: ₹${totalAmount})\n` +
+      `🏠 Appointment Type: ${bookingType === 'home' ? 'Home Service' : 'In-Salon'}\n` +
+      (bookingType === 'home' ? `📍 Address: ${homeServiceAddress} (PIN: ${homeServicePinCode})\n` : '') +
       `👤 Specialist: ${selectedStylist.name}\n` +
       `📍 Branch: ${profile.businessName}, ${profile.address}, ${profile.city}\n` +
       `🔖 Reference: ${bookingRef}\n` +
-      `💳 Payment: ${paymentMethod === 'pay_advance_token' ? `Token Deposit ₹${advanceTokenAmount} (Paid)` : 'Pay at Salon Reception'}\n\n` +
+      `💰 Total Price: ₹${totalAmount}\n` +
+      `💳 Payment: ${paymentMethod === 'pay_advance_token' ? `25% Advance Paid: ₹${advanceTokenAmount} (Balance: ₹${remainingAmount})` : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount})`}\n\n` +
       `Thank you for booking with us!`;
 
     const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(msg)}`;
@@ -518,20 +567,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 1. Service
               </span>
               <ChevronRight className="w-3 h-3 text-slate-400" />
+              <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'upgrades' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
+                2. Upgrades
+              </span>
+              <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'datetime' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
-                2. Slot
+                3. Slot
               </span>
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'guest' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
-                3. Info
+                4. Info
               </span>
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'otp' ? 'bg-emerald-700 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
-                4. OTP
+                5. OTP
               </span>
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'payment' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
-                5. Pay
+                6. Pay
               </span>
             </div>
 
@@ -559,42 +612,34 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               {/* Branch / Location Picker */}
               <div>
                 <label className="text-xs font-bold font-mono-caps text-slate-700 block mb-1.5">
-                  1. Select Salon Branch Location
+                  1. Appointment Type
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div
-                    onClick={() => setSelectedBranch('main')}
-                    className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-2.5 ${
-                      selectedBranch === 'main'
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <button
+                    onClick={() => setBookingType('salon')}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      bookingType === 'salon'
                         ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs'
                         : 'border-slate-200 hover:border-slate-300 bg-white'
                     }`}
                   >
-                    <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-slate-900">Main Flagship Studio</div>
-                      <div className="text-[11px] text-slate-500 truncate">{profile.address}, {profile.city}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">PIN: {profile.postalCode || '560001'}</div>
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setSelectedBranch('express')}
-                    className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-2.5 ${
-                      selectedBranch === 'express'
+                    <div className="font-bold text-xs text-slate-900">In-Salon</div>
+                    <div className="text-[10px] text-slate-500">Visit our studio</div>
+                  </button>
+                  <button
+                    onClick={() => setBookingType('home')}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      bookingType === 'home'
                         ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs'
                         : 'border-slate-200 hover:border-slate-300 bg-white'
                     }`}
                   >
-                    <MapPin className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-slate-900">City Center Express Lounge</div>
-                      <div className="text-[11px] text-slate-500 truncate">Mall Galleria, {profile.city}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">Valet Parking Available</div>
-                    </div>
-                  </div>
+                    <div className="font-bold text-xs text-slate-900">Home Service</div>
+                    <div className="text-[10px] text-slate-500">We come to you</div>
+                  </button>
                 </div>
               </div>
+
 
               {/* Service Selection */}
               <div>
@@ -708,13 +753,72 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               {/* Step Navigation Action */}
               <button
                 type="button"
-                onClick={() => setCurrentStep('datetime')}
+                onClick={() => setCurrentStep('upgrades')}
                 className="w-full py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95 active:scale-[0.99] mt-2"
                 style={{ backgroundColor: themeAccentHex }}
               >
-                <span>Continue to Date & Slot</span>
+                <span>Continue to Optional Upgrades</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+            </motion.div>
+          )}
+
+          {/* ========================================================= */}
+          {/* STEP 1.5: OPTIONAL UPGRADES */}
+          {/* ========================================================= */}
+          {currentStep === 'upgrades' && (
+            <motion.div
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="flex flex-col gap-4"
+            >
+              <h4 className="font-bold text-sm text-slate-900">Make your service even better!</h4>
+              <p className="text-[11px] text-slate-500">Popular add-ons for {selectedService.name}</p>
+
+              <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
+                {(services || []).filter(s => s.category === selectedService.category && s.id !== selectedService.id).slice(0, 3).map(addon => {
+                    const isSelected = selectedUpgrades.some(u => u.id === addon.id);
+                    return (
+                        <div 
+                            key={addon.id}
+                            onClick={() => {
+                                if (isSelected) {
+                                    setSelectedUpgrades(prev => prev.filter(u => u.id !== addon.id));
+                                } else {
+                                    setSelectedUpgrades(prev => [...prev, addon]);
+                                }
+                            }}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                                isSelected ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                        >
+                            <div className="text-xs font-bold text-slate-900">{addon.name}</div>
+                            <div className="text-xs font-mono font-bold text-slate-900">₹{addon.price.toLocaleString('en-IN')}</div>
+                        </div>
+                    )
+                })}
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep('service')}
+                  className="px-4 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer flex items-center gap-1.5"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep('datetime')}
+                  className="flex-1 py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95"
+                  style={{ backgroundColor: themeAccentHex }}
+                >
+                  <span>Continue to Date & Slot</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -838,27 +942,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <span>{bookingDate} at {bookingTime} IST</span>
                 </div>
                 <span className="text-slate-600">{selectedService.name} ({selectedStylist.name})</span>
-              </div>
-
-              {/* Quick WhatsApp Booking Shortcut */}
-              <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-200/50 dark:border-emerald-900/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-400 font-extrabold text-xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>⚡ Quick WhatsApp Booking Shortcut</span>
-                  </div>
-                  <p className="text-[10.5px] text-slate-600 dark:text-neutral-400 mt-1 leading-relaxed">
-                    Skip filling out details and OTP! Tap to instantly send a pre-filled booking request for <strong>{selectedService.name}</strong> on WhatsApp.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleQuickWhatsAppBooking}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 fill-white" />
-                  <span>Book on WhatsApp</span>
-                </button>
               </div>
 
               {/* Step Navigation Actions */}
@@ -1204,59 +1287,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               {/* Payment Method Selector */}
               <div>
                 <label className="text-xs font-bold font-mono-caps text-slate-700 block mb-1.5">
-                  Choose Payment Option
+                  Required Advance Payment (25%)
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {/* Option 1: Pay at Salon */}
-                  <div
-                    onClick={() => setPaymentMethod('pay_at_salon')}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
-                      paymentMethod === 'pay_at_salon'
-                        ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-slate-700" />
-                        <span className="font-bold text-xs text-slate-900">Pay at Salon Reception</span>
-                      </div>
-                      {paymentMethod === 'pay_at_salon' && (
-                        <span className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">
-                          ✓
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      No advance payment needed. Pay ₹{selectedService.price.toLocaleString('en-IN')} at reception via Cash, UPI, or Card.
-                    </p>
-                    <span className="text-[10px] font-mono text-emerald-700 font-bold">
-                      Zero Advance • Pay after service
-                    </span>
-                  </div>
-
-                  {/* Option 2: Pay Advance Token */}
+                <div className="grid grid-cols-1 gap-2.5">
                   <div
                     onClick={() => setPaymentMethod('pay_advance_token')}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
-                      paymentMethod === 'pay_advance_token'
-                        ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-2 border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <CreditCard className="w-4 h-4 text-emerald-600" />
-                        <span className="font-bold text-xs text-slate-900">Pay Advance Token (20%)</span>
+                        <span className="font-bold text-xs text-slate-900">Pay Advance Token (25%)</span>
                       </div>
-                      {paymentMethod === 'pay_advance_token' && (
-                        <span className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">
-                          ✓
-                        </span>
-                      )}
+                      <span className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">
+                        ✓
+                      </span>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Pay ₹{advanceTokenAmount.toLocaleString('en-IN')} token via UPI (GPay / PhonePe). Remaining ₹{remainingAmount.toLocaleString('en-IN')} at salon.
+                      Pay ₹{advanceTokenAmount.toLocaleString('en-IN')} token via UPI to secure slot. Remaining ₹{remainingAmount.toLocaleString('en-IN')} at salon.
                     </p>
                     <span className="text-[10px] font-mono text-emerald-700 font-bold">
                       VIP Priority Slot Hold
@@ -1361,9 +1409,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
 
                 <div className="flex justify-between items-center text-slate-700 font-sans">
-                  <span>Payment Mode:</span>
+                  <span>Price Breakdown:</span>
+                  <div className="text-right">
+                    <strong>Service: ₹{selectedService.price.toLocaleString('en-IN')}</strong><br/>
+                    {bookingType === 'home' && <span>Home Service: ₹{homeServiceCharge.toLocaleString('en-IN')}<br/></span>}
+                    {selectedUpgrades.length > 0 && <span>Upgrades ({selectedUpgrades.map(u => u.name).join(', ')}): ₹{upgradesPrice.toLocaleString('en-IN')}<br/></span>}
+                    <span className="font-bold text-slate-900">Total: ₹{totalAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center text-slate-700 font-sans">
+                  <span>Payment Status:</span>
                   <strong className="text-emerald-700">
-                    {paymentMethod === 'pay_advance_token' ? `Advance Token ₹${advanceTokenAmount} (Paid)` : `Pay at Salon (₹${selectedService.price})`}
+                    {paymentMethod === 'pay_advance_token' ? `25% Advance Paid: ₹${advanceTokenAmount.toLocaleString('en-IN')} (Balance: ₹${remainingAmount.toLocaleString('en-IN')})` : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount.toLocaleString('en-IN')})`}
                   </strong>
                 </div>
 

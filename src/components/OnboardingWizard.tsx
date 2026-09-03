@@ -4,6 +4,7 @@ import { BUSINESS_TYPES } from '../mockData';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { AIBioModal } from './AIBioModal';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
+import { AboutOwnerForm } from './AboutOwnerForm';
 
 interface OnboardingWizardProps {
   profile: SalonProfile;
@@ -247,7 +248,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
           {/* STEP 3: Business Details & Bio (Matches Screenshot 3) */}
           {currentStep === 3 && (
-            <div className="flex flex-col gap-6 animate-fade-in">
+            <div className="flex flex-col gap-6 animate-fade-in pb-8">
               <div>
                 <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
                   SALON INFORMATION
@@ -258,117 +259,54 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-2">
-                {/* Left: Founder Photo Upload Card */}
-                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex flex-col items-center justify-center text-center gap-3">
-                  <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[#b0004a] shadow-md relative group">
-                    <img
-                      src={profile.ownerPhotoUrl}
-                      alt={profile.ownerName}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <div className="font-display text-sm font-bold">{profile.ownerName || 'Salon Owner'}</div>
-                    <div className="text-xs text-gray-500">{profile.ownerRole || 'Founder'}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextImg = profile.ownerPhotoUrl.includes('photo-1573496359142')
-                        ? 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80'
-                        : 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80';
-                      setProfile((p) => ({ ...p, ownerPhotoUrl: nextImg }));
-                    }}
-                    className="text-xs font-bold text-[#b0004a] hover:underline flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-sm">add_a_photo</span>
-                    <span>Change Photo</span>
-                  </button>
-                </div>
-
-                {/* Right: Input fields */}
-                <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="font-bold text-gray-700">Salon Name</label>
+              {/* Basic Details */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
+                <h3 className="text-lg font-semibold text-[#111827] mb-4">Contact Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-[#111827] mb-1.5">Salon Name</label>
                     <input
                       type="text"
                       value={profile?.businessName || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setProfile((prev) => ({ ...prev, businessName: val }));
-                      }}
-                      className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
+                      onChange={(e) => setProfile((prev) => ({ ...prev, businessName: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827]"
                     />
                   </div>
-
                   <div>
-                    <label className="font-bold text-gray-700">Owner / Lead Stylist Name</label>
-                    <input
-                      type="text"
-                      value={profile.ownerName}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setProfile((prev) => ({ ...prev, ownerName: val }));
-                      }}
-                      className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-gray-700">Phone Number</label>
+                    <label className="block text-sm font-medium text-[#111827] mb-1.5">Phone Number</label>
                     <input
                       type="text"
                       value={profile.phone}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setProfile((prev) => ({ ...prev, phone: val }));
-                      }}
-                      className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
+                      onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827]"
                     />
                   </div>
-
                   <div>
-                    <label className="font-bold text-gray-700">WhatsApp / Booking Line</label>
+                    <label className="block text-sm font-medium text-[#111827] mb-1.5">WhatsApp / Booking Line</label>
                     <input
                       type="text"
                       value={profile.whatsapp}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setProfile((prev) => ({ ...prev, whatsapp: val }));
-                      }}
-                      className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="font-bold text-gray-700">Salon Story / Bio</label>
-                      <button
-                        type="button"
-                        onClick={() => setIsBioModalOpen(true)}
-                        className="text-[#b0004a] font-bold text-xs hover:underline flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                        <span>Write with AI / Speak</span>
-                      </button>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={profile.about}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setProfile((prev) => ({ ...prev, about: val }));
-                      }}
-                      className="w-full p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
+                      onChange={(e) => setProfile((prev) => ({ ...prev, whatsapp: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827]"
                     />
                   </div>
                 </div>
               </div>
+
+              <AboutOwnerForm
+                ownerName={profile.ownerName}
+                setOwnerName={(val) => setProfile((p) => ({ ...p, ownerName: val }))}
+                ownerPhotoUrl={profile.ownerPhotoUrl}
+                setOwnerPhotoUrl={(val) => setProfile((p) => ({ ...p, ownerPhotoUrl: val }))}
+                ownerRole={profile.ownerRole || ''}
+                setOwnerRole={(val) => setProfile((p) => ({ ...p, ownerRole: val }))}
+                about={profile.about}
+                setAbout={(val) => setProfile((p) => ({ ...p, about: val }))}
+                onWriteWithAI={() => setIsBioModalOpen(true)}
+                onSpeak={() => setIsBioModalOpen(true)}
+              />
             </div>
           )}
-
-          {/* STEP 4: Aesthetics & Theme Presets */}
           {currentStep === 4 && (
             <div className="flex flex-col gap-6 animate-fade-in">
               <div>
