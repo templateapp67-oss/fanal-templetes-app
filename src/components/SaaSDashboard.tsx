@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, ClientRecord, LoyaltyConfig } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
-import { validateAndReadImageFile } from '../utils/imageUploadHelper';
+import { validateAndReadImageFile, compressAndResizeImage } from '../utils/imageUploadHelper';
+import { ImageCompressorWidget } from './ImageCompressorWidget';
 import { TeamManagement } from './TeamManagement';
 import { ServiceManagement } from './ServiceManagement';
 import { PromoStudio } from './PromoStudio';
@@ -65,9 +66,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     if (!file) return;
 
     setAppearanceError(null);
-    const result = await validateAndReadImageFile(file);
+    setAppearanceSuccess('Resizing & compressing logo...');
+    const result = await compressAndResizeImage(file);
     if (!result.isValid) {
       setAppearanceError(result.errorMessage || 'Invalid image file.');
+      setAppearanceSuccess(null);
       return;
     }
 
@@ -81,7 +84,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         }
         return updated;
       });
-      setAppearanceSuccess('Custom Logo uploaded and saved to profile & localStorage!');
+      setAppearanceSuccess(`Logo optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & saved!`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
     }
   };
@@ -91,9 +94,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     if (!file) return;
 
     setAppearanceError(null);
-    const result = await validateAndReadImageFile(file);
+    setAppearanceSuccess('Resizing & compressing hero cover...');
+    const result = await compressAndResizeImage(file);
     if (!result.isValid) {
       setAppearanceError(result.errorMessage || 'Invalid image file.');
+      setAppearanceSuccess(null);
       return;
     }
 
@@ -107,7 +112,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         }
         return updated;
       });
-      setAppearanceSuccess('Custom Hero Cover Image uploaded and saved to profile & localStorage!');
+      setAppearanceSuccess(`Hero cover optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & saved!`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
     }
   };
@@ -826,6 +831,23 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Real-time Browser-based Image Compression Hub */}
+              <div className="mt-4">
+                <ImageCompressorWidget
+                  onApplyLogo={(url) => {
+                    setProfile((prev) => ({ ...prev, logoUrl: url }));
+                    setAppearanceSuccess('Optimized image applied as custom logo!');
+                    setTimeout(() => setAppearanceSuccess(null), 4000);
+                  }}
+                  onApplyCover={(url) => {
+                    setProfile((prev) => ({ ...prev, coverImageUrl: url }));
+                    setAppearanceSuccess('Optimized image applied as custom cover banner!');
+                    setTimeout(() => setAppearanceSuccess(null), 4000);
+                  }}
+                  themePrimaryColor={currentPrimaryColor}
+                />
               </div>
             </div>
 

@@ -151,12 +151,22 @@ export default function App() {
     }
   };
 
+  const handleBuildWebsiteClick = () => {
+    const wizardCompleted = localStorage.getItem('onboarding_wizard_completed') === 'true';
+    if (wizardCompleted) {
+      setCurrentView('preview');
+    } else {
+      setCurrentView('wizard');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-surface text-on-surface">
       <Header
         currentView={currentView}
         setCurrentView={setCurrentView}
         salonName={profile.businessName}
+        onBuildWebsiteClick={handleBuildWebsiteClick}
       />
 
       {currentView === 'landing' && (
@@ -174,7 +184,10 @@ export default function App() {
           setServices={setServices}
           stylists={stylists}
           setStylists={setStylists}
-          onComplete={() => setCurrentView('preview')}
+          onComplete={() => {
+            localStorage.setItem('onboarding_wizard_completed', 'true');
+            setCurrentView('preview');
+          }}
         />
       )}
 

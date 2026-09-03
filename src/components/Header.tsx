@@ -5,12 +5,14 @@ interface HeaderProps {
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
   salonName: string;
+  onBuildWebsiteClick?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   setCurrentView,
   salonName,
+  onBuildWebsiteClick,
 }) => {
   return (
     <header className="bg-surface/80 backdrop-blur-md fixed top-0 w-full z-50 border-b border-outline-variant/30 transition-all duration-300" id="global-nav">
@@ -40,30 +42,24 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           
           <button
-            onClick={() => setCurrentView('preview')}
+            onClick={() => {
+              if (onBuildWebsiteClick) {
+                onBuildWebsiteClick();
+              } else {
+                setCurrentView('wizard');
+              }
+            }}
             className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'preview'
+              currentView === 'preview' || currentView === 'wizard'
                 ? 'bg-primary text-on-primary shadow-sm'
                 : 'text-on-surface-variant hover:text-primary'
             }`}
           >
-            <span className="material-symbols-outlined text-base">edit_document</span>
-            <span>Live Visual Editor & Templates</span>
+            <span className="material-symbols-outlined text-base">web</span>
+            <span>Build My Salon Website</span>
             <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
-              14
+              Live
             </span>
-          </button>
-
-          <button
-            onClick={() => setCurrentView('wizard')}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'wizard'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:text-primary'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">auto_awesome</span>
-            AI Setup Wizard
           </button>
 
           <button

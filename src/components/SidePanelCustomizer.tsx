@@ -25,14 +25,16 @@ import {
   ImagePlus,
   Trash2,
   Link as LinkIcon,
-  AlertCircle
+  AlertCircle,
+  Scissors
 } from 'lucide-react';
-import { SalonProfile, BusinessTypeId } from '../types';
+import { SalonProfile, BusinessTypeId, SalonService } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey } from '../themeAccents';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { SALON_IMAGES } from '../assets/images';
-import { validateAndReadImageFile } from '../utils/imageUploadHelper';
+import { validateAndReadImageFile, compressAndResizeImage } from '../utils/imageUploadHelper';
 import { AILogoSuiteModal } from './AILogoSuiteModal';
+import { ImageCompressorWidget } from './ImageCompressorWidget';
 
 export interface SectionVisibilityState {
   header: boolean;
@@ -92,9 +94,12 @@ interface SidePanelCustomizerProps {
   setSectionVisibility: React.Dispatch<React.SetStateAction<SectionVisibilityState>>;
   onAIGeneratePrompt?: (promptType: string, customPrompt?: string) => void;
   onResetDefaults?: () => void;
+  services?: SalonService[];
+  setServices?: React.Dispatch<React.SetStateAction<SalonService[]>>;
+  onSelectCategory?: (categoryId: BusinessTypeId) => void;
 }
 
-type CustomizerTab = 'theme' | 'branding' | 'location' | 'sections' | 'ai';
+type CustomizerTab = 'theme' | 'branding' | 'services' | 'location' | 'sections' | 'ai';
 
 const CURATED_HERO_PRESETS = [
   { name: 'Pinky Nails Sanctuary', url: SALON_IMAGES.hero, tag: 'Nail & Lash Studio' },
@@ -119,7 +124,10 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
   sectionVisibility,
   setSectionVisibility,
   onAIGeneratePrompt,
-  onResetDefaults
+  onResetDefaults,
+  services,
+  setServices,
+  onSelectCategory
 }) => {
   const [activeTab, setActiveTab] = useState<CustomizerTab>('theme');
   const [customHex, setCustomHex] = useState<string>(primaryAccentColor || '#0f172a');
@@ -148,15 +156,16 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
     setTimeout(() => setToastNotice(null), 3000);
   };
 
-  // Handle Logo Upload (Client-side max 5MB validation + Data URL conversion)
+  // Handle Logo Upload with automatic auto-resize & compression
   const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setFileError(null);
-    const result = await validateAndReadImageFile(file);
+    showToast('Uploading & compressing logo...');
+    const result = await compressAndResizeImage(file);
     if (!result.isValid) {
-      setFileError(result.errorMessage || 'File validation failed.');
+      setFileError(result.errorMessage || 'File compression failed.');
       showToast(result.errorMessage || 'Logo upload failed.');
       return;
     }
@@ -164,19 +173,20 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
     if (result.dataUrl) {
       setProfile((prev) => ({ ...prev, logoUrl: result.dataUrl }));
       setCustomLogoUrlInput(result.dataUrl);
-      showToast('Custom Salon Logo uploaded & auto-saved!');
+      showToast(`Logo optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & applied!`);
     }
   };
 
-  // Handle Hero Banner Upload (Client-side max 5MB validation + Data URL conversion)
+  // Handle Hero Banner Upload with automatic auto-resize & compression
   const handleHeroFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setFileError(null);
-    const result = await validateAndReadImageFile(file);
+    showToast('Uploading & compressing banner...');
+    const result = await compressAndResizeImage(file);
     if (!result.isValid) {
-      setFileError(result.errorMessage || 'File validation failed.');
+      setFileError(result.errorMessage || 'File compression failed.');
       showToast(result.errorMessage || 'Hero upload failed.');
       return;
     }
@@ -184,7 +194,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
     if (result.dataUrl) {
       setProfile((prev) => ({ ...prev, coverImageUrl: result.dataUrl }));
       setCustomHeroUrlInput(result.dataUrl);
-      showToast('Custom Hero Banner image uploaded & auto-saved!');
+      showToast(`Banner optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & applied!`);
     }
   };
 
@@ -291,7 +301,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
       </div>
 
       {/* Tabs Switcher */}
-      <div className="grid grid-cols-5 p-1 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
+      <div className="grid grid-cols-6 p-1 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
         <button
           onClick={() => setActiveTab('theme')}
           className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
@@ -310,6 +320,16 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
         >
           <ImageIcon className="w-3.5 h-3.5 text-purple-600" />
           <span className="text-[9px]">Branding</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('services')}
+          className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'services' ? 'bg-white text-blue-700 font-extrabold shadow-xs' : 'hover:text-slate-900'
+          }`}
+        >
+          <Scissors className="w-3.5 h-3.5 text-blue-600" />
+          <span className="text-[9px]">Services</span>
         </button>
 
         <button
@@ -561,6 +581,21 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* 3. Image Optimization & Compression Studio */}
+            <ImageCompressorWidget
+              onApplyLogo={(url) => {
+                setProfile((p) => ({ ...p, logoUrl: url }));
+                setCustomLogoUrlInput(url);
+                showToast('Applied optimized photo as Salon Logo!');
+              }}
+              onApplyCover={(url) => {
+                setProfile((p) => ({ ...p, coverImageUrl: url }));
+                setCustomHeroUrlInput(url);
+                showToast('Applied optimized photo as Hero Banner!');
+              }}
+              themePrimaryColor={primaryAccentColor}
+            />
           </div>
         )}
         
@@ -570,6 +605,31 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
         {activeTab === 'theme' && (
           <div className="flex flex-col gap-4">
             
+            {/* Salon Category / Vertical Switcher */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Salon Category / Template
+              </label>
+              <select
+                value={selectedCategoryKey}
+                onChange={(e) => {
+                  const catId = e.target.value as BusinessTypeId;
+                  onSelectCategory?.(catId);
+                  showToast(`Switched Category Template to ${CATEGORY_TEMPLATES[catId]?.title || catId}`);
+                }}
+                className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:border-slate-900 focus:outline-none"
+              >
+                {Object.values(CATEGORY_TEMPLATES).map((tmpl) => (
+                  <option key={tmpl.id} value={tmpl.id}>
+                    {tmpl.title} ({tmpl.paletteLabel.split('(')[0]})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-500 leading-normal">
+                Selecting a new category will auto-populate professional preset services, stylists, and banner photos for that category.
+              </p>
+            </div>
+
             {/* Canvas Lighting */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
@@ -675,6 +735,100 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
               />
             </div>
 
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB: SERVICES & PRICING MENU */}
+        {/* ============================================================ */}
+        {activeTab === 'services' && (
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-between items-center mb-1">
+              <div>
+                <h4 className="font-bold text-slate-900 text-xs">Manage Menu Services</h4>
+                <p className="text-[10px] text-slate-500">Live prices in INR (₹) reflected on canvas</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const newSrv: SalonService = {
+                    id: `srv-custom-${Date.now()}`,
+                    name: 'New Custom Service',
+                    category: 'General',
+                    durationMinutes: 30,
+                    price: 250,
+                    description: 'Handcrafted premium salon treatment.',
+                    icon: 'spa',
+                    popular: false
+                  };
+                  setServices?.((prev) => [...prev, newSrv]);
+                  showToast('Custom service added to menu!');
+                }}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
+              >
+                <span>+ Add Service</span>
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin">
+              {services?.map((srv) => (
+                <div key={srv.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <input
+                      type="text"
+                      value={srv.name}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setServices?.((prev) => prev.map((s) => s.id === srv.id ? { ...s, name: val } : s));
+                      }}
+                      className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-900 focus:outline-none w-3/4 py-0.5"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setServices?.((prev) => prev.filter((s) => s.id !== srv.id));
+                        showToast(`Deleted service "${srv.name}"`);
+                      }}
+                      className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400">Price (₹):</span>
+                      <input
+                        type="number"
+                        value={srv.price}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setServices?.((prev) => prev.map((s) => s.id === srv.id ? { ...s, price: val } : s));
+                        }}
+                        className="w-full p-1 bg-white border border-slate-200 rounded text-center font-bold text-slate-900 focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400">Min:</span>
+                      <input
+                        type="number"
+                        value={srv.durationMinutes}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setServices?.((prev) => prev.map((s) => s.id === srv.id ? { ...s, durationMinutes: val } : s));
+                        }}
+                        className="w-full p-1 bg-white border border-slate-200 rounded text-center font-bold text-slate-900 focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(!services || services.length === 0) && (
+                <div className="text-center py-6 text-slate-400 text-xs">
+                  No services configured. Click '+ Add Service' above to add your first salon service.
+                </div>
+              )}
+            </div>
           </div>
         )}
 

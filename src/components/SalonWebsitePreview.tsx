@@ -36,12 +36,13 @@ import {
 import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
-import { CATEGORY_STANDARDIZED_DATA } from '../templateData';
+import { CATEGORY_STANDARDIZED_DATA, Testimonial } from '../templateData';
 import { INITIAL_SALON_PROFILE } from '../mockData';
 import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
 import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
+import { TestimonialModal } from './ClientTestimonials';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -92,6 +93,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       setSelectedCategoryKey(activeProfile.businessType);
     }
   }, [activeProfile.businessType]);
+
+  // Synchronize client reviews when category selection changes
+  useEffect(() => {
+    const data = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
+    setActiveReviews(data.reviews || []);
+  }, [selectedCategoryKey]);
 
   // Side Panel Section Visibility
   const [sectionVisibility, setSectionVisibility] = useState<SectionVisibilityState>(DEFAULT_SECTION_VISIBILITY);
@@ -151,6 +158,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [selectedService, setSelectedService] = useState<SalonService>(activeServices[0] || activeTemplate.services[0]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
+
+  // Dynamic client testimonials state
+  const [activeReviews, setActiveReviews] = useState<Testimonial[]>(() => {
+    const data = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
+    return data.reviews || [];
+  });
+  const [isTestimonialModalOpen, setIsTestimonialModalOpen] = useState<boolean>(false);
+  const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
 
   // Editable section custom headings
   const [sectionHeadings, setSectionHeadings] = useState<{
@@ -368,6 +383,34 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const handleDeleteStylist = (stylistId: string) => {
     setStylists((prev) => prev.filter((st) => st.id !== stylistId));
     showNotification('Specialist removed from roster.');
+  };
+
+  // Dynamic Testimonials Management Actions
+  const handleAddNewTestimonial = () => {
+    setEditingTestimonial(null);
+    setIsTestimonialModalOpen(true);
+  };
+
+  const handleEditTestimonial = (testimonial: Testimonial) => {
+    setEditingTestimonial(testimonial);
+    setIsTestimonialModalOpen(true);
+  };
+
+  const handleDeleteTestimonial = (id: string) => {
+    setActiveReviews((prev) => prev.filter((r) => r.id !== id));
+    showNotification('Review removed from featured testimonials list.');
+  };
+
+  const handleSaveTestimonial = (saved: Testimonial) => {
+    setActiveReviews((prev) => {
+      const exists = prev.some((r) => r.id === saved.id);
+      if (exists) {
+        return prev.map((r) => r.id === saved.id ? saved : r);
+      } else {
+        return [saved, ...prev];
+      }
+    });
+    showNotification(editingTestimonial ? 'Featured testimonial updated successfully!' : 'New testimonial added to website!');
   };
 
   // AI Studio Prompts Engine
@@ -702,6 +745,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         setSectionVisibility={setSectionVisibility}
         onAIGeneratePrompt={handleAIGeneratePrompt}
         onResetDefaults={() => handleCategorySwitch(selectedCategoryKey)}
+        services={activeServices}
+        setServices={setServices}
+        onSelectCategory={handleCategorySwitch}
       />
 
       {/* Edit Mode Notice Banner */}
@@ -870,8 +916,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <span 
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs transition-colors"
                     style={{ 
-                      backgroundColor: heroAIStyling.badgeBg.startsWith('linear') ? undefined : heroAIStyling.badgeBg,
-                      background: heroAIStyling.badgeBg.startsWith('linear') ? heroAIStyling.badgeBg : undefined,
+                      background: heroAIStyling.badgeBg,
                       color: heroAIStyling.badgeTextColor 
                     }}
                   >
@@ -1550,13 +1595,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <p className={`text-xs md:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
                 Verified Google & Practo reviews from clients across {activeProfile.city}.
               </p>
+
+              {isEditMode && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handleAddNewTestimonial}
+                    className="px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-all shadow-xs hover:shadow-md hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Featured Review</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(standardData.reviews || []).map((rev, idx) => (
+              {(activeReviews || []).map((rev, idx) => (
                 <div
-                  key={idx}
-                  className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${
+                  key={rev.id || idx}
+                  className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 transition-all ${
                     isDarkCanvas ? 'bg-neutral-900/60 border-neutral-800' : 'bg-slate-50 border-slate-200'
                   }`}
                 >
@@ -1575,14 +1633,53 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </p>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-200/60 dark:border-neutral-800 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-xs">{rev.name}</div>
-                      <div className="text-[10px] text-slate-400">{rev.location || activeProfile.city} • Verified Client</div>
+                  <div>
+                    <div className="pt-3 border-t border-slate-200/60 dark:border-neutral-800 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-slate-100 border border-slate-200/80">
+                          {rev.avatarUrl ? (
+                            <img 
+                              src={rev.avatarUrl} 
+                              alt={rev.name} 
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
+                              {rev.name.charAt(0)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold text-xs">{rev.name}</div>
+                          <div className="text-[10px] text-slate-400">{rev.location || activeProfile.city} • Verified</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 max-w-[120px] truncate">
+                        {rev.serviceName || 'Custom Service'}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      {rev.serviceName || 'Custom Service'}
-                    </span>
+
+                    {isEditMode && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-150 dark:border-neutral-800 flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleEditTestimonial(rev)}
+                          className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-amber-700 hover:bg-amber-50 bg-white border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTestimonial(rev.id)}
+                          className="px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50 hover:border-rose-200 bg-white border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1866,6 +1963,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Dynamic Testimonials Modal Editor */}
+      <TestimonialModal
+        isOpen={isTestimonialModalOpen}
+        onClose={() => setIsTestimonialModalOpen(false)}
+        onSave={handleSaveTestimonial}
+        editingTestimonial={editingTestimonial}
+        defaultCity={activeProfile.city}
+        availableServices={activeServices.map((s) => s.name)}
+      />
 
     </div>
   );
