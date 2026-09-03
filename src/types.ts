@@ -141,6 +141,17 @@ export interface SalonService {
   description: string;
   icon: string;
   popular?: boolean;
+  showDuration?: boolean; // Defaults to true if undefined. When false, duration is hidden on public website menu.
+}
+
+export type StaffAccessRole = 'Service Provider (Assigned)' | 'Manager (Full Access)' | 'Receptionist (Frontdesk)';
+export type StaffStatus = 'Available' | 'Busy' | 'On Leave' | 'Inactive';
+
+export interface DaySchedule {
+  day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  enabled: boolean;
+  fromTime: string;
+  toTime: string;
 }
 
 export interface Stylist {
@@ -150,6 +161,14 @@ export interface Stylist {
   avatarUrl: string;
   specialties: string[];
   rating: number;
+  phone?: string;
+  commissionRate?: number;
+  status?: StaffStatus;
+  accessRole?: StaffAccessRole;
+  hidePhone?: boolean;
+  assignedServices?: string[];
+  bio?: string;
+  schedule?: DaySchedule[];
 }
 
 export interface Appointment {

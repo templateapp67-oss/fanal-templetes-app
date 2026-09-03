@@ -13,9 +13,16 @@ import {
   Award,
   Image as ImageIcon,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Phone,
+  Shield,
+  Clock,
+  EyeOff,
+  Percent,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { AddStaffModal } from './AddStaffModal';
 
 interface TeamManagementProps {
   stylists: Stylist[];
@@ -170,22 +177,10 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
     }));
   };
 
-  const handleSaveNewStylist = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim()) return;
-
-    const newStylist: Stylist = {
-      id: `st-${Date.now()}`,
-      name: formData.name.trim(),
-      role: formData.role.trim() || 'Stylist Specialist',
-      avatarUrl: formData.avatarUrl || AVATAR_PRESETS[0].url,
-      rating: Number(formData.rating) || 4.8,
-      specialties: formData.specialties.length > 0 ? formData.specialties : ['Hair Cutting']
-    };
-
-    setStylists((prev) => [...prev, newStylist]);
+  const handleSaveNewStaffMember = (newStaff: Stylist) => {
+    setStylists((prev) => [...prev, newStaff]);
     setIsAddModalOpen(false);
-    showNotification(`Specialist "${newStylist.name}" successfully added to the team!`);
+    showNotification(`Specialist "${newStaff.name}" (${newStaff.role}) successfully onboarded!`);
   };
 
   const handleSaveEditStylist = (e: React.FormEvent) => {
@@ -390,11 +385,21 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
                     alt={st.name}
                     className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shadow-xs"
                     onError={(e) => {
-                      // Fallback avatar if URL fails
                       (e.target as HTMLImageElement).src = AVATAR_PRESETS[0].url;
                     }}
                   />
-                  <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full" title="Active on Floor" />
+                  <span 
+                    className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 border-2 border-white rounded-full ${
+                      st.status === 'Inactive' 
+                        ? 'bg-gray-400' 
+                        : st.status === 'On Leave'
+                        ? 'bg-amber-500'
+                        : st.status === 'Busy'
+                        ? 'bg-rose-500'
+                        : 'bg-emerald-500'
+                    }`} 
+                    title={st.status || 'Available'} 
+                  />
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -412,14 +417,29 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
                     {st.role}
                   </p>
 
-                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold mt-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    <span>Available for Online Bookings</span>
+                  {/* Metadata Row: Access Role, Status, Commission */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100">
+                      {st.accessRole || 'Service Provider'}
+                    </span>
+
+                    {st.commissionRate !== undefined && (
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        {st.commissionRate}% comm.
+                      </span>
+                    )}
+
+                    {st.hidePhone && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 flex items-center gap-0.5">
+                        <EyeOff className="w-2.5 h-2.5" />
+                        <span>Private</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Specialties / Skills */}
+              {/* Assigned Services / Specialties */}
               <div className="pt-2 border-t border-gray-100 flex flex-col gap-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
                   Specialties & Expertise
@@ -438,6 +458,13 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
                     <span className="text-[11px] text-gray-400 italic">General Salon Services</span>
                   )}
                 </div>
+
+                {st.assignedServices && st.assignedServices.length > 0 && (
+                  <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-500">
+                    <Layers className="w-3 h-3 text-gray-400" />
+                    <span>{st.assignedServices.length} Assigned Services</span>
+                  </div>
+                )}
               </div>
 
               {/* Card Actions */}
@@ -501,228 +528,14 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
         </div>
       )}
 
-      {/* ADD NEW STYLIST MODAL */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full border border-gray-200 shadow-2xl flex flex-col gap-4 my-8 max-h-[90vh] overflow-y-auto">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <span
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white"
-                  style={{ backgroundColor: primaryAccentColor }}
-                >
-                  <UserPlus className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="font-bold text-base text-gray-900">Add New Stylist / Specialist</h3>
-                  <p className="text-xs text-gray-500">Onboard a new specialist to your salon roster</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleSaveNewStylist} className="flex flex-col gap-4">
-              
-              {/* Full Name */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Ananya Sen / Vikram Rathore"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 outline-none"
-                />
-              </div>
-
-              {/* Role / Designation */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Designation / Title
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Master Stylist"
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Client Rating (★)
-                  </label>
-                  <select
-                    value={formData.rating}
-                    onChange={(e) => setFormData({ ...formData, rating: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:border-gray-500 focus:ring-2 focus:ring-gray-200 outline-none font-mono"
-                  >
-                    <option value="5.0">5.0 ★★★★★</option>
-                    <option value="4.9">4.9 ★★★★☆</option>
-                    <option value="4.8">4.8 ★★★★☆</option>
-                    <option value="4.7">4.7 ★★★★☆</option>
-                    <option value="4.6">4.6 ★★★★☆</option>
-                    <option value="4.5">4.5 ★★★★☆</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Avatar Selection */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Stylist Profile Photo
-                </label>
-                
-                {/* Photo Preview & Custom URL */}
-                <div className="flex items-center gap-3 mb-2">
-                  <img
-                    src={formData.avatarUrl || AVATAR_PRESETS[0].url}
-                    alt="Preview"
-                    className="w-12 h-12 rounded-xl object-cover border border-gray-200 shadow-xs shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = AVATAR_PRESETS[0].url;
-                    }}
-                  />
-                  <input
-                    type="url"
-                    placeholder="Or paste custom image URL..."
-                    value={formData.avatarUrl}
-                    onChange={(e) => setFormData({ ...formData, avatarUrl: e.target.value })}
-                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-300 text-gray-700 font-mono focus:border-gray-500 outline-none"
-                  />
-                </div>
-
-                {/* Preset Avatar Picker */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[11px] text-gray-500">Or choose from photo presets:</span>
-                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                    {AVATAR_PRESETS.map((preset, idx) => {
-                      const isSelected = formData.avatarUrl === preset.url;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, avatarUrl: preset.url })}
-                          className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all cursor-pointer ${
-                            isSelected ? 'border-slate-900 scale-105 shadow-sm' : 'border-transparent opacity-75 hover:opacity-100'
-                          }`}
-                        >
-                          <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
-                          {isSelected && (
-                            <span className="absolute inset-0 bg-black/30 flex items-center justify-center text-white">
-                              <Check className="w-3.5 h-3.5" />
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Specialties / Skills Tags */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Specialties & Skills
-                </label>
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {COMMON_SPECIALTIES.map((spec) => {
-                    const isSelected = formData.specialties.includes(spec);
-                    return (
-                      <button
-                        key={spec}
-                        type="button"
-                        onClick={() => handleToggleSpecialty(spec)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-slate-900 text-white shadow-xs'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                        }`}
-                      >
-                        {isSelected ? `✓ ${spec}` : `+ ${spec}`}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Custom Specialty input */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Add custom skill (e.g. Kerastase Ritual)..."
-                    value={formData.customSpecialtyInput}
-                    onChange={(e) => setFormData({ ...formData, customSpecialtyInput: e.target.value })}
-                    onKeyDown={handleAddCustomSpecialty}
-                    className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-gray-300 focus:border-gray-500 outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddCustomSpecialty}
-                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {/* Active selected tags */}
-                {formData.specialties.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-100">
-                    <span className="text-[11px] text-gray-400 font-bold mr-1 self-center">Assigned:</span>
-                    {formData.specialties.map((spec) => (
-                      <span
-                        key={spec}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md"
-                      >
-                        <span>{spec}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSpecialty(spec)}
-                          className="hover:text-emerald-950 p-0.5"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Form Actions */}
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 text-xs font-bold rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-bold rounded-xl text-white shadow-sm flex items-center gap-1.5 cursor-pointer hover:opacity-95"
-                  style={{ backgroundColor: primaryAccentColor }}
-                >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Add Stylist to Team</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* PIXEL-PERFECT ADD NEW STAFF MODAL */}
+      <AddStaffModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onAddStaff={handleSaveNewStaffMember}
+        primaryAccentColor={primaryAccentColor || '#900C3F'}
+        services={services}
+      />
 
       {/* EDIT STYLIST MODAL */}
       {editingStylist && (

@@ -1,4 +1,5 @@
 import { CategoryTemplateConfig, BusinessTypeOption } from './types';
+import { SALON_IMAGES } from './assets/images';
 
 export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
   // 1. Hair Cut & Styling Studio
@@ -466,25 +467,25 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
   // 5. Nail Studio
   nail_studio: {
     id: 'nail_studio',
-    title: 'Polished Pop Neon & Gel Nail Studio',
-    shortName: 'Nail Studio',
-    tagline: 'Chrome Finishes, Gel-X Extensions & Handpainted Runway Nail Art',
-    about: 'Located in posh Jubilee Hills, Polished Pop is Hyderabad’s trendy bento-inspired nail bar. We offer Russian dry cuticles, Hailey Bieber glazed chrome, 3D charms, and Japanese soft gel extensions.',
+    title: 'Pinky Nails Studio',
+    shortName: 'Nail & Lash Studio',
+    tagline: 'Glossy Chrome Gel Nails, Sculpted Extensions, Lash Lifts & Laminated Brows',
+    about: 'Located in posh Jubilee Hills, Pinky Nails Studio is a boutique sanctuary for high-definition nail art, lash extensions, and brow lamination. We combine sterilized medical-grade tools, 9-free toxin-safe gel polishes, and custom aesthetic designs in a serene luxury studio.',
     icon: 'pan_tool_alt',
     layoutStyle: 'bento_grid',
-    paletteLabel: 'Vibrant Neon Pastel & Gloss Theme',
+    paletteLabel: 'Chic Pink & Dark Rose Luxury Theme',
     themePreset: 'neon_gloss_bento',
-    subCategories: ['Gel Extensions', 'Handpainted Art', 'Russian Manicure', 'Chrome & Glaze'],
+    subCategories: ['Gel Extensions', 'Lash & Brow', 'Handpainted Art', 'Russian Manicure', 'Chrome & Glaze'],
     defaultCity: 'Hyderabad, Telangana',
     defaultAddress: 'Road No. 36, Near Peddamma Temple, Jubilee Hills',
     defaultPostalCode: '500033',
     phone: '+91 98490 77654',
     whatsapp: '+91 98490 77654',
     ownerName: 'Aanya Sen',
-    ownerRole: 'Celebrity Nail Designer & Educator',
+    ownerRole: 'Celebrity Nail Designer & Lash Artist',
     ownerPhotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=500&q=80',
-    coverImageUrl: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1200&q=80',
-    instagramHandle: '@polishedpop.hyd',
+    coverImageUrl: SALON_IMAGES.hero,
+    instagramHandle: '@pinkynails.studio',
     themeStyle: {
       heroBackground: 'bg-[#faf5ff]',
       heroTextColor: 'text-purple-950',

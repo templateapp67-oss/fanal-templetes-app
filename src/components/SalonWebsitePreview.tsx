@@ -15,21 +15,22 @@ import {
   Star, 
   ShieldCheck, 
   Award, 
-  Navigation,
-  ExternalLink,
-  ChevronRight,
-  ArrowRight,
-  Edit3,
-  Sliders,
-  Eye,
-  Plus,
-  Trash2,
-  Wand2,
-  Smartphone,
-  Tablet,
-  Monitor,
-  Share2,
-  RefreshCw,
+  Navigation, 
+  ExternalLink, 
+  ChevronRight, 
+  ArrowRight, 
+  Edit3, 
+  Sliders, 
+  Eye, 
+  EyeOff, 
+  Plus, 
+  Trash2, 
+  Wand2, 
+  Smartphone, 
+  Tablet, 
+  Monitor, 
+  Share2, 
+  RefreshCw, 
   Scissors
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId } from '../types';
@@ -270,6 +271,21 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const handleUpdateServiceDuration = (serviceId: string, newDuration: number) => {
     setServices((prev) =>
       prev.map((s) => (s.id === serviceId ? { ...s, durationMinutes: Number(newDuration) } : s))
+    );
+  };
+
+  const handleToggleServiceShowDuration = (serviceId: string) => {
+    setServices((prev) =>
+      prev.map((s) => {
+        if (s.id !== serviceId) return s;
+        const newShow = s.showDuration === false;
+        showNotification(
+          newShow
+            ? `Duration will be displayed on public menu for "${s.name}".`
+            : `Duration hidden on public menu for "${s.name}".`
+        );
+        return { ...s, showDuration: newShow };
+      })
     );
   };
 
@@ -1170,17 +1186,29 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           className="font-mono font-extrabold"
                         />
                       </div>
-                      <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
-                        <Clock className="w-3 h-3" />
-                        <InlineEditable
-                          value={srv.durationMinutes}
-                          onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
-                          isEditingActive={isEditMode}
-                          type="number"
-                          suffix=" mins"
-                          label="Duration"
-                        />
-                      </div>
+                      {/* Duration Display: Only show on public menu if showDuration !== false, but keep visible in edit mode with indicator */}
+                      {(srv.showDuration !== false || isEditMode) && (
+                        <div className={`text-[11px] font-mono flex items-center gap-1 mt-0.5 ${
+                          srv.showDuration === false 
+                            ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/60' 
+                            : 'text-slate-400'
+                        }`}>
+                          <Clock className="w-3 h-3" />
+                          <InlineEditable
+                            value={srv.durationMinutes}
+                            onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
+                            isEditingActive={isEditMode}
+                            type="number"
+                            suffix=" mins"
+                            label="Duration"
+                          />
+                          {isEditMode && srv.showDuration === false && (
+                            <span className="text-[9px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                              (Hidden on site)
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1192,14 +1220,37 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                     <div className="flex items-center gap-2">
                       {isEditMode && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteService(srv.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                          title="Delete Service"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleServiceShowDuration(srv.id)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer text-xs flex items-center gap-1 ${
+                              srv.showDuration === false
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-neutral-800'
+                            }`}
+                            title={
+                              srv.showDuration === false
+                                ? 'Duration is currently hidden on public website. Click to show.'
+                                : 'Duration is currently shown on public website. Click to hide.'
+                            }
+                          >
+                            {srv.showDuration === false ? (
+                              <EyeOff className="w-3.5 h-3.5" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteService(srv.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                            title="Delete Service"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
                       )}
 
                       <button

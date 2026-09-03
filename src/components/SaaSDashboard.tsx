@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, ClientRecord, LoyaltyConfig } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar } from '../themeAccents';
 import { TeamManagement } from './TeamManagement';
+import { ServiceManagement } from './ServiceManagement';
 import { PromoStudio } from './PromoStudio';
 import { LoyaltyManagement } from './LoyaltyManagement';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
@@ -28,6 +29,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   profile,
   setProfile,
   services,
+  setServices,
   stylists,
   setStylists,
   appointments,
@@ -373,46 +375,13 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
         {/* TAB CONTENT: SERVICES */}
         {activeTab === 'services' && (
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="font-display font-bold text-xl">Manage Services & INR (₹) Pricing</h2>
-                <p className="text-xs text-slate-500">Live treatments reflected on client website booking system</p>
-              </div>
-              <button
-                onClick={() => setActiveTab('marketing')}
-                className="text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs flex items-center gap-1.5 w-fit cursor-pointer"
-                style={{ backgroundColor: currentPrimaryColor }}
-              >
-                <span className="material-symbols-outlined text-sm">photo_camera_back</span>
-                <span>Launch Promo Studio</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {services.map((srv) => (
-                <div key={srv.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex justify-between items-center">
-                  <div>
-                    <div className="font-bold text-sm">{srv.name}</div>
-                    <div className="text-xs text-gray-500">{srv.description}</div>
-                    <div className="text-xs text-gray-400 mt-1">{srv.durationMinutes} mins | {srv.category}</div>
-                    <button
-                      onClick={() => setActiveTab('marketing')}
-                      className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 mt-2 flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-xs">auto_awesome</span>
-                      <span>Generate Promo Image for this Service</span>
-                    </button>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-display font-bold text-lg text-[#b0004a]">
-                      ₹{srv.price.toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ServiceManagement
+            services={services}
+            setServices={setServices}
+            primaryAccentColor={currentPrimaryColor}
+            profile={profile}
+            onNavigateToPreview={onNavigateToPreview}
+          />
         )}
 
         {/* TAB CONTENT: TEAM MANAGEMENT */}

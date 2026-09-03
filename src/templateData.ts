@@ -1,4 +1,5 @@
 import { BusinessTypeId } from './types';
+import { SALON_IMAGES } from './assets/images';
 
 export interface GalleryPhoto {
   id: string;
@@ -173,10 +174,10 @@ export const CATEGORY_STANDARDIZED_DATA: Record<BusinessTypeId, CategoryStandard
       { icon: 'brush', title: 'Certified Russian Manicurists', description: 'Precision e-file cuticle techniques that last up to 4 weeks without peeling.' }
     ],
     gallery: [
-      { id: 'ns-g1', url: 'https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&w=800&q=80', title: 'Glazed Chrome & Iridescent Finish', tag: 'Signature Art' },
-      { id: 'ns-g2', url: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=800&q=80', title: 'Ombre French Sculpted Extensions', tag: 'Sculpted Gel' },
-      { id: 'ns-g3', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Bento Nail Stations with Dust Extractor', tag: 'Studio Interior' },
-      { id: 'ns-g4', url: 'https://images.unsplash.com/photo-1519014816548-bf5fe059798b?auto=format&fit=crop&w=800&q=80', title: 'Hand-Painted Floral & Foil Detailing', tag: 'Custom Art' },
+      { id: 'ns-g1', url: SALON_IMAGES.nailArt, title: 'Glossy Chrome Gel Nail Art & Aura Design', tag: 'Nail Art' },
+      { id: 'ns-g2', url: SALON_IMAGES.lashBrow, title: 'Lash Extensions & Laminated Brows', tag: 'Lash & Brow' },
+      { id: 'ns-g3', url: SALON_IMAGES.hero, title: 'Modern Nail, Lash & Brow Studio Interior', tag: 'Studio Interior' },
+      { id: 'ns-g4', url: SALON_IMAGES.toolsSetup, title: 'Sterilized Salon Tools & Gel Polish Flatlay', tag: 'Tools & Setup' },
       { id: 'ns-g5', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Russian Dry Manicure Cuticle Precision', tag: 'Cuticle Care' },
       { id: 'ns-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Luxury Jelly Pedicure Station', tag: 'Pedicure Lounge' }
     ],
