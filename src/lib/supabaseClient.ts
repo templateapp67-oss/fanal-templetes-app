@@ -11,13 +11,22 @@ const supabaseAnonKey =
   (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || 
   (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY));
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be defined in environment variables');
-}
+const isRealSupabase = supabaseUrl && supabaseUrl.trim() !== '' && !supabaseUrl.includes('placeholder');
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co', 
-  supabaseAnonKey || 'placeholder-key'
+  isRealSupabase ? supabaseUrl : 'https://placeholder-project.supabase.co', 
+  isRealSupabase ? supabaseAnonKey : 'placeholder-key',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  }
 );
 
-export const isMockSupabase = !supabaseUrl || !supabaseAnonKey;
+// Helper to check if we should even attempt a real database call
+export const isMockSupabase = !isRealSupabase;
+
+if (isMockSupabase) {
+  console.warn('Supabase keys are missing or using placeholders. App will run in mock mode with limited persistence.');
+}

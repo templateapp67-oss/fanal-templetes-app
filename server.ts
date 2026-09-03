@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -14,9 +15,18 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Global Error Handler for better debugging
+  app.use((err: any, _req: any, res: any, next: any) => {
+    if (res.headersSent) {
+      return next(err);
+    }
+    console.error('Unhandled Server Error:', err);
+    res.status(500).json({ success: false, error: 'Internal Server Error', details: err.message });
+  });
+
   // API Routes
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", app: "Nexora Salon OS" });
+    res.json({ status: "ok", app: "Nexora Salon OS", mode: isMockSupabase ? 'mock' : 'live' });
   });
 
   // Booking Update Endpoint
@@ -275,14 +285,7 @@ async function startServer() {
         });
       }
 
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = `Write a high-converting tagline (max 10 words) and a compelling salon story/about bio (2-3 sentences) for a beauty business with the following details:
 Salon Name: ${businessName}
 Category: ${businessType}
@@ -294,7 +297,7 @@ Return strictly valid JSON in this format:
 {"tagline": "...", "bio": "..."}`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-1.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json'
@@ -335,20 +338,13 @@ Return strictly valid JSON in this format:
         });
       }
 
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
+      const ai = new GoogleGenAI({ apiKey });
 
       const validAspectRatios = ["1:1", "3:4", "4:3", "9:16", "16:9"];
       const chosenAspect = validAspectRatios.includes(aspectRatio) ? aspectRatio : "1:1";
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite-image',
+        model: 'imagen-3.0-generate-001',
         contents: {
           parts: [{ text: detailedPrompt }],
         },
@@ -408,14 +404,7 @@ Return strictly valid JSON in this format:
         });
       }
 
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
+      const ai = new GoogleGenAI({ apiKey });
 
       const prompt = `You are an elite beauty salon social media marketing copywriter. Create promotional copy for a salon service with these details:
 Salon: ${businessName}
@@ -433,7 +422,7 @@ Return strictly JSON with the following keys:
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-1.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json'

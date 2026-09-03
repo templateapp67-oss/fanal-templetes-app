@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './lib/supabaseClient';
+import { supabase, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
@@ -10,22 +10,105 @@ import { LandingPage } from './components/LandingPage';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { SalonWebsitePreview } from './components/SalonWebsitePreview';
 import { SaaSDashboard } from './components/SaaSDashboard';
+import { AuthModal } from './components/AuthModal';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [wizardStartingStep, setWizardStartingStep] = useState<number>(1);
+
+  // Auth State Listener
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
   // Load persisted profile state from localStorage on initial mount
-  const [profile, setProfile] = useState<SalonProfile>(() => {
-    try {
-      const saved = localStorage.getItem('pinky_nails_salon_profile_v1');
-      if (saved) {
-        return { ...INITIAL_SALON_PROFILE, ...JSON.parse(saved) };
-      }
-    } catch (e) {
-      console.warn('Could not read salon profile from localStorage:', e);
+  const [profile, setProfile] = useState<SalonProfile>(INITIAL_SALON_PROFILE);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [user, setUser] = useState<any>(null);
+
+  // Auth State Listener
+  useEffect(() => {
+    if (isMockSupabase) {
+      console.log('Running in Mock Auth Mode');
+      return;
     }
-    return INITIAL_SALON_PROFILE;
-  });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Auto-Fetch Profile Sync
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user || isMockSupabase) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (data) {
+          setProfile((prev) => ({
+            ...prev,
+            businessName: data.salon_name || prev.businessName,
+            ownerName: data.full_name || prev.ownerName,
+            ownerRole: data.owner_role || prev.ownerRole,
+            phone: data.phone_number || prev.phone,
+            email: data.email || prev.email,
+            ownerPhotoUrl: data.owner_photo_url || prev.ownerPhotoUrl,
+            address: data.full_address || prev.address,
+            postalCode: data.postal_code || prev.postalCode,
+            landmark: data.landmark || prev.landmark,
+          }));
+        }
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+      }
+    };
+
+    fetchProfile();
+  }, [user]);
+
+  // Real-time Auto-Save with Debounce
+  useEffect(() => {
+    if (!user || isMockSupabase) return;
+
+    const timer = setTimeout(async () => {
+      setSaveStatus('saving');
+      try {
+        const { error } = await supabase.from('profiles').upsert({
+          id: user.id,
+          full_name: profile.ownerName,
+          salon_name: profile.businessName,
+          phone_number: profile.phone,
+          email: profile.email,
+          owner_role: profile.ownerRole,
+          owner_photo_url: profile.ownerPhotoUrl,
+          full_address: profile.address,
+          postal_code: profile.postalCode,
+          landmark: profile.landmark,
+          updated_at: new Date().toISOString(),
+        });
+
+        if (error) throw error;
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (err) {
+        console.error('Auto-save error:', err);
+        setSaveStatus('error');
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [profile, user]);
 
   const [services, setServices] = useState<SalonService[]>(INITIAL_SERVICES);
   const [stylists, setStylists] = useState<Stylist[]>(INITIAL_STYLISTS);
@@ -36,6 +119,7 @@ export default function App() {
   // Sync Supabase Realtime Data
   useEffect(() => {
     const fetchSyncData = async () => {
+      if (isMockSupabase) return;
       try {
         const { data: apts } = await supabase.from('appointments').select('*').order('date', { ascending: false });
         if (apts && apts.length > 0) setAppointments(apts);
@@ -95,6 +179,10 @@ export default function App() {
       }));
       setServices(tmpl.services);
       setStylists(tmpl.stylists);
+      
+      // When selecting a category from landing page, start wizard at Step 2 (Tell us about business)
+      setWizardStartingStep(2);
+      setCurrentView('wizard');
     }
   };
 
@@ -175,6 +263,8 @@ export default function App() {
     }
 
     // 2. Sync to Supabase in Background
+    if (isMockSupabase) return;
+
     try {
       await supabase.from('appointments').insert([newApt]);
 
@@ -201,6 +291,7 @@ export default function App() {
     if (wizardCompleted) {
       setCurrentView('preview');
     } else {
+      setWizardStartingStep(1);
       setCurrentView('wizard');
     }
   };
@@ -212,11 +303,26 @@ export default function App() {
         setCurrentView={setCurrentView}
         salonName={profile.businessName}
         onBuildWebsiteClick={handleBuildWebsiteClick}
+        user={user}
+        setUser={setUser}
+        profile={profile}
+        openAuth={(mode) => {
+          setAuthMode(mode);
+          setIsAuthModalOpen(true);
+        }}
       />
 
       {currentView === 'landing' && (
         <LandingPage 
-          setCurrentView={setCurrentView} 
+          setCurrentView={(view) => {
+            if (view === 'preview') {
+              // If user clicks "Explore", we start wizard at Step 1 (Category Select)
+              setWizardStartingStep(1);
+              setCurrentView('wizard');
+            } else {
+              setCurrentView(view);
+            }
+          }} 
           onSelectCategory={handleSelectCategory}
         />
       )}
@@ -229,6 +335,8 @@ export default function App() {
           setServices={setServices}
           stylists={stylists}
           setStylists={setStylists}
+          initialStep={wizardStartingStep}
+          saveStatus={saveStatus}
           onComplete={() => {
             localStorage.setItem('onboarding_wizard_completed', 'true');
             setCurrentView('preview');
@@ -266,6 +374,13 @@ export default function App() {
           onNavigateToPreview={() => setCurrentView('preview')}
         />
       )}
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        initialMode={authMode}
+        onSuccess={(u) => setUser(u)}
+      />
     </div>
   );
 }

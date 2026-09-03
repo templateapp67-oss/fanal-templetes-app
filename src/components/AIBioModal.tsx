@@ -94,7 +94,7 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center border-b border-gray-100 pb-4">
-          <div className="flex items-center gap-2 text-[#b0004a]">
+          <div className="flex items-center gap-2 text-[#C20E5A]">
             <span className="material-symbols-outlined text-2xl">auto_awesome</span>
             <h3 className="font-display font-bold text-lg text-gray-900">
               AI Salon Story Generator
@@ -125,7 +125,7 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
                 onClick={() => setVibe(v)}
                 className={`p-2.5 rounded-xl text-xs font-medium border text-left transition-all ${
                   vibe === v
-                    ? 'border-[#b0004a] bg-[#b0004a]/10 text-[#b0004a] font-bold'
+                    ? 'border-[#C20E5A] bg-[#C20E5A]/10 text-[#C20E5A] font-bold'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
@@ -135,11 +135,11 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
           </div>
         </div>
 
-        {/* Voice Dictation OR Specialties input */}
+        {/* Voice Dictation OR Keywords input */}
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center">
             <label className="text-xs font-bold font-mono-caps text-gray-700">
-              Specialties & Core Focus
+              Keywords & Core Specialties
             </label>
             <button
               type="button"
@@ -153,7 +153,7 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
               <span className="material-symbols-outlined text-sm">
                 {isRecording ? 'graphic_eq' : 'mic'}
               </span>
-              <span>{isRecording ? `Listening (${recordingSeconds}s)...` : 'Speak Instead'}</span>
+              <span>{isRecording ? `Listening (${recordingSeconds}s)...` : 'Speak keywords'}</span>
             </button>
           </div>
 
@@ -161,9 +161,12 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
             type="text"
             value={specialties}
             onChange={(e) => setSpecialties(e.target.value)}
-            placeholder="e.g. Balayage, Scalp detox, hot towel shaving"
-            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-gray-300 bg-gray-50 text-gray-900 focus:outline-none focus:border-[#b0004a]"
+            placeholder="e.g. Balayage, Scalp detox, Bridal makeup, Grooming"
+            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] transition-all"
           />
+          <p className="text-[10px] text-gray-400">
+            Enter a few keywords separated by commas. AI will generate a professional bio.
+          </p>
         </div>
 
         {/* Generate Button */}
@@ -179,7 +182,7 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
             type="button"
             onClick={handleGenerate}
             disabled={loading}
-            className="px-5 py-2 text-xs font-bold text-white bg-[#b0004a] hover:bg-[#d81b60] rounded-lg flex items-center gap-2 shadow-md disabled:opacity-50"
+            className="px-6 py-2.5 text-xs font-bold text-white bg-[#C20E5A] hover:bg-[#A30B4A] rounded-xl flex items-center gap-2 shadow-lg shadow-[#C20E5A]/20 disabled:opacity-50 transition-all"
           >
             {loading ? (
               <>

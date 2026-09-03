@@ -14,7 +14,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
     if (onSelectCategory) {
       onSelectCategory(catId);
     }
-    setCurrentView('preview');
   };
 
   return (
@@ -48,18 +47,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
 
             <div className="flex flex-col sm:flex-row gap-4">
               <button 
-                onClick={() => setCurrentView('wizard')}
+                onClick={() => setCurrentView('preview')}
                 className="bg-primary hover:bg-primary-container text-on-primary font-bold text-sm h-12 px-8 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all flex items-center justify-center gap-2 group cursor-pointer"
               >
-                <span>Launch AI Salon Setup</span>
-                <span className="material-symbols-outlined text-base group-hover:translate-x-1 transition-transform">arrow_forward</span>
-              </button>
-
-              <button 
-                onClick={() => setCurrentView('preview')}
-                className="bg-surface-container hover:bg-surface-container-high border border-outline-variant/50 text-on-surface font-bold text-sm h-12 px-6 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-base">devices</span>
+                <span className="material-symbols-outlined text-base group-hover:scale-110 transition-transform">devices</span>
                 <span>Explore 14 Live Templates</span>
               </button>
             </div>

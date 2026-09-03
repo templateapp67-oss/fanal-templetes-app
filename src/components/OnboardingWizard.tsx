@@ -13,7 +13,9 @@ interface OnboardingWizardProps {
   setServices: React.Dispatch<React.SetStateAction<SalonService[]>>;
   stylists: Stylist[];
   setStylists: React.Dispatch<React.SetStateAction<Stylist[]>>;
+  initialStep?: number;
   onComplete: () => void;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
@@ -23,14 +25,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   setServices,
   stylists,
   setStylists,
+  initialStep = 1,
   onComplete,
+  saveStatus = 'idle',
 }) => {
-  const [currentStep, setCurrentStep] = useState<number>(2); // Start at Step 2 (Business Type)
+  const [currentStep, setCurrentStep] = useState<number>(initialStep);
   const [isBioModalOpen, setIsBioModalOpen] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationProgress, setGenerationProgress] = useState<number>(0);
 
-  const totalSteps = 12; // 12-step guided flow for maximum ease
+  // Define the core steps for the simplified flow
+  // 1: Business Type (Category) - if not coming from landing page category select
+  // 2: Tell us about your business (Business Info + About Owner)
+  // 3: Connect your social media
+  // 4: Claim your free domain name
+  const totalSteps = 4;
   const progressPercent = Math.round((currentStep / totalSteps) * 100);
 
   const handleBusinessTypeSelect = (typeId: BusinessTypeId) => {
@@ -60,24 +69,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
     setServices(tmpl.services);
     setStylists(tmpl.stylists);
-  };
-
-  const handleAddService = () => {
-    const newSrv: SalonService = {
-      id: `srv-custom-${Date.now()}`,
-      name: 'Custom Specialty Service',
-      category: 'General',
-      durationMinutes: 45,
-      price: 60,
-      description: 'High-quality personalized service.',
-      icon: 'content_cut',
-      popular: false
-    };
-    setServices((prev) => [...prev, newSrv]);
-  };
-
-  const handleRemoveService = (id: string) => {
-    setServices((prev) => prev.filter((s) => s.id !== id));
+    // Move to next step: Tell us about business
+    setCurrentStep(2);
   };
 
   const startAIGeneration = () => {
@@ -100,10 +93,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   };
 
   const nextStep = () => {
-    if (currentStep === totalSteps - 1) {
-      setCurrentStep(totalSteps);
+    if (currentStep === totalSteps) {
       startAIGeneration();
-    } else if (currentStep < totalSteps) {
+    } else {
       setCurrentStep((prev) => prev + 1);
     }
   };
@@ -128,19 +120,49 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         }}
       />
 
-      <div className={`${currentStep === 6 ? 'max-w-7xl' : 'max-w-4xl'} w-full px-4 sm:px-6 transition-all duration-300`}>
+      <div className={`${currentStep === 3 ? 'max-w-7xl' : 'max-w-4xl'} w-full px-4 sm:px-6 transition-all duration-300`}>
         {/* Progress Header */}
         <div className="mb-8 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
           <div className="flex justify-between items-center mb-3">
-            <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-full bg-[#b0004a] text-white text-xs font-bold flex items-center justify-center">
-                {currentStep}
-              </span>
-              <span className="font-display font-bold text-sm text-gray-800">
-                Step {currentStep} of {totalSteps}
-              </span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-full bg-[#C20E5A] text-white text-xs font-bold flex items-center justify-center">
+                  {currentStep}
+                </span>
+                <span className="font-display font-bold text-sm text-gray-800">
+                  Step {currentStep} of {totalSteps}
+                </span>
+              </div>
+
+              {/* Save Status Indicator */}
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-gray-50 border border-gray-100 transition-all">
+                {saveStatus === 'saving' && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span>
+                    Saving...
+                  </div>
+                )}
+                {saveStatus === 'saved' && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-green-600">
+                    <span className="material-symbols-outlined text-xs">check_circle</span>
+                    Saved
+                  </div>
+                )}
+                {saveStatus === 'error' && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-red-500">
+                    <span className="material-symbols-outlined text-xs">error</span>
+                    Error
+                  </div>
+                )}
+                {saveStatus === 'idle' && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    <span className="material-symbols-outlined text-xs">cloud_done</span>
+                    Synced
+                  </div>
+                )}
+              </div>
             </div>
-            <span className="font-mono-caps text-xs font-bold text-[#b0004a]">
+            <span className="font-mono-caps text-xs font-bold text-[#C20E5A]">
               {progressPercent}% Completed
             </span>
           </div>
@@ -148,7 +170,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           {/* Progress Bar */}
           <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
             <div
-              className="bg-[#b0004a] h-full transition-all duration-300 rounded-full"
+              className="bg-[#C20E5A] h-full transition-all duration-300 rounded-full"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -157,55 +179,20 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         {/* STEP CONTENT CONTAINER */}
         <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-xl min-h-[460px] flex flex-col justify-between">
           
-          {/* STEP 1: Welcome & Goal */}
+          {/* STEP 1: Select your salon category */}
           {currentStep === 1 && (
             <div className="flex flex-col gap-6 animate-fade-in">
               <div>
-                <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
-                  GET STARTED
-                </span>
-                <h2 className="font-display text-3xl font-bold mt-1">What is your primary goal today?</h2>
-                <p className="text-gray-600 text-sm mt-1">
-                  We'll customize your website template and booking options based on your target setup.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 my-4">
-                {[
-                  { title: 'Launch New Salon Site', icon: 'web', desc: 'Create a full mobile-friendly website with online bookings.' },
-                  { title: 'Enable Online Bookings', icon: 'calendar_month', desc: 'Accept client appointments and deposits 24/7.' },
-                  { title: 'Replace Existing Site', icon: 'published_with_changes', desc: 'Upgrade to Nexora AI with automated retention tools.' }
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={nextStep}
-                    className="p-5 rounded-2xl border-2 border-gray-200 hover:border-[#b0004a] hover:bg-[#b0004a]/5 cursor-pointer transition-all flex flex-col gap-3 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-[#b0004a]/10 text-[#b0004a] flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <span className="material-symbols-outlined text-2xl">{item.icon}</span>
-                    </div>
-                    <h3 className="font-display font-bold text-base text-gray-900">{item.title}</h3>
-                    <p className="text-xs text-gray-500">{item.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: Business Type Grid (Matches Screenshot 2) */}
-          {currentStep === 2 && (
-            <div className="flex flex-col gap-6 animate-fade-in">
-              <div>
-                <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
-                  BUSINESS TYPE
+                <span className="font-mono-caps text-xs font-bold text-[#C20E5A] tracking-widest">
+                  STEP 1
                 </span>
                 <h2 className="font-display text-3xl font-bold mt-1">Select your salon category</h2>
                 <p className="text-gray-600 text-sm mt-1">
-                  This helps us auto-generate the perfect layout, service list, and aesthetic for your brand.
+                  This helps us auto-generate the perfect layout and services for your brand.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 my-2 max-h-[360px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 my-2 max-h-[420px] overflow-y-auto pr-1">
                 {BUSINESS_TYPES.map((bt) => {
                   const isSelected = profile.businessType === bt.id;
                   return (
@@ -214,28 +201,25 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                       onClick={() => handleBusinessTypeSelect(bt.id)}
                       className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3 relative ${
                         isSelected
-                          ? 'border-[#b0004a] bg-[#b0004a]/5 text-[#b0004a] font-bold shadow-md'
+                          ? 'border-[#C20E5A] bg-[#C20E5A]/5 text-[#C20E5A] font-bold shadow-md'
                           : 'border-gray-200 hover:border-gray-300 text-gray-800'
                       }`}
                     >
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                        isSelected ? 'bg-[#b0004a] text-white' : 'bg-gray-100 text-gray-700'
+                        isSelected ? 'bg-[#C20E5A] text-white' : 'bg-gray-100 text-gray-700'
                       }`}>
                         <span className="material-symbols-outlined text-2xl">{bt.icon}</span>
                       </div>
-                      <div className="flex flex-col pr-4">
+                      <div className="flex flex-col pr-4 text-left">
                         <div className="flex items-center gap-1.5">
                           <span className="font-display text-sm font-bold">{bt.title}</span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-normal">
-                            {bt.paletteName}
-                          </span>
                         </div>
                         <div className="text-[11px] text-gray-500 line-clamp-2 mt-0.5">
                           {bt.aestheticDescription || bt.description}
                         </div>
                       </div>
                       {isSelected && (
-                        <span className="material-symbols-outlined text-[#b0004a] text-lg absolute top-3 right-3 fill-1">
+                        <span className="material-symbols-outlined text-[#C20E5A] text-lg absolute top-3 right-3 fill-1">
                           check_circle
                         </span>
                       )}
@@ -246,199 +230,116 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             </div>
           )}
 
-          {/* STEP 3: Business Details & Bio (Matches Screenshot 3) */}
-          {currentStep === 3 && (
-            <div className="flex flex-col gap-6 animate-fade-in pb-8">
+          {/* STEP 2: Tell us about your business (Business Details & About Owner) */}
+          {currentStep === 2 && (
+            <div className="flex flex-col gap-8 animate-fade-in pb-4">
               <div>
-                <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
-                  SALON INFORMATION
+                <span className="font-mono-caps text-xs font-bold text-[#C20E5A] tracking-widest">
+                  STEP 2
                 </span>
-                <h2 className="font-display text-3xl font-bold mt-1">Tell us about your business</h2>
+                <h2 className="font-display text-3xl font-bold mt-1">Tell us about your business (बिजनेस की जानकारी)</h2>
                 <p className="text-gray-600 text-sm mt-1">
-                  Add your contact details and founder story to build immediate trust with clients.
+                  Add your contact details and founder story to build trust with your future clients.
                 </p>
               </div>
 
-              {/* Basic Details */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
-                <h3 className="text-lg font-semibold text-[#111827] mb-4">Contact Details</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-[#111827] mb-1.5">Salon Name</label>
-                    <input
-                      type="text"
-                      value={profile?.businessName || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, businessName: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#111827] mb-1.5">Phone Number</label>
-                    <input
-                      type="text"
-                      value={profile.phone}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#111827] mb-1.5">WhatsApp / Booking Line</label>
-                    <input
-                      type="text"
-                      value={profile.whatsapp}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, whatsapp: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <AboutOwnerForm
-                ownerName={profile.ownerName}
-                setOwnerName={(val) => setProfile((p) => ({ ...p, ownerName: val }))}
-                ownerPhotoUrl={profile.ownerPhotoUrl}
-                setOwnerPhotoUrl={(val) => setProfile((p) => ({ ...p, ownerPhotoUrl: val }))}
-                ownerRole={profile.ownerRole || ''}
-                setOwnerRole={(val) => setProfile((p) => ({ ...p, ownerRole: val }))}
-                about={profile.about}
-                setAbout={(val) => setProfile((p) => ({ ...p, about: val }))}
-                onWriteWithAI={() => setIsBioModalOpen(true)}
-                onSpeak={() => setIsBioModalOpen(true)}
-              />
-            </div>
-          )}
-          {currentStep === 4 && (
-            <div className="flex flex-col gap-6 animate-fade-in">
-              <div>
-                <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
-                  VISUAL STYLE
-                </span>
-                <h2 className="font-display text-3xl font-bold mt-1">Choose your website aesthetic</h2>
-                <p className="text-gray-600 text-sm mt-1">
-                  Select a color palette and visual atmosphere that matches your salon vibe.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-2">
-                {[
-                  { id: 'luxe_light', name: 'Luxe Light', bg: 'bg-[#f9f9ff]', accent: 'bg-[#b0004a]', text: 'text-gray-900', desc: 'Clean, elegant, high-contrast rose accent.' },
-                  { id: 'champagne_gold', name: 'Champagne Gold', bg: 'bg-[#fbf8f2]', accent: 'bg-[#c59b27]', text: 'text-gray-900', desc: 'Refined, golden warm luxury salon theme.' },
-                  { id: 'velvet_rose', name: 'Velvet Rose', bg: 'bg-[#fff5f7]', accent: 'bg-[#d81b60]', text: 'text-gray-900', desc: 'Warm rose tones for high-end boutique salons.' },
-                  { id: 'emerald_botanical', name: 'Emerald Botanical', bg: 'bg-[#f2f7f4]', accent: 'bg-[#1b5e20]', text: 'text-gray-900', desc: 'Calming organic green tones for spas & wellness.' }
-                ].map((tp) => (
-                  <div
-                    key={tp.id}
-                    onClick={() => setProfile((p) => ({ ...p, themePreset: tp.id as any }))}
-                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col gap-3 ${
-                      profile.themePreset === tp.id
-                        ? 'border-[#b0004a] ring-2 ring-[#b0004a]/30 shadow-md'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-display font-bold text-base">{tp.name}</span>
-                      {profile.themePreset === tp.id && (
-                        <span className="material-symbols-outlined text-[#b0004a] text-xl fill-1">
-                          check_circle
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">{tp.desc}</p>
-                    <div className={`h-12 w-full rounded-lg ${tp.bg} border border-gray-300 p-2 flex items-center justify-between`}>
-                      <span className={`text-xs font-bold ${tp.text}`}>Preview Text</span>
-                      <div className={`w-6 h-6 rounded-full ${tp.accent}`} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 5: Services & Pricing */}
-          {currentStep === 5 && (
-            <div className="flex flex-col gap-6 animate-fade-in">
-              <div className="flex justify-between items-end">
-                <div>
-                  <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
-                    SERVICES MENU
-                  </span>
-                  <h2 className="font-display text-3xl font-bold mt-1">Configure your services & pricing</h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddService}
-                  className="bg-[#b0004a] text-white text-xs font-bold px-3.5 py-2 rounded-lg hover:bg-[#d81b60] flex items-center gap-1 shadow-sm"
-                >
-                  <span className="material-symbols-outlined text-sm">add</span>
-                  <span>Add Service</span>
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-3 max-h-[340px] overflow-y-auto pr-1">
-                {services.map((srv) => (
-                  <div
-                    key={srv.id}
-                    className="p-3.5 rounded-xl border border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                      <div className="w-8 h-8 rounded-lg bg-[#b0004a]/10 text-[#b0004a] flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-lg">{srv.icon || 'spa'}</span>
-                      </div>
+              <div className="space-y-8">
+                {/* Contact Details Section */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
+                  <h3 className="text-lg font-semibold text-[#111827] mb-6">Contact Details</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-[#111827] mb-1.5">Salon Name <span className="text-[#C20E5A]">*</span></label>
                       <input
                         type="text"
-                        value={srv.name}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setServices((prev) => prev.map((s) => (s.id === srv.id ? { ...s, name: val } : s)));
-                        }}
-                        className="font-bold text-gray-900 bg-transparent border-b border-gray-300 focus:outline-none focus:border-[#b0004a] text-sm w-full sm:w-64"
+                        placeholder="Nexora Luxury Spa"
+                        value={profile?.businessName || ''}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, businessName: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827] placeholder-[#9CA3AF]"
                       />
                     </div>
-
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-500 font-mono-caps">Price (₹):</span>
-                        <input
-                          type="number"
-                          value={srv.price}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setServices((prev) => prev.map((s) => (s.id === srv.id ? { ...s, price: val } : s)));
-                          }}
-                          className="w-20 p-1.5 rounded border border-gray-300 text-center font-bold"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-500 font-mono-caps">Duration (min):</span>
-                        <input
-                          type="number"
-                          value={srv.durationMinutes}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setServices((prev) => prev.map((s) => (s.id === srv.id ? { ...s, durationMinutes: val } : s)));
-                          }}
-                          className="w-16 p-1.5 rounded border border-gray-300 text-center font-bold"
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveService(srv.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-lg">delete</span>
-                      </button>
+                    <div>
+                      <label className="block text-sm font-medium text-[#111827] mb-1.5">Phone Number</label>
+                      <input
+                        type="text"
+                        placeholder="+91 98765 43210"
+                        value={profile.phone}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827] placeholder-[#9CA3AF]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#111827] mb-1.5">WhatsApp / Booking Line</label>
+                      <input
+                        type="text"
+                        placeholder="+91 98765 43210"
+                        value={profile.whatsapp}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, whatsapp: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827] placeholder-[#9CA3AF]"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-[#111827] mb-1.5">Full Address</label>
+                      <input
+                        type="text"
+                        placeholder="Shop No. 12, Crystal Plaza, MG Road"
+                        value={profile.address}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, address: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827] placeholder-[#9CA3AF]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#111827] mb-1.5">City</label>
+                      <input
+                        type="text"
+                        placeholder="Mumbai"
+                        value={profile.city}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827] placeholder-[#9CA3AF]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#111827] mb-1.5">Postal Code</label>
+                      <input
+                        type="text"
+                        placeholder="400001"
+                        value={profile.postalCode}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, postalCode: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] text-[#111827] placeholder-[#9CA3AF]"
+                      />
                     </div>
                   </div>
-                ))}
+                </div>
+
+                {/* About Owner Form Component */}
+                <AboutOwnerForm
+                  ownerName={profile.ownerName}
+                  setOwnerName={(val) => setProfile((p) => ({ ...p, ownerName: val }))}
+                  ownerPhotoUrl={profile.ownerPhotoUrl}
+                  setOwnerPhotoUrl={(val) => setProfile((p) => ({ ...p, ownerPhotoUrl: val }))}
+                  ownerRole={profile.ownerRole || ''}
+                  setOwnerRole={(val) => setProfile((p) => ({ ...p, ownerRole: val }))}
+                  about={profile.about}
+                  setAbout={(val) => setProfile((p) => ({ ...p, about: val }))}
+                  onWriteWithAI={() => setIsBioModalOpen(true)}
+                  onSpeak={() => setIsBioModalOpen(true)}
+                />
               </div>
             </div>
           )}
 
-          {/* STEP 06: SOCIAL CONNECTIVITY */}
-          {currentStep === 6 && (
+          {/* STEP 3: Connect your social media */}
+          {currentStep === 3 && (
             <div className="animate-fade-in w-full">
+              <div className="mb-6">
+                <span className="font-mono-caps text-xs font-bold text-[#C20E5A] tracking-widest">
+                  STEP 3
+                </span>
+                <h2 className="font-display text-3xl font-bold mt-1">Connect your social media</h2>
+                <p className="text-gray-600 text-sm mt-1">
+                  Sync your Instagram and Facebook to automatically pull photos and build trust.
+                </p>
+              </div>
               <SocialConnectivityStep
                 profile={profile}
                 setProfile={setProfile}
@@ -448,72 +349,25 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             </div>
           )}
 
-          {/* STEP 7-10: Booking Rules, Payments, Domain */}
-          {currentStep >= 7 && currentStep <= 10 && (
+          {/* STEP 4: Claim your free domain name */}
+          {currentStep === 4 && (
             <div className="flex flex-col gap-6 animate-fade-in">
               <div>
-                <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
-                  CONFIGURATION
+                <span className="font-mono-caps text-xs font-bold text-[#C20E5A] tracking-widest">
+                  STEP 4
                 </span>
-                <h2 className="font-display text-3xl font-bold mt-1">
-                  {currentStep === 7 && 'Team members & specialists'}
-                  {currentStep === 8 && 'Booking & deposit rules'}
-                  {currentStep === 9 && 'Payment gateways'}
-                  {currentStep === 10 && 'Claim your free domain name'}
-                </h2>
+                <h2 className="font-display text-3xl font-bold mt-1">Claim your free domain name (डोमेन नाम चुनना)</h2>
                 <p className="text-gray-600 text-sm mt-1">
-                  Automate deposit collection and client notifications seamlessly.
+                  Choose a unique address for your salon website. It's free and included!
                 </p>
               </div>
 
-              {currentStep === 8 && (
-                <div className="p-5 rounded-2xl border border-gray-200 bg-gray-50 flex flex-col gap-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-bold text-sm">Require Online Deposit to Book</div>
-                      <div className="text-xs text-gray-500">Reduces no-shows by up to 90%.</div>
-                    </div>
-                     <input
-                      type="checkbox"
-                      checked={profile.requireDeposit}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setProfile((prev) => ({ ...prev, requireDeposit: checked }));
-                      }}
-                      className="w-5 h-5 accent-[#b0004a]"
-                    />
-                  </div>
-
-                  {profile.requireDeposit && (
-                    <div className="flex items-center gap-4 text-xs pt-2 border-t border-gray-200">
-                      <span className="font-bold">Deposit Percentage:</span>
-                      {[15, 25, 50, 100].map((pct) => (
-                        <button
-                          key={pct}
-                          type="button"
-                          onClick={() => {
-                            setProfile((prev) => ({ ...prev, depositPercentage: pct }));
-                          }}
-                          className={`px-3 py-1.5 rounded-lg border font-bold ${
-                            profile.depositPercentage === pct
-                              ? 'bg-[#b0004a] text-white border-[#b0004a]'
-                              : 'bg-white border-gray-300 text-gray-700'
-                          }`}
-                        >
-                          {pct}%
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {currentStep === 10 && (
-                <div className="p-5 rounded-2xl border border-gray-200 bg-gray-50 flex flex-col gap-3">
-                  <label className="font-bold text-xs font-mono-caps text-gray-700">
-                    Your Subdomain
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 w-full max-w-2xl mx-auto flex flex-col gap-6">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-[#111827]">
+                    Your Salon Address
                   </label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <input
                       type="text"
                       value={profile.subdomain}
@@ -521,81 +375,91 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
                         setProfile((prev) => ({ ...prev, subdomain: val }));
                       }}
-                      className="p-3 rounded-xl border border-gray-300 bg-white text-gray-900 font-mono font-bold text-sm flex-1"
+                      className="flex-1 p-3.5 rounded-l-xl border border-gray-200 border-r-0 bg-white text-gray-900 font-mono font-bold text-base focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A]"
+                      placeholder="mysalon"
                     />
-                    <span className="font-mono text-sm text-gray-500">.nexora.in</span>
-                  </div>
-                  <div className="text-xs text-emerald-600 flex items-center gap-1 font-bold">
-                    <span className="material-symbols-outlined text-sm">check_circle</span>
-                    <span>{profile.subdomain}.nexora.in is available!</span>
+                    <div className="bg-gray-50 px-4 py-3.5 border border-gray-200 rounded-r-xl font-mono text-base font-bold text-gray-500">
+                      .nexora.in
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {(currentStep === 7 || currentStep === 9) && (
-                <div className="p-8 rounded-2xl border border-dashed border-gray-300 flex flex-col items-center justify-center text-center gap-3">
-                  <span className="material-symbols-outlined text-4xl text-[#b0004a]">
-                    check_circle
-                  </span>
-                  <div className="font-bold text-base">Standard Settings Applied</div>
-                  <p className="text-xs text-gray-500 max-w-sm">
-                    We've configured smart defaults. You can fine-tune operating hours and team permissions anytime in your Salon Dashboard.
-                  </p>
+                <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex items-center gap-3">
+                  <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-emerald-900">Great news!</span>
+                    <span className="text-xs text-emerald-700"><strong>{profile.subdomain || 'mysalon'}.nexora.in</strong> is currently available for your brand.</span>
+                  </div>
                 </div>
-              )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                  <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 flex items-start gap-3">
+                    <span className="material-symbols-outlined text-[#C20E5A] text-lg mt-0.5">verified</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-gray-900">SSL Secure</span>
+                      <span className="text-[10px] text-gray-500">HTTPS encrypted browsing</span>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 flex items-start gap-3">
+                    <span className="material-symbols-outlined text-[#C20E5A] text-lg mt-0.5">bolt</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-gray-900">Fast CDN</span>
+                      <span className="text-[10px] text-gray-500">Global edge delivery</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* STEP 11 & 12: Realtime Generation Progress */}
-          {(currentStep === 11 || currentStep === 12 || isGenerating) && (
+          {/* GENERATION PROGRESS */}
+          {isGenerating && (
             <div className="flex flex-col items-center justify-center py-12 text-center gap-6 animate-fade-in">
-              <div className="w-20 h-20 rounded-full bg-[#b0004a]/10 text-[#b0004a] flex items-center justify-center relative">
+              <div className="w-20 h-20 rounded-full bg-[#C20E5A]/10 text-[#C20E5A] flex items-center justify-center relative">
                 <span className="material-symbols-outlined text-4xl animate-spin">auto_awesome</span>
               </div>
 
               <div>
                 <h2 className="font-display text-3xl font-bold">Generating Your Salon Website...</h2>
-                <p className="text-xs text-gray-500 mt-2 font-mono-caps">
+                <p className="text-xs text-gray-500 mt-2 font-mono-caps tracking-wider">
                   Building layout, palette, and booking engine for {profile?.businessName || 'your salon'}
                 </p>
               </div>
 
-              <div className="w-full max-w-md bg-gray-100 h-3 rounded-full overflow-hidden">
+              <div className="w-full max-w-md bg-gray-100 h-2.5 rounded-full overflow-hidden">
                 <div
-                  className="bg-[#b0004a] h-full transition-all duration-300 rounded-full"
+                  className="bg-[#C20E5A] h-full transition-all duration-300 rounded-full"
                   style={{ width: `${generationProgress}%` }}
                 />
               </div>
 
-              <div className="text-xs font-bold text-[#b0004a]">
+              <div className="text-xs font-bold text-[#C20E5A] tracking-wide">
                 {generationProgress}% - {generationProgress < 40 ? 'Analyzing brand aesthetic' : generationProgress < 80 ? 'Setting up calendar & booking system' : 'Finalizing live preview...'}
               </div>
             </div>
           )}
 
-          {/* BOTTOM CONTROLS (Hidden on step 6 since SocialConnectivityStep includes its own nav footer) */}
-          {!isGenerating && currentStep !== 6 && (
+          {/* BOTTOM CONTROLS */}
+          {!isGenerating && currentStep !== 3 && (
             <div className="flex justify-between items-center border-t border-gray-100 pt-6 mt-6">
               <button
                 type="button"
                 onClick={prevStep}
                 disabled={currentStep === 1}
-                className="px-5 py-2.5 rounded-lg border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1"
+                className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-2 transition-all"
               >
                 <span className="material-symbols-outlined text-sm">arrow_back</span>
                 <span>Back</span>
               </button>
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  className="bg-[#b0004a] hover:bg-[#d81b60] text-white text-xs font-bold px-7 py-3 rounded-lg shadow-md shadow-[#b0004a]/20 hover:shadow-lg flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <span>{currentStep === totalSteps - 1 ? 'Generate Website' : 'Continue'}</span>
-                  <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={nextStep}
+                className="bg-[#C20E5A] hover:bg-[#A30B4A] text-white text-sm font-bold px-10 py-3 rounded-xl shadow-lg shadow-[#C20E5A]/20 hover:shadow-[#C20E5A]/30 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <span>{currentStep === totalSteps ? 'Generate Website' : 'Continue'}</span>
+                <span className="material-symbols-outlined text-sm">arrow_forward</span>
+              </button>
             </div>
           )}
         </div>

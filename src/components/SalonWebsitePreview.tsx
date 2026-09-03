@@ -815,35 +815,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
       <div 
-        className={`mt-4 transition-all duration-300 ${deviceWidthClass} shadow-2xl rounded-2xl overflow-hidden border border-slate-200 my-4 ${
+        className={`mt-8 transition-all duration-300 ${deviceWidthClass} min-h-[800px] ${
           isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
         }`}
         id="salon-website-canvas"
       >
         
-        {/* Template Header Notice */}
-        <div className={`py-2 px-6 text-xs flex flex-wrap items-center justify-between gap-2 ${
-          isDarkCanvas ? 'bg-[#181820] border-b border-neutral-800 text-neutral-300' : 'bg-slate-50 border-b border-slate-200 text-slate-700'
-        }`}>
-          <div className="flex items-center gap-2 font-medium">
-            <span className="material-symbols-outlined text-base">{activeTemplate.icon}</span>
-            <span><strong>Template:</strong> {activeTemplate.title}</span>
-            <span className="text-slate-400">•</span>
-            <span className="font-mono text-[11px] font-bold" style={{ color: activeAccent.primaryHex }}>
-              Accent: {activeAccent.name}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-[11px] text-slate-500">
-            <MapPin className="w-3 h-3 text-slate-400" />
-            <InlineEditable
-              value={activeProfile.city}
-              onSave={(val) => setProfile((p) => ({ ...p, city: String(val) }))}
-              isEditingActive={isEditMode}
-              label="Salon City"
-            />
-          </div>
-        </div>
-
         {/* ============================================================ */}
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
@@ -1130,7 +1107,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 <p className={`text-xs md:text-sm mt-2 max-w-2xl mx-auto leading-relaxed ${
                   isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'
                 }`}>
-                  {standardData.foundingNarrative}
+                  <InlineEditable
+                    value={activeProfile.about}
+                    onSave={(val) => setProfile((p) => ({ ...p, about: String(val) }))}
+                    isEditingActive={isEditMode}
+                    type="textarea"
+                    label="Business Story"
+                  />
                 </p>
               </div>
 
@@ -1860,9 +1843,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <div className="text-slate-900 font-medium text-xs mt-0.5">
                         {activeProfile.address}, {activeProfile.city} - {activeProfile.postalCode}
                       </div>
-                      {standardData.landmark && (
+                      {(activeProfile.landmark || standardData.landmark) && (
                         <div className="text-[11px] text-slate-800 mt-1 font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block">
-                          Landmark: {standardData.landmark}
+                          Landmark: {activeProfile.landmark || standardData.landmark}
                         </div>
                       )}
                     </div>

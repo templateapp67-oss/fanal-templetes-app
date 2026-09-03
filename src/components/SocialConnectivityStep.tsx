@@ -712,39 +712,9 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
         {/* RIGHT PANEL: INTERACTIVE LIVE WEBSITE PREVIEW */}
         {/* ============================================================ */}
         <div className="lg:col-span-5 flex flex-col gap-4 sticky top-20">
-          <div className="bg-slate-950 text-white border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col relative">
-            
-            {/* Mock Device Title & URL Bar */}
-            <div className="bg-slate-900/95 px-4 py-2.5 border-b border-slate-800 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400 font-bold ml-2">
-                    LIVE WEBSITE PREVIEW
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live Sync
-                </span>
-              </div>
-
-              {/* Simulated Client-Facing URL Bar */}
-              <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-400">
-                <span className="material-symbols-outlined text-xs text-emerald-400">lock</span>
-                <span className="truncate text-slate-300">
-                  final-new-app-templete.vercel.app/{profile.slug || 'pinky-nails-studio'}
-                </span>
-                <span className="material-symbols-outlined text-xs text-slate-500 ml-auto">refresh</span>
-              </div>
-            </div>
-
+          <div className="flex flex-col relative">
             {/* Simulated Live Website Container */}
-            <div className="p-4 sm:p-5 flex flex-col gap-5 bg-slate-950 min-h-[580px] max-h-[720px] overflow-y-auto relative text-slate-100">
+            <div className="p-4 sm:p-5 flex flex-col gap-5 bg-slate-950 min-h-[580px] max-h-[720px] overflow-y-auto relative text-slate-100 rounded-2xl border border-slate-800 shadow-xl">
               
               {/* 1. TOP ANNOUNCEMENT & STATUS BAR */}
               <div className="bg-gradient-to-r from-rose-950/80 via-purple-950/80 to-slate-900 border border-rose-500/20 p-2.5 rounded-xl flex items-center justify-between text-[10px] font-mono">
