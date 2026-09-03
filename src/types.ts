@@ -1,0 +1,183 @@
+export type AppView = 'landing' | 'wizard' | 'preview' | 'dashboard';
+
+export type BusinessTypeId = 
+  | 'hair_salon'         // Hair Cut & Styling Studio
+  | 'barber'             // Barber Shop / Men's Grooming
+  | 'unisex_salon'       // Unisex Salon
+  | 'beauty_parlour'     // Beauty Parlour
+  | 'nail_studio'        // Nail Studio
+  | 'hair_spa'           // Hair Spa & Treatment
+  | 'skincare_clinic'    // Facial & Skincare Clinic
+  | 'makeup_studio'      // Makeup Studio
+  | 'massage_wellness'   // Massage & Wellness Center
+  | 'hair_coloring'      // Hair Coloring Studio
+  | 'bridal_lounge'      // Bridal Makeup & Makeover Lounge
+  | 'tattoo_studio'      // Tattoo & Body Art Studio
+  | 'lash_brow'          // Lash & Brow Bar
+  | 'ayurvedic_spa';     // Ayurvedic Rejuvenation Spa
+
+export type LayoutStyle = 
+  | 'modern_minimalist'
+  | 'vintage_industrial'
+  | 'contemporary_balanced'
+  | 'curved_elegant'
+  | 'bento_grid'
+  | 'zen_emerald'
+  | 'clinical_clean'
+  | 'dark_glam'
+  | 'earth_bamboo'
+  | 'creative_gallery'
+  | 'royal_crimson'
+  | 'urban_monochrome'
+  | 'chic_nude'
+  | 'ayurvedic_terracotta';
+
+export interface BusinessTypeOption {
+  id: BusinessTypeId;
+  title: string;
+  categoryTag: string;
+  icon: string;
+  aestheticDescription: string;
+  description?: string;
+  paletteName: string;
+  badge: string;
+  defaultServices: Array<{ name: string; price: number; duration: number; category: string }>;
+}
+
+export type SalonThemePreset = 
+  | 'slate_silver'
+  | 'vintage_brass'
+  | 'pastel_blush'
+  | 'rose_gold_ivory'
+  | 'neon_gloss_bento'
+  | 'emerald_sage'
+  | 'clinical_sky_blue'
+  | 'obsidian_gold'
+  | 'earth_bamboo'
+  | 'chroma_gradient'
+  | 'royal_crimson_gold'
+  | 'urban_monochrome'
+  | 'chic_nude_beige'
+  | 'ayurvedic_terracotta';
+
+export interface CategoryTemplateConfig {
+  id: BusinessTypeId;
+  title: string;
+  shortName: string;
+  tagline: string;
+  about: string;
+  icon: string;
+  layoutStyle: LayoutStyle;
+  paletteLabel: string;
+  themePreset: SalonThemePreset;
+  subCategories: string[];
+  defaultCity: string;
+  defaultAddress: string;
+  defaultPostalCode: string;
+  phone: string;
+  whatsapp: string;
+  ownerName: string;
+  ownerRole: string;
+  ownerPhotoUrl: string;
+  coverImageUrl: string;
+  instagramHandle: string;
+  themeStyle: {
+    heroBackground: string;
+    heroTextColor: string;
+    cardBorder: string;
+    cardBackground: string;
+    cardRadius: string;
+    accentColor: string;
+    accentBg: string;
+    badgeBg: string;
+    badgeText: string;
+    buttonBg: string;
+    buttonText: string;
+    priceColor: string;
+    isDark?: boolean;
+    headerBanner?: string;
+  };
+  services: SalonService[];
+  stylists: Stylist[];
+}
+
+export interface SalonProfile {
+  businessType: BusinessTypeId;
+  businessName: string;
+  ownerName: string;
+  ownerRole: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  tagline: string;
+  about: string;
+  ownerPhotoUrl: string;
+  coverImageUrl: string;
+  themePreset: SalonThemePreset;
+  currency: string;
+  subdomain: string;
+  customDomain?: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  instagramHandle: string;
+  requireDeposit: boolean;
+  depositPercentage: number;
+  themeAccentKey?: string;
+  customAccentColor?: string;
+  landmark?: string;
+  foundingYear?: string;
+  workingHoursMonFri?: string;
+  workingHoursSat?: string;
+  workingHoursSun?: string;
+}
+
+export interface SalonService {
+  id: string;
+  name: string;
+  category: string;
+  durationMinutes: number;
+  price: number;
+  description: string;
+  icon: string;
+  popular?: boolean;
+}
+
+export interface Stylist {
+  id: string;
+  name: string;
+  role: string;
+  avatarUrl: string;
+  specialties: string[];
+  rating: number;
+}
+
+export interface Appointment {
+  id: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
+  serviceId: string;
+  serviceName: string;
+  servicePrice: number;
+  stylistId: string;
+  stylistName: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  status: 'confirmed' | 'completed' | 'cancelled' | 'pending';
+  paymentStatus: 'paid_deposit' | 'paid_full' | 'pay_at_salon';
+  amountPaid: number;
+  createdAt: string;
+}
+
+export interface ClientRecord {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  totalVisits: number;
+  totalSpent: number;
+  lastVisit: string;
+  notes: string;
+  favoriteStylist: string;
+}

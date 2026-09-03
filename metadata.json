@@ -1,0 +1,6 @@
+{
+  "name": "Nexora - Salon Website Builder & Platform",
+  "description": "AI-powered salon website builder and all-in-one management platform for beauty businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
