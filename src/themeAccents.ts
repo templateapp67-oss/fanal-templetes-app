@@ -174,3 +174,19 @@ export const DEFAULT_CATEGORY_ACCENTS: Record<BusinessTypeId, AccentPaletteKey> 
   lash_brow: 'purple',
   ayurvedic_spa: 'emerald'
 };
+
+/**
+ * Updates the primary accent CSS variable across the document root
+ * and all templates using var(--primary-accent) or var(--theme-primary).
+ */
+export function applyPrimaryAccentCssVar(primaryHex: string, secondaryHex?: string) {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.style.setProperty('--primary-accent', primaryHex);
+    document.documentElement.style.setProperty('--theme-primary', primaryHex);
+    document.documentElement.style.setProperty('--color-primary', primaryHex);
+    if (secondaryHex) {
+      document.documentElement.style.setProperty('--theme-secondary', secondaryHex);
+    }
+  }
+}
+

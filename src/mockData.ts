@@ -114,7 +114,28 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     totalSpent: 18400,
     lastVisit: '2026-08-14',
     notes: 'Regular Keratin client every 3 months. Prefers herbal tea without sugar.',
-    favoriteStylist: 'Ananya Sharma'
+    favoriteStylist: 'Ananya Sharma',
+    points: 1150,
+    lifetimePoints: 2190,
+    loyaltyTier: 'platinum',
+    pointHistory: [
+      { id: 'tx-1', date: '2026-08-14', description: 'Formaldehyde-Free Keratin Smoothing Visit', pointsChange: 470, type: 'spend_earned' },
+      { id: 'tx-2', date: '2026-06-10', description: 'Hair Spa Rejuvenation', pointsChange: 220, type: 'spend_earned' },
+      { id: 'tx-3', date: '2026-05-02', description: 'Redeemed 20% OFF Festive Voucher', pointsChange: -750, type: 'redeemed' },
+      { id: 'tx-4', date: '2026-04-12', description: 'Birthday Milestone Bonus', pointsChange: 250, type: 'bonus' },
+    ],
+    redeemedRewards: [
+      {
+        id: 'red-1',
+        rewardId: 'rew-3',
+        rewardTitle: '20% OFF Festive & Premium Treatments',
+        discountSummary: '20% OFF',
+        pointsSpent: 750,
+        redeemedAt: '2026-05-02',
+        couponCode: 'ROYAL20-8492',
+        status: 'used',
+      }
+    ]
   },
   {
     id: 'cli-ind-2',
@@ -125,7 +146,15 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     totalSpent: 4250,
     lastVisit: '2026-08-20',
     notes: 'Likes razor texture on crown, sharp sideburn taper.',
-    favoriteStylist: 'Rohan Kapoor'
+    favoriteStylist: 'Rohan Kapoor',
+    points: 425,
+    lifetimePoints: 675,
+    loyaltyTier: 'silver',
+    pointHistory: [
+      { id: 'tx-5', date: '2026-08-20', description: 'Precision Cut & Beard Grooming', pointsChange: 125, type: 'spend_earned' },
+      { id: 'tx-6', date: '2026-07-15', description: 'Visit Loyalty Bonus', pointsChange: 50, type: 'visit_earned' },
+      { id: 'tx-7', date: '2026-06-01', description: 'Welcome Onboarding Bonus', pointsChange: 100, type: 'bonus' },
+    ],
   },
   {
     id: 'cli-ind-3',
@@ -136,6 +165,63 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     totalSpent: 9800,
     lastVisit: '2026-07-28',
     notes: 'Sensitive scalp post-coloring. Uses sulfate-free botanical shampoo only.',
-    favoriteStylist: 'Kavita Deshmukh'
+    favoriteStylist: 'Kavita Deshmukh',
+    points: 980,
+    lifetimePoints: 1130,
+    loyaltyTier: 'gold',
+    pointHistory: [
+      { id: 'tx-8', date: '2026-07-28', description: 'Hair Botox Reconstruction & Argan Therapy', pointsChange: 410, type: 'spend_earned' },
+      { id: 'tx-9', date: '2026-05-18', description: 'Balayage Color & Gloss', pointsChange: 570, type: 'spend_earned' },
+      { id: 'tx-10', date: '2026-03-02', description: 'First Visit Bonus', pointsChange: 150, type: 'bonus' },
+    ],
+  },
+  {
+    id: 'cli-ind-4',
+    name: 'Aditya Sen',
+    phone: '+91 98450 78129',
+    email: 'aditya.sen@gmail.com',
+    totalVisits: 2,
+    totalSpent: 1250,
+    lastVisit: '2026-08-30',
+    notes: 'Prefers quiet sessions during haircuts.',
+    favoriteStylist: 'Rohan Kapoor',
+    points: 175,
+    lifetimePoints: 175,
+    loyaltyTier: 'bronze',
+    pointHistory: [
+      { id: 'tx-11', date: '2026-08-30', description: 'Layered Cut & Styling', pointsChange: 95, type: 'spend_earned' },
+      { id: 'tx-12', date: '2026-08-01', description: 'First Visit Welcome Points', pointsChange: 80, type: 'bonus' },
+    ],
+  },
+  {
+    id: 'cli-ind-5',
+    name: 'Meera Iyer',
+    phone: '+91 98860 33419',
+    email: 'meera.iyer@designhouse.in',
+    totalVisits: 9,
+    totalSpent: 26500,
+    lastVisit: '2026-08-25',
+    notes: 'Bridal trial scheduled in November. Loyal VIP customer.',
+    favoriteStylist: 'Ananya Sharma',
+    points: 1650,
+    lifetimePoints: 3100,
+    loyaltyTier: 'platinum',
+    pointHistory: [
+      { id: 'tx-13', date: '2026-08-25', description: 'Full Ayurvedic Rejuvenation Spa Package', pointsChange: 550, type: 'spend_earned' },
+      { id: 'tx-14', date: '2026-07-12', description: 'Redeemed Free Deluxe Scalp Detox', pointsChange: -1200, type: 'redeemed' },
+      { id: 'tx-15', date: '2026-06-05', description: 'Global Highlights & Toner', pointsChange: 650, type: 'spend_earned' },
+    ],
+    redeemedRewards: [
+      {
+        id: 'red-2',
+        rewardId: 'rew-4',
+        rewardTitle: 'Complimentary Scalp Detox / Hand Spa Ritual',
+        discountSummary: '100% Complimentary Add-on',
+        pointsSpent: 1200,
+        redeemedAt: '2026-07-12',
+        couponCode: 'FREESPA-4819',
+        status: 'used',
+      }
+    ]
   }
 ];

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId } from './types';
+import React, { useState, useEffect } from 'react';
+import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
+import { ACCENT_PALETTES, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
+import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -17,6 +19,16 @@ export default function App() {
   const [stylists, setStylists] = useState<Stylist[]>(INITIAL_STYLISTS);
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
+  const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
+
+  // Sync primary accent CSS variable to :root whenever profile theme changes
+  useEffect(() => {
+    const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
+    const pal = ACCENT_PALETTES[accentKey];
+    const primaryColor = profile.customAccentColor || (pal ? pal.primaryHex : '#0f172a');
+    const secondaryColor = pal ? pal.secondaryHex : '#334155';
+    applyPrimaryAccentCssVar(primaryColor, secondaryColor);
+  }, [profile.themeAccentKey, profile.customAccentColor]);
 
   const handleSelectCategory = (catId: BusinessTypeId) => {
     const tmpl = CATEGORY_TEMPLATES[catId];
@@ -49,22 +61,49 @@ export default function App() {
   const handleAddAppointment = (newApt: Appointment) => {
     setAppointments((prev) => [newApt, ...prev]);
 
+    // Calculate loyalty points earned: base visit points + spend points * multiplier
+    const spendPoints = Math.round((newApt.servicePrice / 100) * loyaltyConfig.pointsPerHundredSpent);
+    const baseVisitPoints = loyaltyConfig.pointsPerVisit;
+    const earnedPoints = baseVisitPoints + spendPoints;
+
     // Also sync to CRM clients list if new
     const existingClient = clients.find((c) => c.phone === newApt.clientPhone);
     if (existingClient) {
       setClients((prev) =>
-        prev.map((c) =>
-          c.id === existingClient.id
-            ? {
-                ...c,
-                totalVisits: c.totalVisits + 1,
-                totalSpent: c.totalSpent + newApt.servicePrice,
-                lastVisit: newApt.date
-              }
-            : c
-        )
+        prev.map((c) => {
+          if (c.id !== existingClient.id) return c;
+          const currentPts = c.points || 0;
+          const currentLifetime = c.lifetimePoints || currentPts;
+          const tier = c.loyaltyTier || 'bronze';
+          const multiplier = loyaltyConfig.tierMultipliers[tier] || 1.0;
+          const finalEarned = Math.round(earnedPoints * multiplier);
+          const newTotalPoints = currentPts + finalEarned;
+          const newLifetime = currentLifetime + finalEarned;
+          const newTier = calculateLoyaltyTier(newLifetime, loyaltyConfig.tierThresholds);
+
+          const newTx = {
+            id: `tx-${Date.now()}`,
+            date: newApt.date,
+            description: `Visit & booking for ${newApt.serviceName}`,
+            pointsChange: finalEarned,
+            type: 'spend_earned' as const,
+          };
+
+          return {
+            ...c,
+            totalVisits: c.totalVisits + 1,
+            totalSpent: c.totalSpent + newApt.servicePrice,
+            lastVisit: newApt.date,
+            points: newTotalPoints,
+            lifetimePoints: newLifetime,
+            loyaltyTier: newTier,
+            pointHistory: [newTx, ...(c.pointHistory || [])],
+          };
+        })
       );
     } else {
+      const initialPoints = earnedPoints;
+      const initialTier = calculateLoyaltyTier(initialPoints, loyaltyConfig.tierThresholds);
       const newClientRecord: ClientRecord = {
         id: `cli-${Date.now()}`,
         name: newApt.clientName,
@@ -74,7 +113,19 @@ export default function App() {
         totalSpent: newApt.servicePrice,
         lastVisit: newApt.date,
         notes: `First visit on ${newApt.date} for ${newApt.serviceName}`,
-        favoriteStylist: newApt.stylistName
+        favoriteStylist: newApt.stylistName,
+        points: initialPoints,
+        lifetimePoints: initialPoints,
+        loyaltyTier: initialTier,
+        pointHistory: [
+          {
+            id: `tx-${Date.now()}`,
+            date: newApt.date,
+            description: `First booking for ${newApt.serviceName}`,
+            pointsChange: initialPoints,
+            type: 'spend_earned',
+          },
+        ],
       };
       setClients((prev) => [newClientRecord, ...prev]);
     }
@@ -110,8 +161,11 @@ export default function App() {
       {currentView === 'preview' && (
         <SalonWebsitePreview
           profile={profile}
+          setProfile={setProfile}
           services={services}
+          setServices={setServices}
           stylists={stylists}
+          setStylists={setStylists}
           onAddAppointment={handleAddAppointment}
           onSelectCategory={handleSelectCategory}
         />
@@ -123,9 +177,15 @@ export default function App() {
           setProfile={setProfile}
           services={services}
           setServices={setServices}
+          stylists={stylists}
+          setStylists={setStylists}
           appointments={appointments}
           setAppointments={setAppointments}
           clients={clients}
+          setClients={setClients}
+          loyaltyConfig={loyaltyConfig}
+          setLoyaltyConfig={setLoyaltyConfig}
+          onNavigateToPreview={() => setCurrentView('preview')}
         />
       )}
     </div>

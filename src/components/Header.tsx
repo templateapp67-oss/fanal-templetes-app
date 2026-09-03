@@ -36,9 +36,24 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <span className="material-symbols-outlined text-base">home</span>
-            Landing
+            Home
           </button>
           
+          <button
+            onClick={() => setCurrentView('preview')}
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              currentView === 'preview'
+                ? 'bg-primary text-on-primary shadow-sm'
+                : 'text-on-surface-variant hover:text-primary'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">edit_document</span>
+            <span>Live Visual Editor & Templates</span>
+            <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
+              14
+            </span>
+          </button>
+
           <button
             onClick={() => setCurrentView('wizard')}
             className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
@@ -48,19 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <span className="material-symbols-outlined text-base">auto_awesome</span>
-            AI Builder
-          </button>
-
-          <button
-            onClick={() => setCurrentView('preview')}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'preview'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:text-primary'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">devices</span>
-            Preview
+            AI Setup Wizard
           </button>
 
           <button
@@ -72,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <span className="material-symbols-outlined text-base">dashboard</span>
-            Dashboard
+            SaaS Dashboard
           </button>
         </nav>
 

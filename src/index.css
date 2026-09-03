@@ -101,6 +101,9 @@
 
 @layer base {
   :root {
+    --primary-accent: #9f1239;
+    --theme-primary: #9f1239;
+    --theme-secondary: #e11d48;
     --font-display: 'Manrope', sans-serif;
     --font-body: 'Hanken Grotesk', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;

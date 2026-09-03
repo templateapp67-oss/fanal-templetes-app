@@ -18,17 +18,35 @@ import {
   Navigation,
   ExternalLink,
   ChevronRight,
-  ArrowRight
+  ArrowRight,
+  Edit3,
+  Sliders,
+  Eye,
+  Plus,
+  Trash2,
+  Wand2,
+  Smartphone,
+  Tablet,
+  Monitor,
+  Share2,
+  RefreshCw,
+  Scissors
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
-import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey } from '../themeAccents';
+import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar } from '../themeAccents';
 import { CATEGORY_STANDARDIZED_DATA } from '../templateData';
+import { BookingModal } from './BookingModal';
+import { InlineEditable } from './InlineEditable';
+import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
+  setProfile?: React.Dispatch<React.SetStateAction<SalonProfile>>;
   services: SalonService[];
+  setServices?: React.Dispatch<React.SetStateAction<SalonService[]>>;
   stylists: Stylist[];
+  setStylists?: React.Dispatch<React.SetStateAction<Stylist[]>>;
   onAddAppointment: (appointment: Appointment) => void;
   onSelectCategory?: (categoryId: BusinessTypeId) => void;
 }
@@ -37,62 +55,103 @@ type DeviceMode = 'desktop' | 'tablet' | 'mobile';
 
 export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   profile,
+  setProfile: setProfileProp,
   services,
+  setServices: setServicesProp,
   stylists,
+  setStylists: setStylistsProp,
   onAddAppointment,
   onSelectCategory,
 }) => {
+  // Fallback internal state if setters not passed
+  const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
+  const [internalServices, setInternalServices] = useState<SalonService[]>(services);
+  const [internalStylists, setInternalStylists] = useState<Stylist[]>(stylists);
+
+  const activeProfile = setProfileProp ? profile : internalProfile;
+  const setProfile = setProfileProp || setInternalProfile;
+
+  const activeServices = setServicesProp ? services : internalServices;
+  const setServices = setServicesProp || setInternalServices;
+
+  const activeStylists = setStylistsProp ? stylists : internalStylists;
+  const setStylists = setStylistsProp || setInternalStylists;
+
+  // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
-  const [selectedCategoryKey, setSelectedCategoryKey] = useState<BusinessTypeId>(profile.businessType || 'hair_salon');
-  
+  const [isEditMode, setIsEditMode] = useState<boolean>(true);
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState<BusinessTypeId>(activeProfile.businessType || 'hair_salon');
+
+  // Synchronize category selection if parent changes businessType
+  useEffect(() => {
+    if (activeProfile.businessType && activeProfile.businessType !== selectedCategoryKey) {
+      setSelectedCategoryKey(activeProfile.businessType);
+    }
+  }, [activeProfile.businessType]);
+
+  // Side Panel Section Visibility
+  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibilityState>(DEFAULT_SECTION_VISIBILITY);
+
   // Active template configuration
   const activeTemplate = CATEGORY_TEMPLATES[selectedCategoryKey] || CATEGORY_TEMPLATES.hair_salon;
-  const currentServices = selectedCategoryKey === profile.businessType ? services : activeTemplate.services;
-  const currentStylists = selectedCategoryKey === profile.businessType ? stylists : activeTemplate.stylists;
 
-  // Active Accent Palette selection with fallback to category default
+  // Active Accent Palette selection
   const [selectedAccentKey, setSelectedAccentKey] = useState<AccentPaletteKey>(
-    (profile.themeAccentKey as AccentPaletteKey) || DEFAULT_CATEGORY_ACCENTS[selectedCategoryKey] || 'slate'
+    (activeProfile.themeAccentKey as AccentPaletteKey) || DEFAULT_CATEGORY_ACCENTS[selectedCategoryKey] || 'slate'
+  );
+  const [isDarkCanvas, setIsDarkCanvas] = useState<boolean>(
+    activeTemplate.themeStyle.isDark || selectedAccentKey === 'obsidian'
   );
 
+  // Synchronize accent changes
+  useEffect(() => {
+    if (activeProfile.themeAccentKey && ACCENT_PALETTES[activeProfile.themeAccentKey as AccentPaletteKey]) {
+      setSelectedAccentKey(activeProfile.themeAccentKey as AccentPaletteKey);
+    }
+  }, [activeProfile.themeAccentKey]);
+
   const activeAccent = ACCENT_PALETTES[selectedAccentKey] || ACCENT_PALETTES.slate;
+  const primaryAccentColor = activeProfile.customAccentColor || activeAccent.primaryHex;
+
+  // Update primary accent CSS variable across the document
+  useEffect(() => {
+    applyPrimaryAccentCssVar(primaryAccentColor, activeAccent.secondaryHex);
+  }, [primaryAccentColor, activeAccent]);
+
   const standardData = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
 
-  const currentProfile: SalonProfile = selectedCategoryKey === profile.businessType ? profile : {
-    ...profile,
-    businessType: activeTemplate.id,
-    businessName: activeTemplate.title,
-    ownerName: activeTemplate.ownerName,
-    ownerRole: activeTemplate.ownerRole,
-    phone: activeTemplate.phone,
-    whatsapp: activeTemplate.whatsapp,
-    tagline: activeTemplate.tagline,
-    about: activeTemplate.about,
-    ownerPhotoUrl: activeTemplate.ownerPhotoUrl,
-    coverImageUrl: activeTemplate.coverImageUrl,
-    themePreset: activeTemplate.themePreset,
-    currency: '₹',
-    subdomain: activeTemplate.id.replace('_', ''),
-    address: activeTemplate.defaultAddress,
-    city: activeTemplate.defaultCity,
-    postalCode: activeTemplate.defaultPostalCode,
-    instagramHandle: activeTemplate.instagramHandle,
-    landmark: standardData.landmark
-  };
-
+  // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
   const [isBookingOpen, setIsBookingOpen] = useState<boolean>(false);
-  const [selectedService, setSelectedService] = useState<SalonService>(currentServices[0]);
-  const [selectedStylist, setSelectedStylist] = useState<Stylist>(currentStylists[0]);
-  const [bookingDate, setBookingDate] = useState<string>('2026-09-05');
-  const [bookingTime, setBookingTime] = useState<string>('11:00');
-  const [clientName, setClientName] = useState<string>('');
-  const [clientPhone, setClientPhone] = useState<string>('');
-  const [clientEmail, setClientEmail] = useState<string>('');
-  const [bookingSuccess, setBookingSuccess] = useState<boolean>(false);
-  const [generatedRefCode, setGeneratedRefCode] = useState<string>('');
+  const [selectedService, setSelectedService] = useState<SalonService>(activeServices[0] || activeTemplate.services[0]);
+  const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
 
+  // Editable section custom headings
+  const [sectionHeadings, setSectionHeadings] = useState<{
+    servicesTitle: string;
+    servicesSubtitle: string;
+    stylistsTitle: string;
+    stylistsSubtitle: string;
+    testimonialsTitle: string;
+    galleryTitle: string;
+    locationTitle: string;
+  }>({
+    servicesTitle: 'Curated Services & Treatments',
+    servicesSubtitle: 'Explore our handcrafted menu with transparent pricing in INR (₹).',
+    stylistsTitle: 'Meet Our Master Specialists & Stylists',
+    stylistsSubtitle: 'Dedicated artisans trained in contemporary international and classical Indian beauty traditions.',
+    testimonialsTitle: 'Loved by 1,200+ Verified Clients',
+    galleryTitle: 'Studio Lookbook & Client Transformations',
+    locationTitle: 'Visit Our Sanctuary'
+  });
+
+  // Top AI Prompt state
+  const [topAiPrompt, setTopAiPrompt] = useState<string>('');
+  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+
+  // Toast message
   const [toastMessage, setToastMessage] = useState<{
     id: string;
     title: string;
@@ -103,7 +162,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     refCode: string;
     price: number;
   } | null>(null);
+  const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
+
+  const showNotification = (msg: string) => {
+    setNotificationToast(msg);
+    setTimeout(() => setNotificationToast(null), 3500);
+  };
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -119,12 +184,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     setTimeout(() => setCopiedRef(false), 2000);
   };
 
-  const subCategoriesList = ['All', ...activeTemplate.subCategories];
+  const subCategoriesList = ['All', ...(activeTemplate.subCategories || ['Hair', 'Spa', 'Care'])];
 
   const filteredServices = activeSubCategory === 'All'
-    ? currentServices
-    : currentServices.filter((s) => s.category === activeSubCategory);
+    ? activeServices
+    : activeServices.filter((s) => s.category === activeSubCategory);
 
+  // Category template switcher
   const handleCategorySwitch = (catId: BusinessTypeId) => {
     setSelectedCategoryKey(catId);
     const tmpl = CATEGORY_TEMPLATES[catId];
@@ -132,11 +198,42 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       setActiveSubCategory('All');
       setSelectedService(tmpl.services[0]);
       setSelectedStylist(tmpl.stylists[0]);
-      // Update accent to match new category default
-      setSelectedAccentKey(DEFAULT_CATEGORY_ACCENTS[catId] || 'slate');
+      
+      const newAccent = DEFAULT_CATEGORY_ACCENTS[catId] || 'slate';
+      setSelectedAccentKey(newAccent);
+      setIsDarkCanvas(tmpl.themeStyle.isDark || newAccent === 'obsidian');
+
+      setProfile((prev) => ({
+        ...prev,
+        businessType: tmpl.id,
+        businessName: tmpl.title,
+        ownerName: tmpl.ownerName,
+        ownerRole: tmpl.ownerRole,
+        phone: tmpl.phone,
+        whatsapp: tmpl.whatsapp,
+        tagline: tmpl.tagline,
+        about: tmpl.about,
+        ownerPhotoUrl: tmpl.ownerPhotoUrl,
+        coverImageUrl: tmpl.coverImageUrl,
+        themePreset: tmpl.themePreset,
+        currency: '₹',
+        subdomain: tmpl.id.replace('_', ''),
+        address: tmpl.defaultAddress,
+        city: tmpl.defaultCity,
+        postalCode: tmpl.defaultPostalCode,
+        instagramHandle: tmpl.instagramHandle,
+        themeAccentKey: newAccent,
+        customAccentColor: undefined
+      }));
+
+      setServices(tmpl.services);
+      setStylists(tmpl.stylists);
+
       if (onSelectCategory) {
         onSelectCategory(catId);
       }
+
+      showNotification(`Switched to "${tmpl.title}" template with Indian INR (₹) rates!`);
     }
   };
 
@@ -144,74 +241,151 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     if (srv) {
       setSelectedService(srv);
     } else {
-      setSelectedService(currentServices[0]);
+      setSelectedService(activeServices[0] || activeTemplate.services[0]);
     }
-    setSelectedStylist(currentStylists[0]);
-    setBookingSuccess(false);
+    setSelectedStylist(activeStylists[0] || activeTemplate.stylists[0]);
     setIsBookingOpen(true);
   };
 
-  const handleConfirmBooking = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedService || !selectedStylist) return;
+  // Inline Service Actions
+  const handleUpdateServicePrice = (serviceId: string, newPrice: number) => {
+    setServices((prev) =>
+      prev.map((s) => (s.id === serviceId ? { ...s, price: Number(newPrice) || s.price } : s))
+    );
+    showNotification(`Updated service price to ₹${newPrice}`);
+  };
 
-    const cityCode = currentProfile.city.includes('Bengaluru') ? 'BLR' 
-      : currentProfile.city.includes('Mumbai') ? 'BOM'
-      : currentProfile.city.includes('Delhi') ? 'DEL'
-      : currentProfile.city.includes('Hyderabad') ? 'HYD'
-      : currentProfile.city.includes('Jaipur') ? 'JPR'
-      : currentProfile.city.includes('Chennai') ? 'MAA'
-      : currentProfile.city.includes('Kochi') ? 'COK'
-      : 'IND';
+  const handleUpdateServiceName = (serviceId: string, newName: string) => {
+    setServices((prev) =>
+      prev.map((s) => (s.id === serviceId ? { ...s, name: String(newName) } : s))
+    );
+  };
 
-    const refNum = `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
-    setGeneratedRefCode(refNum);
+  const handleUpdateServiceDesc = (serviceId: string, newDesc: string) => {
+    setServices((prev) =>
+      prev.map((s) => (s.id === serviceId ? { ...s, description: String(newDesc) } : s))
+    );
+  };
 
-    const depositAmount = currentProfile.requireDeposit
-      ? Math.round((selectedService.price * (currentProfile.depositPercentage || 20)) / 100)
-      : 0;
+  const handleUpdateServiceDuration = (serviceId: string, newDuration: number) => {
+    setServices((prev) =>
+      prev.map((s) => (s.id === serviceId ? { ...s, durationMinutes: Number(newDuration) } : s))
+    );
+  };
 
-    const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
-      clientName: clientName || 'Guest Client',
-      clientPhone: clientPhone || '+91 98765 43210',
-      clientEmail: clientEmail || 'client@example.in',
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      servicePrice: selectedService.price,
-      stylistId: selectedStylist.id,
-      stylistName: selectedStylist.name,
-      date: bookingDate,
-      time: bookingTime,
-      status: 'confirmed',
-      paymentStatus: currentProfile.requireDeposit ? 'paid_deposit' : 'pay_at_salon',
-      amountPaid: depositAmount,
-      createdAt: new Date().toISOString()
+  const handleAddNewService = () => {
+    const newSrv: SalonService = {
+      id: `srv-${Date.now()}`,
+      name: 'New Signature Treatment',
+      category: activeSubCategory === 'All' ? (activeTemplate.subCategories[0] || 'General') : activeSubCategory,
+      durationMinutes: 45,
+      price: 950,
+      description: 'Personalized salon care with organic essential extracts and precision styling.',
+      icon: 'spa',
+      popular: true
     };
-
-    onAddAppointment(newApt);
-    setBookingSuccess(true);
-    setToastMessage({
-      id: String(Date.now()),
-      title: 'Appointment Confirmed!',
-      clientName: newApt.clientName,
-      serviceName: newApt.serviceName,
-      stylistName: newApt.stylistName,
-      dateTime: `${bookingDate} at ${bookingTime}`,
-      refCode: refNum,
-      price: selectedService.price
-    });
+    setServices((prev) => [newSrv, ...prev]);
+    showNotification(`Added new service "${newSrv.name}" (₹${newSrv.price})!`);
   };
 
-  const closeBooking = () => {
-    setIsBookingOpen(false);
-    setBookingSuccess(false);
-    setClientName('');
-    setClientPhone('');
-    setClientEmail('');
+  const handleDeleteService = (serviceId: string) => {
+    setServices((prev) => prev.filter((s) => s.id !== serviceId));
+    showNotification('Service removed from menu.');
   };
 
-  // Device width classes
+  // Inline Stylist Actions
+  const handleUpdateStylistName = (stylistId: string, newName: string) => {
+    setStylists((prev) =>
+      prev.map((st) => (st.id === stylistId ? { ...st, name: String(newName) } : st))
+    );
+  };
+
+  const handleUpdateStylistRole = (stylistId: string, newRole: string) => {
+    setStylists((prev) =>
+      prev.map((st) => (st.id === stylistId ? { ...st, role: String(newRole) } : st))
+    );
+  };
+
+  const handleUpdateStylistRating = (stylistId: string, newRating: number) => {
+    setStylists((prev) =>
+      prev.map((st) => (st.id === stylistId ? { ...st, rating: Number(newRating) } : st))
+    );
+  };
+
+  const handleAddNewStylist = () => {
+    const newSt: Stylist = {
+      id: `st-${Date.now()}`,
+      name: 'Specialist Artisan',
+      role: 'Senior Hair & Beauty Expert',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+      rating: 4.9,
+      specialties: ['Precision Styling', 'Color Artistry', 'Scalp Detox']
+    };
+    setStylists((prev) => [...prev, newSt]);
+    showNotification(`Specialist "${newSt.name}" added to roster!`);
+  };
+
+  const handleDeleteStylist = (stylistId: string) => {
+    setStylists((prev) => prev.filter((st) => st.id !== stylistId));
+    showNotification('Specialist removed from roster.');
+  };
+
+  // AI Studio Prompts Engine
+  const handleAIGeneratePrompt = (presetType: string, customPrompt?: string) => {
+    setIsAiLoading(true);
+    setTimeout(() => {
+      if (presetType === 'luxury') {
+        setProfile((prev) => ({
+          ...prev,
+          tagline: `Bespoke Botanical Luxury & Haute Artistry in ${prev.city}`,
+          about: `Step into ${prev.businessName}, an exclusive sanctuary where world-class precision meets restorative organic wellness. From runway-ready styling to deep ayurvedic scalp therapies, every moment is crafted to elevate your radiance.`
+        }));
+        setSectionHeadings((prev) => ({
+          ...prev,
+          servicesTitle: 'Haute Beauty & Wellness Experiences',
+          servicesSubtitle: 'Uncompromising luxury treatments with transparent INR (₹) rates.'
+        }));
+      } else if (presetType === 'bridal') {
+        setProfile((prev) => ({
+          ...prev,
+          tagline: `Royal Indian Bridal Makeovers & Festive Luxury Packages`,
+          about: `Celebrate your milestone moments with ${prev.businessName}. Our award-winning bridal artisans specialize in HD makeup, intricate bridal hairstyles, pre-wedding skin detox, and luxury festive rejuvenation.`
+        }));
+        setSectionHeadings((prev) => ({
+          ...prev,
+          servicesTitle: 'Bridal & Festive Ceremony Menus',
+          servicesSubtitle: 'Complete bespoke pre-bridal and wedding day packages in INR (₹).'
+        }));
+      } else if (presetType === 'ayurvedic') {
+        setProfile((prev) => ({
+          ...prev,
+          tagline: `Authentic Ayurvedic Healing & Pure Herbal Rejuvenation`,
+          about: `Rooted in ancient Vedic traditions, ${prev.businessName} brings you pure herbal infusions, therapeutic scalp detoxes, and dosha-balancing treatments administered by certified master vaidyas.`
+        }));
+        setSectionHeadings((prev) => ({
+          ...prev,
+          servicesTitle: 'Traditional Ayurvedic Rituals',
+          servicesSubtitle: 'Pure herbal therapies and holistic body polishes in INR (₹).'
+        }));
+      } else if (presetType === 'genz') {
+        setProfile((prev) => ({
+          ...prev,
+          tagline: `Next-Gen Hair Artistry, Bold Colors & Trendsetting Cuts`,
+          about: `Welcome to ${prev.businessName}—the ultimate style destination for trendsetters. We turn hair into art with precision fades, vivid balayage, express blowouts, and aesthetic nail glam.`
+        }));
+      } else if (customPrompt) {
+        setProfile((prev) => ({
+          ...prev,
+          tagline: `Elevated Salon Care Tailored for ${prev.city}`,
+          about: `At ${prev.businessName}, we combine innovative techniques with personalized care inspired by "${customPrompt}". Discover customized beauty services crafted to celebrate your unique individuality.`
+        }));
+      }
+      setIsAiLoading(false);
+      showNotification('AI regenerated copy and headline variations applied to canvas!');
+    }, 600);
+  };
+
+  // Device width class
   const deviceWidthClass = {
     desktop: 'w-full max-w-[1240px]',
     tablet: 'w-full max-w-[768px]',
@@ -219,112 +393,227 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }[deviceMode];
 
   const themeStyle = activeTemplate.themeStyle;
-  const isDarkCanvas = themeStyle.isDark || selectedAccentKey === 'obsidian';
 
   return (
     <div 
-      className="min-h-screen pt-24 pb-24 flex flex-col items-center bg-slate-100 text-slate-900 font-sans"
+      className="min-h-screen pt-20 pb-24 flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text"
       style={{
-        '--theme-primary': activeAccent.primaryHex,
+        '--primary-accent': primaryAccentColor,
+        '--theme-primary': primaryAccentColor,
         '--theme-secondary': activeAccent.secondaryHex,
+        '--color-primary': primaryAccentColor,
       } as React.CSSProperties}
     >
       
+      {/* Toast Notifications */}
+      <AnimatePresence>
+        {notificationToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="fixed top-24 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs border border-slate-700 font-medium"
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{notificationToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ============================================================ */}
-      {/* 1. TOP CONTROLS & PALETTE / CATEGORY SWITCHER RIBBON */}
+      {/* 1. TOP UNIFIED NAVIGATION & AI STUDIO CONTROLS BAR */}
       {/* ============================================================ */}
       <div className="w-full bg-white border-b border-slate-200 sticky top-20 z-40 shadow-xs">
-        <div className="max-w-[1400px] mx-auto px-4 py-2.5 flex flex-col gap-2">
+        <div className="max-w-[1440px] mx-auto px-4 py-2.5 flex flex-col gap-2.5">
           
-          {/* Upper control row */}
+          {/* Main Controls Row */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            
+            {/* Left Status & Subdomain */}
+            <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700">
-                <span>{currentProfile.subdomain}.nexora.in</span>
+                <span className="font-bold">{activeProfile.subdomain}.nexora.in</span>
                 <span className="text-slate-400">•</span>
-                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold">
-                  {currentProfile.currency} INR (₹) Live
+                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200">
+                  INR (₹) Live
                 </span>
               </div>
             </div>
 
-            {/* Device Modes */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+            {/* Mode Switcher: Inline Edit Mode vs Preview Mode */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
+                type="button"
+                onClick={() => setIsEditMode(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isEditMode
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Click any text, price or heading to edit inline"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Inline Edit Mode</span>
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsEditMode(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  !isEditMode
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Interactive preview with working links & booking"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Client Preview</span>
+              </button>
+            </div>
+
+            {/* Viewport Device Switcher */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
                 onClick={() => setDeviceMode('desktop')}
-                className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer ${
                   deviceMode === 'desktop' ? 'bg-white shadow-xs text-slate-900 font-bold' : 'text-slate-500 hover:text-slate-800'
                 }`}
+                title="Desktop View (1240px)"
               >
-                <span className="material-symbols-outlined text-sm">desktop_windows</span>
+                <Monitor className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Desktop</span>
               </button>
               <button
+                type="button"
                 onClick={() => setDeviceMode('tablet')}
-                className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer ${
                   deviceMode === 'tablet' ? 'bg-white shadow-xs text-slate-900 font-bold' : 'text-slate-500 hover:text-slate-800'
                 }`}
+                title="Tablet View (768px)"
               >
-                <span className="material-symbols-outlined text-sm">tablet_mac</span>
+                <Tablet className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Tablet</span>
               </button>
               <button
+                type="button"
                 onClick={() => setDeviceMode('mobile')}
-                className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer ${
                   deviceMode === 'mobile' ? 'bg-white shadow-xs text-slate-900 font-bold' : 'text-slate-500 hover:text-slate-800'
                 }`}
+                title="Mobile View (390px)"
               >
-                <span className="material-symbols-outlined text-sm">smartphone</span>
+                <Smartphone className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Mobile</span>
               </button>
             </div>
 
-            {/* Fast Test booking CTA */}
-            <button
-              onClick={() => handleOpenBooking()}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <CalendarCheck className="w-4 h-4" />
-              <span>Test Booking Flow (₹)</span>
-            </button>
+            {/* Right Action Buttons */}
+            <div className="flex items-center gap-2">
+              {/* Customizer Side-Panel Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsCustomizerOpen(!isCustomizerOpen)}
+                className={`text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 border shadow-xs transition-all cursor-pointer ${
+                  isCustomizerOpen
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                }`}
+                id="toggle-customizer-top-btn"
+              >
+                <Sliders className="w-4 h-4 text-amber-500" />
+                <span>Side Customizer</span>
+              </button>
+
+              {/* Fast Test Booking Modal Button */}
+              <button
+                type="button"
+                onClick={() => handleOpenBooking()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                id="test-booking-flow-btn"
+              >
+                <CalendarCheck className="w-4 h-4" />
+                <span>Test Booking (₹)</span>
+              </button>
+            </div>
+
           </div>
 
-          {/* Theme Color Accent Switcher Ribbon */}
-          <div className="border-t border-slate-100 pt-2 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              Theme Accent:
-            </span>
-            {Object.values(ACCENT_PALETTES).map((palette) => {
-              const isSelected = palette.key === selectedAccentKey;
-              return (
-                <button
-                  key={palette.key}
-                  onClick={() => setSelectedAccentKey(palette.key)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
-                    isSelected
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs font-bold'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                  title={`${palette.name} (${palette.categoryHint})`}
-                >
-                  <span
-                    className="w-3 h-3 rounded-full border border-white/40 shrink-0 shadow-xs"
-                    style={{ backgroundColor: palette.primaryHex }}
-                  />
-                  <span>{palette.name}</span>
-                  {isSelected && <span className="text-[10px] text-emerald-400 font-mono">✓</span>}
-                </button>
-              );
-            })}
+          {/* AI Studio & Quick Prompts Bar */}
+          <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-2 justify-between">
+            {/* AI Prompt Input */}
+            <div className="flex-1 flex items-center gap-2 bg-gradient-to-r from-purple-50/70 to-pink-50/70 border border-purple-200/80 rounded-xl px-3 py-1.5">
+              <Sparkles className="w-4 h-4 text-purple-600 shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+              <input
+                type="text"
+                value={topAiPrompt}
+                onChange={(e) => setTopAiPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && topAiPrompt.trim()) {
+                    handleAIGeneratePrompt('custom', topAiPrompt);
+                    setTopAiPrompt('');
+                  }
+                }}
+                placeholder="Ask AI: e.g., 'Rewrite luxury copy for Indiranagar bridal studio' or 'Add festive discount packages'..."
+                className="flex-1 bg-transparent text-xs text-slate-900 placeholder:text-slate-400 outline-none font-sans"
+              />
+              <button
+                type="button"
+                disabled={isAiLoading || !topAiPrompt.trim()}
+                onClick={() => {
+                  handleAIGeneratePrompt('custom', topAiPrompt);
+                  setTopAiPrompt('');
+                }}
+                className="px-3 py-1 bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <Wand2 className="w-3 h-3" />
+                <span>Generate</span>
+              </button>
+            </div>
+
+            {/* Quick 1-Click AI Tone Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-thin text-xs shrink-0">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+                AI Presets:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleAIGeneratePrompt('luxury')}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer border border-slate-200"
+              >
+                ✨ Luxury & Organic
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAIGeneratePrompt('bridal')}
+                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer border border-rose-200"
+              >
+                👰 Bridal & Festive
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAIGeneratePrompt('ayurvedic')}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer border border-emerald-200"
+              >
+                🌿 Ayurvedic Glow
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAIGeneratePrompt('genz')}
+                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer border border-indigo-200"
+              >
+                ⚡ Gen-Z Trendsetter
+              </button>
+            </div>
           </div>
 
-          {/* 14 Category Switcher Ribbon */}
-          <div className="border-t border-slate-100 pt-2 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          {/* 14 Category Template Switcher Ribbon */}
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">category</span>
-              14 Templates:
+              14 Category Templates:
             </span>
             {Object.values(CATEGORY_TEMPLATES).map((tmpl) => {
               const isSelected = tmpl.id === selectedCategoryKey;
@@ -334,7 +623,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   onClick={() => handleCategorySwitch(tmpl.id)}
                   className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
                     isSelected
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs scale-105'
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                   title={`${tmpl.title} - ${tmpl.paletteLabel}`}
@@ -349,12 +638,53 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         </div>
       </div>
 
+      {/* Side-Panel Customizer Drawer */}
+      <SidePanelCustomizer
+        isOpen={isCustomizerOpen}
+        onToggle={() => setIsCustomizerOpen(!isCustomizerOpen)}
+        profile={activeProfile}
+        setProfile={setProfile}
+        selectedCategoryKey={selectedCategoryKey}
+        selectedAccentKey={selectedAccentKey}
+        setSelectedAccentKey={setSelectedAccentKey}
+        primaryAccentColor={primaryAccentColor}
+        isDarkCanvas={isDarkCanvas}
+        setIsDarkCanvas={setIsDarkCanvas}
+        sectionVisibility={sectionVisibility}
+        setSectionVisibility={setSectionVisibility}
+        onAIGeneratePrompt={handleAIGeneratePrompt}
+        onResetDefaults={() => handleCategorySwitch(selectedCategoryKey)}
+      />
+
+      {/* Edit Mode Notice Banner */}
+      {isEditMode && (
+        <div className="w-full max-w-[1240px] px-4 mt-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-amber-900 shadow-xs">
+            <div className="flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>Inline Live Editing Active:</strong> Click directly on any text, INR (₹) price, specialist name, or section heading on the canvas below to edit in real time.
+              </span>
+            </div>
+            <button
+              onClick={() => setIsEditMode(false)}
+              className="text-amber-800 hover:text-amber-950 font-bold underline shrink-0 cursor-pointer"
+            >
+              Switch to Client Preview
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ============================================================ */}
-      {/* 2. STANDARDIZED SALON WEBSITE CANVAS */}
+      {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
-      <div className={`mt-6 transition-all duration-300 ${deviceWidthClass} shadow-2xl rounded-2xl overflow-hidden border border-slate-200 my-4 ${
-        isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
-      }`}>
+      <div 
+        className={`mt-4 transition-all duration-300 ${deviceWidthClass} shadow-2xl rounded-2xl overflow-hidden border border-slate-200 my-4 ${
+          isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
+        }`}
+        id="salon-website-canvas"
+      >
         
         {/* Template Header Notice */}
         <div className={`py-2 px-6 text-xs flex flex-wrap items-center justify-between gap-2 ${
@@ -370,150 +700,209 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           </div>
           <div className="flex items-center gap-1 text-[11px] text-slate-500">
             <MapPin className="w-3 h-3 text-slate-400" />
-            <span>{currentProfile.city}</span>
+            <InlineEditable
+              value={activeProfile.city}
+              onSave={(val) => setProfile((p) => ({ ...p, city: String(val) }))}
+              isEditingActive={isEditMode}
+              label="Salon City"
+            />
           </div>
         </div>
 
         {/* ============================================================ */}
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
-        <header className={`px-6 md:px-10 py-4 flex justify-between items-center border-b transition-colors ${
-          isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
-        }`}>
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-11 h-11 rounded-xl flex items-center justify-center font-bold shadow-xs text-white"
-              style={{ backgroundColor: activeAccent.primaryHex }}
-            >
-              <span className="material-symbols-outlined text-2xl">{activeTemplate.icon}</span>
-            </div>
-            <div>
-              <div className="font-bold text-lg md:text-xl tracking-tight leading-snug">
-                {currentProfile.businessName}
+        {sectionVisibility.header && (
+          <header className={`px-6 md:px-10 py-4 flex justify-between items-center border-b transition-colors ${
+            isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div 
+                className="w-11 h-11 rounded-xl flex items-center justify-center font-bold shadow-xs text-white shrink-0"
+                style={{ backgroundColor: activeAccent.primaryHex }}
+              >
+                <span className="material-symbols-outlined text-2xl">{activeTemplate.icon}</span>
               </div>
-              <div className={`text-[11px] flex items-center gap-1 font-mono ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
-                <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                <span className="truncate max-w-[280px] sm:max-w-md">{currentProfile.address}, {currentProfile.city}</span>
+              <div>
+                <div className="font-bold text-lg md:text-xl tracking-tight leading-snug">
+                  <InlineEditable
+                    value={activeProfile.businessName}
+                    onSave={(val) => setProfile((p) => ({ ...p, businessName: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Salon Name"
+                  />
+                </div>
+                <div className={`text-[11px] flex items-center gap-1 font-mono ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span className="truncate max-w-[280px] sm:max-w-md">
+                    <InlineEditable
+                      value={activeProfile.address}
+                      onSave={(val) => setProfile((p) => ({ ...p, address: String(val) }))}
+                      isEditingActive={isEditMode}
+                      label="Street Address"
+                    />
+                    {', '}
+                    <InlineEditable
+                      value={activeProfile.city}
+                      onSave={(val) => setProfile((p) => ({ ...p, city: String(val) }))}
+                      isEditingActive={isEditMode}
+                      label="City"
+                    />
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden lg:flex flex-col text-right">
-              <span className="text-[11px] font-mono text-slate-400">Direct Appointments</span>
-              <span className="text-xs font-bold">{currentProfile.phone}</span>
+            <div className="flex items-center gap-3">
+              <div className="hidden lg:flex flex-col text-right">
+                <span className="text-[11px] font-mono text-slate-400">Direct Appointments</span>
+                <span className="text-xs font-bold font-mono">
+                  <InlineEditable
+                    value={activeProfile.phone}
+                    onSave={(val) => setProfile((p) => ({ ...p, phone: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Phone Number"
+                  />
+                </span>
+              </div>
+
+              {/* Header Sticky Booking Trigger */}
+              <button
+                type="button"
+                onClick={() => handleOpenBooking()}
+                className="font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer text-white hover:opacity-90"
+                style={{ backgroundColor: activeAccent.primaryHex }}
+              >
+                <CalendarCheck className="w-4 h-4" />
+                <span>Book Appointment</span>
+              </button>
             </div>
-
-            {/* Header Sticky Booking Trigger */}
-            <button
-              onClick={() => handleOpenBooking()}
-              className="font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer text-white hover:opacity-90"
-              style={{ backgroundColor: activeAccent.primaryHex }}
-            >
-              <CalendarCheck className="w-4 h-4" />
-              <span>Book Appointment</span>
-            </button>
-          </div>
-        </header>
+          </header>
+        )}
 
         {/* ============================================================ */}
         {/* 1. HERO SECTION */}
         {/* ============================================================ */}
-        <section className={`relative overflow-hidden transition-all ${
-          themeStyle.heroBackground || 'bg-[#0f172a]'
-        } text-white`}>
-          {/* Background image & gradient overlay */}
-          <div className="absolute inset-0 z-0">
-            <img
-              src={currentProfile.coverImageUrl}
-              alt={currentProfile.businessName}
-              className="w-full h-full object-cover object-center opacity-30 mix-blend-luminosity filter contrast-125"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/75 to-black/50" />
-          </div>
-
-          {/* Hero Content */}
-          <div className="relative z-10 px-6 md:px-12 py-14 md:py-20 flex flex-col justify-center max-w-4xl text-white">
-            {/* Category badge & highlight tags */}
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span 
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs text-white"
-                style={{ backgroundColor: activeAccent.primaryHex }}
-              >
-                <span className="material-symbols-outlined text-sm">{activeTemplate.icon}</span>
-                <span>{activeTemplate.shortName}</span>
-              </span>
-
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-mono">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Verified Indian Salon</span>
-              </span>
-
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-mono">
-                <MapPin className="w-3.5 h-3.5 text-amber-300" />
-                <span>{currentProfile.city}</span>
-              </span>
+        {sectionVisibility.hero && (
+          <section className={`relative overflow-hidden transition-all ${
+            themeStyle.heroBackground || 'bg-[#0f172a]'
+          } text-white`}>
+            {/* Background image & gradient overlay */}
+            <div className="absolute inset-0 z-0">
+              <img
+                src={activeProfile.coverImageUrl}
+                alt={activeProfile.businessName}
+                className="w-full h-full object-cover object-center opacity-30 mix-blend-luminosity filter contrast-125"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/75 to-black/50" />
             </div>
 
-            {/* Tagline */}
-            <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight text-balance">
-              {currentProfile.tagline}
-            </h1>
+            {/* Hero Content */}
+            <div className="relative z-10 px-6 md:px-12 py-14 md:py-20 flex flex-col justify-center max-w-4xl text-white">
+              {/* Category badge & highlight tags */}
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <span 
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs text-white"
+                  style={{ backgroundColor: activeAccent.primaryHex }}
+                >
+                  <span className="material-symbols-outlined text-sm">{activeTemplate.icon}</span>
+                  <span>{activeTemplate.shortName}</span>
+                </span>
 
-            {/* Description */}
-            <p className="text-sm md:text-base text-slate-200 mt-4 leading-relaxed max-w-2xl">
-              {currentProfile.about}
-            </p>
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-mono">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Verified Indian Salon</span>
+                </span>
 
-            {/* Quick Metrics Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/20 text-xs">
-              <div>
-                <div className="text-white/60 font-mono text-[10px] uppercase">Services from</div>
-                <div className="text-xl font-bold font-mono text-emerald-400">
-                  {currentProfile.currency}{Math.min(...currentServices.map(s => s.price))}
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-mono">
+                  <MapPin className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{activeProfile.city}</span>
+                </span>
+              </div>
+
+              {/* Tagline */}
+              <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight text-balance">
+                <InlineEditable
+                  value={activeProfile.tagline}
+                  onSave={(val) => setProfile((p) => ({ ...p, tagline: String(val) }))}
+                  isEditingActive={isEditMode}
+                  label="Hero Tagline"
+                  tag="span"
+                />
+              </h1>
+
+              {/* Description */}
+              <p className="text-sm md:text-base text-slate-200 mt-4 leading-relaxed max-w-2xl">
+                <InlineEditable
+                  value={activeProfile.about}
+                  onSave={(val) => setProfile((p) => ({ ...p, about: String(val) }))}
+                  isEditingActive={isEditMode}
+                  type="textarea"
+                  label="Hero Story"
+                  tag="span"
+                />
+              </p>
+
+              {/* Quick Metrics Bar */}
+              {sectionVisibility.metrics && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/20 text-xs">
+                  <div>
+                    <div className="text-white/60 font-mono text-[10px] uppercase">Services from</div>
+                    <div className="text-xl font-bold font-mono text-emerald-400">
+                      ₹{Math.min(...activeServices.map((s) => s.price))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-white/60 font-mono text-[10px] uppercase">Lead Specialist</div>
+                    <div className="text-sm font-bold truncate">
+                      <InlineEditable
+                        value={activeProfile.ownerName}
+                        onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
+                        isEditingActive={isEditMode}
+                        label="Lead Specialist Name"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-white/60 font-mono text-[10px] uppercase">Specialty</div>
+                    <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0] || 'Artistry'}</div>
+                  </div>
+                  <div>
+                    <div className="text-white/60 font-mono text-[10px] uppercase">Client Rating</div>
+                    <div className="text-sm font-bold flex items-center gap-1 text-amber-300">
+                      <Star className="w-3.5 h-3.5 fill-amber-400" />
+                      <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
+                    </div>
+                  </div>
                 </div>
+              )}
+
+              {/* Primary Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3.5 mt-8">
+                <button
+                  type="button"
+                  onClick={() => handleOpenBooking()}
+                  className="font-bold text-sm px-6 py-3.5 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer text-white hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ backgroundColor: activeAccent.primaryHex }}
+                >
+                  <span>Book Now in INR (₹)</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+
+                <a
+                  href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="bg-emerald-600/90 hover:bg-emerald-600 text-white font-medium text-xs px-5 py-3.5 rounded-xl border border-emerald-500/30 flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>WhatsApp Us ({activeProfile.whatsapp})</span>
+                </a>
               </div>
-              <div>
-                <div className="text-white/60 font-mono text-[10px] uppercase">Lead Specialist</div>
-                <div className="text-sm font-bold truncate">{currentProfile.ownerName}</div>
-              </div>
-              <div>
-                <div className="text-white/60 font-mono text-[10px] uppercase">Specialty</div>
-                <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0]}</div>
-              </div>
-              <div>
-                <div className="text-white/60 font-mono text-[10px] uppercase">Client Rating</div>
-                <div className="text-sm font-bold flex items-center gap-1 text-amber-300">
-                  <Star className="w-3.5 h-3.5 fill-amber-400" />
-                  <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
-                </div>
-              </div>
+
             </div>
-
-            {/* Primary Action Buttons */}
-            <div className="flex flex-wrap items-center gap-3.5 mt-8">
-              <button
-                onClick={() => handleOpenBooking()}
-                className="font-bold text-sm px-6 py-3.5 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer text-white hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
-                style={{ backgroundColor: activeAccent.primaryHex }}
-              >
-                <span>Book Now in {currentProfile.currency}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              <a
-                href={`https://wa.me/${currentProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(currentProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
-                target="_blank"
-                rel="noreferrer"
-                className="bg-emerald-600/90 hover:bg-emerald-600 text-white font-medium text-xs px-5 py-3.5 rounded-xl border border-emerald-500/30 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>WhatsApp Us ({currentProfile.whatsapp})</span>
-              </a>
-            </div>
-
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Location Banner Bar with Live Hours */}
         <div className={`px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs border-b ${
@@ -524,7 +913,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <MapPin className="w-3.5 h-3.5" />
             </span>
             <span>
-              <strong>Salon Location:</strong> {currentProfile.address}, {currentProfile.city} - <span className="font-mono">{currentProfile.postalCode}</span>
+              <strong>Salon Location:</strong> {activeProfile.address}, {activeProfile.city} - <span className="font-mono">{activeProfile.postalCode}</span>
             </span>
           </div>
 
@@ -541,1015 +930,808 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* ============================================================ */}
         {/* 2. ABOUT SALON SECTION (STORY, HYGIENE CERTIFICATIONS) */}
         {/* ============================================================ */}
-        <section className={`p-6 md:p-12 border-b ${
-          isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-white border-slate-200'
-        }`}>
-          <div className="max-w-4xl mx-auto">
-            {/* Header */}
-            <div className="text-center mb-8">
-              <span 
-                className="text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full inline-block mb-2"
-                style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
-              >
-                About Our Sanctuary
-              </span>
-              <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-                Artistry, Certified Hygiene & Pure Craftsmanship
-              </h2>
-              <p className={`text-xs md:text-sm mt-2 max-w-2xl mx-auto leading-relaxed ${
-                isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'
-              }`}>
-                {standardData.foundingNarrative}
-              </p>
-            </div>
-
-            {/* Specialties Badges */}
-            <div className="flex flex-wrap justify-center gap-2 mb-10">
-              {standardData.specialties.map((spec, idx) => (
-                <span
-                  key={idx}
-                  className={`text-xs font-medium px-3.5 py-1.5 rounded-xl border flex items-center gap-1.5 ${
-                    isDarkCanvas ? 'bg-neutral-900 border-neutral-800 text-neutral-200' : 'bg-slate-50 border-slate-200 text-slate-800'
-                  }`}
+        {sectionVisibility.about && (
+          <section className={`p-6 md:p-12 border-b ${
+            isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-white border-slate-200'
+          }`}>
+            <div className="max-w-4xl mx-auto">
+              {/* Header */}
+              <div className="text-center mb-8">
+                <span 
+                  className="text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full inline-block mb-2"
+                  style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
                 >
-                  <Sparkles className="w-3 h-3 text-amber-500" />
-                  <span>{spec}</span>
+                  About Our Sanctuary
                 </span>
-              ))}
-            </div>
-
-            {/* Founder / Lead Stylist Quote Card */}
-            <div className={`p-6 rounded-2xl border mb-10 flex flex-col sm:flex-row items-center gap-5 ${
-              isDarkCanvas ? 'bg-neutral-900/70 border-neutral-800' : 'bg-slate-50 border-slate-200'
-            }`}>
-              <div className="relative shrink-0">
-                <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 shadow-sm" style={{ borderColor: activeAccent.primaryHex }}>
-                  <img
-                    src={currentProfile.ownerPhotoUrl}
-                    alt={currentProfile.ownerName}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-xs">
-                  Lead
-                </span>
-              </div>
-              <div className="flex-1 text-center sm:text-left">
-                <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
-                  "Every client deserves an uncompromising standard of individual personalization, certified non-toxic products, and medical-grade sterilization in an atmosphere of warmth and calmness."
+                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  Artistry, Certified Hygiene & Pure Craftsmanship
+                </h2>
+                <p className={`text-xs md:text-sm mt-2 max-w-2xl mx-auto leading-relaxed ${
+                  isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'
+                }`}>
+                  {standardData.foundingNarrative}
                 </p>
-                <div className="mt-2">
-                  <span className="font-bold text-sm block">{currentProfile.ownerName}</span>
-                  <span className="text-xs text-slate-500 font-mono">{currentProfile.ownerRole}</span>
+              </div>
+
+              {/* Specialties Badges */}
+              <div className="flex flex-wrap justify-center gap-2 mb-10">
+                {(standardData.specialties || []).map((spec, idx) => (
+                  <span
+                    key={idx}
+                    className={`text-xs font-medium px-3.5 py-1.5 rounded-xl border flex items-center gap-1.5 ${
+                      isDarkCanvas ? 'bg-neutral-900 border-neutral-800 text-neutral-200' : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <span>{spec}</span>
+                  </span>
+                ))}
+              </div>
+
+              {/* Founder / Lead Stylist Quote Card */}
+              <div className={`p-6 rounded-2xl border mb-10 flex flex-col sm:flex-row items-center gap-5 ${
+                isDarkCanvas ? 'bg-neutral-900/70 border-neutral-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="relative shrink-0">
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 shadow-sm" style={{ borderColor: activeAccent.primaryHex }}>
+                    <img
+                      src={activeProfile.ownerPhotoUrl}
+                      alt={activeProfile.ownerName}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-xs">
+                    Lead
+                  </span>
                 </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
+                    "Every client deserves an uncompromising standard of individual personalization, certified non-toxic products, and medical-grade sterilization in an atmosphere of warmth and calmness."
+                  </p>
+                  <div className="mt-2">
+                    <span className="font-bold text-sm block">
+                      <InlineEditable
+                        value={activeProfile.ownerName}
+                        onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
+                        isEditingActive={isEditMode}
+                        label="Founder Name"
+                      />
+                    </span>
+                    <span className="text-xs text-slate-500 font-mono">
+                      <InlineEditable
+                        value={activeProfile.ownerRole}
+                        onSave={(val) => setProfile((p) => ({ ...p, ownerRole: String(val) }))}
+                        isEditingActive={isEditMode}
+                        label="Founder Role"
+                      />
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Hygiene & Quality Certification Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {(standardData.certifications || []).map((cert, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-4 rounded-xl border flex items-start gap-3.5 transition-all ${
+                      isDarkCanvas ? 'bg-neutral-900/50 border-neutral-800 hover:border-neutral-700' : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                    }`}
+                  >
+                    <div 
+                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-white"
+                      style={{ backgroundColor: activeAccent.primaryHex }}
+                    >
+                      <span className="material-symbols-outlined text-lg">{cert.icon}</span>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-xs md:text-sm">{cert.title}</h3>
+                      <p className={`text-xs mt-1 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                        {cert.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+          </section>
+        )}
+
+        {/* ============================================================ */}
+        {/* 3. SERVICES & PRICING MENU SECTION (100% INLINE EDITABLE) */}
+        {/* ============================================================ */}
+        {sectionVisibility.services && (
+          <section className={`p-6 md:p-12 border-b ${
+            isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
+          }`} id="services-section">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span 
+                    className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                    style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
+                  >
+                    {activeTemplate.title} Menu
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">({filteredServices.length} Treatments)</span>
+                </div>
+
+                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                  <InlineEditable
+                    value={sectionHeadings.servicesTitle}
+                    onSave={(val) => setSectionHeadings((prev) => ({ ...prev, servicesTitle: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Services Section Heading"
+                    tag="span"
+                  />
+                </h2>
+
+                <p className={`text-xs md:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                  <InlineEditable
+                    value={sectionHeadings.servicesSubtitle}
+                    onSave={(val) => setSectionHeadings((prev) => ({ ...prev, servicesSubtitle: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Services Section Subtitle"
+                    tag="span"
+                  />
+                </p>
+              </div>
+
+              {/* Sub-Category Filter Tabs & Add Service button */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                  {subCategoriesList.map((subCat) => (
+                    <button
+                      key={subCat}
+                      type="button"
+                      onClick={() => setActiveSubCategory(subCat)}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all cursor-pointer ${
+                        activeSubCategory === subCat
+                          ? 'text-white shadow-xs'
+                          : isDarkCanvas
+                          ? 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800'
+                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                      }`}
+                      style={activeSubCategory === subCat ? { backgroundColor: activeAccent.primaryHex } : {}}
+                    >
+                      {subCat}
+                    </button>
+                  ))}
+                </div>
+
+                {isEditMode && (
+                  <button
+                    type="button"
+                    onClick={handleAddNewService}
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-xs cursor-pointer"
+                    title="Add new custom service to menu"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Service</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* 4 Hygiene & Quality Certification Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {standardData.certifications.map((cert, idx) => (
+            {/* Services Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredServices.map((srv) => (
                 <div
-                  key={idx}
-                  className={`p-4 rounded-xl border flex items-start gap-3.5 transition-all ${
-                    isDarkCanvas ? 'bg-neutral-900/50 border-neutral-800 hover:border-neutral-700' : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                  key={srv.id}
+                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 group ${
+                    isDarkCanvas
+                      ? 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
+                      : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 shadow-xs'
                   }`}
                 >
-                  <div 
-                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-white"
-                    style={{ backgroundColor: activeAccent.primaryHex }}
-                  >
-                    <span className="material-symbols-outlined text-lg">{cert.icon}</span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-bold text-sm md:text-base text-slate-900 dark:text-white">
+                          <InlineEditable
+                            value={srv.name}
+                            onSave={(val) => handleUpdateServiceName(srv.id, String(val))}
+                            isEditingActive={isEditMode}
+                            label="Service Name"
+                          />
+                        </h3>
+                        {srv.popular && (
+                          <span 
+                            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md text-white shadow-xs shrink-0"
+                            style={{ backgroundColor: activeAccent.primaryHex }}
+                          >
+                            POPULAR
+                          </span>
+                        )}
+                      </div>
+
+                      <p className={`text-xs mt-1.5 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'}`}>
+                        <InlineEditable
+                          value={srv.description}
+                          onSave={(val) => handleUpdateServiceDesc(srv.id, String(val))}
+                          isEditingActive={isEditMode}
+                          type="textarea"
+                          label="Service Description"
+                        />
+                      </p>
+                    </div>
+
+                    {/* Price & Duration with Inline Editable INR (₹) */}
+                    <div className="text-right shrink-0 flex flex-col items-end">
+                      <div className="text-lg md:text-xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                        <InlineEditable
+                          value={srv.price}
+                          onSave={(val) => handleUpdateServicePrice(srv.id, Number(val))}
+                          isEditingActive={isEditMode}
+                          type="price"
+                          prefix="₹"
+                          label="Service Price (INR)"
+                          className="font-mono font-extrabold"
+                        />
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Clock className="w-3 h-3" />
+                        <InlineEditable
+                          value={srv.durationMinutes}
+                          onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
+                          isEditingActive={isEditMode}
+                          type="number"
+                          suffix=" mins"
+                          label="Duration"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-xs md:text-sm">{cert.title}</h3>
-                    <p className={`text-xs mt-1 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
-                      {cert.description}
-                    </p>
+
+                  {/* Actions Bar inside Card */}
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 dark:border-neutral-800 text-xs">
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Category: {srv.category}
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      {isEditMode && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteService(srv.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          title="Delete Service"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenBooking(srv)}
+                        className="font-bold px-3.5 py-1.5 rounded-xl text-white text-xs shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer hover:opacity-90"
+                        style={{ backgroundColor: activeAccent.primaryHex }}
+                      >
+                        <CalendarCheck className="w-3.5 h-3.5" />
+                        <span>Book (₹{srv.price})</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* ============================================================ */}
-        {/* 3. SERVICES & PRICING MENU SECTION */}
+        {/* 4. MASTER STYLISTS & SPECIALISTS SECTION (INLINE EDITABLE) */}
         {/* ============================================================ */}
-        <section className={`p-6 md:p-12 border-b ${
-          isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
-        }`}>
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-            <div>
-              <div className="flex items-center gap-2">
+        {sectionVisibility.stylists && (
+          <section className={`p-6 md:p-12 border-b ${
+            isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-slate-50/50 border-slate-200'
+          }`} id="team-section">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+              <div>
                 <span 
                   className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
                   style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
                 >
-                  {activeTemplate.title} Menu
+                  Our Specialist Team
                 </span>
-                <span className="text-xs text-slate-400 font-mono">({filteredServices.length} Treatments)</span>
-              </div>
-              <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1.5">
-                Curated Services & Transparent Indian Rupee (₹) Pricing
-              </h2>
-            </div>
 
-            {/* Sub-Category Filter Tabs */}
-            <div className="flex flex-wrap gap-1.5">
-              {subCategoriesList.map((cat) => {
-                const isActive = activeSubCategory === cat;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setActiveSubCategory(cat)}
-                    className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
-                      isActive
-                        ? 'text-white border-transparent shadow-xs'
-                        : isDarkCanvas
-                          ? 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:bg-neutral-800'
-                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                    }`}
-                    style={isActive ? { backgroundColor: activeAccent.primaryHex } : {}}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Standardized Responsive Service Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredServices.map((srv) => (
-              <div
-                key={srv.id}
-                className={`p-6 rounded-2xl border hover:shadow-md transition-all flex flex-col justify-between gap-4 ${
-                  isDarkCanvas 
-                    ? 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700' 
-                    : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
-                }`}
-              >
-                <div className="flex justify-between items-start gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span 
-                        className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
-                        style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
-                      >
-                        {srv.category}
-                      </span>
-                      {srv.popular && (
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                          Signature Choice
-                        </span>
-                      )}
-                    </div>
-                    <h3 className={`font-bold text-base md:text-lg leading-snug ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
-                      {srv.name}
-                    </h3>
-                    <p className={`text-xs mt-2 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'}`}>
-                      {srv.description}
-                    </p>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div 
-                      className="font-mono text-xl md:text-2xl font-extrabold"
-                      style={{ color: activeAccent.primaryHex }}
-                    >
-                      ₹{srv.price.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                      {srv.durationMinutes} mins
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-neutral-800 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Duration: {srv.durationMinutes} mins</span>
-                  </span>
-
-                  {/* Section Level Direct Booking Trigger */}
-                  <button
-                    onClick={() => handleOpenBooking(srv)}
-                    className="px-4 py-2 text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer text-white hover:opacity-90"
-                    style={{ backgroundColor: activeAccent.primaryHex }}
-                  >
-                    <span>Book Now (₹{srv.price})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ============================================================ */}
-        {/* 4. GALLERY SHOWCASE SECTION */}
-        {/* ============================================================ */}
-        <section className={`p-6 md:p-12 border-b ${
-          isDarkCanvas ? 'bg-[#15151c] border-neutral-800' : 'bg-slate-50 border-slate-200'
-        }`}>
-          <div className="max-w-6xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-              <div>
-                <span 
-                  className="text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full inline-block mb-1.5"
-                  style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
-                >
-                  Visual Portfolio
-                </span>
-                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-                  Recent Work, Studio Spaces & Transformations
+                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                  <InlineEditable
+                    value={sectionHeadings.stylistsTitle}
+                    onSave={(val) => setSectionHeadings((prev) => ({ ...prev, stylistsTitle: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Stylists Section Heading"
+                    tag="span"
+                  />
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Authentic work performed by our verified artists in {currentProfile.city}.
+
+                <p className={`text-xs md:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                  <InlineEditable
+                    value={sectionHeadings.stylistsSubtitle}
+                    onSave={(val) => setSectionHeadings((prev) => ({ ...prev, stylistsSubtitle: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Stylists Section Subtitle"
+                    tag="span"
+                  />
                 </p>
               </div>
 
-              <button
-                onClick={() => handleOpenBooking()}
-                className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 hover:border-slate-400 transition-colors flex items-center gap-1.5 w-fit cursor-pointer"
-              >
-                <span>Book This Aesthetic</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              {isEditMode && (
+                <button
+                  type="button"
+                  onClick={handleAddNewStylist}
+                  className="text-xs font-bold px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Specialist</span>
+                </button>
+              )}
             </div>
 
-            {/* 6-Photo Clean Responsive Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {standardData.gallery.map((photo) => (
+            {/* Stylists Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+              {activeStylists.map((st) => (
                 <div
-                  key={photo.id}
-                  onClick={() => setSelectedGalleryPhoto(photo.url)}
-                  className={`group relative rounded-2xl overflow-hidden border cursor-pointer aspect-4/3 shadow-xs hover:shadow-lg transition-all ${
-                    isDarkCanvas ? 'border-neutral-800 bg-neutral-900' : 'border-slate-200 bg-white'
+                  key={st.id}
+                  className={`rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all ${
+                    isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
                   }`}
                 >
-                  <img
-                    src={photo.url}
-                    alt={photo.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent opacity-80 group-hover:opacity-95 transition-opacity" />
-                  
-                  <div className="absolute top-3 left-3">
-                    <span 
-                      className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md text-white shadow-xs backdrop-blur-md"
-                      style={{ backgroundColor: activeAccent.primaryHex }}
-                    >
-                      {photo.tag}
-                    </span>
+                  <div className="flex items-start gap-3.5">
+                    <div className="relative shrink-0">
+                      <img
+                        src={st.avatarUrl}
+                        alt={st.name}
+                        className="w-16 h-16 rounded-2xl object-cover border border-slate-100 shadow-xs"
+                      />
+                      <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full" />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                          <InlineEditable
+                            value={st.name}
+                            onSave={(val) => handleUpdateStylistName(st.id, String(val))}
+                            isEditingActive={isEditMode}
+                            label="Specialist Name"
+                          />
+                        </h3>
+                        <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded text-[11px] font-bold text-amber-800 dark:text-amber-300 shrink-0">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          <InlineEditable
+                            value={st.rating}
+                            onSave={(val) => handleUpdateStylistRating(st.id, Number(val))}
+                            isEditingActive={isEditMode}
+                            type="number"
+                            label="Rating"
+                          />
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
+                        <InlineEditable
+                          value={st.role}
+                          onSave={(val) => handleUpdateStylistRole(st.id, String(val))}
+                          isEditingActive={isEditMode}
+                          label="Specialist Role"
+                        />
+                      </p>
+
+                      <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-semibold mt-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span>Accepting Online Bookings</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="absolute bottom-3 left-3 right-3 text-white">
-                    <h4 className="font-bold text-sm leading-tight drop-shadow-sm">{photo.title}</h4>
-                    <p className="text-[11px] text-slate-300 flex items-center gap-1 mt-0.5">
-                      <span>Tap to preview full resolution</span>
-                    </p>
+                  {/* Specialties tags */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex flex-wrap gap-1.5">
+                    {st.specialties && st.specialties.map((spec, i) => (
+                      <span
+                        key={i}
+                        className={`text-[11px] font-medium px-2 py-0.5 rounded-md border ${
+                          isDarkCanvas
+                            ? 'bg-neutral-800 border-neutral-700 text-neutral-300'
+                            : 'bg-slate-100 border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {spec}
+                      </span>
+                    ))}
                   </div>
+
+                  {/* Book / Manage */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex items-center justify-between">
+                    {isEditMode && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStylist(st.id)}
+                        className="p-1 rounded text-slate-400 hover:text-rose-600"
+                        title="Delete specialist"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStylist(st);
+                        setIsBookingOpen(true);
+                      }}
+                      className="ml-auto text-xs font-bold text-slate-700 dark:text-neutral-200 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Select for Service</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
                 </div>
               ))}
             </div>
-
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* ============================================================ */}
-        {/* 5. REVIEWS & RATINGS SECTION */}
+        {/* 5. CLIENT REVIEWS & TESTIMONIALS SECTION */}
         {/* ============================================================ */}
-        <section className={`p-6 md:p-12 border-b ${
-          isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
-        }`}>
-          <div className="max-w-5xl mx-auto">
-            
-            {/* Reviews Aggregate Header */}
-            <div className={`p-6 md:p-8 rounded-2xl border mb-8 flex flex-col md:flex-row items-center justify-between gap-6 ${
-              isDarkCanvas ? 'bg-neutral-900/80 border-neutral-800' : 'bg-slate-50 border-slate-200'
-            }`}>
-              <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-                <div 
-                  className="w-20 h-20 rounded-2xl flex flex-col items-center justify-center text-white shadow-md shrink-0"
-                  style={{ backgroundColor: activeAccent.primaryHex }}
-                >
-                  <span className="text-2xl font-extrabold font-mono leading-none">★ {standardData.averageRating}</span>
-                  <span className="text-[10px] font-mono mt-1 opacity-90">OUT OF 5.0</span>
-                </div>
-                <div>
-                  <h3 className="text-lg md:text-xl font-extrabold">Verified Client Testimonials</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Based on {standardData.totalReviewCount}+ verified Google & WhatsApp appointments in {currentProfile.city}.
-                  </p>
-                  <div className="flex items-center gap-1 text-amber-400 mt-2">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Star key={s} className="w-4 h-4 fill-amber-400" />
-                    ))}
-                    <span className="text-xs font-bold text-slate-700 dark:text-neutral-300 ml-1">100% Verified</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Metrics Pills */}
-              <div className="grid grid-cols-3 gap-2 w-full md:w-auto text-center font-mono">
-                <div className={`p-3 rounded-xl border ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-                  <div className="font-extrabold text-emerald-600 text-sm">99%</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Hygiene Score</div>
-                </div>
-                <div className={`p-3 rounded-xl border ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-                  <div className="font-extrabold text-emerald-600 text-sm">98%</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">On-Time Starts</div>
-                </div>
-                <div className={`p-3 rounded-xl border ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-                  <div className="font-extrabold text-emerald-600 text-sm">86%</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Repeat Clients</div>
-                </div>
-              </div>
+        {sectionVisibility.testimonials && (
+          <section className={`p-6 md:p-12 border-b ${
+            isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
+          }`}>
+            <div className="text-center max-w-3xl mx-auto mb-8">
+              <span 
+                className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
+              >
+                Client Trust & Testimonials
+              </span>
+              <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                <InlineEditable
+                  value={sectionHeadings.testimonialsTitle}
+                  onSave={(val) => setSectionHeadings((prev) => ({ ...prev, testimonialsTitle: String(val) }))}
+                  isEditingActive={isEditMode}
+                  label="Reviews Section Heading"
+                  tag="span"
+                />
+              </h2>
+              <p className={`text-xs md:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                Verified Google & Practo reviews from clients across {activeProfile.city}.
+              </p>
             </div>
 
-            {/* 3 Verified Testimonial Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {standardData.reviews.map((rev) => (
+              {(standardData.reviews || []).map((rev, idx) => (
                 <div
-                  key={rev.id}
-                  className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 ${
-                    isDarkCanvas ? 'bg-neutral-900/50 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
+                  key={idx}
+                  className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${
+                    isDarkCanvas ? 'bg-neutral-900/60 border-neutral-800' : 'bg-slate-50 border-slate-200'
                   }`}
                 >
-                  <div className="flex flex-col gap-2.5">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-1 text-amber-400">
-                        {[...Array(rev.rating)].map((_, i) => (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-0.5 text-amber-400">
+                        {Array.from({ length: rev.rating || 5 }).map((_, i) => (
                           <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
                         ))}
                       </div>
-                      <span className="text-[10px] text-slate-400 font-mono">{rev.date}</span>
+                      <span className="text-[10px] font-mono text-slate-400">{rev.date}</span>
                     </div>
 
-                    <p className={`text-xs leading-relaxed italic ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
+                    <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
                       "{rev.comment}"
                     </p>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100 dark:border-neutral-800 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-200/60 dark:border-neutral-800 flex items-center justify-between">
                     <div>
                       <div className="font-bold text-xs">{rev.name}</div>
-                      <div className="text-[10px] text-slate-400">{rev.location}</div>
+                      <div className="text-[10px] text-slate-400">{rev.location || activeProfile.city} • Verified Client</div>
                     </div>
-
-                    <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      ✓ Verified
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {rev.serviceName || 'Custom Service'}
                     </span>
                   </div>
                 </div>
               ))}
             </div>
-
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* ============================================================ */}
-        {/* 6. WORKING HOURS & 7. CONTACT & 8. GOOGLE MAPS LOCATION */}
+        {/* 6. STUDIO GALLERY & LOOKBOOK PHOTOS */}
         {/* ============================================================ */}
-        <section className={`p-6 md:p-12 border-b ${
-          isDarkCanvas ? 'bg-[#15151c] border-neutral-800' : 'bg-slate-50 border-slate-200'
-        }`}>
-          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* 6. WORKING HOURS & LIVE STATUS (Col 4) */}
-            <div className={`lg:col-span-4 p-6 rounded-2xl border flex flex-col justify-between gap-4 ${
-              isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
-            }`}>
+        {sectionVisibility.gallery && (
+          <section className={`p-6 md:p-12 border-b ${
+            isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-slate-50/50 border-slate-200'
+          }`}>
+            <div className="flex items-end justify-between mb-6">
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-emerald-600" />
-                    <h3 className="font-bold text-base">Working Hours</h3>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Open Now</span>
-                  </span>
-                </div>
-
-                <div className="flex flex-col gap-2.5 text-xs font-mono">
-                  <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-neutral-800">
-                    <span className="text-slate-500">Monday – Friday</span>
-                    <span className="font-bold">10:00 AM – 08:30 PM</span>
-                  </div>
-                  <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-neutral-800">
-                    <span className="text-slate-500">Saturday</span>
-                    <span className="font-bold">09:30 AM – 09:00 PM</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-500">Sunday</span>
-                    <span className="font-bold">10:00 AM – 08:00 PM</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 dark:border-neutral-800">
-                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
-                  ⚡ Advance appointments receive priority seating. Walk-ins accommodated based on specialist availability.
-                </p>
-                <button
-                  onClick={() => handleOpenBooking()}
-                  className="w-full py-2.5 rounded-xl font-bold text-xs text-white shadow-xs transition-opacity hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5"
-                  style={{ backgroundColor: activeAccent.primaryHex }}
+                <span 
+                  className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                  style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
                 >
-                  <CalendarCheck className="w-4 h-4" />
-                  <span>Reserve Desired Slot</span>
-                </button>
+                  Visual Lookbook
+                </span>
+                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                  <InlineEditable
+                    value={sectionHeadings.galleryTitle}
+                    onSave={(val) => setSectionHeadings((prev) => ({ ...prev, galleryTitle: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Gallery Section Heading"
+                    tag="span"
+                  />
+                </h2>
               </div>
+              <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+                Follow @{activeProfile.instagramHandle?.replace('@', '')} on Instagram
+              </span>
             </div>
 
-            {/* 7. CONTACT DETAILS & SPECIALIST ASSISTANCE (Col 4) */}
-            <div className={`lg:col-span-4 p-6 rounded-2xl border flex flex-col justify-between gap-4 ${
-              isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
-            }`}>
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <Phone className="w-5 h-5" style={{ color: activeAccent.primaryHex }} />
-                  <h3 className="font-bold text-base">Contact Information</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {(standardData.gallery || []).map((photo, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => setSelectedGalleryPhoto(photo.url)}
+                  className="group relative rounded-xl overflow-hidden aspect-4/3 cursor-pointer shadow-xs border border-slate-200 dark:border-neutral-800"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.title || 'Salon Gallery Photo'}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 text-white">
+                    <span className="text-[11px] font-bold">{photo.title || photo.tag}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ============================================================ */}
+        {/* 7. LOCATION, MAP & WORKING HOURS CARD */}
+        {/* ============================================================ */}
+        {sectionVisibility.location && (
+          <section className={`p-6 md:p-12 ${
+            isDarkCanvas ? 'bg-[#0f0f13]' : 'bg-white'
+          }`}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Location details */}
+              <div className="flex flex-col justify-between gap-4">
+                <div>
+                  <span 
+                    className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                    style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
+                  >
+                    Find Us
+                  </span>
+                  <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                    <InlineEditable
+                      value={sectionHeadings.locationTitle}
+                      onSave={(val) => setSectionHeadings((prev) => ({ ...prev, locationTitle: String(val) }))}
+                      isEditingActive={isEditMode}
+                      label="Location Section Heading"
+                      tag="span"
+                    />
+                  </h2>
+                  <p className={`text-xs md:text-sm mt-1 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'}`}>
+                    Conveniently located in the heart of {activeProfile.city}. Free parking and valet available for salon clients.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-3 text-xs">
-                  {/* Phone */}
-                  <a
-                    href={`tel:${currentProfile.phone.replace(/\s+/g, '')}`}
-                    className={`p-3 rounded-xl border flex items-center gap-3 transition-colors ${
-                      isDarkCanvas ? 'bg-neutral-800/60 border-neutral-700 hover:bg-neutral-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white">Studio Address</div>
+                      <div className="text-slate-500 dark:text-neutral-400">
+                        {activeProfile.address}, {activeProfile.city} - {activeProfile.postalCode}
+                      </div>
+                      {standardData.landmark && (
+                        <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5 font-medium">
+                          Landmark: {standardData.landmark}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white">Operating Hours</div>
+                      <div className="text-slate-500 dark:text-neutral-400 font-mono text-[11px]">
+                        Monday – Saturday: {standardData.openHourText} – {standardData.closeHourText}
+                      </div>
+                      <div className="text-slate-500 dark:text-neutral-400 font-mono text-[11px]">
+                        Sunday: 10:00 AM – 07:00 PM (By Advance Booking)
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
                       <Phone className="w-4 h-4" />
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-mono text-slate-400 uppercase">Direct Phone</div>
-                      <div className="font-bold text-xs truncate">{currentProfile.phone}</div>
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white">Phone & Instant WhatsApp</div>
+                      <div className="text-slate-500 dark:text-neutral-400 font-mono">
+                        {activeProfile.phone} / {activeProfile.whatsapp}
+                      </div>
                     </div>
-                  </a>
+                  </div>
+                </div>
 
-                  {/* WhatsApp */}
+                <div className="pt-3 border-t border-slate-200 dark:border-neutral-800 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBooking()}
+                    className="font-bold text-xs px-5 py-2.5 rounded-xl text-white shadow-xs cursor-pointer hover:opacity-90"
+                    style={{ backgroundColor: activeAccent.primaryHex }}
+                  >
+                    Schedule Your Appointment
+                  </button>
+
                   <a
-                    href={`https://wa.me/${currentProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(currentProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking.`}
+                    href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
-                    className={`p-3 rounded-xl border flex items-center gap-3 transition-colors ${
-                      isDarkCanvas ? 'bg-neutral-800/60 border-neutral-700 hover:bg-neutral-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
+                    className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-50 dark:hover:bg-neutral-800 flex items-center gap-1.5 cursor-pointer"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                      <MessageSquare className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-mono text-slate-400 uppercase">WhatsApp Instant Chat</div>
-                      <div className="font-bold text-xs truncate">{currentProfile.whatsapp}</div>
-                    </div>
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp Inquiry</span>
                   </a>
+                </div>
+              </div>
 
-                  {/* Email */}
+              {/* Map Preview Placeholder Card */}
+              <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-neutral-800 bg-slate-100 dark:bg-neutral-900 relative min-h-[260px] flex items-center justify-center p-6 text-center">
+                <div className="flex flex-col items-center gap-2 z-10 max-w-xs">
+                  <div className="w-12 h-12 rounded-2xl bg-white dark:bg-neutral-800 text-emerald-600 shadow-md flex items-center justify-center">
+                    <Navigation className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white mt-2">
+                    {activeProfile.businessName}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-neutral-400">
+                    {activeProfile.address}, {activeProfile.city}
+                  </p>
                   <a
-                    href={`mailto:${currentProfile.email || 'appointments@' + currentProfile.subdomain + '.in'}`}
-                    className={`p-3 rounded-xl border flex items-center gap-3 transition-colors ${
-                      isDarkCanvas ? 'bg-neutral-800/60 border-neutral-700 hover:bg-neutral-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
+                    href={`https://maps.google.com/?q=${encodeURIComponent(`${activeProfile.businessName} ${activeProfile.address} ${activeProfile.city}`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 text-xs font-bold px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-xs"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-600 flex items-center justify-center shrink-0">
-                      <Mail className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-mono text-slate-400 uppercase">Official Email</div>
-                      <div className="font-bold text-xs truncate">{currentProfile.email || 'appointments@' + currentProfile.subdomain + '.in'}</div>
-                    </div>
+                    <span>Open in Google Maps</span>
+                    <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
-              </div>
-
-              {/* Primary Contact Person */}
-              <div className="pt-3 border-t border-slate-100 dark:border-neutral-800 flex items-center gap-3">
-                <img
-                  src={currentProfile.ownerPhotoUrl}
-                  alt={currentProfile.ownerName}
-                  className="w-10 h-10 rounded-full object-cover border"
-                />
-                <div className="min-w-0 text-xs">
-                  <span className="font-bold block truncate">{currentProfile.ownerName}</span>
-                  <span className="text-[11px] text-slate-400 block truncate">{currentProfile.ownerRole}</span>
-                </div>
+                
+                {/* Background map grid illustration */}
+                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#000_1px,transparent_1px)] dark:bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
               </div>
             </div>
-
-            {/* 8. GOOGLE MAPS LOCATION (Col 4) */}
-            <div className={`lg:col-span-4 p-6 rounded-2xl border flex flex-col justify-between gap-4 ${
-              isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
-            }`}>
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Navigation className="w-5 h-5 text-emerald-600" />
-                  <h3 className="font-bold text-base">Google Maps Location</h3>
-                </div>
-
-                {/* Simulated Interactive Map Container */}
-                <div className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-200 dark:border-neutral-700 bg-slate-200 dark:bg-neutral-800 mb-3 shadow-inner">
-                  {/* Grid Lines simulating city streets */}
-                  <div className="absolute inset-0 opacity-40 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:16px_16px]" />
-                  <div className="absolute w-full h-1 bg-slate-400/40 top-1/2 -rotate-6" />
-                  <div className="absolute w-1 h-full bg-slate-400/40 left-1/3 rotate-12" />
-
-                  {/* Pulsing Salon Pin Marker */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-                    <span 
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-lg animate-bounce"
-                      style={{ backgroundColor: activeAccent.primaryHex }}
-                    >
-                      <MapPin className="w-4 h-4 fill-white" />
-                    </span>
-                    <span className="mt-1 px-2 py-0.5 rounded bg-slate-900/90 text-white font-mono text-[9px] font-bold shadow-md whitespace-nowrap">
-                      {currentProfile.businessName.split(' ')[0]}
-                    </span>
-                  </div>
-
-                  <div className="absolute bottom-2 left-2 bg-white/90 dark:bg-black/90 px-2 py-0.5 rounded text-[9px] font-mono text-slate-700 dark:text-slate-300">
-                    📍 {currentProfile.city.split(',')[0]}
-                  </div>
-                </div>
-
-                <div className="text-xs space-y-1">
-                  <div className="font-bold leading-snug">{currentProfile.address}</div>
-                  <div className="text-slate-500 text-[11px] font-mono">{currentProfile.city} - {currentProfile.postalCode}</div>
-                  <div className="text-slate-500 text-[11px] pt-1">
-                    <strong>Landmark:</strong> {standardData.landmark}
-                  </div>
-                  <div className="text-emerald-700 dark:text-emerald-400 text-[10px] font-medium pt-0.5">
-                    ✓ {standardData.parkingInfo}
-                  </div>
-                </div>
-              </div>
-
-              {/* Directions Button */}
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(currentProfile.businessName + ' ' + currentProfile.address + ' ' + currentProfile.city)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <span>Get Directions on Google Maps</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-
-          </div>
-        </section>
-
-        {/* ============================================================ */}
-        {/* FOOTER */}
-        {/* ============================================================ */}
-        <footer className={`p-6 md:p-10 border-t flex flex-col sm:flex-row items-center justify-between gap-4 text-xs ${
-          isDarkCanvas ? 'bg-[#0a0a0d] border-neutral-800 text-neutral-400' : 'bg-white border-slate-200 text-slate-600'
-        }`}>
-          <div>
-            <span className="font-bold text-slate-900 dark:text-white">{currentProfile.businessName}</span>
-            <span className="text-slate-400"> • All rights reserved © 2026. Official Indian Salon Portal.</span>
-          </div>
-          <div className="flex items-center gap-4 font-mono text-[11px]">
-            <span>Powered by Nexora SaaS</span>
-            <span>•</span>
-            <button
-              onClick={() => handleOpenBooking()}
-              className="font-bold underline hover:opacity-80 cursor-pointer"
-              style={{ color: activeAccent.primaryHex }}
-            >
-              Instant Booking (₹)
-            </button>
-          </div>
-        </footer>
+          </section>
+        )}
 
       </div>
 
-      {/* ============================================================ */}
-      {/* 9. STICKY MOBILE / VIEWPORT FLOATING BOOKING BAR */}
-      {/* ============================================================ */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-4 py-2.5 shadow-2xl flex items-center justify-between sm:hidden">
-        <div>
-          <div className="font-bold text-xs truncate max-w-[170px] text-slate-900 dark:text-white">
-            {currentProfile.businessName}
-          </div>
-          <div className="text-[11px] font-mono text-emerald-600 font-bold">
-            From ₹{Math.min(...currentServices.map(s => s.price))}
-          </div>
-        </div>
-
-        <button
-          onClick={() => handleOpenBooking()}
-          className="text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer"
-          style={{ backgroundColor: activeAccent.primaryHex }}
+      {/* Floating Instant WhatsApp Button */}
+      {sectionVisibility.whatsappFloat && (
+        <a
+          href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20book%20an%20appointment.`}
+          target="_blank"
+          rel="noreferrer"
+          className="fixed bottom-6 right-6 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+          title="Chat on WhatsApp"
         >
-          <CalendarCheck className="w-3.5 h-3.5" />
-          <span>Book Now (₹)</span>
-        </button>
-      </div>
+          <MessageSquare className="w-5 h-5 fill-white" />
+          <span className="text-xs font-bold max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap">
+            WhatsApp Booking
+          </span>
+        </a>
+      )}
 
-      {/* ============================================================ */}
-      {/* GALLERY PHOTO LIGHTBOX MODAL */}
-      {/* ============================================================ */}
+      {/* Booking Modal Flow */}
+      <BookingModal
+        isOpen={isBookingOpen}
+        onClose={() => setIsBookingOpen(false)}
+        service={selectedService}
+        stylist={selectedStylist}
+        servicesList={activeServices}
+        stylistsList={activeStylists}
+        salonName={activeProfile.businessName}
+        currency={activeProfile.currency || '₹'}
+        onConfirmBooking={(bookingData) => {
+          const newApt: Appointment = {
+            id: `apt-${Date.now()}`,
+            clientName: bookingData.clientName,
+            clientPhone: bookingData.clientPhone,
+            clientEmail: bookingData.clientEmail,
+            serviceId: bookingData.service.id,
+            serviceName: bookingData.service.name,
+            servicePrice: bookingData.service.price,
+            stylistId: bookingData.stylist.id,
+            stylistName: bookingData.stylist.name,
+            date: bookingData.date,
+            time: bookingData.time,
+            status: 'confirmed',
+            paymentStatus: bookingData.paymentMethod === 'pay_salon' ? 'pay_at_salon' : 'paid_full',
+            amountPaid: bookingData.paymentMethod === 'pay_salon' ? 0 : bookingData.service.price,
+            createdAt: new Date().toISOString()
+          };
+
+          onAddAppointment(newApt);
+          setIsBookingOpen(false);
+
+          setToastMessage({
+            id: newApt.id,
+            title: 'Appointment Booked Successfully!',
+            clientName: newApt.clientName,
+            serviceName: newApt.serviceName,
+            stylistName: newApt.stylistName,
+            dateTime: `${newApt.date} at ${newApt.time}`,
+            refCode: `NX-${Math.floor(100000 + Math.random() * 900000)}`,
+            price: newApt.servicePrice
+          });
+        }}
+      />
+
+      {/* Gallery Lightbox Modal */}
       {selectedGalleryPhoto && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-pointer"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setSelectedGalleryPhoto(null)}
         >
-          <div className="relative max-w-4xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl border border-white/20">
-            <img 
-              src={selectedGalleryPhoto} 
-              alt="Gallery Preview" 
-              className="w-full h-full object-contain max-h-[80vh]"
-            />
+          <div className="relative max-w-2xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl bg-black">
             <button
               onClick={() => setSelectedGalleryPhoto(null)}
-              className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+              className="absolute top-3 right-3 z-10 bg-black/60 text-white p-2 rounded-full hover:bg-black"
             >
               <X className="w-5 h-5" />
             </button>
+            <img src={selectedGalleryPhoto} alt="Gallery Zoom" className="w-full h-full object-contain" />
           </div>
         </div>
       )}
 
-      {/* ============================================================ */}
-      {/* INTERACTIVE BOOKING FLOW MODAL WITH INDIAN ADDRESS & ₹ PRICING */}
-      {/* ============================================================ */}
-      {isBookingOpen && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeBooking();
-          }}
-        >
-          <div 
-            className="bg-white border border-slate-200 rounded-2xl w-[92%] sm:w-[90%] md:w-[600px] max-w-[600px] p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[88vh] my-auto overflow-hidden shrink-0 relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            
-            {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <span 
-                  className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs"
-                  style={{ backgroundColor: activeAccent.primaryHex }}
-                >
-                  <CalendarCheck className="w-5 h-5" />
-                </span>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900 leading-tight">
-                    {bookingSuccess ? 'Booking Confirmed!' : 'Book Appointment (₹)'}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    {currentProfile.businessName}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={closeBooking}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      {/* Booking Confirmation Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-6 z-50 max-w-sm w-full bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex flex-col gap-2.5 animate-in slide-in-from-bottom">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{toastMessage.title}</span>
             </div>
+            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-            {/* Indian Location Badge within Modal */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-2.5 text-xs text-slate-700 shrink-0">
-              <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <div className="font-bold text-slate-900 truncate">{currentProfile.businessName}</div>
-                <div className="text-slate-500 text-[11px] leading-relaxed">{currentProfile.address}, {currentProfile.city} - PIN: {currentProfile.postalCode}</div>
-              </div>
-            </div>
+          <div className="text-xs text-slate-300">
+            <div><strong>Client:</strong> {toastMessage.clientName}</div>
+            <div><strong>Service:</strong> {toastMessage.serviceName} (₹{toastMessage.price})</div>
+            <div><strong>Specialist:</strong> {toastMessage.stylistName}</div>
+            <div><strong>Slot:</strong> {toastMessage.dateTime}</div>
+          </div>
 
-            {bookingSuccess ? (
-              /* Success confirmation view with animation */
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.25 }}
-                className="w-full flex flex-col items-center justify-center py-4 text-center gap-4 overflow-y-auto pr-1"
-              >
-                <div className="relative flex items-center justify-center">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0.8 }}
-                    animate={{ scale: [0.8, 1.35, 1.2], opacity: [0.6, 0.2, 0] }}
-                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
-                    className="absolute w-20 h-20 rounded-full bg-emerald-400 -z-10"
-                  />
-                  <motion.div
-                    initial={{ scale: 0, rotate: -25 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-                    className="w-16 h-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30 relative"
-                  >
-                    <CheckCircle2 className="w-9 h-9" />
-                    <motion.span
-                      initial={{ scale: 0 }}
-                      animate={{ scale: [0, 1.25, 1] }}
-                      transition={{ delay: 0.25 }}
-                      className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 p-1 rounded-full shadow-xs"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
-                    </motion.span>
-                  </motion.div>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-2xl text-slate-900">You're All Set!</h4>
-                  <p className="text-xs text-slate-600 max-w-sm mt-1 leading-relaxed">
-                    Your appointment for <strong className="text-slate-900">{selectedService.name}</strong> with <strong className="text-slate-900">{selectedStylist.name}</strong> is scheduled for <strong className="text-slate-900">{bookingDate} at {bookingTime}</strong>.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs w-full text-left font-mono flex flex-col gap-2.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans">Booking Reference:</span>
-                    <div className="flex items-center gap-1.5">
-                      <strong className="text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">{generatedRefCode}</strong>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyRefCode(generatedRefCode)}
-                        className="p-1 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                        title="Copy code"
-                      >
-                        {copiedRef ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans">Service Fee:</span>
-                    <strong className="text-emerald-700 font-bold text-sm">₹{selectedService.price.toLocaleString('en-IN')}</strong>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans">Deposit Paid:</span>
-                    <strong className="text-slate-800">₹{Math.round((selectedService.price * 20) / 100).toLocaleString('en-IN')} (UPI / Card)</strong>
-                  </div>
-                  <div className="pt-2 border-t border-slate-200 text-[11px] text-emerald-700 flex items-center gap-1.5 font-sans font-medium">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Confirmation WhatsApp sent to {clientPhone || currentProfile.phone}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 w-full pt-1">
-                  <button
-                    type="button"
-                    onClick={closeBooking}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    Close Window
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBookingSuccess(false);
-                      setClientName('');
-                      setClientPhone('');
-                      setClientEmail('');
-                    }}
-                    className="flex-1 py-2.5 rounded-xl text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:opacity-90"
-                    style={{ backgroundColor: activeAccent.primaryHex }}
-                  >
-                    Book Another Service
-                  </button>
-                </div>
-              </motion.div>
-            ) : (
-              /* Booking input form */
-              <form onSubmit={handleConfirmBooking} className="flex flex-col gap-3.5 overflow-y-auto pr-1">
-                
-                {/* 1. Service Selection */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Selected Service (Indian Rupee ₹ Pricing)
-                  </label>
-                  <select
-                    value={selectedService.id}
-                    onChange={(e) => {
-                      const found = currentServices.find(s => s.id === e.target.value);
-                      if (found) setSelectedService(found);
-                    }}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-white font-medium focus:ring-2 focus:ring-slate-900 outline-none"
-                  >
-                    {currentServices.map((srv) => (
-                      <option key={srv.id} value={srv.id}>
-                        {srv.name} — ₹{srv.price.toLocaleString('en-IN')} ({srv.durationMinutes} mins)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 2. Stylist Selection */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Select Specialist
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {currentStylists.map((st) => {
-                      const isSelected = selectedStylist.id === st.id;
-                      return (
-                        <div
-                          key={st.id}
-                          onClick={() => setSelectedStylist(st)}
-                          className={`p-2 rounded-xl border cursor-pointer flex items-center gap-2 transition-all ${
-                            isSelected 
-                              ? 'border-slate-900 bg-slate-50 shadow-xs ring-1 ring-slate-900' 
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
-                        >
-                          <img
-                            src={st.avatarUrl}
-                            alt={st.name}
-                            className="w-8 h-8 rounded-full object-cover shrink-0"
-                          />
-                          <div className="min-w-0 text-left">
-                            <div className="font-bold text-[11px] truncate">{st.name.split(' ')[0]}</div>
-                            <div className="text-[10px] text-slate-500 truncate">★ {st.rating}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 3. Date & Time Selection */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={bookingDate}
-                      onChange={(e) => setBookingDate(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-white font-mono focus:ring-2 focus:ring-slate-900 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Preferred Time</label>
-                    <select
-                      value={bookingTime}
-                      onChange={(e) => setBookingTime(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-white font-mono focus:ring-2 focus:ring-slate-900 outline-none"
-                    >
-                      {['10:00', '11:00', '12:30', '14:00', '15:30', '17:00', '18:30', '19:30'].map((t) => (
-                        <option key={t} value={t}>{t} (IST)</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* 4. Client Contact Details */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-700">Client Details</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Full Name (e.g. Aarti Sharma)"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-slate-900 outline-none"
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="tel"
-                      required
-                      placeholder="WhatsApp Mobile (+91 98765...)"
-                      value={clientPhone}
-                      onChange={(e) => setClientPhone(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-white font-mono focus:ring-2 focus:ring-slate-900 outline-none"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email Address (Optional)"
-                      value={clientEmail}
-                      onChange={(e) => setClientEmail(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-slate-900 outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Price & Deposit Summary */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex flex-col gap-1.5 font-mono">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-sans">Service Total:</span>
-                    <strong className="font-bold">₹{selectedService.price.toLocaleString('en-IN')}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-sans">20% Advance UPI Deposit:</span>
-                    <strong className="text-emerald-700">₹{Math.round((selectedService.price * 20) / 100).toLocaleString('en-IN')}</strong>
-                  </div>
-                  <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200 font-sans">
-                    Remaining ₹{Math.round((selectedService.price * 80) / 100).toLocaleString('en-IN')} payable at salon reception.
-                  </div>
-                </div>
-
-                {/* Submit Trigger */}
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-xl font-bold text-xs text-white shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-90 active:scale-[0.99]"
-                  style={{ backgroundColor: activeAccent.primaryHex }}
-                >
-                  <CalendarCheck className="w-4 h-4" />
-                  <span>Confirm Slot & Generate Booking Pass (₹)</span>
-                </button>
-              </form>
-            )}
-
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px] font-mono">
+            <span>Ref: {toastMessage.refCode}</span>
+            <button
+              onClick={() => handleCopyRefCode(toastMessage.refCode)}
+              className="text-emerald-400 hover:underline flex items-center gap-1"
+            >
+              {copiedRef ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              <span>{copiedRef ? 'Copied' : 'Copy Ref'}</span>
+            </button>
           </div>
         </div>
       )}
-
-      {/* ============================================================ */}
-      {/* FLOATING SUCCESS TOAST MESSAGE OVERLAY */}
-      {/* ============================================================ */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -25, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 24 }}
-            className="fixed top-5 right-5 sm:right-6 z-[80] w-[calc(100%-2.5rem)] sm:w-[420px] max-w-full bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/70 overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="p-4 flex items-start gap-3.5 relative z-10">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                <CheckCircle2 className="w-6 h-6 animate-pulse" />
-              </div>
-
-              <div className="flex-1 min-w-0 flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm text-white tracking-tight">
-                      {toastMessage.title}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      <Sparkles className="w-2.5 h-2.5" />
-                      ₹{toastMessage.price.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => setToastMessage(null)}
-                    className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
-                    title="Dismiss"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-slate-300 line-clamp-1">
-                  <strong className="text-white">{toastMessage.clientName}</strong> booked <span className="text-emerald-300 font-medium">{toastMessage.serviceName}</span>
-                </p>
-
-                <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                  <CalendarCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>{toastMessage.dateTime} • {toastMessage.stylistName}</span>
-                </div>
-
-                {/* Reference Code Chip */}
-                <div className="mt-1 pt-1.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400 font-mono">
-                    Ref: <strong className="text-slate-200">{toastMessage.refCode}</strong>
-                  </span>
-                  <button
-                    onClick={() => handleCopyRefCode(toastMessage.refCode)}
-                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
-                  >
-                    {copiedRef ? (
-                      <>
-                        <Check className="w-3 h-3" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3" />
-                        <span>Copy Code</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Countdown timer line */}
-            <motion.div
-              initial={{ width: '100%' }}
-              animate={{ width: '0%' }}
-              transition={{ duration: 5.5, ease: 'linear' }}
-              className="h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300"
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
 
     </div>
   );

@@ -170,6 +170,58 @@ export interface Appointment {
   createdAt: string;
 }
 
+export type LoyaltyTier = 'bronze' | 'silver' | 'gold' | 'platinum';
+
+export interface RewardThreshold {
+  id: string;
+  title: string;
+  requiredPoints: number;
+  rewardType: 'percentage_discount' | 'flat_discount' | 'free_service';
+  discountValue: number; // e.g. 15 for 15% or 300 for ₹300 OFF
+  applicableCategory?: string;
+  description: string;
+  isActive: boolean;
+  couponCodePrefix: string;
+}
+
+export interface LoyaltyConfig {
+  programEnabled: boolean;
+  pointsPerVisit: number;
+  pointsPerHundredSpent: number;
+  tierThresholds: {
+    bronze: number;
+    silver: number;
+    gold: number;
+    platinum: number;
+  };
+  tierMultipliers: {
+    bronze: number;
+    silver: number;
+    gold: number;
+    platinum: number;
+  };
+  rewards: RewardThreshold[];
+}
+
+export interface PointTransaction {
+  id: string;
+  date: string;
+  description: string;
+  pointsChange: number;
+  type: 'visit_earned' | 'spend_earned' | 'bonus' | 'redeemed';
+}
+
+export interface RedeemedReward {
+  id: string;
+  rewardId: string;
+  rewardTitle: string;
+  discountSummary: string;
+  pointsSpent: number;
+  redeemedAt: string;
+  couponCode: string;
+  status: 'active' | 'used';
+}
+
 export interface ClientRecord {
   id: string;
   name: string;
@@ -180,4 +232,9 @@ export interface ClientRecord {
   lastVisit: string;
   notes: string;
   favoriteStylist: string;
+  points: number;
+  lifetimePoints: number;
+  loyaltyTier: LoyaltyTier;
+  pointHistory?: PointTransaction[];
+  redeemedRewards?: RedeemedReward[];
 }
