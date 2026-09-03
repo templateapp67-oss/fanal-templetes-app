@@ -26,16 +26,17 @@ import {
   Lock
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
+import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS } from '../mockData';
 
 export interface BookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  profile: SalonProfile;
-  services: SalonService[];
-  stylists: Stylist[];
+  profile?: SalonProfile;
+  services?: SalonService[];
+  stylists?: Stylist[];
   initialService?: SalonService;
   initialStylist?: Stylist;
-  onAddAppointment: (appointment: Appointment) => void;
+  onAddAppointment?: (appointment: Appointment) => void;
   themeAccentHex?: string;
   onShowToast?: (toast: {
     id: string;
@@ -47,6 +48,14 @@ export interface BookingModalProps {
     refCode: string;
     price: number;
   }) => void;
+  // Backward compatibility alias props
+  service?: SalonService;
+  stylist?: Stylist;
+  servicesList?: SalonService[];
+  stylistsList?: Stylist[];
+  salonName?: string;
+  currency?: string;
+  onConfirmBooking?: (bookingData: any) => void;
 }
 
 type BookingStep = 'service' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
@@ -76,15 +85,46 @@ const LOCAL_STORAGE_GUEST_KEY = 'salon_guest_booking_info';
 export const BookingModal: React.FC<BookingModalProps> = ({
   isOpen,
   onClose,
-  profile,
-  services,
-  stylists,
-  initialService,
-  initialStylist,
-  onAddAppointment,
+  profile: inputProfile,
+  services: inputServices,
+  stylists: inputStylists,
+  initialService: inputInitialService,
+  initialStylist: inputInitialStylist,
+  onAddAppointment: inputOnAddAppointment,
   themeAccentHex = '#0f172a',
-  onShowToast
+  onShowToast,
+  // Alias props
+  service: aliasService,
+  stylist: aliasStylist,
+  servicesList: aliasServicesList,
+  stylistsList: aliasStylistsList,
+  salonName: aliasSalonName,
+  currency: aliasCurrency,
+  onConfirmBooking: aliasOnConfirmBooking
 }) => {
+  // Safe resolved values
+  const profile = inputProfile || {
+    ...INITIAL_SALON_PROFILE,
+    businessName: aliasSalonName || INITIAL_SALON_PROFILE.businessName,
+    currency: aliasCurrency || INITIAL_SALON_PROFILE.currency || '₹',
+  };
+  const services = inputServices || aliasServicesList || INITIAL_SERVICES;
+  const stylists = inputStylists || aliasStylistsList || INITIAL_STYLISTS;
+  const initialService = inputInitialService || aliasService;
+  const initialStylist = inputInitialStylist || aliasStylist;
+  const onAddAppointment = inputOnAddAppointment || (aliasOnConfirmBooking ? (apt: Appointment) => {
+    aliasOnConfirmBooking({
+      clientName: apt.clientName,
+      clientPhone: apt.clientPhone,
+      clientEmail: apt.clientEmail,
+      service: { id: apt.serviceId, name: apt.serviceName, price: apt.servicePrice },
+      stylist: { id: apt.stylistId, name: apt.stylistName },
+      date: apt.date,
+      time: apt.time,
+      paymentMethod: apt.paymentStatus === 'paid_full' ? 'online' : 'pay_salon'
+    });
+  } : () => {});
+
   // Navigation Steps: 'service' -> 'datetime' -> 'guest' -> 'otp' -> 'payment' -> 'confirmed'
   const [currentStep, setCurrentStep] = useState<BookingStep>('service');
 
@@ -158,10 +198,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   // Synchronize initialService when changed
   useEffect(() => {
-    if (initialService) {
+    if (initialService && initialService.id !== selectedService?.id) {
       setSelectedService(initialService);
     }
-  }, [initialService]);
+  }, [initialService, selectedService]);
 
   // 5-minute Slot Lock Timer countdown
   useEffect(() => {
@@ -563,24 +603,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       >
                         <div className="min-w-0 flex-1 pr-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-slate-900">{srv.name}</span>
+                            <span className="font-extrabold text-xs text-slate-900">{srv.name}</span>
                             {srv.popular && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                              <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 text-[10px] font-extrabold">
                                 Popular
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                            <span>{srv.category}</span>
+                          <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 mt-0.5">
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[10px]">{srv.category}</span>
                             <span>•</span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
+                            <span className="flex items-center gap-1 font-mono text-slate-700">
+                              <Clock className="w-3 h-3 text-slate-500" />
                               {srv.durationMinutes} mins
                             </span>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="font-bold text-sm text-slate-900 font-mono">
+                          <div className="font-extrabold text-sm text-slate-900 font-mono">
                             ₹{srv.price.toLocaleString('en-IN')}
                           </div>
                           {isSelected && (

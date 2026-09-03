@@ -3,6 +3,7 @@ import { SalonProfile, SalonService, Stylist, BusinessTypeId } from '../types';
 import { BUSINESS_TYPES } from '../mockData';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { AIBioModal } from './AIBioModal';
+import { SocialConnectivityStep } from './SocialConnectivityStep';
 
 interface OnboardingWizardProps {
   profile: SalonProfile;
@@ -118,15 +119,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
       <AIBioModal
         isOpen={isBioModalOpen}
         onClose={() => setIsBioModalOpen(false)}
-        businessName={profile.businessName}
-        businessType={profile.businessType}
-        ownerName={profile.ownerName}
+        businessName={profile?.businessName || 'Our Salon'}
+        businessType={profile?.businessType || 'hair_salon'}
+        ownerName={profile?.ownerName || 'Owner'}
         onApply={(bio, tagline) => {
           setProfile((prev) => ({ ...prev, about: bio, tagline }));
         }}
       />
 
-      <div className="max-w-4xl w-full px-4 sm:px-6">
+      <div className={`${currentStep === 6 ? 'max-w-7xl' : 'max-w-4xl'} w-full px-4 sm:px-6 transition-all duration-300`}>
         {/* Progress Header */}
         <div className="mb-8 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
           <div className="flex justify-between items-center mb-3">
@@ -292,7 +293,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <label className="font-bold text-gray-700">Salon Name</label>
                     <input
                       type="text"
-                      value={profile.businessName}
+                      value={profile?.businessName || ''}
                       onChange={(e) => setProfile({ ...profile, businessName: e.target.value })}
                       className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
                     />
@@ -482,15 +483,26 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             </div>
           )}
 
-          {/* STEP 6-10: Booking Rules, Payments, Domain */}
-          {currentStep >= 6 && currentStep <= 10 && (
+          {/* STEP 06: SOCIAL CONNECTIVITY */}
+          {currentStep === 6 && (
+            <div className="animate-fade-in w-full">
+              <SocialConnectivityStep
+                profile={profile}
+                setProfile={setProfile}
+                onBack={prevStep}
+                onContinue={nextStep}
+              />
+            </div>
+          )}
+
+          {/* STEP 7-10: Booking Rules, Payments, Domain */}
+          {currentStep >= 7 && currentStep <= 10 && (
             <div className="flex flex-col gap-6 animate-fade-in">
               <div>
                 <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest">
                   CONFIGURATION
                 </span>
                 <h2 className="font-display text-3xl font-bold mt-1">
-                  {currentStep === 6 && 'Set operating hours & staff'}
                   {currentStep === 7 && 'Team members & specialists'}
                   {currentStep === 8 && 'Booking & deposit rules'}
                   {currentStep === 9 && 'Payment gateways'}
@@ -559,7 +571,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 </div>
               )}
 
-              {(currentStep === 6 || currentStep === 7 || currentStep === 9) && (
+              {(currentStep === 7 || currentStep === 9) && (
                 <div className="p-8 rounded-2xl border border-dashed border-gray-300 flex flex-col items-center justify-center text-center gap-3">
                   <span className="material-symbols-outlined text-4xl text-[#b0004a]">
                     check_circle
@@ -583,7 +595,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
               <div>
                 <h2 className="font-display text-3xl font-bold">Generating Your Salon Website...</h2>
                 <p className="text-xs text-gray-500 mt-2 font-mono-caps">
-                  Building layout, palette, and booking engine for {profile.businessName || 'your salon'}
+                  Building layout, palette, and booking engine for {profile?.businessName || 'your salon'}
                 </p>
               </div>
 
@@ -600,8 +612,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             </div>
           )}
 
-          {/* BOTTOM CONTROLS */}
-          {!isGenerating && (
+          {/* BOTTOM CONTROLS (Hidden on step 6 since SocialConnectivityStep includes its own nav footer) */}
+          {!isGenerating && currentStep !== 6 && (
             <div className="flex justify-between items-center border-t border-gray-100 pt-6 mt-6">
               <button
                 type="button"

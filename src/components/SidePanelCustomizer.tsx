@@ -19,11 +19,20 @@ import {
   RotateCcw,
   Wand2,
   Share2,
-  CheckCircle2
+  CheckCircle2,
+  Upload,
+  Image as ImageIcon,
+  ImagePlus,
+  Trash2,
+  Link as LinkIcon,
+  AlertCircle
 } from 'lucide-react';
 import { SalonProfile, BusinessTypeId } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey } from '../themeAccents';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
+import { SALON_IMAGES } from '../assets/images';
+import { validateAndReadImageFile } from '../utils/imageUploadHelper';
+import { AILogoSuiteModal } from './AILogoSuiteModal';
 
 export interface SectionVisibilityState {
   header: boolean;
@@ -85,7 +94,16 @@ interface SidePanelCustomizerProps {
   onResetDefaults?: () => void;
 }
 
-type CustomizerTab = 'theme' | 'location' | 'sections' | 'ai';
+type CustomizerTab = 'theme' | 'branding' | 'location' | 'sections' | 'ai';
+
+const CURATED_HERO_PRESETS = [
+  { name: 'Pinky Nails Sanctuary', url: SALON_IMAGES.hero, tag: 'Nail & Lash Studio' },
+  { name: 'Glossy Chrome Gel Art', url: SALON_IMAGES.nailArt, tag: 'Nail Art' },
+  { name: 'Lifted Lash & Brow Result', url: SALON_IMAGES.lashBrow, tag: 'Lash & Brow' },
+  { name: 'Sterilized Tools & Polish Tray', url: SALON_IMAGES.toolsSetup, tag: 'Tools & Setup' },
+  { name: 'Luxury Miraki Hair Sanctuary', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80', tag: 'Hair Studio' },
+  { name: 'Gentlemen’s Grooming Barbershop', url: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1200&q=80', tag: 'Barber Lounge' }
+];
 
 export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
   isOpen,
@@ -107,6 +125,12 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
   const [customHex, setCustomHex] = useState<string>(primaryAccentColor || '#0f172a');
   const [aiCustomText, setAiCustomText] = useState<string>('');
   const [toastNotice, setToastNotice] = useState<string | null>(null);
+  
+  // Branding & Media Management State
+  const [isLogoModalOpen, setIsLogoModalOpen] = useState<boolean>(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [customLogoUrlInput, setCustomLogoUrlInput] = useState<string>(profile.logoUrl || '');
+  const [customHeroUrlInput, setCustomHeroUrlInput] = useState<string>(profile.coverImageUrl || '');
 
   useEffect(() => {
     if (primaryAccentColor) {
@@ -114,9 +138,54 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
     }
   }, [primaryAccentColor]);
 
+  useEffect(() => {
+    setCustomLogoUrlInput(profile.logoUrl || '');
+    setCustomHeroUrlInput(profile.coverImageUrl || '');
+  }, [profile.logoUrl, profile.coverImageUrl]);
+
   const showToast = (msg: string) => {
     setToastNotice(msg);
     setTimeout(() => setToastNotice(null), 3000);
+  };
+
+  // Handle Logo Upload (Client-side max 5MB validation + Data URL conversion)
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileError(null);
+    const result = await validateAndReadImageFile(file);
+    if (!result.isValid) {
+      setFileError(result.errorMessage || 'File validation failed.');
+      showToast(result.errorMessage || 'Logo upload failed.');
+      return;
+    }
+
+    if (result.dataUrl) {
+      setProfile((prev) => ({ ...prev, logoUrl: result.dataUrl }));
+      setCustomLogoUrlInput(result.dataUrl);
+      showToast('Custom Salon Logo uploaded & auto-saved!');
+    }
+  };
+
+  // Handle Hero Banner Upload (Client-side max 5MB validation + Data URL conversion)
+  const handleHeroFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileError(null);
+    const result = await validateAndReadImageFile(file);
+    if (!result.isValid) {
+      setFileError(result.errorMessage || 'File validation failed.');
+      showToast(result.errorMessage || 'Hero upload failed.');
+      return;
+    }
+
+    if (result.dataUrl) {
+      setProfile((prev) => ({ ...prev, coverImageUrl: result.dataUrl }));
+      setCustomHeroUrlInput(result.dataUrl);
+      showToast('Custom Hero Banner image uploaded & auto-saved!');
+    }
   };
 
   const handleCustomColorApply = (hex: string) => {
@@ -222,7 +291,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
       </div>
 
       {/* Tabs Switcher */}
-      <div className="grid grid-cols-4 p-1.5 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
+      <div className="grid grid-cols-5 p-1 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
         <button
           onClick={() => setActiveTab('theme')}
           className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
@@ -230,7 +299,17 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Palette className="w-3.5 h-3.5" />
-          <span className="text-[10px]">Theme</span>
+          <span className="text-[9px]">Theme</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('branding')}
+          className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'branding' ? 'bg-white text-purple-700 font-extrabold shadow-xs' : 'hover:text-slate-900'
+          }`}
+        >
+          <ImageIcon className="w-3.5 h-3.5 text-purple-600" />
+          <span className="text-[9px]">Branding</span>
         </button>
 
         <button
@@ -240,7 +319,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <MapPin className="w-3.5 h-3.5" />
-          <span className="text-[10px]">Location</span>
+          <span className="text-[9px]">Location</span>
         </button>
 
         <button
@@ -250,7 +329,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Sliders className="w-3.5 h-3.5" />
-          <span className="text-[10px]">Sections</span>
+          <span className="text-[9px]">Sections</span>
         </button>
 
         <button
@@ -260,12 +339,230 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span className="text-[10px]">AI Studio</span>
+          <span className="text-[9px]">AI Studio</span>
         </button>
       </div>
 
       {/* Tab Content Body */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 text-xs text-slate-700 scrollbar-thin">
+        
+        {/* Error Alert Notice */}
+        {fileError && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl flex items-start gap-2 text-xs">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <strong className="block font-bold">File Upload Error:</strong>
+              <span>{fileError}</span>
+            </div>
+            <button onClick={() => setFileError(null)} className="text-rose-500 hover:text-rose-900">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB: BRANDING & MEDIA MANAGEMENT (LOGOS & HERO BANNERS) */}
+        {/* ============================================================ */}
+        {activeTab === 'branding' && (
+          <div className="flex flex-col gap-5">
+            {/* 1. Salon Header Logo Section */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-purple-600" />
+                    <span>Salon Header Logo</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">Reflected live on website navbar header</p>
+                </div>
+                {profile.logoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfile((p) => ({ ...p, logoUrl: undefined }));
+                      setCustomLogoUrlInput('');
+                      showToast('Cleared custom header logo');
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                    title="Remove Header Logo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Logo Preview Box */}
+              <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-center min-h-[70px] relative">
+                {profile.logoUrl ? (
+                  <img
+                    src={profile.logoUrl}
+                    alt="Salon Logo Preview"
+                    className="max-h-12 max-w-full object-contain"
+                  />
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px]">
+                    <span>No Custom Logo set. Using template category mark.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons: AI Logo Suite & File Upload */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLogoModalOpen(true)}
+                  className="w-full py-2.5 px-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-95 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Generate 5 AI Vector Logos</span>
+                </button>
+
+                <label className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-xl border border-slate-300 text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs">
+                  <Upload className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Upload Custom Logo (Max 5MB)</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* Direct Image URL Input */}
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Or Paste Custom Image URL / Data URL:
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={customLogoUrlInput}
+                    onChange={(e) => setCustomLogoUrlInput(e.target.value)}
+                    placeholder="https://... or data:image/..."
+                    className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] outline-none focus:border-purple-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customLogoUrlInput.trim()) {
+                        setProfile((p) => ({ ...p, logoUrl: customLogoUrlInput.trim() }));
+                        showToast('Custom logo URL applied!');
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-900 text-white font-bold text-[11px] rounded-lg cursor-pointer hover:bg-slate-800 shrink-0"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Hero Banner Image Section */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <ImagePlus className="w-4 h-4 text-purple-600" />
+                    <span>Hero Banner Cover Image</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">Reflected on main website hero section</p>
+                </div>
+              </div>
+
+              {/* Hero Banner Preview Box */}
+              <div className="relative rounded-xl overflow-hidden border border-slate-200 h-28 bg-slate-900">
+                <img
+                  src={profile.coverImageUrl}
+                  alt="Hero Banner Preview"
+                  className="w-full h-full object-cover object-center opacity-95 filter brightness-105 contrast-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-2.5">
+                  <span className="text-[10px] font-mono font-bold text-white/90 truncate">
+                    Active Hero Image
+                  </span>
+                </div>
+              </div>
+
+              {/* Upload Custom Hero Button */}
+              <label className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload Custom Hero Banner (Max 5MB)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleHeroFileUpload}
+                  className="hidden"
+                />
+              </label>
+
+              {/* Direct Hero URL Input */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Or Paste Custom Hero Image URL:
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={customHeroUrlInput}
+                    onChange={(e) => setCustomHeroUrlInput(e.target.value)}
+                    placeholder="https://images.unsplash.com/..."
+                    className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] outline-none focus:border-purple-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customHeroUrlInput.trim()) {
+                        setProfile((p) => ({ ...p, coverImageUrl: customHeroUrlInput.trim() }));
+                        showToast('Custom Hero Image applied!');
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-900 text-white font-bold text-[11px] rounded-lg cursor-pointer hover:bg-slate-800 shrink-0"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+
+              {/* Curated Hero Banner Presets */}
+              <div className="pt-2 border-t border-slate-200 space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Curated Studio Banner Presets:
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {CURATED_HERO_PRESETS.map((preset, idx) => {
+                    const isSelected = profile.coverImageUrl === preset.url;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setProfile((p) => ({ ...p, coverImageUrl: preset.url }));
+                          setCustomHeroUrlInput(preset.url);
+                          showToast(`Applied "${preset.name}" banner`);
+                        }}
+                        className={`relative rounded-xl overflow-hidden border text-left transition-all cursor-pointer h-16 group ${
+                          isSelected ? 'border-purple-600 ring-2 ring-purple-400/30' : 'border-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        <img
+                          src={preset.url}
+                          alt={preset.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-1.5 flex flex-col justify-end">
+                          <span className="text-[10px] font-bold text-white leading-tight truncate">
+                            {preset.name}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* ============================================================ */}
         {/* TAB 1: THEME & ACCENT PALETTES */}
@@ -803,6 +1100,21 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
         )}
 
       </div>
+
+      {/* AI Logo Suite Modal */}
+      <AILogoSuiteModal
+        isOpen={isLogoModalOpen}
+        onClose={() => setIsLogoModalOpen(false)}
+        salonName={profile.businessName}
+        categoryKey={selectedCategoryKey}
+        primaryColor={primaryAccentColor}
+        currentLogoUrl={profile.logoUrl}
+        onSelectLogo={(logoDataUrl) => {
+          setProfile((prev) => ({ ...prev, logoUrl: logoDataUrl }));
+          setCustomLogoUrlInput(logoDataUrl);
+          showToast('Selected AI Logo applied to header!');
+        }}
+      />
     </aside>
   );
 };

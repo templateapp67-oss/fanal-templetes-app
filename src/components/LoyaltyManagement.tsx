@@ -280,7 +280,7 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
     const tierMeta = TIER_METADATA[client.loyaltyTier || 'bronze'];
     const { nextReward, pointsNeeded } = calculateRewardProgress(client.points || 0, loyaltyConfig.rewards);
 
-    const message = `✨ *${profile.businessName.toUpperCase()} REWARDS UPDATE* ✨
+    const message = `✨ *${(profile?.businessName || 'OUR SALON').toUpperCase()} REWARDS UPDATE* ✨
 
 Namaste *${client.name}*! 🌸
 

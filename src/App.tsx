@@ -13,13 +13,33 @@ import { SaaSDashboard } from './components/SaaSDashboard';
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('landing');
 
-  // Application Data States
-  const [profile, setProfile] = useState<SalonProfile>(INITIAL_SALON_PROFILE);
+  // Load persisted profile state from localStorage on initial mount
+  const [profile, setProfile] = useState<SalonProfile>(() => {
+    try {
+      const saved = localStorage.getItem('pinky_nails_salon_profile_v1');
+      if (saved) {
+        return { ...INITIAL_SALON_PROFILE, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.warn('Could not read salon profile from localStorage:', e);
+    }
+    return INITIAL_SALON_PROFILE;
+  });
+
   const [services, setServices] = useState<SalonService[]>(INITIAL_SERVICES);
   const [stylists, setStylists] = useState<Stylist[]>(INITIAL_STYLISTS);
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
   const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
+
+  // Auto-save profile (including logoUrl and coverImageUrl) to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(profile));
+    } catch (e) {
+      console.warn('Could not save salon profile to localStorage:', e);
+    }
+  }, [profile]);
 
   // Sync primary accent CSS variable to :root whenever profile theme changes
   useEffect(() => {

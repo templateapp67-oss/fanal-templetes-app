@@ -35,11 +35,13 @@ import {
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
-import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar } from '../themeAccents';
+import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { CATEGORY_STANDARDIZED_DATA } from '../templateData';
+import { INITIAL_SALON_PROFILE } from '../mockData';
 import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
 import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
+import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -69,7 +71,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [internalServices, setInternalServices] = useState<SalonService[]>(services);
   const [internalStylists, setInternalStylists] = useState<Stylist[]>(stylists);
 
-  const activeProfile = setProfileProp ? profile : internalProfile;
+  const activeProfile = (setProfileProp ? profile : internalProfile) || INITIAL_SALON_PROFILE;
   const setProfile = setProfileProp || setInternalProfile;
 
   const activeServices = setServicesProp ? services : internalServices;
@@ -80,7 +82,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
-  const [isEditMode, setIsEditMode] = useState<boolean>(true);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<BusinessTypeId>(activeProfile.businessType || 'hair_salon');
 
@@ -105,12 +107,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     activeTemplate.themeStyle.isDark || selectedAccentKey === 'obsidian'
   );
 
-  // Synchronize accent changes
+  // Synchronize accent changes when profile.themeAccentKey changes externally
   useEffect(() => {
-    if (activeProfile.themeAccentKey && ACCENT_PALETTES[activeProfile.themeAccentKey as AccentPaletteKey]) {
+    if (
+      activeProfile.themeAccentKey &&
+      ACCENT_PALETTES[activeProfile.themeAccentKey as AccentPaletteKey] &&
+      activeProfile.themeAccentKey !== selectedAccentKey
+    ) {
       setSelectedAccentKey(activeProfile.themeAccentKey as AccentPaletteKey);
     }
-  }, [activeProfile.themeAccentKey]);
+  }, [activeProfile.themeAccentKey, selectedAccentKey]);
 
   const activeAccent = ACCENT_PALETTES[selectedAccentKey] || ACCENT_PALETTES.slate;
   const primaryAccentColor = activeProfile.customAccentColor || activeAccent.primaryHex;
@@ -119,6 +125,23 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   useEffect(() => {
     applyPrimaryAccentCssVar(primaryAccentColor, activeAccent.secondaryHex);
   }, [primaryAccentColor, activeAccent]);
+
+  // Dynamic Image-Based AI Styling State
+  const [heroAIStyling, setHeroAIStyling] = useState<HeroAIStyling>(() =>
+    computeHeroAIStyling(activeProfile.coverImageUrl, primaryAccentColor)
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    extractImageMoodAsync(activeProfile.coverImageUrl, primaryAccentColor).then((extracted) => {
+      if (isMounted) {
+        setHeroAIStyling(extracted);
+      }
+    });
+
+    return () => { isMounted = false; };
+  }, [activeProfile.coverImageUrl, primaryAccentColor]);
 
   const standardData = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
 
@@ -196,6 +219,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     setSelectedCategoryKey(catId);
     const tmpl = CATEGORY_TEMPLATES[catId];
     if (tmpl) {
+      setIsEditMode(false);
       setActiveSubCategory('All');
       setSelectedService(tmpl.services[0]);
       setSelectedStylist(tmpl.stylists[0]);
@@ -409,6 +433,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }[deviceMode];
 
   const themeStyle = activeTemplate.themeStyle;
+  const contrastTextColor = getContrastTextColor(primaryAccentColor);
+  const accentLuminance = getLuminance(primaryAccentColor);
 
   return (
     <div 
@@ -418,6 +444,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         '--theme-primary': primaryAccentColor,
         '--theme-secondary': activeAccent.secondaryHex,
         '--color-primary': primaryAccentColor,
+        '--accent-luminance': accentLuminance.toFixed(4),
+        '--accent-text-color': contrastTextColor,
+        '--accent-contrast-text': contrastTextColor,
+        '--color-on-primary': contrastTextColor,
+        '--theme-on-accent': contrastTextColor,
+        '--heading-text-shadow': '0 1px 3px rgba(0, 0, 0, 0.45)',
       } as React.CSSProperties}
     >
       
@@ -461,7 +493,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
                 type="button"
-                onClick={() => setIsEditMode(true)}
+                onClick={() => setIsEditMode(!isEditMode)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                   isEditMode
                     ? 'bg-amber-500 text-white shadow-xs'
@@ -471,7 +503,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 <span>Inline Edit Mode</span>
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                {isEditMode && <span className="w-2 h-2 rounded-full bg-white animate-pulse" />}
               </button>
 
               <button
@@ -733,12 +765,22 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
           }`}>
             <div className="flex items-center gap-3">
-              <div 
-                className="w-11 h-11 rounded-xl flex items-center justify-center font-bold shadow-xs text-white shrink-0"
-                style={{ backgroundColor: activeAccent.primaryHex }}
-              >
-                <span className="material-symbols-outlined text-2xl">{activeTemplate.icon}</span>
-              </div>
+              {activeProfile.logoUrl ? (
+                <div className="relative group shrink-0">
+                  <img 
+                    src={activeProfile.logoUrl} 
+                    alt={activeProfile.businessName} 
+                    className="h-11 max-w-[170px] object-contain rounded-xl shadow-xs transition-transform group-hover:scale-105" 
+                  />
+                </div>
+              ) : (
+                <div 
+                  className="w-11 h-11 rounded-xl flex items-center justify-center font-bold shadow-xs text-white shrink-0"
+                  style={{ backgroundColor: activeAccent.primaryHex }}
+                >
+                  <span className="material-symbols-outlined text-2xl">{activeTemplate.icon}</span>
+                </div>
+              )}
               <div>
                 <div className="font-bold text-lg md:text-xl tracking-tight leading-snug">
                   <InlineEditable
@@ -797,125 +839,158 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* ============================================================ */}
-        {/* 1. HERO SECTION */}
+        {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
         {sectionVisibility.hero && (
-          <section className={`relative overflow-hidden transition-all ${
-            themeStyle.heroBackground || 'bg-[#0f172a]'
-          } text-white`}>
-            {/* Background image & gradient overlay */}
-            <div className="absolute inset-0 z-0">
+          <section className="relative overflow-hidden transition-all bg-slate-950 text-white min-h-[480px] md:min-h-[540px] flex items-center">
+            {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
+            <div className="absolute inset-0 z-0 overflow-hidden">
               <img
                 src={activeProfile.coverImageUrl}
                 alt={activeProfile.businessName}
-                className="w-full h-full object-cover object-center opacity-30 mix-blend-luminosity filter contrast-125"
+                className={`w-full h-full object-cover object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/75 to-black/50" />
+              {/* Dynamic Overlay Ambient Tint (Gentle ~15-25% mask max) */}
+              <div 
+                className={`absolute inset-0 ${heroAIStyling.overlayGradientClass} pointer-events-none transition-all duration-500`}
+                style={{
+                  backgroundColor: heroAIStyling.overlayAccentColor,
+                  mixBlendMode: heroAIStyling.overlayBlendMode as any
+                }}
+              />
+              {/* Bottom Vignette for Smooth Transition */}
+              <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-slate-950/80 to-transparent pointer-events-none" />
             </div>
 
-            {/* Hero Content */}
-            <div className="relative z-10 px-6 md:px-12 py-14 md:py-20 flex flex-col justify-center max-w-4xl text-white">
-              {/* Category badge & highlight tags */}
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span 
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs text-white"
-                  style={{ backgroundColor: activeAccent.primaryHex }}
-                >
-                  <span className="material-symbols-outlined text-sm">{activeTemplate.icon}</span>
-                  <span>{activeTemplate.shortName}</span>
-                </span>
+            {/* Hero Content Container with Dynamic Backdrop Glassmorphism */}
+            <div className="relative z-10 px-4 sm:px-6 md:px-12 py-10 md:py-16 max-w-4xl w-full mx-auto my-auto">
+              <div className={`${heroAIStyling.cardBackingClass} transition-all duration-500`}>
+                {/* Category badge & highlight tags */}
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span 
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs transition-colors"
+                    style={{ 
+                      backgroundColor: heroAIStyling.badgeBg.startsWith('linear') ? undefined : heroAIStyling.badgeBg,
+                      background: heroAIStyling.badgeBg.startsWith('linear') ? heroAIStyling.badgeBg : undefined,
+                      color: heroAIStyling.badgeTextColor 
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-sm">{activeTemplate.icon}</span>
+                    <span>{activeTemplate.shortName}</span>
+                  </span>
 
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-mono">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Verified Indian Salon</span>
-                </span>
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-mono transition-colors ${heroAIStyling.verifiedBadgeClass}`}>
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Verified Indian Salon</span>
+                  </span>
 
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-mono">
-                  <MapPin className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{activeProfile.city}</span>
-                </span>
-              </div>
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-mono transition-colors ${heroAIStyling.cityBadgeClass}`}>
+                    <MapPin className="w-3.5 h-3.5 text-amber-300" />
+                    <span>{activeProfile.city}</span>
+                  </span>
 
-              {/* Tagline */}
-              <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight text-balance">
-                <InlineEditable
-                  value={activeProfile.tagline}
-                  onSave={(val) => setProfile((p) => ({ ...p, tagline: String(val) }))}
-                  isEditingActive={isEditMode}
-                  label="Hero Tagline"
-                  tag="span"
-                />
-              </h1>
-
-              {/* Description */}
-              <p className="text-sm md:text-base text-slate-200 mt-4 leading-relaxed max-w-2xl">
-                <InlineEditable
-                  value={activeProfile.about}
-                  onSave={(val) => setProfile((p) => ({ ...p, about: String(val) }))}
-                  isEditingActive={isEditMode}
-                  type="textarea"
-                  label="Hero Story"
-                  tag="span"
-                />
-              </p>
-
-              {/* Quick Metrics Bar */}
-              {sectionVisibility.metrics && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/20 text-xs">
-                  <div>
-                    <div className="text-white/60 font-mono text-[10px] uppercase">Services from</div>
-                    <div className="text-xl font-bold font-mono text-emerald-400">
-                      ₹{Math.min(...activeServices.map((s) => s.price))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-white/60 font-mono text-[10px] uppercase">Lead Specialist</div>
-                    <div className="text-sm font-bold truncate">
-                      <InlineEditable
-                        value={activeProfile.ownerName}
-                        onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
-                        isEditingActive={isEditMode}
-                        label="Lead Specialist Name"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-white/60 font-mono text-[10px] uppercase">Specialty</div>
-                    <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0] || 'Artistry'}</div>
-                  </div>
-                  <div>
-                    <div className="text-white/60 font-mono text-[10px] uppercase">Client Rating</div>
-                    <div className="text-sm font-bold flex items-center gap-1 text-amber-300">
-                      <Star className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
-                    </div>
-                  </div>
+                  {/* AI Mood Indicator Tag */}
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-950/60 backdrop-blur-md text-amber-300 border border-amber-400/30 text-[10px] font-mono font-bold shadow-xs">
+                    <Sparkles className="w-3 h-3 text-amber-300 animate-pulse" />
+                    <span>AI Mood: {heroAIStyling.moodName}</span>
+                  </span>
                 </div>
-              )}
 
-              {/* Primary Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3.5 mt-8">
-                <button
-                  type="button"
-                  onClick={() => handleOpenBooking()}
-                  className="font-bold text-sm px-6 py-3.5 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer text-white hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
-                  style={{ backgroundColor: activeAccent.primaryHex }}
+                {/* Tagline / Heading */}
+                <h1 
+                  className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight text-balance transition-colors duration-300"
+                  style={{ 
+                    color: heroAIStyling.headingColor,
+                    textShadow: heroAIStyling.textShadow
+                  }}
                 >
-                  <span>Book Now in INR (₹)</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                  <InlineEditable
+                    value={activeProfile.tagline}
+                    onSave={(val) => setProfile((p) => ({ ...p, tagline: String(val) }))}
+                    isEditingActive={isEditMode}
+                    label="Hero Tagline"
+                    tag="span"
+                  />
+                </h1>
 
-                <a
-                  href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="bg-emerald-600/90 hover:bg-emerald-600 text-white font-medium text-xs px-5 py-3.5 rounded-xl border border-emerald-500/30 flex items-center gap-2 transition-all cursor-pointer"
+                {/* Description */}
+                <p 
+                  className="text-sm md:text-base mt-4 leading-relaxed max-w-2xl transition-colors duration-300"
+                  style={{ 
+                    color: heroAIStyling.subtitleColor,
+                    textShadow: heroAIStyling.textShadow !== 'none' ? '0 1px 4px rgba(0,0,0,0.7)' : 'none'
+                  }}
                 >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>WhatsApp Us ({activeProfile.whatsapp})</span>
-                </a>
+                  <InlineEditable
+                    value={activeProfile.about}
+                    onSave={(val) => setProfile((p) => ({ ...p, about: String(val) }))}
+                    isEditingActive={isEditMode}
+                    type="textarea"
+                    label="Hero Story"
+                    tag="span"
+                  />
+                </p>
+
+                {/* Quick Metrics Bar */}
+                {sectionVisibility.metrics && (
+                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t ${heroAIStyling.metricsBorderColor} text-xs transition-colors`}>
+                    <div>
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Services from</div>
+                      <div className={`text-xl font-bold font-mono ${heroAIStyling.metricsValueColor}`}>
+                        ₹{Math.min(...activeServices.map((s) => s.price))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Lead Specialist</div>
+                      <div className="text-sm font-bold truncate">
+                        <InlineEditable
+                          value={activeProfile.ownerName}
+                          onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
+                          isEditingActive={isEditMode}
+                          label="Lead Specialist Name"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Specialty</div>
+                      <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0] || 'Artistry'}</div>
+                    </div>
+                    <div>
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Client Rating</div>
+                      <div className="text-sm font-bold flex items-center gap-1 text-amber-400">
+                        <Star className="w-3.5 h-3.5 fill-amber-400" />
+                        <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Primary Action Buttons */}
+                <div className="flex flex-wrap items-center gap-3.5 mt-8">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBooking()}
+                    className="font-bold text-sm px-6 py-3.5 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ 
+                      backgroundColor: heroAIStyling.primaryBtnBg,
+                      color: heroAIStyling.primaryBtnText 
+                    }}
+                  >
+                    <span>Book Now in INR (₹)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  <a
+                    href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-3.5 rounded-xl border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>WhatsApp Us ({activeProfile.whatsapp})</span>
+                  </a>
+                </div>
               </div>
-
             </div>
           </section>
         )}
@@ -1097,30 +1172,33 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               {/* Sub-Category Filter Tabs & Add Service button */}
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                  {subCategoriesList.map((subCat) => (
-                    <button
-                      key={subCat}
-                      type="button"
-                      onClick={() => setActiveSubCategory(subCat)}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all cursor-pointer ${
-                        activeSubCategory === subCat
-                          ? 'text-white shadow-xs'
-                          : isDarkCanvas
-                          ? 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800'
-                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                      }`}
-                      style={activeSubCategory === subCat ? { backgroundColor: activeAccent.primaryHex } : {}}
-                    >
-                      {subCat}
-                    </button>
-                  ))}
+                  {subCategoriesList.map((subCat) => {
+                    const isActive = activeSubCategory === subCat;
+                    return (
+                      <button
+                        key={subCat}
+                        type="button"
+                        onClick={() => setActiveSubCategory(subCat)}
+                        className={`text-xs font-extrabold px-3.5 py-2 rounded-xl whitespace-nowrap transition-all cursor-pointer ${
+                          isActive
+                            ? 'shadow-xs'
+                            : isDarkCanvas
+                            ? 'bg-neutral-900 text-neutral-300 hover:text-white border border-neutral-800'
+                            : 'bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200 border border-slate-200/60'
+                        }`}
+                        style={isActive ? { backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' } : {}}
+                      >
+                        {subCat}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {isEditMode && (
                   <button
                     type="button"
                     onClick={handleAddNewService}
-                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-xs cursor-pointer"
+                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs cursor-pointer"
                     title="Add new custom service to menu"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -1137,14 +1215,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   key={srv.id}
                   className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 group ${
                     isDarkCanvas
-                      ? 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
-                      : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 shadow-xs'
+                      ? 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'
+                      : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-sm md:text-base text-slate-900 dark:text-white">
+                        <h3 className={`font-extrabold text-base md:text-lg leading-snug ${
+                          isDarkCanvas ? 'text-white' : 'text-slate-900'
+                        }`}>
                           <InlineEditable
                             value={srv.name}
                             onSave={(val) => handleUpdateServiceName(srv.id, String(val))}
@@ -1154,15 +1234,17 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </h3>
                         {srv.popular && (
                           <span 
-                            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md text-white shadow-xs shrink-0"
-                            style={{ backgroundColor: activeAccent.primaryHex }}
+                            className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-lg border border-white/20 shadow-2xs shrink-0 tracking-wider uppercase"
+                            style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
                           >
                             POPULAR
                           </span>
                         )}
                       </div>
 
-                      <p className={`text-xs mt-1.5 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'}`}>
+                      <p className={`text-xs mt-1.5 leading-relaxed font-medium ${
+                        isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'
+                      }`}>
                         <InlineEditable
                           value={srv.description}
                           onSave={(val) => handleUpdateServiceDesc(srv.id, String(val))}
@@ -1175,7 +1257,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                     {/* Price & Duration with Inline Editable INR (₹) */}
                     <div className="text-right shrink-0 flex flex-col items-end">
-                      <div className="text-lg md:text-xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                      <div className={`text-lg md:text-xl font-extrabold font-mono ${
+                        isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
+                      }`}>
                         <InlineEditable
                           value={srv.price}
                           onSave={(val) => handleUpdateServicePrice(srv.id, Number(val))}
@@ -1186,14 +1270,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           className="font-mono font-extrabold"
                         />
                       </div>
-                      {/* Duration Display: Only show on public menu if showDuration !== false, but keep visible in edit mode with indicator */}
+                      {/* Duration Display */}
                       {(srv.showDuration !== false || isEditMode) && (
-                        <div className={`text-[11px] font-mono flex items-center gap-1 mt-0.5 ${
+                        <div className={`text-[11px] font-mono flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md border ${
                           srv.showDuration === false 
-                            ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/60' 
-                            : 'text-slate-400'
+                            ? 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800' 
+                            : isDarkCanvas
+                            ? 'text-neutral-300 bg-neutral-800 border-neutral-700'
+                            : 'text-slate-700 bg-slate-100 border-slate-200'
                         }`}>
-                          <Clock className="w-3 h-3" />
+                          <Clock className="w-3 h-3 text-slate-500 dark:text-neutral-400 shrink-0" />
                           <InlineEditable
                             value={srv.durationMinutes}
                             onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
@@ -1203,8 +1289,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             label="Duration"
                           />
                           {isEditMode && srv.showDuration === false && (
-                            <span className="text-[9px] font-mono font-bold text-amber-600 dark:text-amber-400">
-                              (Hidden on site)
+                            <span className="text-[9px] font-mono font-bold text-amber-700 dark:text-amber-300 ml-1">
+                              (Hidden)
                             </span>
                           )}
                         </div>
@@ -1213,8 +1299,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                   {/* Actions Bar inside Card */}
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 dark:border-neutral-800 text-xs">
-                    <span className="text-[11px] font-mono text-slate-400">
+                  <div className={`flex items-center justify-between pt-3 border-t text-xs ${
+                    isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'
+                  }`}>
+                    <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border ${
+                      isDarkCanvas
+                        ? 'bg-neutral-800 border-neutral-700 text-neutral-300'
+                        : 'bg-slate-100 border-slate-200 text-slate-700'
+                    }`}>
                       Category: {srv.category}
                     </span>
 
@@ -1226,7 +1318,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             onClick={() => handleToggleServiceShowDuration(srv.id)}
                             className={`p-1.5 rounded-lg transition-colors cursor-pointer text-xs flex items-center gap-1 ${
                               srv.showDuration === false
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300'
                                 : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-neutral-800'
                             }`}
                             title={
@@ -1256,10 +1348,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenBooking(srv)}
-                        className="font-bold px-3.5 py-1.5 rounded-xl text-white text-xs shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer hover:opacity-90"
-                        style={{ backgroundColor: activeAccent.primaryHex }}
+                        className="font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-xs transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer hover:opacity-90"
+                        style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
                       >
-                        <CalendarCheck className="w-3.5 h-3.5" />
+                        <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
                         <span>Book (₹{srv.price})</span>
                       </button>
                     </div>
@@ -1324,8 +1416,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               {activeStylists.map((st) => (
                 <div
                   key={st.id}
-                  className={`rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all ${
-                    isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
+                  className={`rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all shadow-xs ${
+                    isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'
                   }`}
                 >
                   <div className="flex items-start gap-3.5">
@@ -1340,7 +1432,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
-                        <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                        <h3 className={`font-extrabold text-base truncate ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
                           <InlineEditable
                             value={st.name}
                             onSave={(val) => handleUpdateStylistName(st.id, String(val))}
@@ -1348,8 +1440,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             label="Specialist Name"
                           />
                         </h3>
-                        <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded text-[11px] font-bold text-amber-800 dark:text-amber-300 shrink-0">
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        <div className={`flex items-center gap-1 border px-2 py-0.5 rounded-lg text-xs font-extrabold shrink-0 ${
+                          isDarkCanvas
+                            ? 'bg-amber-950/80 border-amber-500/60 text-amber-200'
+                            : 'bg-amber-100/90 border-amber-300 text-amber-950 shadow-2xs'
+                        }`}>
+                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-600 shrink-0" />
                           <InlineEditable
                             value={st.rating}
                             onSave={(val) => handleUpdateStylistRating(st.id, Number(val))}
@@ -1360,7 +1456,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
+                      <p className={`text-xs font-semibold truncate mt-1 ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'}`}>
                         <InlineEditable
                           value={st.role}
                           onSave={(val) => handleUpdateStylistRole(st.id, String(val))}
@@ -1369,22 +1465,22 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         />
                       </p>
 
-                      <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-semibold mt-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <div className={`flex items-center gap-1.5 text-[11px] font-bold mt-1.5 ${isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
                         <span>Accepting Online Bookings</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Specialties tags */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex flex-wrap gap-1.5">
+                  <div className={`pt-2.5 border-t flex flex-wrap gap-1.5 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
                     {st.specialties && st.specialties.map((spec, i) => (
                       <span
                         key={i}
-                        className={`text-[11px] font-medium px-2 py-0.5 rounded-md border ${
+                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
                           isDarkCanvas
-                            ? 'bg-neutral-800 border-neutral-700 text-neutral-300'
-                            : 'bg-slate-100 border-slate-200 text-slate-700'
+                            ? 'bg-neutral-800/80 border-neutral-700 text-neutral-200'
+                            : 'bg-slate-100 border-slate-200/80 text-slate-800'
                         }`}
                       >
                         {spec}
@@ -1393,15 +1489,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                   {/* Book / Manage */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex items-center justify-between">
+                  <div className={`pt-2.5 border-t flex items-center justify-between gap-2 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
                     {isEditMode && (
                       <button
                         type="button"
                         onClick={() => handleDeleteStylist(st.id)}
-                        className="p-1 rounded text-slate-400 hover:text-rose-600"
+                        className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-colors shrink-0 cursor-pointer"
                         title="Delete specialist"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     )}
 
@@ -1411,10 +1507,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         setSelectedStylist(st);
                         setIsBookingOpen(true);
                       }}
-                      className="ml-auto text-xs font-bold text-slate-700 dark:text-neutral-200 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                      className="w-full text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                      style={{
+                        backgroundColor: isDarkCanvas ? '#ffffff' : activeAccent.primaryHex,
+                        color: isDarkCanvas ? '#0f172a' : 'var(--accent-text-color, #ffffff)',
+                      }}
                     >
                       <span>Select for Service</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
+                      <ChevronRight className="w-4 h-4 shrink-0" />
                     </button>
                   </div>
 
@@ -1692,43 +1792,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       <BookingModal
         isOpen={isBookingOpen}
         onClose={() => setIsBookingOpen(false)}
-        service={selectedService}
-        stylist={selectedStylist}
-        servicesList={activeServices}
-        stylistsList={activeStylists}
-        salonName={activeProfile.businessName}
-        currency={activeProfile.currency || '₹'}
-        onConfirmBooking={(bookingData) => {
-          const newApt: Appointment = {
-            id: `apt-${Date.now()}`,
-            clientName: bookingData.clientName,
-            clientPhone: bookingData.clientPhone,
-            clientEmail: bookingData.clientEmail,
-            serviceId: bookingData.service.id,
-            serviceName: bookingData.service.name,
-            servicePrice: bookingData.service.price,
-            stylistId: bookingData.stylist.id,
-            stylistName: bookingData.stylist.name,
-            date: bookingData.date,
-            time: bookingData.time,
-            status: 'confirmed',
-            paymentStatus: bookingData.paymentMethod === 'pay_salon' ? 'pay_at_salon' : 'paid_full',
-            amountPaid: bookingData.paymentMethod === 'pay_salon' ? 0 : bookingData.service.price,
-            createdAt: new Date().toISOString()
-          };
-
+        profile={activeProfile}
+        services={activeServices}
+        stylists={activeStylists}
+        initialService={selectedService}
+        initialStylist={selectedStylist}
+        onAddAppointment={(newApt) => {
           onAddAppointment(newApt);
           setIsBookingOpen(false);
-
+        }}
+        themeAccentHex={activeAccent.primaryHex}
+        onShowToast={(toastData) => {
           setToastMessage({
-            id: newApt.id,
-            title: 'Appointment Booked Successfully!',
-            clientName: newApt.clientName,
-            serviceName: newApt.serviceName,
-            stylistName: newApt.stylistName,
-            dateTime: `${newApt.date} at ${newApt.time}`,
-            refCode: `NX-${Math.floor(100000 + Math.random() * 900000)}`,
-            price: newApt.servicePrice
+            id: toastData.id,
+            title: toastData.title,
+            clientName: toastData.clientName,
+            serviceName: toastData.serviceName,
+            stylistName: toastData.stylistName,
+            dateTime: toastData.dateTime,
+            refCode: toastData.refCode,
+            price: toastData.price
           });
         }}
       />

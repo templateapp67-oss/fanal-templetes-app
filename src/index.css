@@ -104,6 +104,14 @@
     --primary-accent: #9f1239;
     --theme-primary: #9f1239;
     --theme-secondary: #e11d48;
+    --accent-luminance: 0.15;
+    --accent-text-color: #ffffff;
+    --accent-contrast-text: #ffffff;
+    --color-on-primary: #ffffff;
+    --theme-on-accent: #ffffff;
+    --color-charcoal: #1e293b;
+    --color-white: #ffffff;
+    --heading-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
     --font-display: 'Manrope', sans-serif;
     --font-body: 'Hanken Grotesk', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
@@ -113,8 +121,9 @@
     font-family: var(--font-body);
   }
 
-  h1, h2, h3, h4, .font-display {
+  h1, h2, h3, h4, h5, h6, .font-display {
     font-family: var(--font-display);
+    text-shadow: var(--heading-text-shadow, 0 1px 3px rgba(0, 0, 0, 0.45));
   }
 
   .font-mono-caps {
@@ -122,6 +131,28 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+}
+
+/* Dynamic Accent Contrast & Heading Text-Shadow Utility Classes */
+.text-shadow-subtle {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.text-shadow-subtle-sm {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.text-shadow-subtle-light {
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(255, 255, 255, 0.6);
+}
+
+.text-dynamic-accent {
+  color: var(--accent-text-color, #ffffff);
+}
+
+.bg-dynamic-accent {
+  background-color: var(--primary-accent);
+  color: var(--accent-text-color, #ffffff);
 }
 
 /* Material Symbols Styling */

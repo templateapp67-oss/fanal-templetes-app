@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, ClientRecord, LoyaltyConfig } from '../types';
-import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar } from '../themeAccents';
+import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
+import { validateAndReadImageFile } from '../utils/imageUploadHelper';
 import { TeamManagement } from './TeamManagement';
 import { ServiceManagement } from './ServiceManagement';
 import { PromoStudio } from './PromoStudio';
 import { LoyaltyManagement } from './LoyaltyManagement';
+import { SocialConnectivityStep } from './SocialConnectivityStep';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
 
 interface SaaSDashboardProps {
@@ -23,7 +25,7 @@ interface SaaSDashboardProps {
   onNavigateToPreview?: () => void;
 }
 
-type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'marketing' | 'appearance' | 'website';
+type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'marketing' | 'social_connectivity' | 'appearance' | 'website';
 
 export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   profile,
@@ -55,6 +57,60 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
   const [customHexInput, setCustomHexInput] = useState<string>(currentPrimaryColor);
   const [accentAppliedFeedback, setAccentAppliedFeedback] = useState<string>('');
+  const [appearanceError, setAppearanceError] = useState<string | null>(null);
+  const [appearanceSuccess, setAppearanceSuccess] = useState<string | null>(null);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAppearanceError(null);
+    const result = await validateAndReadImageFile(file);
+    if (!result.isValid) {
+      setAppearanceError(result.errorMessage || 'Invalid image file.');
+      return;
+    }
+
+    if (result.dataUrl) {
+      setProfile((prev) => {
+        const updated = { ...prev, logoUrl: result.dataUrl };
+        try {
+          localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(updated));
+        } catch (err) {
+          console.warn('LocalStorage save warning:', err);
+        }
+        return updated;
+      });
+      setAppearanceSuccess('Custom Logo uploaded and saved to profile & localStorage!');
+      setTimeout(() => setAppearanceSuccess(null), 4000);
+    }
+  };
+
+  const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAppearanceError(null);
+    const result = await validateAndReadImageFile(file);
+    if (!result.isValid) {
+      setAppearanceError(result.errorMessage || 'Invalid image file.');
+      return;
+    }
+
+    if (result.dataUrl) {
+      setProfile((prev) => {
+        const updated = { ...prev, coverImageUrl: result.dataUrl };
+        try {
+          localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(updated));
+        } catch (err) {
+          console.warn('LocalStorage save warning:', err);
+        }
+        return updated;
+      });
+      setAppearanceSuccess('Custom Hero Cover Image uploaded and saved to profile & localStorage!');
+      setTimeout(() => setAppearanceSuccess(null), 4000);
+    }
+  };
 
   const totalRevenue = appointments.reduce((sum, a) => sum + a.servicePrice, 0) + 142500;
   const totalBookings = appointments.length + 68;
@@ -96,7 +152,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     setMarketingLoading(true);
     setTimeout(() => {
       setMarketingSms(
-        `Namaste [Client Name]! We miss your glow at ${profile.businessName}. Book your favorite service this week and receive an exclusive complimentary botanical scalp or hand spa therapy. Claim your slot: https://${profile.subdomain}.nexora.in/book`
+        `Namaste [Client Name]! We miss your glow at ${profile?.businessName || 'Our Salon'}. Book your favorite service this week and receive an exclusive complimentary botanical scalp or hand spa therapy. Claim your slot: https://${profile?.subdomain || 'salon'}.nexora.in/book`
       );
       setMarketingLoading(false);
     }, 1000);
@@ -165,13 +221,13 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-display text-2xl font-bold">{profile.businessName}</h1>
+                <h1 className="font-display text-2xl font-bold">{profile?.businessName || 'Our Salon'}</h1>
                 <span className="bg-emerald-100 text-emerald-700 text-[10px] font-mono-caps font-bold px-2 py-0.5 rounded-full">
                   LIVE SALON SITE
                 </span>
               </div>
               <p className="text-xs text-gray-500 font-mono mt-0.5">
-                https://{profile.subdomain}.nexora.in • {profile.city}
+                https://{profile?.subdomain || 'salon'}.nexora.in • {profile?.city || 'India'}
               </p>
             </div>
           </div>
@@ -209,6 +265,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             { id: 'clients', label: 'Clients CRM', icon: 'group' },
             { id: 'loyalty', label: 'Loyalty & Rewards', icon: 'military_tech' },
             { id: 'marketing', label: 'Promo Image & Social', icon: 'photo_camera_back' },
+            { id: 'social_connectivity', label: 'Step 06 • Social Connectivity', icon: 'share' },
             { id: 'appearance', label: 'Appearance', icon: 'palette' },
             { id: 'website', label: 'Salon Info', icon: 'storefront' }
           ].map((tab) => {
@@ -587,6 +644,17 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           </div>
         )}
 
+        {/* TAB CONTENT: STEP 06 • SOCIAL CONNECTIVITY */}
+        {activeTab === 'social_connectivity' && (
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
+            <SocialConnectivityStep
+              profile={profile}
+              setProfile={setProfile}
+              onContinue={onNavigateToPreview}
+            />
+          </div>
+        )}
+
         {/* TAB CONTENT: APPEARANCE (THEME ACCENT COLOR PICKER & CSS VARIABLE UPDATER) */}
         {activeTab === 'appearance' && (
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-6">
@@ -600,11 +668,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                     <span className="material-symbols-outlined text-lg">palette</span>
                   </span>
                   <h2 className="font-display font-bold text-xl text-gray-900">
-                    Appearance & Theme Accent
+                    Appearance & Brand Media
                   </h2>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Pick a Theme Accent color for your salon. This dynamically updates the primary accent CSS variable (<code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono text-[11px]">--primary-accent</code>) used across all 14 templates without breaking layout grids or typography scales.
+                  Customize your salon's brand assets and accent palette. Upload custom logos and hero cover banners (converted to data URLs and saved to localStorage), or pick a Theme Accent color (<code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono text-[11px]">--primary-accent</code>) used across all 14 templates.
                 </p>
               </div>
 
@@ -617,6 +685,148 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   <span>Preview Across 14 Templates</span>
                 </button>
               )}
+            </div>
+
+            {/* BRAND MEDIA ASSETS: CUSTOM LOGO & HERO IMAGE UPLOAD */}
+            <div className="p-5 rounded-2xl border border-gray-200 bg-gray-50/70 flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-purple-600 text-xl">add_photo_alternate</span>
+                    <h3 className="font-display font-bold text-base text-gray-900">
+                      Brand Media Assets (Custom Logo & Hero Image)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Upload your salon's custom Logo or Hero Cover Image (Max 5MB per file). Images are validated, converted to Data URLs, and saved in your salon profile in localStorage.
+                  </p>
+                </div>
+              </div>
+
+              {/* Error and Success Feedback Alerts */}
+              {appearanceError && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl flex items-center justify-between text-xs font-medium">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-rose-600 text-base">error</span>
+                    <span>{appearanceError}</span>
+                  </div>
+                  <button onClick={() => setAppearanceError(null)} className="text-rose-500 hover:text-rose-800 text-xs font-bold cursor-pointer">
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {appearanceSuccess && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-xl flex items-center gap-2 text-xs font-bold animate-fade-in">
+                  <span className="material-symbols-outlined text-emerald-600 text-base">check_circle</span>
+                  <span>{appearanceSuccess}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Custom Logo Upload Card */}
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-purple-600">image</span>
+                        <span>Salon Header Logo</span>
+                      </span>
+                      {profile.logoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfile((prev) => {
+                              const updated = { ...prev, logoUrl: undefined };
+                              try {
+                                localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(updated));
+                              } catch (e) {
+                                console.warn('LocalStorage save warning:', e);
+                              }
+                              return updated;
+                            });
+                            setAppearanceSuccess('Custom header logo cleared.');
+                            setTimeout(() => setAppearanceSuccess(null), 3000);
+                          }}
+                          className="text-[11px] text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+                        >
+                          Remove Logo
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="h-24 rounded-lg bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center p-2 relative overflow-hidden">
+                      {profile.logoUrl ? (
+                        <img
+                          src={profile.logoUrl}
+                          alt="Salon Logo Preview"
+                          className="max-h-20 max-w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-center text-gray-400 text-xs">
+                          <span className="material-symbols-outlined text-2xl block text-gray-300">storefront</span>
+                          <span>No custom logo uploaded yet</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="w-full py-2.5 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs">
+                      <span className="material-symbols-outlined text-sm">upload_file</span>
+                      <span>Upload Custom Logo (Max 5MB)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="text-[10px] text-gray-400 text-center mt-1">
+                      Validated (&lt;5MB), converted to Data URL & saved in localStorage
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Custom Hero Image Upload Card */}
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-purple-600">photo_library</span>
+                        <span>Hero Cover Banner</span>
+                      </span>
+                    </div>
+
+                    <div className="h-24 rounded-lg bg-gray-900 border border-gray-200 flex items-center justify-center relative overflow-hidden">
+                      <img
+                        src={profile.coverImageUrl}
+                        alt="Hero Banner Preview"
+                        className="w-full h-full object-cover opacity-80"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2">
+                        <span className="text-[10px] text-white font-mono font-bold truncate">Active Hero Cover Image</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="w-full py-2.5 px-3 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs">
+                      <span className="material-symbols-outlined text-sm">upload_file</span>
+                      <span>Upload Custom Hero Banner (Max 5MB)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleHeroUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="text-[10px] text-gray-400 text-center mt-1">
+                      Validated (&lt;5MB), converted to Data URL & saved in localStorage
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Active CSS Variable Status Indicator */}
@@ -771,12 +981,15 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 style={{
                   '--primary-accent': currentPrimaryColor,
                   '--theme-primary': currentPrimaryColor,
+                  '--accent-luminance': getLuminance(currentPrimaryColor).toFixed(4),
+                  '--accent-text-color': getContrastTextColor(currentPrimaryColor),
+                  '--accent-contrast-text': getContrastTextColor(currentPrimaryColor),
                 } as React.CSSProperties}
               >
                 {/* 1. Primary Action Button */}
                 <button
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs flex items-center gap-1.5 cursor-pointer hover:opacity-90 transition-opacity"
-                  style={{ backgroundColor: 'var(--primary-accent)' }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: 'var(--primary-accent)', color: 'var(--accent-text-color, #ffffff)' }}
                 >
                   <span className="material-symbols-outlined text-sm">calendar_month</span>
                   <span>Book Appointment</span>
@@ -784,8 +997,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
                 {/* 2. Active Tab Pill */}
                 <div 
-                  className="px-4 py-1.5 rounded-full text-xs font-bold text-white shadow-xs flex items-center gap-1"
-                  style={{ backgroundColor: 'var(--primary-accent)' }}
+                  className="px-4 py-1.5 rounded-full text-xs font-bold shadow-xs flex items-center gap-1"
+                  style={{ backgroundColor: 'var(--primary-accent)', color: 'var(--accent-text-color, #ffffff)' }}
                 >
                   <span>Signature Treatments</span>
                   <span className="text-[10px] font-mono">✓</span>

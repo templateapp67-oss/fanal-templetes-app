@@ -404,24 +404,24 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-bold text-sm text-gray-900">{srv.name}</h4>
+                          <h4 className="font-extrabold text-sm text-slate-900">{srv.name}</h4>
                           {srv.popular && (
                             <span 
-                              className="text-[10px] font-mono font-bold px-2 py-0.2 rounded-md text-white shadow-xs"
-                              style={{ backgroundColor: primaryAccentColor }}
+                              className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-md shadow-2xs border border-white/20"
+                              style={{ backgroundColor: primaryAccentColor, color: 'var(--accent-text-color, #ffffff)' }}
                             >
                               POPULAR
                             </span>
                           )}
                         </div>
 
-                        <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md inline-block mt-1">
+                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md inline-block mt-1">
                           {srv.category}
                         </span>
                       </div>
 
                       <div className="text-right shrink-0">
-                        <div className="font-display font-extrabold text-lg text-emerald-700 font-mono">
+                        <div className="font-display font-extrabold text-lg text-emerald-800 font-mono">
                           ₹{srv.price.toLocaleString('en-IN')}
                         </div>
                       </div>

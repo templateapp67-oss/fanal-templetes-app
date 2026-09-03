@@ -101,6 +101,22 @@ export interface CategoryTemplateConfig {
   stylists: Stylist[];
 }
 
+export type VideoCategoryTag = 'SHOWCASE' | 'SHORT' | 'LONG';
+
+export interface SocialVideo {
+  id: string;
+  youtubeUrl: string;
+  videoId: string;
+  title: string;
+  description?: string;
+  channelTitle?: string;
+  thumbnailUrl: string;
+  categoryTag: VideoCategoryTag;
+  isOwnerVideo: boolean; // true if added by owner ("yours"), false for default ("showcase")
+  views?: string;
+  transformationTag?: string;
+}
+
 export interface SalonProfile {
   businessType: BusinessTypeId;
   businessName: string;
@@ -113,6 +129,7 @@ export interface SalonProfile {
   about: string;
   ownerPhotoUrl: string;
   coverImageUrl: string;
+  logoUrl?: string;
   themePreset: SalonThemePreset;
   currency: string;
   subdomain: string;
@@ -121,6 +138,10 @@ export interface SalonProfile {
   city: string;
   postalCode: string;
   instagramHandle: string;
+  facebookPage?: string;
+  youtubeChannel?: string;
+  tiktokProfile?: string;
+  socialVideos?: SocialVideo[];
   requireDeposit: boolean;
   depositPercentage: number;
   themeAccentKey?: string;

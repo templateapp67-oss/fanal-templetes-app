@@ -99,11 +99,11 @@ export const ACCENT_PALETTES: Record<AccentPaletteKey, ThemeAccentConfig> = {
     primaryHex: '#7e22ce',
     secondaryHex: '#a855f7',
     badgeBg: 'bg-purple-100',
-    badgeText: 'text-purple-950',
+    badgeText: 'text-purple-950 font-bold',
     buttonBg: 'bg-purple-700',
     buttonHoverBg: 'hover:bg-purple-800',
-    buttonText: 'text-white',
-    textAccent: 'text-purple-700',
+    buttonText: 'text-white font-bold',
+    textAccent: 'text-purple-900 font-extrabold',
     borderAccent: 'border-purple-300',
     lightBg: 'bg-purple-50',
     ringColor: 'focus:ring-purple-700'
@@ -114,15 +114,15 @@ export const ACCENT_PALETTES: Record<AccentPaletteKey, ThemeAccentConfig> = {
     categoryHint: 'Beauty Parlour & Glow',
     primaryHex: '#be185d',
     secondaryHex: '#f43f5e',
-    badgeBg: 'bg-pink-100',
-    badgeText: 'text-pink-950',
-    buttonBg: 'bg-pink-700',
-    buttonHoverBg: 'hover:bg-pink-800',
-    buttonText: 'text-white',
-    textAccent: 'text-pink-700',
-    borderAccent: 'border-pink-300',
-    lightBg: 'bg-pink-50',
-    ringColor: 'focus:ring-pink-700'
+    badgeBg: 'bg-rose-100',
+    badgeText: 'text-rose-950 font-bold',
+    buttonBg: 'bg-rose-800',
+    buttonHoverBg: 'hover:bg-rose-900',
+    buttonText: 'text-white font-bold',
+    textAccent: 'text-rose-900 font-extrabold',
+    borderAccent: 'border-rose-300',
+    lightBg: 'bg-rose-50',
+    ringColor: 'focus:ring-rose-800'
   },
   ocean: {
     key: 'ocean',
@@ -176,16 +176,62 @@ export const DEFAULT_CATEGORY_ACCENTS: Record<BusinessTypeId, AccentPaletteKey> 
 };
 
 /**
+ * Calculates relative luminance of a HEX color string (WCAG 2.x standard)
+ */
+export function getLuminance(hex: string): number {
+  if (!hex) return 0;
+  let cleanHex = hex.replace('#', '').trim();
+  if (cleanHex.length === 3) {
+    cleanHex = cleanHex.split('').map((c) => c + c).join('');
+  }
+  if (cleanHex.length !== 6) return 0;
+
+  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+
+  const calR = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+  const calG = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+  const calB = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+
+  return 0.2126 * calR + 0.7152 * calG + 0.0722 * calB;
+}
+
+/**
+ * Dynamically adjusts text color between white (#ffffff) or charcoal (#1e293b)
+ * based on the relative luminance of the given accent HEX color.
+ */
+export function getContrastTextColor(hex: string): '#ffffff' | '#1e293b' {
+  const lum = getLuminance(hex);
+  // WCAG contrast threshold: if luminance > 0.45, charcoal (#1e293b) provides high contrast, else white (#ffffff)
+  return lum > 0.45 ? '#1e293b' : '#ffffff';
+}
+
+/**
  * Updates the primary accent CSS variable across the document root
  * and all templates using var(--primary-accent) or var(--theme-primary).
+ * Automatically calculates relative luminance and updates dynamic text contrast variables.
  */
 export function applyPrimaryAccentCssVar(primaryHex: string, secondaryHex?: string) {
   if (typeof document !== 'undefined' && document.documentElement) {
+    const luminance = getLuminance(primaryHex);
+    const contrastColor = getContrastTextColor(primaryHex);
+
     document.documentElement.style.setProperty('--primary-accent', primaryHex);
     document.documentElement.style.setProperty('--theme-primary', primaryHex);
     document.documentElement.style.setProperty('--color-primary', primaryHex);
+
+    // Dynamic contrast & luminance CSS variables
+    document.documentElement.style.setProperty('--accent-luminance', luminance.toFixed(4));
+    document.documentElement.style.setProperty('--accent-text-color', contrastColor);
+    document.documentElement.style.setProperty('--accent-contrast-text', contrastColor);
+    document.documentElement.style.setProperty('--color-on-primary', contrastColor);
+    document.documentElement.style.setProperty('--theme-on-accent', contrastColor);
+
     if (secondaryHex) {
       document.documentElement.style.setProperty('--theme-secondary', secondaryHex);
+      const secContrast = getContrastTextColor(secondaryHex);
+      document.documentElement.style.setProperty('--theme-on-secondary', secContrast);
     }
   }
 }

@@ -90,8 +90,13 @@ export const PromoStudio: React.FC<PromoStudioProps> = ({
       modern_studio: 'Contemporary sleek studio lighting, neon edge lighting accents, high-contrast fashion editorial look',
     };
 
+    const bizName = profile?.businessName || 'Our Salon';
+    const subDomain = profile?.subdomain || 'salon';
+    const city = profile?.city || 'India';
+    const address = profile?.address || 'Our Studio';
+
     setCustomPrompt(
-      `An ultra-high resolution, commercial salon promotional image for "${serviceName}" at ${profile.businessName}. Style: ${styleDescriptions[aesthetic]}. Clean, professional beauty photography with space for promotional text overlay.`
+      `An ultra-high resolution, commercial salon promotional image for "${serviceName}" at ${bizName}. Style: ${styleDescriptions[aesthetic]}. Clean, professional beauty photography with space for promotional text overlay.`
     );
 
     // Update Headlines and Badges based on theme
@@ -112,14 +117,14 @@ export const PromoStudio: React.FC<PromoStudioProps> = ({
       setSubtext('Camera-ready glow & styling for your upcoming weddings & celebrations');
     } else if (campaignTheme === 'vip_welcome') {
       setCustomOfferText('FIRST-TIME CLIENT SPECIAL');
-      setHeadline(`Welcome to ${profile.businessName}`);
+      setHeadline(`Welcome to ${bizName}`);
       setPromoCode('WELCOME20');
       setSubtext(`Experience our award-winning ${selectedService.name} with complimentary consultation`);
     }
 
     // Generate WhatsApp Template
-    const bookingUrl = `https://${profile.subdomain || 'salon'}.nexora.in/book?service=${encodeURIComponent(selectedService.name)}`;
-    const waText = `✨ *SPECIAL INVITATION FROM ${profile.businessName.toUpperCase()}* ✨
+    const bookingUrl = `https://${subDomain}.nexora.in/book?service=${encodeURIComponent(selectedService.name)}`;
+    const waText = `✨ *SPECIAL INVITATION FROM ${bizName.toUpperCase()}* ✨
 
 Namaste! 🌸
 
@@ -129,7 +134,7 @@ Treat yourself to our signature *${selectedService.name}* at an exclusive promot
 💰 *Promotional Price*: *₹${discountedPrice.toLocaleString('en-IN')}* (Regular ~₹${selectedService.price.toLocaleString('en-IN')}~)
 🎟️ *Promo Code*: \`${promoCode}\`
 ⏱️ *Duration*: ${selectedService.durationMinutes} mins of pure pampering
-📍 *Location*: ${profile.address || profile.city || 'Our Studio'}
+📍 *Location*: ${address || city || 'Our Studio'}
 
 👉 *Claim your slot online*:
 ${bookingUrl}
@@ -139,7 +144,7 @@ Or reply to this message directly with your preferred date and time to reserve y
     setWhatsappTemplate(waText);
 
     // Generate Instagram Caption
-    const igText = `✨ *Glow up with ${profile.businessName}!* ✨
+    const igText = `✨ *Glow up with ${bizName}!* ✨
 
 Ready for a transformation? Experience our signature *${selectedService.name}* with an exclusive limited-time promotion! 💆‍♀️💇‍♂️
 
@@ -152,16 +157,16 @@ Ready for a transformation? Experience our signature *${selectedService.name}* w
 🏷️ *Price*: ₹${discountedPrice.toLocaleString('en-IN')} (Reg. ₹${selectedService.price.toLocaleString('en-IN')})
 🔑 *Use Code*: ${promoCode}
 
-📍 ${profile.city ? `${profile.city} • ` : ''}${profile.address || 'Visit us in studio'}
+📍 ${city ? `${city} • ` : ''}${address || 'Visit us in studio'}
 ⏰ Limited slots available this week!
 
 👇 *Tap the link in our bio to book your slot now*:
 ${bookingUrl}
 
-#${profile.businessName.replace(/\s+/g, '')} #${selectedService.name.replace(/\s+/g, '')} #SalonOffers #IndianSalons #${(profile.city || 'India').replace(/\s+/g, '')}Beauty #HairTransformation #SkinGlow #BridalGlam #NexoraSalons #SalonDeals`;
+#${bizName.replace(/\s+/g, '')} #${selectedService.name.replace(/\s+/g, '')} #SalonOffers #IndianSalons #${city.replace(/\s+/g, '')}Beauty #HairTransformation #SkinGlow #BridalGlam #NexoraSalons #SalonDeals`;
 
     setInstagramCaption(igText);
-  }, [selectedServiceId, campaignTheme, discountPercent, aesthetic, profile.businessName, profile.city, profile.subdomain]);
+  }, [selectedServiceId, campaignTheme, discountPercent, aesthetic, profile?.businessName, profile?.city, profile?.subdomain]);
 
   // Handle AI Image Generation
   const handleGenerateImage = async () => {
@@ -261,7 +266,7 @@ ${bookingUrl}
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(profile.businessName.toUpperCase(), 60, 90);
+      ctx.fillText((profile?.businessName || 'Our Salon').toUpperCase(), 60, 90);
 
       ctx.fillStyle = '#cbd5e1';
       ctx.font = '500 24px "Plus Jakarta Sans", sans-serif';
@@ -334,7 +339,7 @@ ${bookingUrl}
 
       // Trigger Download
       const link = document.createElement('a');
-      link.download = `${profile.businessName.toLowerCase().replace(/\s+/g, '-')}-promo-${selectedService.name.toLowerCase().replace(/\s+/g, '-')}.png`;
+      link.download = `${(profile?.businessName || 'salon').toLowerCase().replace(/\s+/g, '-')}-promo-${selectedService.name.toLowerCase().replace(/\s+/g, '-')}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
 
@@ -707,11 +712,11 @@ ${bookingUrl}
                         className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-white text-xs shadow-md"
                         style={{ backgroundColor: primaryAccentColor }}
                       >
-                        {profile.businessName.charAt(0)}
+                        {(profile?.businessName || 'S').charAt(0)}
                       </span>
                       <div>
                         <div className="font-display font-extrabold text-sm tracking-wide text-white drop-shadow-md">
-                          {profile.businessName.toUpperCase()}
+                          {(profile?.businessName || 'OUR SALON').toUpperCase()}
                         </div>
                         <div className="text-[10px] text-gray-300 font-mono">
                           {profile.city || 'India'} • ★ 4.98 Verified Sanctuary
