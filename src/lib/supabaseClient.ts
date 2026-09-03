@@ -1,14 +1,27 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Access environment variables safely in both Vite (client) and Node.js (server)
+// Static references are required for Vite build-time AST replacement of import.meta.env.VITE_*
+const getViteEnv = () => {
+  try {
+    return {
+      // @ts-ignore
+      url: import.meta.env ? import.meta.env.VITE_SUPABASE_URL : undefined,
+      // @ts-ignore
+      key: import.meta.env ? import.meta.env.VITE_SUPABASE_ANON_KEY : undefined,
+    };
+  } catch {
+    return { url: undefined, key: undefined };
+  }
+};
+
+const viteEnv = getViteEnv();
+
 const supabaseUrl = 
-  // @ts-ignore
-  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || 
+  viteEnv.url ||
   (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL));
 
 const supabaseAnonKey = 
-  // @ts-ignore
-  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || 
+  viteEnv.key ||
   (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY));
 
 if (!supabaseUrl || !supabaseAnonKey) {

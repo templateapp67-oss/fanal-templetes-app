@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface AIBioModalProps {
   isOpen: boolean;
@@ -22,6 +22,15 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -63,15 +72,17 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
 
   const toggleRecording = () => {
     if (isRecording) {
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
       setIsRecording(false);
       setRecordingSeconds(0);
       setSpecialties('Scalp detox, hair extensions, precision balayage and organic shine glaze');
     } else {
       setIsRecording(true);
-      const interval = setInterval(() => {
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 4) {
-            clearInterval(interval);
+            if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
             setIsRecording(false);
             setSpecialties('Custom organic color, luxury head spa and restorative treatments');
             return 0;
