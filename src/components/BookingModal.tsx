@@ -400,10 +400,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     onAddAppointment(newApt);
     setCurrentStep('confirmed');
 
+    // MOCK EMAIL TRIGGER
+    console.log(`[MOCK EMAIL] Confirmation sent to ${newApt.clientEmail} for appointment ${refNum}`);
+
     if (onShowToast) {
       onShowToast({
         id: String(Date.now()),
-        title: 'Appointment Confirmed via WhatsApp!',
+        title: 'Appointment Confirmed! Confirmation email sent.',
         clientName: newApt.clientName,
         serviceName: newApt.serviceName,
         stylistName: newApt.stylistName,
@@ -435,6 +438,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       `Thank you for booking with us!`;
 
     const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(msg)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
+  // Open WhatsApp with pre-filled service, date, time shortcut
+  const handleQuickWhatsAppBooking = () => {
+    const formattedPhone = (profile.whatsapp || '').replace(/\D/g, '');
+    const msg = `Namaste ${profile.businessName}! 🌟\n\n` +
+      `I would like to book a quick appointment with these details:\n` +
+      `💇‍♂️ Service: ${selectedService.name} (₹${selectedService.price.toLocaleString('en-IN')})\n` +
+      `📅 Date: ${bookingDate}\n` +
+      `⏰ Time: ${bookingTime} IST\n` +
+      `👤 Specialist: ${selectedStylist.name}\n\n` +
+      `Please let me know if this slot is available to confirm! Thank you.`;
+    
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`;
     window.open(whatsappUrl, '_blank');
   };
 
@@ -820,6 +838,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <span>{bookingDate} at {bookingTime} IST</span>
                 </div>
                 <span className="text-slate-600">{selectedService.name} ({selectedStylist.name})</span>
+              </div>
+
+              {/* Quick WhatsApp Booking Shortcut */}
+              <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-200/50 dark:border-emerald-900/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-400 font-extrabold text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>⚡ Quick WhatsApp Booking Shortcut</span>
+                  </div>
+                  <p className="text-[10.5px] text-slate-600 dark:text-neutral-400 mt-1 leading-relaxed">
+                    Skip filling out details and OTP! Tap to instantly send a pre-filled booking request for <strong>{selectedService.name}</strong> on WhatsApp.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickWhatsAppBooking}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 fill-white" />
+                  <span>Book on WhatsApp</span>
+                </button>
               </div>
 
               {/* Step Navigation Actions */}

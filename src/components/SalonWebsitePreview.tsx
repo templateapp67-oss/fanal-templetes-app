@@ -13,11 +13,16 @@ import {
   Mail, 
   Clock, 
   Star, 
-  ShieldCheck, 
+  ShieldCheck,
+  Facebook,
+  Youtube,
+  Instagram, 
   Award, 
   Navigation, 
   ExternalLink, 
   ChevronRight, 
+  ChevronLeft,
+  ZoomIn,
   ArrowRight, 
   Edit3, 
   Sliders, 
@@ -41,6 +46,7 @@ import { INITIAL_SALON_PROFILE } from '../mockData';
 import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
 import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
+import { InteractiveMapSetup } from './InteractiveMapSetup';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 import { TestimonialModal } from './ClientTestimonials';
 
@@ -164,6 +170,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     const data = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
     return data.reviews || [];
   });
+  const [testimonialIndex, setTestimonialIndex] = useState(0);
+
+  useEffect(() => {
+    if (activeReviews.length <= 1) return;
+    const interval = setInterval(() => {
+      setTestimonialIndex((prev) => (prev + 1) % activeReviews.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeReviews.length]);
+
   const [isTestimonialModalOpen, setIsTestimonialModalOpen] = useState<boolean>(false);
   const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
 
@@ -216,6 +232,29 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     }, 5500);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  // Lightbox keyboard navigation (Left/Right arrow keys and Escape key)
+  useEffect(() => {
+    if (!selectedGalleryPhoto) return;
+    const galleryPhotos = standardData.gallery || [];
+    const currentIndex = galleryPhotos.findIndex(photo => photo.url === selectedGalleryPhoto);
+    if (currentIndex === -1) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedGalleryPhoto(null);
+      } else if (e.key === 'ArrowLeft') {
+        const prevIndex = (currentIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
+        setSelectedGalleryPhoto(galleryPhotos[prevIndex].url);
+      } else if (e.key === 'ArrowRight') {
+        const nextIndex = (currentIndex + 1) % galleryPhotos.length;
+        setSelectedGalleryPhoto(galleryPhotos[nextIndex].url);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedGalleryPhoto, standardData.gallery]);
 
   const handleCopyRefCode = (code: string) => {
     navigator.clipboard?.writeText(code);
@@ -828,7 +867,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
               )}
               <div>
-                <div className="font-bold text-lg md:text-xl tracking-tight leading-snug">
+                <div className={`font-bold text-lg md:text-xl tracking-tight leading-snug ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
                   <InlineEditable
                     value={activeProfile.businessName}
                     onSave={(val) => setProfile((p) => ({ ...p, businessName: String(val) }))}
@@ -1067,7 +1106,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 2. ABOUT SALON SECTION (STORY, HYGIENE CERTIFICATIONS) */}
         {/* ============================================================ */}
         {sectionVisibility.about && (
-          <section className={`p-6 md:p-12 border-b ${
+          <motion.section 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className={`p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-white border-slate-200'
           }`}>
             <div className="max-w-4xl mx-auto">
@@ -1171,7 +1214,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
 
             </div>
-          </section>
+          </motion.section>
         )}
 
         {/* ============================================================ */}
@@ -1181,7 +1224,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           <section className={`p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
           }`} id="services-section">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
                   <span 
@@ -1213,44 +1256,48 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   />
                 </p>
               </div>
+            </div>
 
-              {/* Sub-Category Filter Tabs & Add Service button */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                  {subCategoriesList.map((subCat) => {
-                    const isActive = activeSubCategory === subCat;
-                    return (
-                      <button
-                        key={subCat}
-                        type="button"
-                        onClick={() => setActiveSubCategory(subCat)}
-                        className={`text-xs font-extrabold px-3.5 py-2 rounded-xl whitespace-nowrap transition-all cursor-pointer ${
-                          isActive
-                            ? 'shadow-xs'
-                            : isDarkCanvas
-                            ? 'bg-neutral-900 text-neutral-300 hover:text-white border border-neutral-800'
-                            : 'bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200 border border-slate-200/60'
-                        }`}
-                        style={isActive ? { backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' } : {}}
-                      >
-                        {subCat}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {isEditMode && (
-                  <button
-                    type="button"
-                    onClick={handleAddNewService}
-                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs cursor-pointer"
-                    title="Add new custom service to menu"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Service</span>
-                  </button>
-                )}
+            {/* Elegant Tabbed Navigation Bar for Categories */}
+            <div className="mt-8 mb-8 border-b border-slate-100 dark:border-neutral-800 pb-2 flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                {subCategoriesList.map((subCat) => {
+                  const isActive = activeSubCategory === subCat;
+                  return (
+                    <button
+                      key={subCat}
+                      type="button"
+                      onClick={() => setActiveSubCategory(subCat)}
+                      className={`text-xs md:text-sm font-extrabold px-4 py-2.5 rounded-xl transition-all relative whitespace-nowrap cursor-pointer ${
+                        isActive
+                          ? 'text-slate-900 bg-slate-100 dark:bg-neutral-800 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-900 dark:text-neutral-400 dark:hover:text-neutral-200'
+                      }`}
+                    >
+                      <span>{subCat}</span>
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeServiceTab"
+                          className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full"
+                          style={{ backgroundColor: activeAccent.primaryHex }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
+
+              {isEditMode && (
+                <button
+                  type="button"
+                  onClick={handleAddNewService}
+                  className="text-xs font-bold px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors shrink-0"
+                  title="Add new custom service to menu"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Service</span>
+                </button>
+              )}
             </div>
 
             {/* Services Grid */}
@@ -1300,46 +1347,50 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       </p>
                     </div>
 
-                    {/* Price & Duration with Inline Editable INR (₹) */}
-                    <div className="text-right shrink-0 flex flex-col items-end">
-                      <div className={`text-lg md:text-xl font-extrabold font-mono ${
-                        isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
-                      }`}>
-                        <InlineEditable
-                          value={srv.price}
-                          onSave={(val) => handleUpdateServicePrice(srv.id, Number(val))}
-                          isEditingActive={isEditMode}
-                          type="price"
-                          prefix="₹"
-                          label="Service Price (INR)"
-                          className="font-mono font-extrabold"
-                        />
-                      </div>
-                      {/* Duration Display */}
-                      {(srv.showDuration !== false || isEditMode) && (
-                        <div className={`text-[11px] font-mono flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md border ${
-                          srv.showDuration === false 
-                            ? 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800' 
-                            : isDarkCanvas
-                            ? 'text-neutral-300 bg-neutral-800 border-neutral-700'
-                            : 'text-slate-700 bg-slate-100 border-slate-200'
+                    {/* Price & Duration Elegant Badge System */}
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                      <div className="flex items-center gap-2 justify-end flex-wrap">
+                        <div className={`text-lg md:text-xl font-extrabold font-mono ${
+                          isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
                         }`}>
-                          <Clock className="w-3 h-3 text-slate-500 dark:text-neutral-400 shrink-0" />
                           <InlineEditable
-                            value={srv.durationMinutes}
-                            onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
+                            value={srv.price}
+                            onSave={(val) => handleUpdateServicePrice(srv.id, Number(val))}
                             isEditingActive={isEditMode}
-                            type="number"
-                            suffix=" mins"
-                            label="Duration"
+                            type="price"
+                            prefix="₹"
+                            label="Service Price (INR)"
+                            className="font-mono font-extrabold"
                           />
-                          {isEditMode && srv.showDuration === false && (
-                            <span className="text-[9px] font-mono font-bold text-amber-700 dark:text-amber-300 ml-1">
-                              (Hidden)
-                            </span>
-                          )}
                         </div>
-                      )}
+
+                        {/* Duration Badge directly next to Price */}
+                        {(srv.showDuration !== false || isEditMode) && (
+                          <div className={`text-[11px] font-mono flex items-center gap-1 px-2.5 py-1 rounded-full border shrink-0 ${
+                            srv.showDuration === false 
+                              ? 'text-amber-800 bg-amber-50 border-amber-200' 
+                              : isDarkCanvas
+                              ? 'text-neutral-200 bg-neutral-800 border-neutral-700'
+                              : 'text-slate-700 bg-slate-100 border-slate-200'
+                          }`}>
+                            <Clock className="w-3 h-3 text-slate-500 dark:text-neutral-400 shrink-0" />
+                            <InlineEditable
+                              value={srv.durationMinutes}
+                              onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
+                              isEditingActive={isEditMode}
+                              type="number"
+                              suffix=" mins"
+                              label="Duration"
+                              className="font-semibold"
+                            />
+                            {isEditMode && srv.showDuration === false && (
+                              <span className="text-[9px] font-mono font-bold text-amber-700 ml-0.5">
+                                (Hidden)
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1411,7 +1462,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 4. MASTER STYLISTS & SPECIALISTS SECTION (INLINE EDITABLE) */}
         {/* ============================================================ */}
         {sectionVisibility.stylists && (
-          <section className={`p-6 md:p-12 border-b ${
+          <motion.section 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className={`p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-slate-50/50 border-slate-200'
           }`} id="team-section">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
@@ -1457,9 +1512,25 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Stylists Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+            <motion.div 
+              variants={{
+                hidden: { opacity: 0 },
+                show: {
+                  opacity: 1,
+                  transition: { staggerChildren: 0.1 }
+                }
+              }}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true }}
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5"
+            >
               {activeStylists.map((st) => (
-                <div
+                <motion.div
+                  variants={{
+                    hidden: { opacity: 0, y: 10 },
+                    show: { opacity: 1, y: 0 }
+                  }}
                   key={st.id}
                   className={`rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all shadow-xs ${
                     isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'
@@ -1563,10 +1634,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </button>
                   </div>
 
-                </div>
+                </motion.div>
               ))}
-            </div>
-          </section>
+            </motion.div>
+          </motion.section>
         )}
 
         {/* ============================================================ */}
@@ -1611,9 +1682,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(activeReviews || []).map((rev, idx) => (
+              {(activeReviews || []).length > 0 && (
                 <div
-                  key={rev.id || idx}
                   className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 transition-all ${
                     isDarkCanvas ? 'bg-neutral-900/60 border-neutral-800' : 'bg-slate-50 border-slate-200'
                   }`}
@@ -1621,15 +1691,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-0.5 text-amber-400">
-                        {Array.from({ length: rev.rating || 5 }).map((_, i) => (
+                        {Array.from({ length: activeReviews[testimonialIndex].rating || 5 }).map((_, i) => (
                           <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
                         ))}
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400">{rev.date}</span>
+                      <span className="text-[10px] font-mono text-slate-400">{activeReviews[testimonialIndex].date}</span>
                     </div>
 
                     <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
-                      "{rev.comment}"
+                      "{activeReviews[testimonialIndex].comment}"
                     </p>
                   </div>
 
@@ -1637,26 +1707,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="pt-3 border-t border-slate-200/60 dark:border-neutral-800 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-slate-100 border border-slate-200/80">
-                          {rev.avatarUrl ? (
+                          {activeReviews[testimonialIndex].avatarUrl ? (
                             <img 
-                              src={rev.avatarUrl} 
-                              alt={rev.name} 
+                              src={activeReviews[testimonialIndex].avatarUrl} 
+                              alt={activeReviews[testimonialIndex].name} 
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
                             />
                           ) : (
                             <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
-                              {rev.name.charAt(0)}
+                              {activeReviews[testimonialIndex].name.charAt(0)}
                             </div>
                           )}
                         </div>
                         <div>
-                          <div className="font-bold text-xs">{rev.name}</div>
-                          <div className="text-[10px] text-slate-400">{rev.location || activeProfile.city} • Verified</div>
+                          <div className="font-bold text-xs">{activeReviews[testimonialIndex].name}</div>
+                          <div className="text-[10px] text-slate-400">{activeReviews[testimonialIndex].location || activeProfile.city} • Verified</div>
                         </div>
                       </div>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 max-w-[120px] truncate">
-                        {rev.serviceName || 'Custom Service'}
+                        {activeReviews[testimonialIndex].serviceName || 'Custom Service'}
                       </span>
                     </div>
 
@@ -1664,7 +1734,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-150 dark:border-neutral-800 flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleEditTestimonial(rev)}
+                          onClick={() => handleEditTestimonial(activeReviews[testimonialIndex])}
                           className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-amber-700 hover:bg-amber-50 bg-white border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Edit3 className="w-3 h-3" />
@@ -1672,7 +1742,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteTestimonial(rev.id)}
+                          onClick={() => handleDeleteTestimonial(activeReviews[testimonialIndex].id)}
                           className="px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50 hover:border-rose-200 bg-white border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1682,7 +1752,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     )}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           </section>
         )}
@@ -1722,15 +1792,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 <div
                   key={idx}
                   onClick={() => setSelectedGalleryPhoto(photo.url)}
-                  className="group relative rounded-xl overflow-hidden aspect-4/3 cursor-pointer shadow-xs border border-slate-200 dark:border-neutral-800"
+                  className="group relative rounded-xl overflow-hidden aspect-4/3 cursor-pointer shadow-md hover:shadow-xl border border-slate-100 dark:border-neutral-800 transition-all duration-300"
                 >
                   <img
                     src={photo.url}
                     alt={photo.title || 'Salon Gallery Photo'}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
+                    referrerPolicy="no-referrer"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 text-white">
-                    <span className="text-[11px] font-bold">{photo.title || photo.tag}</span>
+                  <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-between p-3.5 text-white">
+                    <div className="self-end bg-black/40 backdrop-blur-md p-1.5 rounded-full scale-75 group-hover:scale-100 transition-transform duration-300">
+                      <ZoomIn className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-300 bg-white/10 px-2 py-0.5 rounded-full backdrop-blur-xs">
+                        {photo.tag || 'Transformation'}
+                      </span>
+                      <h4 className="text-xs font-extrabold mt-1.5 truncate text-white drop-shadow-md">
+                        {photo.title || 'Salon View'}
+                      </h4>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1742,9 +1823,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 7. LOCATION, MAP & WORKING HOURS CARD */}
         {/* ============================================================ */}
         {sectionVisibility.location && (
-          <section className={`p-6 md:p-12 ${
-            isDarkCanvas ? 'bg-[#0f0f13]' : 'bg-white'
-          }`}>
+          <section className="p-6 md:p-12 bg-slate-50 border-t border-slate-100">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Location details */}
               <div className="flex flex-col justify-between gap-4">
@@ -1755,7 +1834,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   >
                     Find Us
                   </span>
-                  <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                  <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1 text-slate-900">
                     <InlineEditable
                       value={sectionHeadings.locationTitle}
                       onSave={(val) => setSectionHeadings((prev) => ({ ...prev, locationTitle: String(val) }))}
@@ -1764,7 +1843,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       tag="span"
                     />
                   </h2>
-                  <p className={`text-xs md:text-sm mt-1 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'}`}>
+                  <p className="text-xs md:text-sm mt-1 leading-relaxed text-slate-700">
                     Conveniently located in the heart of {activeProfile.city}. Free parking and valet available for salon clients.
                   </p>
                 </div>
@@ -1775,12 +1854,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <MapPin className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="font-bold text-slate-900 dark:text-white">Studio Address</div>
-                      <div className="text-slate-500 dark:text-neutral-400">
+                      <div className="font-bold text-slate-900 text-sm">Studio Address</div>
+                      <div className="text-slate-700 font-medium text-xs mt-0.5">
                         {activeProfile.address}, {activeProfile.city} - {activeProfile.postalCode}
                       </div>
                       {standardData.landmark && (
-                        <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5 font-medium">
+                        <div className="text-[11px] text-amber-800 mt-1 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200/50 inline-block">
                           Landmark: {standardData.landmark}
                         </div>
                       )}
@@ -1792,11 +1871,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <Clock className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="font-bold text-slate-900 dark:text-white">Operating Hours</div>
-                      <div className="text-slate-500 dark:text-neutral-400 font-mono text-[11px]">
+                      <div className="font-bold text-slate-900 text-sm">Operating Hours</div>
+                      <div className="text-slate-700 font-mono text-[11.5px] mt-0.5 font-semibold">
                         Monday – Saturday: {standardData.openHourText} – {standardData.closeHourText}
                       </div>
-                      <div className="text-slate-500 dark:text-neutral-400 font-mono text-[11px]">
+                      <div className="text-slate-700 font-mono text-[11.5px] font-semibold mt-0.5">
                         Sunday: 10:00 AM – 07:00 PM (By Advance Booking)
                       </div>
                     </div>
@@ -1807,19 +1886,44 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <Phone className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="font-bold text-slate-900 dark:text-white">Phone & Instant WhatsApp</div>
-                      <div className="text-slate-500 dark:text-neutral-400 font-mono">
-                        {activeProfile.phone} / {activeProfile.whatsapp}
+                      <div className="font-bold text-slate-900 text-sm">Phone & Instant WhatsApp</div>
+                      {activeProfile.phone === activeProfile.whatsapp ? (
+                        <div className="text-slate-700 font-mono font-semibold text-xs mt-0.5">
+                          {activeProfile.phone}
+                        </div>
+                      ) : (
+                        <div className="text-slate-700 font-mono font-semibold text-xs mt-0.5">
+                          Phone: {activeProfile.phone} | WhatsApp: {activeProfile.whatsapp}
+                        </div>
+                      )}
+                      
+                      {/* Social Links in Contact Section */}
+                      <div className="flex items-center gap-2 mt-3">
+                        {activeProfile.instagramHandle && (
+                          <a href={`https://instagram.com/${activeProfile.instagramHandle.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-slate-600 hover:text-pink-600">
+                            <Instagram className="w-5 h-5" />
+                          </a>
+                        )}
+                        {activeProfile.facebookPage && (
+                          <a href={activeProfile.facebookPage} target="_blank" rel="noreferrer" className="text-slate-600 hover:text-blue-600">
+                            <Facebook className="w-5 h-5" />
+                          </a>
+                        )}
+                        {activeProfile.youtubeChannel && (
+                          <a href={activeProfile.youtubeChannel} target="_blank" rel="noreferrer" className="text-slate-600 hover:text-red-600">
+                            <Youtube className="w-5 h-5" />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-200 dark:border-neutral-800 flex items-center gap-3">
+                <div className="pt-3 border-t border-slate-200 flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => handleOpenBooking()}
-                    className="font-bold text-xs px-5 py-2.5 rounded-xl text-white shadow-xs cursor-pointer hover:opacity-90"
+                    className="font-bold text-xs px-5 py-2.5 rounded-xl text-white shadow-xs cursor-pointer hover:opacity-90 transition-opacity"
                     style={{ backgroundColor: activeAccent.primaryHex }}
                   >
                     Schedule Your Appointment
@@ -1829,7 +1933,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-50 dark:hover:bg-neutral-800 flex items-center gap-1.5 cursor-pointer"
+                    className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
                   >
                     <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
                     <span>WhatsApp Inquiry</span>
@@ -1838,34 +1942,96 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
 
               {/* Map Preview Placeholder Card */}
-              <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-neutral-800 bg-slate-100 dark:bg-neutral-900 relative min-h-[260px] flex items-center justify-center p-6 text-center">
-                <div className="flex flex-col items-center gap-2 z-10 max-w-xs">
-                  <div className="w-12 h-12 rounded-2xl bg-white dark:bg-neutral-800 text-emerald-600 shadow-md flex items-center justify-center">
-                    <Navigation className="w-6 h-6 animate-pulse" />
-                  </div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white mt-2">
-                    {activeProfile.businessName}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-neutral-400">
-                    {activeProfile.address}, {activeProfile.city}
-                  </p>
-                  <a
-                    href={`https://maps.google.com/?q=${encodeURIComponent(`${activeProfile.businessName} ${activeProfile.address} ${activeProfile.city}`)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 text-xs font-bold px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-xs"
-                  >
-                    <span>Open in Google Maps</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                
-                {/* Background map grid illustration */}
-                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#000_1px,transparent_1px)] dark:bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+              <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 min-h-[380px] shadow-xs">
+                <InteractiveMapSetup 
+                  profile={activeProfile}
+                  setProfile={setProfile || (() => {})}
+                />
               </div>
             </div>
           </section>
         )}
+
+        {/* 8. FOOTER WITH DYNAMIC SOCIAL LINKS */}
+        <footer className={`py-8 px-6 md:px-12 border-t text-center ${
+          isDarkCanvas ? 'bg-[#0b0b0e] border-neutral-900 text-neutral-400' : 'bg-slate-50 border-slate-200 text-slate-500'
+        }`}>
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="text-left">
+              <span className={`font-extrabold text-sm tracking-tight ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
+                {activeProfile.businessName}
+              </span>
+              <p className={`text-[10px] mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-400'}`}>
+                © {new Date().getFullYear()} {activeProfile.businessName}. All rights reserved.
+              </p>
+            </div>
+
+            {/* Social Links Bar */}
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              {activeProfile.instagramHandle && (
+                <a
+                  href={`https://instagram.com/${activeProfile.instagramHandle.replace('@', '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="Instagram Profile"
+                >
+                  <Instagram className="w-4 h-4 text-pink-600" />
+                </a>
+              )}
+
+              {activeProfile.facebookPage && (
+                <a
+                  href={activeProfile.facebookPage}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="Facebook Page"
+                >
+                  <Facebook className="w-4 h-4 text-blue-600" />
+                </a>
+              )}
+
+              {activeProfile.youtubeChannel && (
+                <a
+                  href={activeProfile.youtubeChannel}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="YouTube Channel"
+                >
+                  <Youtube className="w-4 h-4 text-red-600" />
+                </a>
+              )}
+
+              {activeProfile.whatsapp && (
+                <a
+                  href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="WhatsApp Chat"
+                >
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                </a>
+              )}
+
+              {activeProfile.googleBusinessUrl && (
+                <a
+                  href={activeProfile.googleBusinessUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="Google Business Listing"
+                >
+                  <svg className="w-3.5 h-3.5 text-blue-500 fill-current" viewBox="0 0 24 24">
+                    <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.46 1.614l2.427-2.427C17.485 1.77 15.02 1 12.24 1 6.58 1 2 5.58 2 11.24s4.58 10.24 10.24 10.24c5.9 0 9.8-4.14 9.8-9.98 0-.6-.05-1.18-.15-1.72H12.24z" />
+                  </svg>
+                </a>
+              )}
+            </div>
+          </div>
+        </footer>
 
       </div>
 
@@ -1914,22 +2080,124 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       />
 
       {/* Gallery Lightbox Modal */}
-      {selectedGalleryPhoto && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
-          onClick={() => setSelectedGalleryPhoto(null)}
-        >
-          <div className="relative max-w-2xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl bg-black">
-            <button
-              onClick={() => setSelectedGalleryPhoto(null)}
-              className="absolute top-3 right-3 z-10 bg-black/60 text-white p-2 rounded-full hover:bg-black"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <img src={selectedGalleryPhoto} alt="Gallery Zoom" className="w-full h-full object-contain" />
+      {selectedGalleryPhoto && (() => {
+        const galleryPhotos = standardData.gallery || [];
+        const currentIndex = galleryPhotos.findIndex(photo => photo.url === selectedGalleryPhoto);
+        const currentPhoto = galleryPhotos[currentIndex];
+
+        const handlePrevPhoto = (e: React.MouseEvent) => {
+          e.stopPropagation();
+          if (galleryPhotos.length > 0 && currentIndex !== -1) {
+            const prevIndex = (currentIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
+            setSelectedGalleryPhoto(galleryPhotos[prevIndex].url);
+          }
+        };
+
+        const handleNextPhoto = (e: React.MouseEvent) => {
+          e.stopPropagation();
+          if (galleryPhotos.length > 0 && currentIndex !== -1) {
+            const nextIndex = (currentIndex + 1) % galleryPhotos.length;
+            setSelectedGalleryPhoto(galleryPhotos[nextIndex].url);
+          }
+        };
+
+        return (
+          <div 
+            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-8"
+            onClick={() => setSelectedGalleryPhoto(null)}
+          >
+            {/* Top Toolbar */}
+            <div className="w-full max-w-5xl flex items-center justify-between text-white pb-4 border-b border-white/10 shrink-0">
+              <div className="text-left">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
+                  {currentPhoto?.tag || 'Gallery Photo'}
+                </span>
+                <h3 className="text-sm md:text-base font-extrabold tracking-tight">
+                  {currentPhoto?.title || 'Studio Lookbook View'}
+                </h3>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-mono text-neutral-400">
+                  {currentIndex + 1} / {galleryPhotos.length}
+                </span>
+                <button
+                  onClick={() => setSelectedGalleryPhoto(null)}
+                  className="bg-white/10 text-white p-2.5 rounded-full hover:bg-white/20 transition-all cursor-pointer"
+                  title="Close Lightbox"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Main Image Stage with Navigation Controls */}
+            <div className="relative w-full max-w-5xl flex-1 flex items-center justify-center py-6 min-h-0">
+              {/* Prev Button */}
+              {galleryPhotos.length > 1 && (
+                <button
+                  onClick={handlePrevPhoto}
+                  className="absolute left-2 md:left-4 z-10 bg-black/60 hover:bg-black text-white p-3 md:p-4 rounded-full border border-white/10 transition-all cursor-pointer shadow-lg hover:scale-105 active:scale-95 shrink-0 flex items-center justify-center"
+                  title="Previous Photo"
+                >
+                  <ChevronLeft className="w-5 h-5 md:w-6 md:h-6" />
+                </button>
+              )}
+
+              {/* Central Image Container */}
+              <div 
+                className="relative max-h-full max-w-[85vw] md:max-w-[70vw] rounded-2xl overflow-hidden shadow-2xl bg-black border border-white/5 flex items-center justify-center aspect-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img 
+                  src={selectedGalleryPhoto} 
+                  alt={currentPhoto?.title || 'Gallery Zoom'} 
+                  className="max-h-[60vh] md:max-h-[68vh] object-contain w-full rounded-2xl"
+                />
+              </div>
+
+              {/* Next Button */}
+              {galleryPhotos.length > 1 && (
+                <button
+                  onClick={handleNextPhoto}
+                  className="absolute right-2 md:right-4 z-10 bg-black/60 hover:bg-black text-white p-3 md:p-4 rounded-full border border-white/10 transition-all cursor-pointer shadow-lg hover:scale-105 active:scale-95 shrink-0 flex items-center justify-center"
+                  title="Next Photo"
+                >
+                  <ChevronRight className="w-5 h-5 md:w-6 md:h-6" />
+                </button>
+              )}
+            </div>
+
+            {/* Interactive Thumbnail Carousel */}
+            {galleryPhotos.length > 1 && (
+              <div 
+                className="w-full max-w-2xl py-4 border-t border-white/10 shrink-0 flex items-center justify-center gap-2 overflow-x-auto no-scrollbar"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {galleryPhotos.map((photo, idx) => {
+                  const isActive = idx === currentIndex;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedGalleryPhoto(photo.url)}
+                      className={`relative w-12 h-12 md:w-16 md:h-16 rounded-xl overflow-hidden cursor-pointer border-2 transition-all flex-shrink-0 ${
+                        isActive 
+                          ? 'border-emerald-400 scale-110 shadow-lg' 
+                          : 'border-transparent opacity-50 hover:opacity-100'
+                      }`}
+                    >
+                      <img 
+                        src={photo.url} 
+                        alt="thumbnail" 
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Booking Confirmation Toast */}
       {toastMessage && (

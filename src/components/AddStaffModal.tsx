@@ -137,71 +137,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     { day: 'Sunday', enabled: true, fromTime: '10:00 AM', toTime: '04:00 PM' }
   ]);
 
-  // Software Permissions Modal Dialog
-  const [showPermissionsModal, setShowPermissionsModal] = useState<boolean>(false);
-  const [formError, setFormError] = useState<string>('');
-
-  if (!isOpen) return null;
-
-  // Handle Photo selection
-  const handleSelectPreset = (url: string) => {
-    if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(uploadedPreviewUrl);
-    }
-    setSelectedPhoto(url);
-    setCustomPhotoUrl(url);
-    setUploadedPreviewUrl(null);
-  };
-
-  const handleCustomPhotoChange = (url: string) => {
-    setCustomPhotoUrl(url);
-    setSelectedPhoto(url);
-    if (!url.startsWith('blob:') && !url.startsWith('data:image')) {
-      if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(uploadedPreviewUrl);
-      }
-      setUploadedPreviewUrl(null);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        setFormError('Please select a valid image file (PNG, JPG, WEBP).');
-        return;
-      }
-
-      // Revoke any previous Blob URL to prevent memory leaks
-      if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(uploadedPreviewUrl);
-      }
-
-      try {
-        // Generate Blob URL for high-performance instant preview
-        const blobUrl = URL.createObjectURL(file);
-        setUploadedPreviewUrl(blobUrl);
-        setSelectedPhoto(blobUrl);
-        setCustomPhotoUrl(blobUrl);
-        if (formError) setFormError('');
-      } catch (err) {
-        setFormError('Failed to load image preview. Please try again.');
-      }
-    }
-  };
-
-  const handleRemoveUploadedPhoto = () => {
-    if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(uploadedPreviewUrl);
-    }
-    setUploadedPreviewUrl(null);
-    setSelectedPhoto(PRESET_AVATARS[0]);
-    setCustomPhotoUrl(PRESET_AVATARS[0]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
   // Clean up any active Blob URL on component unmount
   useEffect(() => {
     return () => {
@@ -210,6 +145,12 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
       }
     };
   }, [uploadedPreviewUrl]);
+
+  // Software Permissions Modal Dialog
+  const [showPermissionsModal, setShowPermissionsModal] = useState<boolean>(false);
+  const [formError, setFormError] = useState<string>('');
+
+  if (!isOpen) return null;
 
   // Toggle Assigned Service
   const handleToggleService = (serviceName: string) => {

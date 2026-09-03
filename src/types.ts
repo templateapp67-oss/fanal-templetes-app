@@ -137,10 +137,16 @@ export interface SalonProfile {
   address: string;
   city: string;
   postalCode: string;
+  shopFlatNo?: string;
+  areaLocality?: string;
+  state?: string;
+  latitude?: number;
+  longitude?: number;
   instagramHandle: string;
   facebookPage?: string;
   youtubeChannel?: string;
   tiktokProfile?: string;
+  googleBusinessUrl?: string;
   socialVideos?: SocialVideo[];
   requireDeposit: boolean;
   depositPercentage: number;

@@ -294,7 +294,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <input
                       type="text"
                       value={profile?.businessName || ''}
-                      onChange={(e) => setProfile({ ...profile, businessName: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProfile((prev) => ({ ...prev, businessName: val }));
+                      }}
                       className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
                     />
                   </div>
@@ -304,7 +307,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <input
                       type="text"
                       value={profile.ownerName}
-                      onChange={(e) => setProfile({ ...profile, ownerName: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProfile((prev) => ({ ...prev, ownerName: val }));
+                      }}
                       className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
                     />
                   </div>
@@ -314,7 +320,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <input
                       type="text"
                       value={profile.phone}
-                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProfile((prev) => ({ ...prev, phone: val }));
+                      }}
                       className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
                     />
                   </div>
@@ -324,7 +333,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <input
                       type="text"
                       value={profile.whatsapp}
-                      onChange={(e) => setProfile({ ...profile, whatsapp: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProfile((prev) => ({ ...prev, whatsapp: val }));
+                      }}
                       className="w-full mt-1 p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
                     />
                   </div>
@@ -344,7 +356,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <textarea
                       rows={3}
                       value={profile.about}
-                      onChange={(e) => setProfile({ ...profile, about: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProfile((prev) => ({ ...prev, about: val }));
+                      }}
                       className="w-full p-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900"
                     />
                   </div>
@@ -520,10 +535,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                       <div className="font-bold text-sm">Require Online Deposit to Book</div>
                       <div className="text-xs text-gray-500">Reduces no-shows by up to 90%.</div>
                     </div>
-                    <input
+                     <input
                       type="checkbox"
                       checked={profile.requireDeposit}
-                      onChange={(e) => setProfile({ ...profile, requireDeposit: e.target.checked })}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setProfile((prev) => ({ ...prev, requireDeposit: checked }));
+                      }}
                       className="w-5 h-5 accent-[#b0004a]"
                     />
                   </div>
@@ -535,7 +553,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         <button
                           key={pct}
                           type="button"
-                          onClick={() => setProfile({ ...profile, depositPercentage: pct })}
+                          onClick={() => {
+                            setProfile((prev) => ({ ...prev, depositPercentage: pct }));
+                          }}
                           className={`px-3 py-1.5 rounded-lg border font-bold ${
                             profile.depositPercentage === pct
                               ? 'bg-[#b0004a] text-white border-[#b0004a]'
@@ -559,7 +579,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <input
                       type="text"
                       value={profile.subdomain}
-                      onChange={(e) => setProfile({ ...profile, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                      onChange={(e) => {
+                        const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                        setProfile((prev) => ({ ...prev, subdomain: val }));
+                      }}
                       className="p-3 rounded-xl border border-gray-300 bg-white text-gray-900 font-mono font-bold text-sm flex-1"
                     />
                     <span className="font-mono text-sm text-gray-500">.nexora.in</span>

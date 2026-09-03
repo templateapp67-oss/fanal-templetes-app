@@ -26,9 +26,12 @@ import {
   Trash2,
   Link as LinkIcon,
   AlertCircle,
-  Scissors
+  Scissors,
+  Facebook,
+  Youtube
 } from 'lucide-react';
 import { SalonProfile, BusinessTypeId, SalonService } from '../types';
+import { InteractiveMapSetup } from './InteractiveMapSetup';
 import { ACCENT_PALETTES, AccentPaletteKey } from '../themeAccents';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { SALON_IMAGES } from '../assets/images';
@@ -99,7 +102,7 @@ interface SidePanelCustomizerProps {
   onSelectCategory?: (categoryId: BusinessTypeId) => void;
 }
 
-type CustomizerTab = 'theme' | 'branding' | 'services' | 'location' | 'sections' | 'ai';
+type CustomizerTab = 'theme' | 'branding' | 'services' | 'location' | 'social' | 'sections' | 'ai';
 
 const CURATED_HERO_PRESETS = [
   { name: 'Pinky Nails Sanctuary', url: SALON_IMAGES.hero, tag: 'Nail & Lash Studio' },
@@ -301,7 +304,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
       </div>
 
       {/* Tabs Switcher */}
-      <div className="grid grid-cols-6 p-1 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
+      <div className="grid grid-cols-7 p-1 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
         <button
           onClick={() => setActiveTab('theme')}
           className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
@@ -340,6 +343,16 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
         >
           <MapPin className="w-3.5 h-3.5" />
           <span className="text-[9px]">Location</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('social')}
+          className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'social' ? 'bg-white text-teal-700 font-extrabold shadow-xs' : 'hover:text-slate-900'
+          }`}
+        >
+          <Share2 className="w-3.5 h-3.5 text-teal-600" />
+          <span className="text-[9px]">Social</span>
         </button>
 
         <button
@@ -838,7 +851,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
         {activeTab === 'location' && (
           <div className="flex flex-col gap-4">
             
-            {/* Business Name & Subdomain */}
+            {/* Business Name */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                 Salon Business Name
@@ -852,82 +865,27 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
               />
             </div>
 
-            {/* Quick City Dropdown */}
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Salon City (India)
-              </label>
-              <select
-                value={profile.city}
-                onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-medium text-slate-900 focus:border-slate-900 focus:outline-none"
-              >
-                {INDIAN_MAJOR_CITIES.map((c) => {
-                  const cityName = c.split(',')[0];
-                  return (
-                    <option key={cityName} value={cityName}>
-                      {c}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Full Street Address & Landmark */}
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Street Address & Landmark
-              </label>
-              <textarea
-                rows={2}
-                value={profile.address}
-                onChange={(e) => setProfile((prev) => ({ ...prev, address: e.target.value }))}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 text-slate-900 focus:border-slate-900 focus:outline-none"
-                placeholder="e.g. 100 Feet Rd, Indiranagar, Opp. Metro Pillar 42"
+            {/* Dynamic Map and Real-time Address Input Panel */}
+            <div className="border border-slate-100 rounded-2xl p-1 bg-slate-50/50">
+              <InteractiveMapSetup 
+                profile={profile}
+                setProfile={setProfile}
+                themePrimaryColor={primaryAccentColor}
               />
             </div>
 
-            {/* Postal Code */}
+            {/* Phone */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                PIN / Postal Code
+                Phone Number (+91)
               </label>
               <input
                 type="text"
-                value={profile.postalCode}
-                onChange={(e) => setProfile((prev) => ({ ...prev, postalCode: e.target.value }))}
+                value={profile.phone}
+                onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-900 focus:border-slate-900 focus:outline-none"
-                placeholder="560038"
+                placeholder="+91 98765 43210"
               />
-            </div>
-
-            {/* Phone & WhatsApp */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Phone (+91)
-                </label>
-                <input
-                  type="text"
-                  value={profile.phone}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-900 focus:border-slate-900 focus:outline-none"
-                  placeholder="+91 98765 43210"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  WhatsApp
-                </label>
-                <input
-                  type="text"
-                  value={profile.whatsapp}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, whatsapp: e.target.value }))}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-900 focus:border-slate-900 focus:outline-none"
-                  placeholder="+91 98765 43210"
-                />
-              </div>
             </div>
 
             {/* Lead Founder / Owner Info */}
@@ -957,23 +915,99 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
               </div>
             </div>
 
-            {/* Instagram Handle */}
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB 2.5: SOCIAL MEDIA & CONNECTIONS */}
+        {/* ============================================================ */}
+        {activeTab === 'social' && (
+          <div className="flex flex-col gap-4">
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Instagram Handle
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <Share2 className="w-4 h-4 text-teal-600" />
+                Social Media Setup
+              </h3>
+              <p className="text-[11px] text-slate-500">Configure your social links to display in the website's footer and contact section.</p>
+            </div>
+
+            {/* Instagram */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Instagram className="w-3.5 h-3.5 text-pink-600" />
+                Instagram Profile / Handle
               </label>
-              <div className="flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-300 bg-white">
-                <span className="text-slate-400 font-mono">@</span>
+              <div className="flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-300 bg-white focus-within:border-teal-600 transition-colors">
+                <span className="text-slate-400 font-mono text-xs">@</span>
                 <input
                   type="text"
                   value={profile.instagramHandle?.replace('@', '') || ''}
                   onChange={(e) => setProfile((prev) => ({ ...prev, instagramHandle: `@${e.target.value.replace('@', '')}` }))}
                   className="w-full text-xs font-mono text-slate-900 outline-none"
-                  placeholder="miraki.studio"
+                  placeholder="pinkynails.studio"
                 />
               </div>
             </div>
 
+            {/* Facebook */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Facebook className="w-3.5 h-3.5 text-blue-600" />
+                Facebook Page Link
+              </label>
+              <input
+                type="text"
+                value={profile.facebookPage || ''}
+                onChange={(e) => setProfile((prev) => ({ ...prev, facebookPage: e.target.value }))}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 text-slate-900 focus:border-teal-600 focus:outline-none"
+                placeholder="https://facebook.com/pinkynails"
+              />
+            </div>
+
+            {/* YouTube */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Youtube className="w-3.5 h-3.5 text-red-600" />
+                YouTube Channel Link
+              </label>
+              <input
+                type="text"
+                value={profile.youtubeChannel || ''}
+                onChange={(e) => setProfile((prev) => ({ ...prev, youtubeChannel: e.target.value }))}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 text-slate-900 focus:border-teal-600 focus:outline-none"
+                placeholder="https://youtube.com/@pinkynails"
+              />
+            </div>
+
+            {/* WhatsApp */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm text-emerald-600">chat</span>
+                WhatsApp Business Number
+              </label>
+              <input
+                type="text"
+                value={profile.whatsapp || ''}
+                onChange={(e) => setProfile((prev) => ({ ...prev, whatsapp: e.target.value }))}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-900 focus:border-teal-600 focus:outline-none"
+                placeholder="+91 98765 43210"
+              />
+            </div>
+
+            {/* Google Business Page */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm text-blue-500">google</span>
+                Google Business Page URL
+              </label>
+              <input
+                type="text"
+                value={profile.googleBusinessUrl || ''}
+                onChange={(e) => setProfile((prev) => ({ ...prev, googleBusinessUrl: e.target.value }))}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 text-slate-900 focus:border-teal-600 focus:outline-none"
+                placeholder="https://g.page/r/pinkynails/review"
+              />
+            </div>
           </div>
         )}
 
