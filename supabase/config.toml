@@ -1,0 +1,40 @@
+# Supabase project config for Nexora Salon OS.
+# Used by the Supabase CLI (`supabase start`, `supabase db push`, `supabase functions deploy`).
+
+project_id = "nexora-salon-os"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[edge_runtime]
+policy = "per_worker"
+inspector_port = 8083
+
+# Edge Functions. verify_jwt = false so the public (guest) booking + AI endpoints
+# can be called without a login token; owner-scoped reads still check auth headers.
+[functions.bookings]
+verify_jwt = false
+
+[functions.notifications]
+verify_jwt = false
+
+[functions.generate-bio]
+verify_jwt = false
+
+[functions.generate-promo-copy]
+verify_jwt = false
+
+[functions.generate-promo-image]
+verify_jwt = false

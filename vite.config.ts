@@ -17,6 +17,9 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Allow the live-preview host (and any other origin) so the dev server
+      // doesn't reject requests in hosted/preview environments.
+      allowedHosts: true as const,
     },
   };
 });
