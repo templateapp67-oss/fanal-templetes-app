@@ -3,11 +3,71 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import { supabase, isMockSupabase } from "./src/lib/supabaseClient";
+import { supabase, isMockSupabase, getSupabaseAdmin } from "./src/lib/supabaseClient";
+import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
+import { SalonProfile, SalonService, Stylist } from "./src/types";
 
 // In-memory fallback for preview mode without DB
 let mockBookings: any[] = [];
 let mockNotifications: any[] = [];
+// A small in-memory salon registry so we can still demo the public subdomain
+// experience even when Supabase is not configured (mock mode).
+const mockSalons: Record<string, any> = {};
+
+// Use the service-role (admin) client for DB writes/reads so the Express API
+// keeps working even when Row Level Security is enabled. RLS cannot block the
+// service_role key. Falls back to the anon client if no service key is set.
+const admin = getSupabaseAdmin();
+const db = admin ?? supabase;
+
+// Seed the in-memory demo salon(s) so the public subdomain experience works in
+// mock/preview mode (no Supabase). We keep the demo data inline rather than
+// importing mockData (which pulls in Vite-only .jpg imports that break tsx).
+if (isMockSupabase) {
+  const demoSubdomain = 'mirakistudio';
+  mockSalons[demoSubdomain] = {
+    profile: {
+      ownerId: null,
+      businessType: 'hair_salon',
+      businessName: 'Miraki Hair Cut & Styling Studio',
+      ownerName: 'Ananya Sharma',
+      ownerRole: 'Founder & Lead Stylist',
+      phone: '+91 98450 12345',
+      whatsapp: '+91 98450 12345',
+      email: 'hello@mirakistudio.co',
+      tagline: 'Redefining luxury salon care',
+      about:
+        'Welcome to Miraki Hair Cut & Styling Studio, founded by Ananya Sharma. ' +
+        'We are a modern sanctuary dedicated to exceptional salon services. ' +
+        'Blending a luxury aesthetic with high-performance organic products, our mission ' +
+        'is to make every client feel renewed and confident.',
+      ownerPhotoUrl: '',
+      coverImageUrl: '',
+      themePreset: 'slate_silver',
+      currency: '₹',
+      subdomain: demoSubdomain,
+      address: 'Shop No. 12, Crystal Plaza, MG Road',
+      city: 'Bengaluru',
+      postalCode: '560001',
+      state: 'Karnataka',
+      instagramHandle: 'mirakistudio',
+      requireDeposit: false,
+      depositPercentage: 20,
+      themeAccentKey: 'slate',
+      whiteLabelEnabled: true,
+    } as SalonProfile,
+    services: [
+      { id: 'demo-hs-1', name: 'Master Stylist Precision Cut & Blowdry', category: 'Hair', description: 'Signature cut by our senior stylists.', icon: 'scissors', price: 750, durationMinutes: 60, popular: true, showDuration: true },
+      { id: 'demo-hs-2', name: 'Classic Layered Cut & Argan Wash', category: 'Hair', description: 'Relaxing cut and cleanse.', icon: 'scissors', price: 450, durationMinutes: 45, popular: false, showDuration: true },
+      { id: 'demo-hs-3', name: 'Formaldehyde-Free Keratin Smoothing', category: 'Treatments', description: 'Frizz-free, long-lasting smoothness.', icon: 'sparkles', price: 4200, durationMinutes: 120, popular: true, showDuration: true },
+      { id: 'demo-hs-4', name: 'Hair Botox Deep Fiber Reconstruction', category: 'Treatments', description: 'Repairs and rebuilds hair fibers.', icon: 'sparkles', price: 3600, durationMinutes: 90, popular: false, showDuration: true },
+    ] as SalonService[],
+    stylists: [
+      { id: 'demo-hs-st-1', name: 'Ananya Sharma', role: 'Senior Stylist', avatarUrl: '', bio: 'Senior stylist with 10+ years experience.', phone: '+91 98450 12345', specialties: ['Cuts', 'Keratin'], assignedServices: [], rating: 4.9, commissionRate: 30, status: 'Available', accessRole: 'Manager (Full Access)', hidePhone: false, schedule: [] },
+      { id: 'demo-hs-st-2', name: 'Rohan Kapoor', role: 'Barber & Stylist', avatarUrl: '', bio: 'Men\'s grooming specialist.', phone: '+91 98450 12345', specialties: ['Men grooming', 'Cuts'], assignedServices: [], rating: 4.8, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
+    ] as Stylist[],
+  };
+}
 
 async function startServer() {
   const app = express();
@@ -27,6 +87,184 @@ async function startServer() {
   // API Routes
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", app: "Nexora Salon OS", mode: isMockSupabase ? 'mock' : 'live' });
+  });
+
+  // -------------------------------------------------------------------------
+  // MULTI-TENANT PUBLIC SITE RESOLUTION
+  // -------------------------------------------------------------------------
+  // Map a snake_case Supabase profiles row to the app's SalonProfile shape.
+  function mapProfileRow(row: any): SalonProfile {
+    return {
+      ownerId: row.id,
+      businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
+      businessName: row.salon_name || '',
+      ownerName: row.full_name || '',
+      ownerRole: row.owner_role || '',
+      phone: row.phone_number || '',
+      whatsapp: row.whatsapp || row.phone_number || '',
+      email: row.email || '',
+      tagline: row.tagline || '',
+      about: row.about || '',
+      ownerPhotoUrl: row.owner_photo_url || '',
+      coverImageUrl: row.cover_image_url || '',
+      logoUrl: row.logo_url || undefined,
+      themePreset: (row.theme_preset as SalonProfile['themePreset']) || 'slate_silver',
+      currency: row.currency || '₹',
+      subdomain: row.subdomain || '',
+      customDomain: row.custom_domain || undefined,
+      address: row.full_address || '',
+      city: row.city || '',
+      postalCode: row.postal_code || '',
+      state: row.state || undefined,
+      latitude: row.latitude ?? undefined,
+      longitude: row.longitude ?? undefined,
+      instagramHandle: row.instagram_handle || '',
+      facebookPage: row.facebook_page || undefined,
+      youtubeChannel: row.youtube_channel || undefined,
+      tiktokProfile: row.tiktok_profile || undefined,
+      googleBusinessUrl: row.google_business_url || undefined,
+      requireDeposit: row.require_deposit ?? false,
+      depositPercentage: row.deposit_percentage ?? 20,
+      themeAccentKey: row.theme_accent_key || undefined,
+      customAccentColor: row.custom_accent_color || undefined,
+      landmark: row.landmark || undefined,
+      foundingYear: row.founding_year || undefined,
+      whiteLabelEnabled: row.white_label_enabled ?? false,
+    };
+  }
+
+  function mapServiceRow(row: any): SalonService {
+    return {
+      id: row.id,
+      name: row.name,
+      category: row.category || 'General',
+      description: row.description || '',
+      icon: row.icon || 'sparkles',
+      price: Number(row.price ?? 0),
+      durationMinutes: row.duration_minutes ?? 45,
+      popular: row.popular ?? false,
+      showDuration: row.show_duration ?? true,
+    };
+  }
+
+  function mapStylistRow(row: any): Stylist {
+    return {
+      id: row.id,
+      name: row.name,
+      role: row.role || 'Service Provider',
+      avatarUrl: row.avatar_url || '',
+      bio: row.bio || '',
+      phone: row.phone || '',
+      specialties: row.specialties || [],
+      assignedServices: row.assigned_services || [],
+      rating: Number(row.rating ?? 5),
+      commissionRate: Number(row.commission_rate ?? 0),
+      status: row.status || 'Available',
+      accessRole: row.access_role || 'Service Provider (Assigned)',
+      hidePhone: row.hide_phone ?? false,
+      schedule: row.schedule || [],
+    };
+  }
+
+  // Given a request, resolve the tenant salon (by subdomain or custom domain)
+  // and return its full public catalogue. Uses the service-role admin client
+  // (bypasses RLS) so anonymous visitors can read any salon's public site.
+  async function resolveSalonFromHost(req: any) {
+    const host = req.headers.host || req.get('host') || '';
+    const tenant = resolveTenantFromHost(host);
+    if (!tenant) return { host, tenant: null, salon: null };
+
+    try {
+      if (isMockSupabase) {
+        // Mock mode: read from the in-memory registry so the demo still works.
+        const registryKey = tenant.customDomain || tenant.subdomain;
+        const salon = mockSalons[registryKey];
+        if (salon) {
+          return { host, tenant, salon: { ...salon, customDomain: tenant.customDomain || salon.customDomain } };
+        }
+        return { host, tenant, salon: null };
+      }
+
+      // Live mode: match on subdomain OR custom_domain.
+      const query = tenant.subdomain
+        ? { column: 'subdomain', value: tenant.subdomain }
+        : { column: 'custom_domain', value: tenant.customDomain };
+
+      const { data: profileRow, error } = await db
+        .from('profiles')
+        .select('*')
+        .eq(query.column, query.value)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Tenant lookup error:', error);
+        return { host, tenant, salon: null };
+      }
+      if (!profileRow) return { host, tenant, salon: null };
+
+      const ownerId = profileRow.id;
+      const [{ data: serviceRows }, { data: stylistRows }] = await Promise.all([
+        db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
+        db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
+      ]);
+
+      const salon = {
+        profile: mapProfileRow(profileRow),
+        services: (serviceRows || []).map(mapServiceRow),
+        stylists: (stylistRows || []).map(mapStylistRow),
+      };
+      return { host, tenant, salon };
+    } catch (err) {
+      console.warn('Failed to resolve tenant salon:', err);
+      return { host, tenant, salon: null };
+    }
+  }
+
+  // Public JSON endpoint the SPA calls to hydrate the tenant's live site.
+  app.get("/api/site", async (req, res) => {
+    const { host, tenant, salon } = await resolveSalonFromHost(req);
+    if (!tenant) {
+      return res.json({ found: false, host, isTenant: false, salon: null });
+    }
+    return res.json({
+      found: !!salon,
+      isTenant: true,
+      host,
+      tenant,
+      salon,
+      baseDomain: BASE_DOMAIN,
+    });
+  });
+
+  // Convenience: resolve by an explicit subdomain (useful for testing/SEO).
+  app.get("/api/site/:subdomain", async (req, res) => {
+    const sub = req.params.subdomain;
+    if (isMockSupabase) {
+      const salon = mockSalons[sub];
+      return res.json({ found: !!salon, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon });
+    }
+    const { data: profileRow } = await db
+      .from('profiles')
+      .select('*')
+      .eq('subdomain', sub)
+      .maybeSingle();
+    if (!profileRow) return res.json({ found: false, isTenant: true, salon: null });
+    const ownerId = profileRow.id;
+    const [{ data: serviceRows }, { data: stylistRows }] = await Promise.all([
+      db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
+      db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
+    ]);
+    return res.json({
+      found: true,
+      isTenant: true,
+      tenant: { subdomain: sub, customDomain: null },
+      salon: {
+        profile: mapProfileRow(profileRow),
+        services: (serviceRows || []).map(mapServiceRow),
+        stylists: (stylistRows || []).map(mapStylistRow),
+      },
+      baseDomain: BASE_DOMAIN,
+    });
   });
 
   // Booking Update Endpoint
@@ -54,7 +292,7 @@ async function startServer() {
       if (isMockSupabase) {
         doMockUpdate();
       } else {
-        const { data: dbData, error } = await supabase
+        const { data: dbData, error } = await db
           .from('bookings')
           .update(updateData)
           .eq('id', id)
@@ -99,7 +337,7 @@ async function startServer() {
          if (isMockSupabase) {
            mockNotifications.push(...newNotifs.map(n => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
          } else {
-           await supabase.from('in_app_notifications').insert(newNotifs);
+           await db.from('in_app_notifications').insert(newNotifs);
          }
       }
       
@@ -119,7 +357,7 @@ async function startServer() {
         return res.json({ success: true, data: getMock() });
       }
       
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bookings')
         .select('*')
         .order('created_at', { ascending: false });
@@ -147,7 +385,7 @@ async function startServer() {
         return res.json({ success: true, data: booking });
       }
       
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bookings')
         .select('*')
         .eq('id', req.params.id)
@@ -176,7 +414,7 @@ async function startServer() {
         return res.json({ success: true, data: getMock() });
       }
       
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('in_app_notifications')
         .select('*')
         .eq('user_email', email)
@@ -205,7 +443,7 @@ async function startServer() {
         return res.json({ success: true });
       }
       
-      const { error } = await supabase
+      const { error } = await db
         .from('in_app_notifications')
         .update({ is_read: true })
         .eq('user_email', email)
@@ -240,10 +478,17 @@ async function startServer() {
       if (isMockSupabase) {
         doMock();
       } else {
+        // Attribute the booking to the salon owner. The public booking form
+        // sends owner_id via the profile; if absent we fall back to a default.
+        const bookingRow = {
+          ...booking,
+          owner_id: (req.body.owner_id || booking?.owner_id || process.env.DEFAULT_OWNER_ID || null),
+        };
+
         // Insert Booking
-        const { data: dbData, error: bookingError } = await supabase
+        const { data: dbData, error: bookingError } = await db
           .from('bookings')
-          .insert([booking])
+          .insert([bookingRow])
           .select()
           .single();
           
@@ -255,7 +500,7 @@ async function startServer() {
           
           // Insert Notifications if any
           if (notifications && notifications.length > 0) {
-             const { error: notifError } = await supabase
+             const { error: notifError } = await db
               .from('in_app_notifications')
               .insert(notifications);
              if (notifError) console.warn('Notification insert error:', notifError);
@@ -445,7 +690,10 @@ Return strictly JSON with the following keys:
     }
   });
 
-  // Vite middleware for development
+  // The SPA hydrates the tenant (public salon site) by calling `GET /api/site`,
+  // which resolves the salon from the request Host header. We keep the serving
+  // path simple: Vite middleware in dev, static SPA in prod. No HTML rewriting
+  // is needed because the browser already knows its own hostname.
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

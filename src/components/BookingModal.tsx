@@ -396,6 +396,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           booking: {
+            owner_id: profile.ownerId || undefined,
             customer_name: guestName.trim() || 'Guest Client',
             customer_phone: cleanPhone,
             customer_email: guestEmail.trim() || `${cleanPhone}@guest.in`,

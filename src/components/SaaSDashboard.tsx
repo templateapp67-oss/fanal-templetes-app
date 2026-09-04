@@ -26,6 +26,8 @@ interface SaaSDashboardProps {
   loyaltyConfig?: LoyaltyConfig;
   setLoyaltyConfig?: React.Dispatch<React.SetStateAction<LoyaltyConfig>>;
   onNavigateToPreview?: () => void;
+  onNavigateToEditor?: () => void;
+  siteUrl?: string;
 }
 
 type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'marketing' | 'social_connectivity' | 'appearance' | 'website';
@@ -44,6 +46,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   loyaltyConfig: externalLoyaltyConfig,
   setLoyaltyConfig: externalSetLoyaltyConfig,
   onNavigateToPreview,
+  onNavigateToEditor,
+  siteUrl,
 }) => {
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
@@ -235,25 +239,34 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <a 
-                  href={profile.customDomain ? `https://${profile.customDomain}` : `https://${profile?.subdomain || 'salon'}.nexora.in`}
+                  href={siteUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-blue-600 hover:underline font-mono"
                 >
-                  {profile.customDomain ? `https://${profile.customDomain}` : `https://${profile?.subdomain || 'salon'}.nexora.in`}
+                  {siteUrl}
                 </a>
                 <span className="text-xs text-gray-500 font-mono">• {profile?.city || 'India'}</span>
                 <button
                   onClick={() => {
-                    const url = profile.customDomain ? `https://${profile.customDomain}` : `https://${profile?.subdomain || 'salon'}.nexora.in`;
-                    navigator.clipboard.writeText(url);
-                    alert("Website Link Copied: " + url);
+                    navigator.clipboard.writeText(siteUrl);
+                    alert("Website Link Copied: " + siteUrl);
                   }}
                   className="p-1 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
                   title="Copy Website Link"
                 >
                   <span className="material-symbols-outlined text-sm">content_copy</span>
                 </button>
+                <a
+                  href={siteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 transition-colors"
+                  title="Open Live Site"
+                >
+                  <span className="material-symbols-outlined text-sm">open_in_new</span>
+                  <span>Open Site</span>
+                </a>
               </div>
             </div>
           </div>
@@ -1075,144 +1088,79 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               <div className="flex items-center gap-2 text-gray-900">
                 <span className="material-symbols-outlined text-2xl" style={{ color: currentPrimaryColor }}>storefront</span>
                 <h2 className="font-display font-bold text-xl text-gray-900">
-                  Salon Profile & Business Details
+                  Salon Info
                 </h2>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Essential business details displayed across your live salon website, click-to-call links, and WhatsApp bookings.
+                All website details (brand, contact, services, pricing, timings) are managed in one place — the Website Editor.
               </p>
             </div>
 
-            {/* Core Salon Information Form */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  Salon Brand Name
-                </label>
-                <input
-                  type="text"
-                  value={profile.businessName}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, businessName: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs focus:ring-2 focus:ring-gray-400 outline-none"
-                />
+            {/* Read-only summary + link to the single unified editor */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="rounded-xl bg-gray-50 p-4">
+                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>storefront</span>
+                  Salon
+                </div>
+                <div className="font-bold text-gray-900 truncate">{profile.businessName || '—'}</div>
+                <div className="text-[11px] text-gray-500 mt-1 truncate">{profile.tagline || ''}</div>
               </div>
-
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  Tagline / Catchphrase
-                </label>
-                <input
-                  type="text"
-                  value={profile.tagline}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, tagline: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs focus:ring-2 focus:ring-gray-400 outline-none"
-                />
+              <div className="rounded-xl bg-gray-50 p-4">
+                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>call</span>
+                  Contact
+                </div>
+                <div className="font-bold text-gray-900 font-mono">{profile.phone || '—'}</div>
+                <div className="text-[11px] text-gray-500 mt-1">WhatsApp: {profile.whatsapp || '—'}</div>
               </div>
-
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  Phone (Direct Click-to-Call)
-                </label>
-                <input
-                  type="text"
-                  value={profile.phone}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-gray-400 outline-none"
-                />
+              <div className="rounded-xl bg-gray-50 p-4">
+                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>location_on</span>
+                  Location
+                </div>
+                <div className="text-[12px] font-medium text-gray-800">
+                  {profile.address && <span>{profile.address}<br /></span>}
+                  {profile.city && <span>{profile.city}{profile.postalCode ? ` — ${profile.postalCode}` : ''}</span>}
+                  {!profile.address && !profile.city && <span>—</span>}
+                </div>
               </div>
-
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  WhatsApp Number
-                </label>
-                <input
-                  type="text"
-                  value={profile.whatsapp}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, whatsapp: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-gray-400 outline-none"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  Salon Address
-                </label>
-                <input
-                  type="text"
-                  value={profile.address}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, address: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs focus:ring-2 focus:ring-gray-400 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  City & State
-                </label>
-                <input
-                  type="text"
-                  value={profile.city}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs focus:ring-2 focus:ring-gray-400 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                  Postal PIN Code
-                </label>
-                <input
-                  type="text"
-                  value={profile.postalCode}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, postalCode: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-gray-400 outline-none"
-                />
+              <div className="rounded-xl bg-gray-50 p-4">
+                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>link</span>
+                  Live Website
+                </div>
+                <div className="font-mono text-[12px] font-bold text-gray-900 truncate">{siteUrl || '—'}</div>
               </div>
             </div>
-            
-            <div className="border-t border-gray-200 my-2 pt-6">
-              <h3 className="font-bold text-gray-900 mb-4">White Label & Custom Domain</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                    Custom Domain
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. www.mysalon.com"
-                    value={profile.customDomain || ''}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, customDomain: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-gray-400 outline-none"
-                  />
-                  <p className="text-[10px] text-gray-500 mt-1">Leave empty to use default subdomain.</p>
-                </div>
-                <div className="flex items-center">
-                  <label className="flex items-center cursor-pointer">
-                    <div className="relative">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only" 
-                        checked={profile.whiteLabelEnabled || false}
-                        onChange={(e) => setProfile((prev) => ({ ...prev, whiteLabelEnabled: e.target.checked }))}
-                      />
-                      <div className={`block w-10 h-6 rounded-full transition-colors ${profile.whiteLabelEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}></div>
-                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${profile.whiteLabelEnabled ? 'transform translate-x-4' : ''}`}></div>
-                    </div>
-                    <div className="ml-3">
-                      <span className="text-sm font-bold text-gray-800">Remove Nexora Branding</span>
-                      <p className="text-[10px] text-gray-500">Hide 'Powered by Nexora' from your website.</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={onNavigateToEditor}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#C20E5A] hover:bg-[#A30B4A] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">edit</span>
+                <span>Open Website Editor</span>
+              </button>
+              {onNavigateToPreview && (
+                <button
+                  type="button"
+                  onClick={onNavigateToPreview}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-lg">visibility</span>
+                  <span>View Live Preview</span>
+                </button>
+              )}
             </div>
 
             <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
               <span className="font-medium">
-                ✓ Changes update automatically in live preview and across all 14 category templates.
+                ✓ All website details live in a single form. Every change is auto-saved &amp; synced to the live preview.
               </span>
               <span className="font-mono text-[11px] font-bold bg-emerald-100 px-2 py-0.5 rounded">
-                Live Synced
+                Auto-Synced
               </span>
             </div>
           </div>

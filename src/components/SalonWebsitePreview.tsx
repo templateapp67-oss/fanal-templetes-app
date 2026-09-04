@@ -59,6 +59,14 @@ interface SalonWebsitePreviewProps {
   setStylists?: React.Dispatch<React.SetStateAction<Stylist[]>>;
   onAddAppointment: (appointment: Appointment) => void;
   onSelectCategory?: (categoryId: BusinessTypeId) => void;
+  // Unified single-template engine (single source of truth from parent).
+  onSelectTemplate?: (categoryId: BusinessTypeId) => void;
+  selectedTemplateId?: BusinessTypeId;
+  setSelectedTemplateId?: (categoryId: BusinessTypeId) => void;
+  siteUrl?: string;
+  /** When true, renders as a read-only public (customer) site — hides all owner
+   *  controls (inline edit mode, customizer, AI studio, test booking, etc.). */
+  publicView?: boolean;
 }
 
 type DeviceMode = 'desktop' | 'tablet' | 'mobile';
@@ -72,6 +80,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   setStylists: setStylistsProp,
   onAddAppointment,
   onSelectCategory,
+  onSelectTemplate,
+  selectedTemplateId,
+  setSelectedTemplateId,
+  siteUrl,
+  publicView = false,
 }) => {
   // Fallback internal state if setters not passed
   const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
@@ -91,14 +104,37 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
-  const [selectedCategoryKey, setSelectedCategoryKey] = useState<BusinessTypeId>(activeProfile.businessType || 'hair_salon');
 
-  // Synchronize category selection if parent changes businessType
+  // In public (customer) view there is NO owner header, so no top padding and
+  // editing/customizer controls are always locked off.
   useEffect(() => {
-    if (activeProfile.businessType && activeProfile.businessType !== selectedCategoryKey) {
-      setSelectedCategoryKey(activeProfile.businessType);
+    if (publicView) {
+      setIsEditMode(false);
+      setIsCustomizerOpen(false);
     }
-  }, [activeProfile.businessType]);
+  }, [publicView]);
+  // IGNORE: single active template is controlled by the parent (App) via
+  // selectedTemplateId. Only ONE template ever renders on this view.
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState<BusinessTypeId>(
+    selectedTemplateId || activeProfile.businessType || 'hair_salon'
+  );
+
+  // The parent is the single source of truth. When the parent changes
+  // selectedTemplateId, sync this preview to it (and vice-versa).
+  useEffect(() => {
+    if (selectedTemplateId && selectedTemplateId !== selectedCategoryKey) {
+      setSelectedCategoryKey(selectedTemplateId);
+    }
+  }, [selectedTemplateId]);
+
+  // Also keep businessType in sync so the canvas always renders the right
+  // template even if the parent's profile businessType changes.
+  useEffect(() => {
+    const source = selectedTemplateId || activeProfile.businessType;
+    if (source && source !== selectedCategoryKey) {
+      setSelectedCategoryKey(source as BusinessTypeId);
+    }
+  }, [selectedTemplateId, activeProfile.businessType]);
 
   // Synchronize client reviews when category selection changes
   useEffect(() => {
@@ -219,6 +255,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   } | null>(null);
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
+  const [copiedSubdomain, setCopiedSubdomain] = useState<boolean>(false);
 
   const showNotification = (msg: string) => {
     setNotificationToast(msg);
@@ -268,52 +305,45 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     ? activeServices
     : activeServices.filter((s) => s.category === activeSubCategory);
 
-  // Category template switcher
-  const handleCategorySwitch = (catId: BusinessTypeId) => {
-    setSelectedCategoryKey(catId);
-    const tmpl = CATEGORY_TEMPLATES[catId];
-    if (tmpl) {
-      setIsEditMode(false);
-      setActiveSubCategory('All');
-      setSelectedService(tmpl.services[0]);
-      setSelectedStylist(tmpl.stylists[0]);
-      
-      const newAccent = DEFAULT_CATEGORY_ACCENTS[catId] || 'slate';
-      setSelectedAccentKey(newAccent);
-      setIsDarkCanvas(tmpl.themeStyle.isDark || newAccent === 'obsidian');
-
-      setProfile((prev) => ({
-        ...prev,
-        businessType: tmpl.id,
-        businessName: tmpl.title,
-        ownerName: tmpl.ownerName,
-        ownerRole: tmpl.ownerRole,
-        phone: tmpl.phone,
-        whatsapp: tmpl.whatsapp,
-        tagline: tmpl.tagline,
-        about: tmpl.about,
-        ownerPhotoUrl: tmpl.ownerPhotoUrl,
-        coverImageUrl: tmpl.coverImageUrl,
-        themePreset: tmpl.themePreset,
-        currency: '₹',
-        subdomain: tmpl.id.replace('_', ''),
-        address: tmpl.defaultAddress,
-        city: tmpl.defaultCity,
-        postalCode: tmpl.defaultPostalCode,
-        instagramHandle: tmpl.instagramHandle,
-        themeAccentKey: newAccent,
-        customAccentColor: undefined
-      }));
-
-      setServices(tmpl.services);
-      setStylists(tmpl.stylists);
-
-      if (onSelectCategory) {
-        onSelectCategory(catId);
-      }
-
-      showNotification(`Switched to "${tmpl.title}" template with Indian INR (₹) rates!`);
+  // Keep the pre-selected service / stylist valid when the template changes.
+  useEffect(() => {
+    if (activeServices.length && !activeServices.some((s) => s.id === selectedService?.id)) {
+      setSelectedService(activeServices[0]);
     }
+  }, [activeServices]);
+  useEffect(() => {
+    if (activeStylists.length && !activeStylists.some((st) => st.id === selectedStylist?.id)) {
+      setSelectedStylist(activeStylists[0]);
+    }
+  }, [activeStylists]);
+
+  // Category template switcher — delegates to the parent's single unified
+  // handler (which PRESERVES the owner's input) and only re-themes the canvas.
+  const handleCategorySwitch = (catId: BusinessTypeId) => {
+    const tmpl = CATEGORY_TEMPLATES[catId];
+    if (!tmpl) return;
+
+    setIsEditMode(false);
+    setActiveSubCategory('All');
+
+    // Let the parent (App) own the merge logic so onboarding data is never lost.
+    if (onSelectTemplate) {
+      onSelectTemplate(catId);
+    }
+    if (setSelectedTemplateId) {
+      setSelectedTemplateId(catId);
+    }
+    setSelectedCategoryKey(catId);
+
+    const newAccent = DEFAULT_CATEGORY_ACCENTS[catId] || 'slate';
+    setSelectedAccentKey(newAccent);
+    setIsDarkCanvas(tmpl.themeStyle.isDark || newAccent === 'obsidian');
+
+    if (onSelectCategory) {
+      onSelectCategory(catId);
+    }
+
+    showNotification(`Switched to \"${tmpl.title}\" template — your salon details & services were kept.`);
   };
 
   const handleOpenBooking = (srv?: SalonService) => {
@@ -520,7 +550,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   return (
     <div 
-      className="min-h-screen pt-20 pb-24 flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text"
+      className={`min-h-screen flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': primaryAccentColor,
         '--theme-primary': primaryAccentColor,
@@ -551,8 +581,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       </AnimatePresence>
 
       {/* ============================================================ */}
-      {/* 1. TOP UNIFIED NAVIGATION & AI STUDIO CONTROLS BAR */}
+      {/* 1. TOP UNIFIED NAVIGATION & AI STUDIO CONTROLS BAR (OWNER ONLY) */}
       {/* ============================================================ */}
+      {!publicView && (
       <div className="w-full bg-white border-b border-slate-200 sticky top-20 z-40 shadow-xs">
         <div className="max-w-[1440px] mx-auto px-4 py-2.5 flex flex-col gap-2.5">
           
@@ -560,17 +591,49 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-3">
             
             {/* Left Status & Subdomain */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700">
-                <span className="font-bold">
-                  {activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`}
+                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200 shrink-0">
+                  LIVE
+                </span>
+                <span className="font-bold truncate max-w-[260px]">
+                  {siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`)}
                 </span>
                 <span className="text-slate-400">•</span>
-                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200">
+                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200 shrink-0">
                   INR (₹) Live
                 </span>
               </div>
+
+              {/* Copy Link */}
+              <button
+                type="button"
+                onClick={() => {
+                  const u = siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`);
+                  navigator.clipboard?.writeText(u);
+                  setCopiedSubdomain(true);
+                  showNotification('Website link copied to clipboard!');
+                  setTimeout(() => setCopiedSubdomain(false), 2000);
+                }}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                title="Copy Website Link"
+              >
+                {copiedSubdomain ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedSubdomain ? 'Copied' : 'Copy Link'}</span>
+              </button>
+
+              {/* Open Site */}
+              <a
+                href={siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-colors shrink-0"
+                title="Open Live Site"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>Open Site</span>
+              </a>
             </div>
 
             {/* Mode Switcher: Inline Edit Mode vs Preview Mode */}
@@ -769,30 +832,33 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
         </div>
       </div>
+      )}
 
-      {/* Side-Panel Customizer Drawer */}
-      <SidePanelCustomizer
-        isOpen={isCustomizerOpen}
-        onToggle={() => setIsCustomizerOpen(!isCustomizerOpen)}
-        profile={activeProfile}
-        setProfile={setProfile}
-        selectedCategoryKey={selectedCategoryKey}
-        selectedAccentKey={selectedAccentKey}
-        setSelectedAccentKey={setSelectedAccentKey}
-        primaryAccentColor={primaryAccentColor}
-        isDarkCanvas={isDarkCanvas}
-        setIsDarkCanvas={setIsDarkCanvas}
-        sectionVisibility={sectionVisibility}
-        setSectionVisibility={setSectionVisibility}
-        onAIGeneratePrompt={handleAIGeneratePrompt}
-        onResetDefaults={() => handleCategorySwitch(selectedCategoryKey)}
-        services={activeServices}
-        setServices={setServices}
-        onSelectCategory={handleCategorySwitch}
-      />
+      {/* Side-Panel Customizer Drawer (OWNER ONLY) */}
+      {!publicView && (
+        <SidePanelCustomizer
+          isOpen={isCustomizerOpen}
+          onToggle={() => setIsCustomizerOpen(!isCustomizerOpen)}
+          profile={activeProfile}
+          setProfile={setProfile}
+          selectedCategoryKey={selectedCategoryKey}
+          selectedAccentKey={selectedAccentKey}
+          setSelectedAccentKey={setSelectedAccentKey}
+          primaryAccentColor={primaryAccentColor}
+          isDarkCanvas={isDarkCanvas}
+          setIsDarkCanvas={setIsDarkCanvas}
+          sectionVisibility={sectionVisibility}
+          setSectionVisibility={setSectionVisibility}
+          onAIGeneratePrompt={handleAIGeneratePrompt}
+          onResetDefaults={() => handleCategorySwitch(selectedCategoryKey)}
+          services={activeServices}
+          setServices={setServices}
+          onSelectCategory={handleCategorySwitch}
+        />
+      )}
 
-      {/* Edit Mode Notice Banner */}
-      {isEditMode && (
+      {/* Edit Mode Notice Banner (OWNER ONLY) */}
+      {!publicView && isEditMode && (
         <div className="w-full max-w-[1240px] px-4 mt-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-amber-900 shadow-xs">
             <div className="flex items-center gap-2">

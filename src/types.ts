@@ -124,6 +124,7 @@ export interface HomeServiceConfig {
 }
 
 export interface SalonProfile {
+  ownerId?: string;
   businessType: BusinessTypeId;
   businessName: string;
   ownerName: string;
