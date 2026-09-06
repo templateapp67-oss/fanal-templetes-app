@@ -65,21 +65,58 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
     if (isRecording) {
       setIsRecording(false);
       setRecordingSeconds(0);
-      setSpecialties('Scalp detox, hair extensions, precision balayage and organic shine glaze');
-    } else {
-      setIsRecording(true);
-      const interval = setInterval(() => {
-        setRecordingSeconds((prev) => {
-          if (prev >= 4) {
-            clearInterval(interval);
-            setIsRecording(false);
-            setSpecialties('Custom organic color, luxury head spa and restorative treatments');
-            return 0;
-          }
-          return prev + 1;
-        });
-      }, 1000);
+      return;
     }
+
+    const SpeechRecognition = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
+    
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-IN';
+
+        recognition.onstart = () => {
+          setIsRecording(true);
+          setRecordingSeconds(0);
+        };
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          if (transcript) {
+            setSpecialties((prev) => (prev ? `${prev}, ${transcript}` : transcript));
+          }
+        };
+
+        recognition.onerror = () => {
+          setIsRecording(false);
+        };
+
+        recognition.onend = () => {
+          setIsRecording(false);
+        };
+
+        recognition.start();
+        return;
+      } catch (err) {
+        console.warn('Native speech recognition fallback:', err);
+      }
+    }
+
+    // Fallback simulated voice timer
+    setIsRecording(true);
+    const interval = setInterval(() => {
+      setRecordingSeconds((prev) => {
+        if (prev >= 4) {
+          clearInterval(interval);
+          setIsRecording(false);
+          setSpecialties('Precision haircuts, creative balayage, gel nail extensions, and restorative scalp therapy');
+          return 0;
+        }
+        return prev + 1;
+      });
+    }, 1000);
   };
 
   return (

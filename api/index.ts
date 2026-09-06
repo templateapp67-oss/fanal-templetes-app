@@ -268,6 +268,163 @@ app.get("/api/bookings", async (req, res) => {
   }
 });
 
+app.get("/api/bookings/:id", async (req, res) => {
+  try {
+    const getMock = () => mockBookings.find(b => b.id === req.params.id);
+
+    if (isMockSupabase) {
+      const booking = getMock();
+      if (!booking) throw new Error('Booking not found');
+      return res.json({ success: true, data: booking });
+    }
+    
+    const { data, error } = await db
+      .from('bookings')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+      
+    if (error) {
+      const booking = getMock();
+      if (!booking) throw new Error('Booking not found');
+      return res.json({ success: true, data: booking });
+    }
+    res.json({ success: true, data });
+  } catch (err: any) {
+    console.warn('Fetch booking error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/bookings/update", async (req, res) => {
+  try {
+    const { id, status, proposed_date, proposed_time_slot } = req.body;
+    
+    const updateData: any = { status };
+    if (status === 'reschedule_proposed') {
+      updateData.proposed_date = proposed_date;
+      updateData.proposed_time_slot = proposed_time_slot;
+    }
+    
+    let data: any;
+    const doMockUpdate = () => {
+      const idx = mockBookings.findIndex(b => b.id === id);
+      if (idx !== -1) {
+        mockBookings[idx] = { ...mockBookings[idx], ...updateData };
+        data = mockBookings[idx];
+      } else {
+        throw new Error("Booking not found");
+      }
+    };
+
+    if (isMockSupabase) {
+      doMockUpdate();
+    } else {
+      const { data: dbData, error } = await db
+        .from('bookings')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+        
+      if (error) {
+         doMockUpdate();
+      } else {
+         data = dbData;
+      }
+    }
+
+    let notificationMsg = '';
+    let notificationTitle = '';
+
+    if (status === 'reschedule_proposed') {
+       notificationTitle = 'Reschedule Proposed';
+       notificationMsg = `The salon proposed a new time: ${proposed_date} at ${proposed_time_slot}.`;
+    } else if (status === 'confirmed') {
+       notificationTitle = 'Booking Confirmed';
+       notificationMsg = `Your booking on ${data?.booking_date || ''} at ${data?.time_slot || ''} is now confirmed.`;
+    } else if (status === 'cancelled') {
+       notificationTitle = 'Booking Cancelled';
+       notificationMsg = `Your booking was cancelled.`;
+    }
+
+    if (notificationMsg && data) {
+       const newNotifs = [{
+         user_email: data.customer_email,
+         title: notificationTitle,
+         message: notificationMsg,
+       }, {
+         user_email: 'owner@salon.com',
+         title: `Booking ${status}`,
+         message: `${data.customer_name}'s booking was ${status}.`,
+       }];
+
+       if (isMockSupabase) {
+         mockNotifications.push(...newNotifs.map(n => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
+       } else {
+         await db.from('in_app_notifications').insert(newNotifs);
+       }
+    }
+    
+    res.json({ success: true, data });
+  } catch (err: any) {
+    console.warn('Booking update error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/notifications", async (req, res) => {
+  try {
+    const { email } = req.query;
+    const getMock = () => mockNotifications.filter(n => n.user_email === email).sort((a, b) => new Date(b.created_at || Date.now()).getTime() - new Date(a.created_at || Date.now()).getTime());
+
+    if (isMockSupabase) {
+      return res.json({ success: true, data: getMock() });
+    }
+    
+    const { data, error } = await db
+      .from('in_app_notifications')
+      .select('*')
+      .eq('user_email', email)
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      return res.json({ success: true, data: getMock() });
+    }
+    res.json({ success: true, data });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/notifications/read", async (req, res) => {
+  try {
+    const { email } = req.body;
+    const doMock = () => {
+      mockNotifications = mockNotifications.map(n => n.user_email === email ? { ...n, is_read: true } : n);
+    };
+
+    if (isMockSupabase) {
+      doMock();
+      return res.json({ success: true });
+    }
+    
+    const { error } = await db
+      .from('in_app_notifications')
+      .update({ is_read: true })
+      .eq('user_email', email)
+      .eq('is_read', false);
+      
+    if (error) {
+      doMock();
+      return res.json({ success: true });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post("/api/bookings/create", async (req, res) => {
   try {
     const { booking, notifications } = req.body;
@@ -340,6 +497,72 @@ Return strictly valid JSON: {"tagline": "...", "bio": "..."}`;
     return res.json({
       tagline: `Redefining beauty & relaxation in a luxury space.`,
       bio: `Welcome to ${req.body.businessName || 'our studio'}. Our passionate team offers bespoke salon treatments designed to accentuate your unique natural style.`
+    });
+  }
+});
+
+app.post("/api/generate-promo-image", async (req, res) => {
+  try {
+    const { prompt, serviceName, category, style, aspectRatio = "1:1" } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    const detailedPrompt = prompt || `A professional, ultra-high quality, editorial advertising photo for a luxury salon promoting "${serviceName}" in the "${category || 'Beauty & Wellness'}" category. Aesthetic: ${style || 'Luxury Chic & Modern Elegance'}, warm studio lighting, pristine clean background, 8k resolution commercial photoshoot.`;
+
+    if (!apiKey) {
+      return res.json({
+        success: false,
+        fallbackNotice: "No GEMINI_API_KEY configured. Using high-resolution curated asset.",
+        imageUrl: null,
+        promptUsed: detailedPrompt
+      });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    const validAspectRatios = ["1:1", "3:4", "4:3", "9:16", "16:9"];
+    const chosenAspect = validAspectRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+
+    const response = await ai.models.generateContent({
+      model: 'imagen-3.0-generate-001',
+      contents: {
+        parts: [{ text: detailedPrompt }],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: chosenAspect,
+        },
+      },
+    });
+
+    let generatedImageUrl: string | null = null;
+    if (response.candidates && response.candidates[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData && part.inlineData.data) {
+          generatedImageUrl = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+    }
+
+    if (generatedImageUrl) {
+      return res.json({
+        success: true,
+        imageUrl: generatedImageUrl,
+        promptUsed: detailedPrompt,
+      });
+    } else {
+      return res.json({
+        success: false,
+        imageUrl: null,
+        promptUsed: detailedPrompt,
+        notice: "Image generation model returned without an inline image part; using curated backup."
+      });
+    }
+  } catch (err: any) {
+    console.warn("Gemini Image generation error:", err?.message || err);
+    return res.json({
+      success: false,
+      imageUrl: null,
+      error: err?.message || "Failed to generate promotional image with AI.",
     });
   }
 });

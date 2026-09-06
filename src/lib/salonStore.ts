@@ -51,17 +51,12 @@ export function getSiteUrl(profile: SalonProfile): string {
   if (typeof window !== 'undefined') {
     const origin = window.location.origin;
     const host = window.location.hostname;
-    // When running on Vercel (*.vercel.app), sandbox (*.e2b.app), localhost, or Google Cloud Run:
-    // Generate direct shareable live URL so the live customer site is instantly testable/viewable!
-    if (
-      host.includes('vercel.app') ||
-      host.includes('e2b.app') ||
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host.endsWith('.run.app')
-    ) {
-      return `${origin}/?site=${sub}`;
+    // If running under official nexora.in production domain:
+    if (host.endsWith('nexora.in') && !host.startsWith('localhost')) {
+      return `https://${sub}.nexora.in`;
     }
+    // For Vercel deployments, preview hosts, sandbox, localhost:
+    return `${origin}/?site=${sub}`;
   }
 
   return `https://${sub}.nexora.in`;
