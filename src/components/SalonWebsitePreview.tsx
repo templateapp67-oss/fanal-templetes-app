@@ -1870,6 +1870,132 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           </section>
         )}
 
+        {/* 7.5 Social Proof & Reels Showcase */}
+        {sectionVisibility.gallery && (
+          <section className={`p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
+            <div className="max-w-7xl mx-auto">
+                <h2 className={`text-2xl md:text-3xl font-extrabold mb-2 ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>Featured Videos &amp; Reels</h2>
+                <p className={`text-sm mb-8 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>Client transformations and salon showcases from YouTube.</p>
+                {/* SHORTS — Vertical 9:16 Carousel */}
+                <div className="mb-10">
+                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkCanvas ? 'text-white' : 'text-slate-800'}`}>
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    Featured Shorts
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ml-2 ${isDarkCanvas ? 'bg-neutral-800 text-neutral-300' : 'bg-rose-50 text-rose-700'}`}>
+                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length || 0} / 14
+                    </span>
+                  </h3>
+                  <div className="overflow-x-auto pb-4 -mx-2 px-2">
+                    <div className="flex gap-3 min-w-max sm:min-w-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                      {(activeProfile.socialVideos || [])
+                        .filter((video) => video.categoryTag === 'SHORT')
+                        .map((video) => (
+                          <div
+                            key={video.id}
+                            className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer w-[220px] sm:w-auto shrink-0 sm:shrink hover:shadow-md transition-all"
+                            onMouseEnter={(e) => {
+                              const iframe = e.currentTarget.querySelector('iframe');
+                              if (iframe && iframe.src) {
+                                try {
+                                  const url = new URL(iframe.src);
+                                  url.searchParams.set('autoplay', '1');
+                                  url.searchParams.set('mute', '1');
+                                  url.searchParams.set('loop', '1');
+                                  iframe.src = url.toString();
+                                } catch {}
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              const iframe = e.currentTarget.querySelector('iframe');
+                              if (iframe && iframe.src) {
+                                try {
+                                  const url = new URL(iframe.src);
+                                  url.searchParams.set('autoplay', '0');
+                                  url.searchParams.delete('mute');
+                                  url.searchParams.delete('loop');
+                                  iframe.src = url.toString();
+                                } catch {}
+                              }
+                            }}
+                            onClick={() => window.open(video.youtubeUrl, '_blank')}
+                          >
+                            <iframe
+                              src={video.youtubeUrl.replace('watch?v=', 'embed/') + '?autoplay=0'}
+                              className="w-full aspect-[9/16]"
+                              title={video.title}
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                            <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-[10px] font-bold text-white flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              SHORT
+                            </div>
+                            <div className="absolute bottom-3 left-3 right-3 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 rounded-lg">
+                              <h4 className="text-[11px] font-bold text-white truncate leading-snug">{video.title}</h4>
+                              <p className="text-[9px] text-white/80 truncate">{video.transformationTag || 'Transformation'}</p>
+                            </div>
+                          </div>
+                        ))}
+                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length === 0 && (
+                        <div className="w-[220px] sm:w-auto shrink-0 sm:shrink flex items-center justify-center h-[320px] border border-dashed border-slate-200 rounded-2xl text-xs text-slate-400">
+                          No Shorts added yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* LONG VIDEOS — Horizontal 16:9 Grid */}
+                <div>
+                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkCanvas ? 'text-white' : 'text-slate-800'}`}>
+                    <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                    Featured Showcases
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ml-2 ${isDarkCanvas ? 'bg-neutral-800 text-neutral-300' : 'bg-sky-50 text-sky-700'}`}>
+                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length || 0} / 14
+                    </span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {(activeProfile.socialVideos || [])
+                      .filter((video) => video.categoryTag === 'LONG' || video.categoryTag === 'SHOWCASE')
+                      .map((video) => (
+                        <div
+                          key={video.id}
+                          className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-lg transition-all cursor-pointer bg-white"
+                          onClick={() => window.open(video.youtubeUrl, '_blank')}
+                        >
+                          <div className="relative">
+                            <img src={video.thumbnailUrl || `https://img.youtube.com/vi/${video.videoId}/maxresdefault.jpg`} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
+                            <div className="absolute top-2 left-2 bg-sky-600/90 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs">
+                              {video.categoryTag || 'SHOWCASE'}
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg">
+                                <span className="material-symbols-outlined text-xl">play_arrow</span>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-3 bg-white">
+                            <h4 className="font-bold text-xs text-slate-900 truncate leading-snug">{video.title}</h4>
+                            <p className="text-[10px] text-slate-500 truncate mt-0.5">{video.channelTitle || 'YouTube'}</p>
+                            <div className="flex items-center justify-between mt-2 text-[9px] font-mono text-slate-400">
+                              <span>{video.transformationTag || 'Showcase'}</span>
+                              <span className="text-sky-600 font-bold">{video.views || '12.4k views'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length === 0 && (
+                      <div className="col-span-full text-center text-xs text-slate-400 py-8 border border-dashed border-slate-200 rounded-2xl">
+                        No showcase videos added yet. Add transformation reels from the editor.
+                      </div>
+                    )}
+                  </div>
+                </div>
+            </div>
+          </section>
+        )}
+
         {/* ============================================================ */}
         {/* 7. LOCATION, MAP & WORKING HOURS CARD */}
         {/* ============================================================ */}
@@ -1993,132 +2119,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   setProfile={setProfile || (() => {})}
                 />
               </div>
-            </div>
-          </section>
-        )}
-
-        {/* 7.5 Social Proof & Reels Showcase */}
-        {sectionVisibility.gallery && (
-          <section className={`p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-            <div className="max-w-7xl mx-auto">
-                <h2 className={`text-2xl md:text-3xl font-extrabold mb-2 ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>Featured Videos &amp; Reels</h2>
-                <p className={`text-sm mb-8 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>Client transformations and salon showcases from YouTube.</p>
-                {/* SHORTS — Vertical 9:16 Carousel */}
-                <div className="mb-10">
-                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkCanvas ? 'text-white' : 'text-slate-800'}`}>
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                    Featured Shorts
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ml-2 ${isDarkCanvas ? 'bg-neutral-800 text-neutral-300' : 'bg-rose-50 text-rose-700'}`}>
-                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length || 0} / 14
-                    </span>
-                  </h3>
-                  <div className="overflow-x-auto pb-4 -mx-2 px-2">
-                    <div className="flex gap-3 min-w-max sm:min-w-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                      {(activeProfile.socialVideos || [])
-                        .filter((video) => video.categoryTag === 'SHORT')
-                        .map((video) => (
-                          <div
-                            key={video.id}
-                            className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer w-[220px] sm:w-auto shrink-0 sm:shrink hover:shadow-md transition-all"
-                            onMouseEnter={(e) => {
-                              const iframe = e.currentTarget.querySelector('iframe');
-                              if (iframe && iframe.src) {
-                                try {
-                                  const url = new URL(iframe.src);
-                                  url.searchParams.set('autoplay', '1');
-                                  url.searchParams.set('mute', '1');
-                                  url.searchParams.set('loop', '1');
-                                  iframe.src = url.toString();
-                                } catch {}
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              const iframe = e.currentTarget.querySelector('iframe');
-                              if (iframe && iframe.src) {
-                                try {
-                                  const url = new URL(iframe.src);
-                                  url.searchParams.set('autoplay', '0');
-                                  url.searchParams.delete('mute');
-                                  url.searchParams.delete('loop');
-                                  iframe.src = url.toString();
-                                } catch {}
-                              }
-                            }}
-                            onClick={() => window.open(video.youtubeUrl, '_blank')}
-                          >
-                            <iframe
-                              src={video.youtubeUrl.replace('watch?v=', 'embed/') + '?autoplay=0'}
-                              className="w-full aspect-[9/16]"
-                              title={video.title}
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                            <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-[10px] font-bold text-white flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                              SHORT
-                            </div>
-                            <div className="absolute bottom-3 left-3 right-3 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 rounded-lg">
-                              <h4 className="text-[11px] font-bold text-white truncate leading-snug">{video.title}</h4>
-                              <p className="text-[9px] text-white/80 truncate">{video.transformationTag || 'Transformation'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length === 0 && (
-                        <div className="w-[220px] sm:w-auto shrink-0 sm:shrink flex items-center justify-center h-[320px] border border-dashed border-slate-200 rounded-2xl text-xs text-slate-400">
-                          No Shorts added yet.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* LONG VIDEOS — Horizontal 16:9 Grid */}
-                <div>
-                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkCanvas ? 'text-white' : 'text-slate-800'}`}>
-                    <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                    Featured Showcases
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ml-2 ${isDarkCanvas ? 'bg-neutral-800 text-neutral-300' : 'bg-sky-50 text-sky-700'}`}>
-                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length || 0} / 14
-                    </span>
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {(activeProfile.socialVideos || [])
-                      .filter((video) => video.categoryTag === 'LONG' || video.categoryTag === 'SHOWCASE')
-                      .map((video) => (
-                        <div
-                          key={video.id}
-                          className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-lg transition-all cursor-pointer bg-white"
-                          onClick={() => window.open(video.youtubeUrl, '_blank')}
-                        >
-                          <div className="relative">
-                            <img src={video.thumbnailUrl || `https://img.youtube.com/vi/${video.videoId}/maxresdefault.jpg`} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
-                            <div className="absolute top-2 left-2 bg-sky-600/90 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs">
-                              {video.categoryTag || 'SHOWCASE'}
-                            </div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg">
-                                <span className="material-symbols-outlined text-xl">play_arrow</span>
-                              </span>
-                            </div>
-                          </div>
-                          <div className="p-3 bg-white">
-                            <h4 className="font-bold text-xs text-slate-900 truncate leading-snug">{video.title}</h4>
-                            <p className="text-[10px] text-slate-500 truncate mt-0.5">{video.channelTitle || 'YouTube'}</p>
-                            <div className="flex items-center justify-between mt-2 text-[9px] font-mono text-slate-400">
-                              <span>{video.transformationTag || 'Showcase'}</span>
-                              <span className="text-sky-600 font-bold">{video.views || '12.4k views'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length === 0 && (
-                      <div className="col-span-full text-center text-xs text-slate-400 py-8 border border-dashed border-slate-200 rounded-2xl">
-                        No showcase videos added yet. Add transformation reels from the editor.
-                      </div>
-                    )}
-                  </div>
-                </div>
             </div>
           </section>
         )}
