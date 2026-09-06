@@ -134,7 +134,7 @@ export function buildYouTubeEmbedUrl(videoId: string, options: YouTubeEmbedOptio
   if (!id || !YOUTUBE_VIDEO_ID_REGEX.test(id)) return '';
 
   const query = new URLSearchParams();
-  if (options.autoplay) query.set('autoplay', '1');
+  if (typeof options.autoplay === 'boolean') query.set('autoplay', options.autoplay ? '1' : '0');
   if (options.mute) query.set('mute', '1');
   if (options.controls !== undefined) query.set('controls', options.controls ? '1' : '0');
   if (options.rel !== undefined) query.set('rel', String(options.rel));

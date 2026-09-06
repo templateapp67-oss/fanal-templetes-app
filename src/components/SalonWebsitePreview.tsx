@@ -1904,7 +1904,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           const playerVideoId = isYouTubeVideoId(video.videoId)
                             ? video.videoId
                             : extractYouTubeId(video.youtubeUrl) || '';
-                          const embedSrc = buildYouTubeEmbedUrl(playerVideoId);
+                          // Build the iframe src from the clean parsed video id
+                          // (never from a raw URL replace) so Shorts links with
+                          // ?si=… and watch links with &feature=shared render.
+                          const embedSrc = buildYouTubeEmbedUrl(playerVideoId, { autoplay: false });
                           return (
                           <div
                             key={video.id}
