@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Save,
   Eye,
@@ -48,6 +48,31 @@ interface WebsiteEditorProps {
 
 const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
 
+const MAX_SHORTS = 5;
+const MAX_LONG_VIDEOS = 5;
+
+const YOUTUBE_SHORTS_URL_REGEX =
+  /^(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})(?:[?&#].*)?$/i;
+
+const YOUTUBE_VIDEO_URL_PATTERNS = [
+  /^(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/|shorts\/)([a-zA-Z0-9_-]{11})/i,
+  /^(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})/i,
+];
+
+function extractShortVideoId(url: string): string | null {
+  const match = url.trim().match(YOUTUBE_SHORTS_URL_REGEX);
+  return match ? match[1] : null;
+}
+
+function extractVideoIdFromUrl(url: string): string | null {
+  const trimmed = url.trim();
+  for (const pattern of YOUTUBE_VIDEO_URL_PATTERNS) {
+    const match = trimmed.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   profile,
   setProfile,
@@ -85,6 +110,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [isFetchingMeta, setIsFetchingMeta] = useState(false);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
 
+  // Keep live refs alongside state so the max-5 checks stay accurate even when
+  // multiple add actions happen quickly, without relying on a stale closure.
+  const shortsRef = useRef<YtVideoRow[]>([]);
+  const longVideosRef = useRef<YtVideoRow[]>([]);
+
   const loadYouTubeVideos = async () => {
     setIsLoadingVideos(true);
     try {
@@ -103,7 +133,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         shortsData = sData || [];
         longData = lData || [];
       }
-      setShorts((shortsData || []).map((r: any) => ({
+      const shortsRows = (shortsData || []).map((r: any) => ({
         id: r.id,
         video_type: r.video_type as 'short',
         youtube_url: r.youtube_url,
@@ -113,8 +143,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         description: r.description,
         like_count: r.like_count,
         comment_count: r.comment_count,
-      })));
-      setLongVideos((longData || []).map((r: any) => ({
+      }));
+      const longRows = (longData || []).map((r: any) => ({
         id: r.id,
         video_type: r.video_type as 'long',
         youtube_url: r.youtube_url,
@@ -124,7 +154,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         description: r.description,
         like_count: r.like_count,
         comment_count: r.comment_count,
-      })));
+      }));
+      shortsRef.current = shortsRows;
+      longVideosRef.current = longRows;
+      setShorts(shortsRows);
+      setLongVideos(longRows);
     } catch (err) {
       console.warn('Failed to load YouTube videos:', err);
     } finally {
@@ -133,20 +167,68 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   };
 
   const handleFetchMeta = async (url: string, type: 'short' | 'long') => {
-    if (!url.trim()) return;
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) return;
+
+    // Validate the link client-side before calling the API. Shorts must use the
+    // /shorts/ URL format so a long video cannot be added to the Shorts list.
+    if (type === 'short') {
+      const shortsVideoId = extractShortVideoId(trimmedUrl);
+      if (!shortsVideoId) {
+        setFetchStatus(
+          'Invalid YouTube Shorts URL. Please paste a link like https://www.youtube.com/shorts/VIDEO_ID.'
+        );
+        return;
+      }
+    } else {
+      const videoId = extractVideoIdFromUrl(trimmedUrl);
+      if (!videoId) {
+        setFetchStatus(
+          'Invalid YouTube video URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/...'
+        );
+        return;
+      }
+    }
+
+    // Enforce the 5-video limit with the live refs so rapid clicks cannot exceed it.
+    const currentCount = type === 'short' ? shortsRef.current.length : longVideosRef.current.length;
+    const maxAllowed = type === 'short' ? MAX_SHORTS : MAX_LONG_VIDEOS;
+    if (currentCount >= maxAllowed) {
+      setFetchStatus(
+        type === 'short'
+          ? 'Shorts limit reached (max 5). Delete one to add another.'
+          : 'Long Videos limit reached (max 5). Delete one to add another.'
+      );
+      return;
+    }
+
     setIsFetchingMeta(true);
     setFetchStatus('Fetching metadata from YouTube...');
     try {
       const res = await fetch('/api/fetch-youtube-meta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeUrl: url.trim() }),
+        body: JSON.stringify({ youtubeUrl: trimmedUrl }),
       });
       const data = await res.json();
       if (data.success && data.videoId) {
+        // Re-check after the async fetch because another request may have
+        // already filled the slot while this one was in flight.
+        if (
+          (type === 'short' && shortsRef.current.length >= MAX_SHORTS) ||
+          (type === 'long' && longVideosRef.current.length >= MAX_LONG_VIDEOS)
+        ) {
+          setFetchStatus(
+            type === 'short'
+              ? 'Shorts limit reached (max 5). Delete one to add another.'
+              : 'Long Videos limit reached (max 5). Delete one to add another.'
+          );
+          return;
+        }
+
         const newRow: YtVideoRow = {
           video_type: type,
-          youtube_url: data.youtubeUrl || url.trim(),
+          youtube_url: data.youtubeUrl || trimmedUrl,
           youtube_video_id: data.videoId,
           title: data.title || '',
           thumbnail_url: data.thumbnailUrl || '',
@@ -154,32 +236,21 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           like_count: data.likeCount || 0,
           comment_count: data.commentCount || 0,
         };
+
         if (type === 'short') {
-          if (shorts.length >= 5) {
-            setFetchStatus('Shorts limit reached (max 5). Delete one to add another.');
-            setIsFetchingMeta(false);
-            return;
-          }
-          setShorts((prev) => {
-            const updated = [...prev, newRow];
-            // Async save after state update
-            setTimeout(() => handleSaveVideoToDb(newRow), 100);
-            return updated;
-          });
+          const updated = [...shortsRef.current, newRow];
+          shortsRef.current = updated;
+          setShorts(updated);
           setShortUrlInput('');
         } else {
-          if (longVideos.length >= 5) {
-            setFetchStatus('Long Videos limit reached (max 5). Delete one to add another.');
-            setIsFetchingMeta(false);
-            return;
-          }
-          setLongVideos((prev) => {
-            const updated = [...prev, newRow];
-            setTimeout(() => handleSaveVideoToDb(newRow), 100);
-            return updated;
-          });
+          const updated = [...longVideosRef.current, newRow];
+          longVideosRef.current = updated;
+          setLongVideos(updated);
           setLongUrlInput('');
         }
+
+        // Async save after state update
+        setTimeout(() => handleSaveVideoToDb(newRow), 100);
         setFetchStatus('Video metadata fetched and added!');
       } else {
         setFetchStatus(data.notice || 'Failed to fetch metadata.');
@@ -235,9 +306,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         if (error) console.warn('DB delete error:', error);
       }
       if (type === 'short') {
-        setShorts((prev) => prev.filter((v) => v.id !== id));
+        const updated = shortsRef.current.filter((v) => v.id !== id && v.youtube_video_id !== id);
+        shortsRef.current = updated;
+        setShorts(updated);
       } else {
-        setLongVideos((prev) => prev.filter((v) => v.id !== id));
+        const updated = longVideosRef.current.filter((v) => v.id !== id && v.youtube_video_id !== id);
+        longVideosRef.current = updated;
+        setLongVideos(updated);
       }
       showToast?.('Video deleted.');
       await loadYouTubeVideos();
@@ -857,9 +932,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 type="text"
                 value={shortUrlInput}
                 onChange={(e) => setShortUrlInput(e.target.value)}
-                placeholder="Paste YouTube Shorts URL (e.g. youtube.com/shorts/...)"
+                placeholder="Social Proof & Reels Showcase — Paste YouTube Shorts URL (e.g. https://www.youtube.com/shorts/...)"
+                aria-label="Shorts YouTube URL"
+                autoComplete="off"
                 className="flex-1 p-2.5 rounded-xl border border-rose-200 text-xs focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none bg-rose-50/30"
-                disabled={shorts.length >= 5 || isFetchingMeta}
               />
               <button
                 type="button"
@@ -933,9 +1009,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 type="text"
                 value={longUrlInput}
                 onChange={(e) => setLongUrlInput(e.target.value)}
-                placeholder="Paste YouTube video URL (e.g. youtube.com/watch?v=...)"
+                placeholder="Paste YouTube video URL (e.g. https://www.youtube.com/watch?v=...)"
+                aria-label="Long YouTube video URL"
+                autoComplete="off"
                 className="flex-1 p-2.5 rounded-xl border border-sky-200 text-xs focus:ring-2 focus:ring-sky-300 focus:border-sky-400 outline-none bg-sky-50/30"
-                disabled={longVideos.length >= 5 || isFetchingMeta}
               />
               <button
                 type="button"
