@@ -14,65 +14,71 @@
 /** Regex for a bare, valid 11-character YouTube video id. */
 export const YOUTUBE_VIDEO_ID_REGEX = /^[A-Za-z0-9_-]{11}$/;
 
-// Precise extraction patterns. Each capture group (1) is guaranteed to be an
-// 11-character video id by construction ({11} + a non-id boundary lookahead),
-// so no post-filtering is required for these matches.
-const YOUTUBE_ID_PATTERNS: RegExp[] = [
-  // Standard watch URL with v anywhere in the query string:
-  //   https://www.youtube.com/watch?v=VIDEO_ID
-  //   https://youtube.com/watch?si=abc&feature=shared&v=VIDEO_ID
-  /(?:www\.|m\.|music\.|gaming\.)?(?:youtube\.com|youtube-nocookie\.com)\/watch\?(?:[^#\s]*&)?v=([A-Za-z0-9_-]{11})(?=$|[?#&/])/i,
-  // Path-style URLs:
-  //   https://youtube.com/shorts/VIDEO_ID
-  //   https://www.youtube.com/embed/VIDEO_ID
-  //   https://www.youtube.com/v/VIDEO_ID | /live/VIDEO_ID | /e/VIDEO_ID
-  /(?:www\.|m\.|music\.|gaming\.)?(?:youtube\.com|youtube-nocookie\.com)\/(?:shorts|embed|live|v|e)\/([A-Za-z0-9_-]{11})(?=$|[?#/])/i,
-  // Shortened share URL:
-  //   https://youtu.be/VIDEO_ID
-  //   https://youtu.be/VIDEO_ID?si=...
-  /(?:^|[^A-Za-z0-9_-])(?:www\.|m\.)?youtu\.be\/([A-Za-z0-9_-]{11})(?=$|[?#/])/i,
-];
-
-// Loose fallback inspired by the canonical YouTube regex:
-//   /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/
-// It intentionally still requires the 11-char token to end on a delimiter so a
-// longer run of [A-Za-z0-9_-] never produces a wrong "id".
-const LOOSE_YOUTUBE_ID_PATTERN =
-  /^.*(?:youtu\.be\/|v\/|u\/\w+\/|embed\/|shorts\/|live\/|watch\?v=|&v=|\bv=)([A-Za-z0-9_-]{11})(?:[^A-Za-z0-9_-].*)?$/i;
+const YOUTUBE_HOSTS = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'music.youtube.com',
+  'gaming.youtube.com',
+]);
+const YOUTUBE_SHORT_HOSTS = new Set(['youtu.be', 'www.youtu.be', 'm.youtu.be']);
+const YOUTUBE_EMBED_HOSTS = new Set(['youtube-nocookie.com', 'www.youtube-nocookie.com']);
 
 /**
- * Extracts the 11-character YouTube video id from any supported link format:
- *
- *   Standard:  https://www.youtube.com/watch?v=VIDEO_ID
- *   Shortened: https://youtu.be/VIDEO_ID
- *   Shorts:    https://youtube.com/shorts/VIDEO_ID
- *   Embed:     https://www.youtube.com/embed/VIDEO_ID
- *   Path:      https://www.youtube.com/v/VIDEO_ID, /live/VIDEO_ID ...
- *
- * Extra query parameters (?si=..., &feature=shared, &t=..., #fragment, ...)
- * are handled and ignored. Returns null when the URL is not a valid YouTube
- * link (or does not contain an exactly 11-character video id).
+ * Parse the URL rather than matching a YouTube-looking substring. This keeps
+ * lookalike domains and links containing YouTube URLs in their query/path out.
+ * Share parameters, fragments and the order of watch query parameters do not
+ * affect the extracted id. Scheme-less links are treated as HTTPS.
  */
 export function extractYouTubeId(input: unknown): string | null {
-  if (typeof input !== 'string') return null;
-  const url = input.trim();
-  if (!url) return null;
+  if (typeof input !== 'string' || !input.trim()) return null;
 
-  for (const pattern of YOUTUBE_ID_PATTERNS) {
-    const match = url.match(pattern);
-    if (match && match[1]) return match[1];
+  try {
+    const trimmed = input.trim();
+    const url = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    );
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+
+    const host = url.hostname.toLowerCase();
+    const parts = url.pathname.split('/').filter(Boolean);
+    let videoId: string | null | undefined = null;
+
+    if (YOUTUBE_SHORT_HOSTS.has(host)) {
+      videoId = parts[0];
+    } else if (YOUTUBE_EMBED_HOSTS.has(host)) {
+      if (parts[0] === 'embed') videoId = parts[1];
+    } else if (YOUTUBE_HOSTS.has(host)) {
+      if (parts[0] === 'watch') {
+        videoId = url.searchParams.get('v');
+      } else if (['shorts', 'embed', 'v', 'live', 'e'].includes(parts[0])) {
+        videoId = parts[1];
+      } else if (parts[0] === 'u' && parts.length === 3) {
+        videoId = parts[2];
+      }
+    }
+
+    return isYouTubeVideoId(videoId) ? videoId : null;
+  } catch {
+    return null;
   }
+}
 
-  // The loose fallback only runs for URLs that clearly belong to YouTube,
-  // otherwise a random "watch?v=..." on another site would be misread.
-  const belongsToYouTube =
-    /(?:^|[^A-Za-z0-9-])(?:youtu\.be|youtube(?:-nocookie)?\.com)/i.test(url);
-  if (belongsToYouTube) {
-    const looseMatch = url.match(LOOSE_YOUTUBE_ID_PATTERN);
-    if (looseMatch && looseMatch[1]) return looseMatch[1];
-  }
+export interface YouTubeDetails {
+  videoId: string;
+  embedUrl: string;
+  thumbnailUrl: string;
+}
 
-  return null;
+/** Everything needed to add/play a video, without any network dependency. */
+export function getYouTubeDetails(input: unknown): YouTubeDetails | null {
+  const videoId = extractYouTubeId(input);
+  if (!videoId) return null;
+  return {
+    videoId,
+    embedUrl: buildYouTubeEmbedUrl(videoId),
+    thumbnailUrl: buildYouTubeThumbnailUrl(videoId),
+  };
 }
 
 /** True when the value is a YouTube link that yields an 11-char video id. */
