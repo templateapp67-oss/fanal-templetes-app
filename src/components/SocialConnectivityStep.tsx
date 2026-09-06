@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SalonProfile, SocialVideo, VideoCategoryTag } from '../types';
+import { getDefaultVideosForTemplate } from '../templateSocialVideos';
 
 export const DEFAULT_SHOWCASE_VIDEOS: SocialVideo[] = [
   {
@@ -131,11 +132,13 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
   const [isYtConnected, setIsYtConnected] = useState<boolean>(!!profile.youtubeChannel);
   const [isTtConnected, setIsTtConnected] = useState<boolean>(!!profile.tiktokProfile);
 
-  // Videos state
+  // Videos state: initialize with profile videos or template-specific defaults
   const [videos, setVideos] = useState<SocialVideo[]>(() => {
-    return profile.socialVideos && profile.socialVideos.length > 0
-      ? profile.socialVideos
-      : DEFAULT_SHOWCASE_VIDEOS;
+    if (profile.socialVideos && profile.socialVideos.length > 0) {
+      return profile.socialVideos;
+    }
+    const templateDefaults = getDefaultVideosForTemplate(profile.businessType);
+    return templateDefaults.length > 0 ? templateDefaults : DEFAULT_SHOWCASE_VIDEOS;
   });
 
   // Modal / Form state for Add Social Video
@@ -150,8 +153,14 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
   const [managingVideo, setManagingVideo] = useState<SocialVideo | null>(null);
   const [activeTabFilter, setActiveTabFilter] = useState<'ALL' | 'YOURS' | 'SHOWCASE'>('ALL');
 
-  // Preview video player state
+  // Interactive hover preview for video thumbnails
+  const [hoveredVideoId, setHoveredVideoId] = useState<string | null>(null);
   const [previewActiveVideo, setPreviewActiveVideo] = useState<SocialVideo | null>(null);
+
+  // YouTube Data API auto-fetch state
+  const [isFetchingVideos, setIsFetchingVideos] = useState<boolean>(false);
+  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
+  const [fetchedVideos, setFetchedVideos] = useState<SocialVideo[]>([]);
 
   // Synchronize state back to profile
   const syncToProfile = (
@@ -256,6 +265,70 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
       setManagingVideo((prev) => (prev ? { ...prev, isOwnerVideo: !prev.isOwnerVideo } : null));
     }
   };
+
+  const handleAutoFetchVideos = async () => {
+    setIsFetchingVideos(true);
+    setFetchStatus('Fetching videos from YouTube...');
+    setFetchedVideos([]);
+    try {
+      const res = await fetch('/api/youtube/fetch-videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelUrl: youtube || profile.youtubeChannel || `https://youtube.com/@${profile.subdomain || 'yoursalon'}`,
+          maxResults: 6,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.videos && data.videos.length > 0) {
+        const fetched = data.videos.map((v: any, i: number) => ({
+          ...v,
+          id: `vid-auto-${Date.now()}-${i}`,
+          isOwnerVideo: false,
+        }));
+        setFetchedVideos(fetched);
+        setFetchStatus(`Auto-fetched ${fetched.length} videos from YouTube.`);
+        // Optionally append fetched videos to main list
+        const combined = [...videos, ...fetched];
+        setVideos(combined);
+        syncToProfile(instagram, facebook, youtube, tiktok, combined);
+      } else {
+        setFetchStatus(data.notice || 'No videos found for this channel.');
+      }
+    } catch (err: any) {
+      console.warn('Auto-fetch error:', err);
+      setFetchStatus('Failed to fetch videos from YouTube. Please check your API key.');
+    } finally {
+      setIsFetchingVideos(false);
+      setTimeout(() => setFetchStatus(null), 6000);
+    }
+  };
+
+  // Keyboard navigation for video lightbox
+  useEffect(() => {
+    if (!previewActiveVideo) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreviewActiveVideo(null);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        // Navigate through videos in the current view
+        const currentList = videos.filter((v) => {
+          if (activeTabFilter === 'YOURS') return v.isOwnerVideo;
+          if (activeTabFilter === 'SHOWCASE') return !v.isOwnerVideo;
+          return true;
+        });
+        const currentIndex = currentList.findIndex((v) => v.id === previewActiveVideo.id);
+        if (currentIndex !== -1) {
+          const nextIndex = e.key === 'ArrowLeft'
+            ? (currentIndex - 1 + currentList.length) % currentList.length
+            : (currentIndex + 1) % currentList.length;
+          setPreviewActiveVideo(currentList[nextIndex]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewActiveVideo, videos, activeTabFilter]);
 
   // Dynamically compute count breakdown
   const ownerCount = videos.filter((v) => v.isOwnerVideo).length;
@@ -533,6 +606,108 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
             </div>
           </div>
 
+          {/* SUB-SECTION: AUTO-FETCH FROM YOUTUBE DATA API */}
+          <div className="bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col gap-4 relative overflow-hidden">
+            <div className="absolute -top-6 -right-6 text-amber-100 opacity-40">
+              <span className="material-symbols-outlined text-9xl">autorenew</span>
+            </div>
+            <div className="relative z-10">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-600 text-xl">autorenew</span>
+                <h3 className="font-display font-bold text-base text-amber-900">
+                  Auto-Fetch Videos from YouTube
+                </h3>
+              </div>
+              <p className="text-xs text-amber-800 mt-1.5 leading-relaxed">
+                Connect your YouTube channel and automatically pull the latest videos, shorts, and showcases into your salon feed using the YouTube Data API.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 relative z-10">
+              <div className="flex-1 min-w-0">
+                <label className="text-[10px] font-bold text-amber-700 uppercase font-mono-caps block mb-0.5">
+                  YouTube Channel URL
+                </label>
+                <input
+                  type="text"
+                  value={youtube || profile.youtubeChannel || ''}
+                  onChange={(e) => {
+                    setYoutube(e.target.value);
+                    syncToProfile(instagram, facebook, e.target.value, tiktok, videos);
+                  }}
+                  placeholder="https://youtube.com/@pinky-nails-studio"
+                  className="w-full text-xs font-mono bg-white/80 border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 text-amber-900"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAutoFetchVideos}
+                disabled={isFetchingVideos || !(youtube || profile.youtubeChannel)}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.97] whitespace-nowrap"
+              >
+                {isFetchingVideos ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+                    <span>Fetching...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">autorenew</span>
+                    <span>Auto-Fetch Videos</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {fetchStatus && (
+              <div className="bg-amber-50/70 border border-amber-200 text-amber-800 p-3 rounded-xl text-[11px] font-medium flex items-center gap-2 shadow-xs animate-fade-in relative z-10">
+                <span className="material-symbols-outlined text-amber-600 text-base">info</span>
+                <span>{fetchStatus}</span>
+              </div>
+            )}
+
+            {/* Fetched videos preview */}
+            {fetchedVideos.length > 0 && (
+              <div className="relative z-10">
+                <h4 className="text-xs font-bold text-amber-900 mb-2">Successfully fetched videos ({fetchedVideos.length}):</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {fetchedVideos.map((v) => (
+                    <div
+                      key={v.id}
+                      onMouseEnter={() => setHoveredVideoId(v.id)}
+                      onMouseLeave={() => setHoveredVideoId(null)}
+                      onClick={() => setPreviewActiveVideo(v)}
+                      className="group relative rounded-lg overflow-hidden border border-amber-200 bg-white shadow-xs hover:shadow-md transition-all cursor-pointer"
+                    >
+                      <div className="aspect-video w-full overflow-hidden relative">
+                        {hoveredVideoId === v.id && (
+                          <div className="absolute inset-0 z-20 bg-amber-600/20 backdrop-blur-xs flex items-center justify-center animate-fade-in pointer-events-none">
+                            <span className="text-[9px] font-bold text-amber-900 bg-amber-300 px-2 py-0.5 rounded shadow-lg">PREVIEW ACTIVE</span>
+                          </div>
+                        )}
+                        <img src={v.thumbnailUrl} alt={v.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      </div>
+                      <div className="p-2 bg-amber-50/50">
+                        <h5 className="text-[10px] font-bold text-amber-950 truncate">{v.title}</h5>
+                        <p className="text-[9px] text-amber-700 font-mono truncate">{v.channelTitle}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-[10px] text-amber-700 font-medium">These videos have been added to your gallery feed.</span>
+                  <button
+                    type="button"
+                    onClick={() => setFetchedVideos([])}
+                    className="text-[10px] text-amber-800 underline hover:text-amber-950"
+                  >
+                    Clear fetched results
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* SUB-SECTION 3: VIDEO MANAGEMENT (OWNER VIEW) */}
           <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
@@ -793,9 +968,20 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
                   {videos.filter(v => v.categoryTag === 'SHORT').slice(0, 4).map((v) => (
                     <div
                       key={v.id}
+                      onMouseEnter={() => setHoveredVideoId(v.id)}
+                      onMouseLeave={() => setHoveredVideoId(null)}
                       onClick={() => setPreviewActiveVideo(v)}
                       className="group relative rounded-xl bg-slate-900 border border-slate-800 overflow-hidden cursor-pointer hover:border-rose-500/60 transition-all flex flex-col justify-between h-48 shadow-md"
                     >
+                      {/* Interactive hover preview overlay */}
+                      {hoveredVideoId === v.id && (
+                        <div className="absolute inset-0 z-30 bg-black/40 backdrop-blur-xs flex items-center justify-center animate-fade-in pointer-events-none">
+                          <div className="bg-rose-600/90 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg flex items-center gap-1.5">
+                            <span className="material-symbols-outlined animate-pulse">play_circle</span>
+                            <span>Interactive Preview Active</span>
+                          </div>
+                        </div>
+                      )}
                       <img
                         src={v.thumbnailUrl}
                         alt={v.title}
@@ -856,10 +1042,17 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
                   {videos.filter(v => v.categoryTag !== 'SHORT').slice(0, 3).map((v) => (
                     <div
                       key={v.id}
+                      onMouseEnter={() => setHoveredVideoId(v.id)}
+                      onMouseLeave={() => setHoveredVideoId(null)}
                       onClick={() => setPreviewActiveVideo(v)}
-                      className="group p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-sky-500/50 cursor-pointer transition-all flex items-center gap-3 shadow-sm"
+                      className="group p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-sky-500/50 cursor-pointer transition-all flex items-center gap-3 shadow-sm relative overflow-hidden"
                     >
                       <div className="relative w-20 h-14 rounded-lg overflow-hidden shrink-0 border border-slate-800">
+                        {hoveredVideoId === v.id && (
+                          <div className="absolute inset-0 z-20 bg-sky-600/20 backdrop-blur-xs flex items-center justify-center animate-fade-in pointer-events-none">
+                            <span className="text-[9px] font-bold text-white bg-sky-600 px-2 py-0.5 rounded shadow-lg">PREVIEW ACTIVE</span>
+                          </div>
+                        )}
                         <img
                           src={v.thumbnailUrl}
                           alt={v.title}

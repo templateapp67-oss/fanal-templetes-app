@@ -22,11 +22,13 @@ import {
   AlertCircle,
   ArrowRight,
   Sparkles,
+  Play,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
 import { AIBioModal } from './AIBioModal';
+import { supabase, isMockSupabase } from '../lib/supabaseClient';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -61,6 +63,193 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
+
+  // -- YouTube Management ---------------------------------------------------
+  interface YtVideoRow {
+    id?: string;
+    video_type: 'short' | 'long';
+    youtube_url: string;
+    youtube_video_id: string;
+    title: string;
+    thumbnail_url?: string;
+    description?: string;
+    like_count?: number;
+    comment_count?: number;
+  }
+
+  const [shorts, setShorts] = useState<YtVideoRow[]>([]);
+  const [longVideos, setLongVideos] = useState<YtVideoRow[]>([]);
+  const [shortUrlInput, setShortUrlInput] = useState('');
+  const [longUrlInput, setLongUrlInput] = useState('');
+  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
+  const [isFetchingMeta, setIsFetchingMeta] = useState(false);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
+
+  const loadYouTubeVideos = async () => {
+    setIsLoadingVideos(true);
+    try {
+      // Try to load from DB; fall back to empty arrays in mock mode
+      let shortsData: any[] = [];
+      let longData: any[] = [];
+      if (!isMockSupabase) {
+        const { data: sData } = await supabase
+          .from('salon_youtube_videos')
+          .select('*')
+          .eq('video_type', 'short');
+        const { data: lData } = await supabase
+          .from('salon_youtube_videos')
+          .select('*')
+          .eq('video_type', 'long');
+        shortsData = sData || [];
+        longData = lData || [];
+      }
+      setShorts((shortsData || []).map((r: any) => ({
+        id: r.id,
+        video_type: r.video_type as 'short',
+        youtube_url: r.youtube_url,
+        youtube_video_id: r.youtube_video_id,
+        title: r.title || '',
+        thumbnail_url: r.thumbnail_url,
+        description: r.description,
+        like_count: r.like_count,
+        comment_count: r.comment_count,
+      })));
+      setLongVideos((longData || []).map((r: any) => ({
+        id: r.id,
+        video_type: r.video_type as 'long',
+        youtube_url: r.youtube_url,
+        youtube_video_id: r.youtube_video_id,
+        title: r.title || '',
+        thumbnail_url: r.thumbnail_url,
+        description: r.description,
+        like_count: r.like_count,
+        comment_count: r.comment_count,
+      })));
+    } catch (err) {
+      console.warn('Failed to load YouTube videos:', err);
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  };
+
+  const handleFetchMeta = async (url: string, type: 'short' | 'long') => {
+    if (!url.trim()) return;
+    setIsFetchingMeta(true);
+    setFetchStatus('Fetching metadata from YouTube...');
+    try {
+      const res = await fetch('/api/fetch-youtube-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeUrl: url.trim() }),
+      });
+      const data = await res.json();
+      if (data.success && data.videoId) {
+        const newRow: YtVideoRow = {
+          video_type: type,
+          youtube_url: data.youtubeUrl || url.trim(),
+          youtube_video_id: data.videoId,
+          title: data.title || '',
+          thumbnail_url: data.thumbnailUrl || '',
+          description: data.description || '',
+          like_count: data.likeCount || 0,
+          comment_count: data.commentCount || 0,
+        };
+        if (type === 'short') {
+          if (shorts.length >= 5) {
+            setFetchStatus('Shorts limit reached (max 5). Delete one to add another.');
+            setIsFetchingMeta(false);
+            return;
+          }
+          setShorts((prev) => {
+            const updated = [...prev, newRow];
+            // Async save after state update
+            setTimeout(() => handleSaveVideoToDb(newRow), 100);
+            return updated;
+          });
+          setShortUrlInput('');
+        } else {
+          if (longVideos.length >= 5) {
+            setFetchStatus('Long Videos limit reached (max 5). Delete one to add another.');
+            setIsFetchingMeta(false);
+            return;
+          }
+          setLongVideos((prev) => {
+            const updated = [...prev, newRow];
+            setTimeout(() => handleSaveVideoToDb(newRow), 100);
+            return updated;
+          });
+          setLongUrlInput('');
+        }
+        setFetchStatus('Video metadata fetched and added!');
+      } else {
+        setFetchStatus(data.notice || 'Failed to fetch metadata.');
+      }
+    } catch (err: any) {
+      console.warn('Fetch meta error:', err);
+      setFetchStatus('Failed to fetch YouTube metadata.');
+    } finally {
+      setIsFetchingMeta(false);
+      setTimeout(() => setFetchStatus(null), 4000);
+    }
+  };
+
+  const handleSaveVideoToDb = async (video: YtVideoRow) => {
+    try {
+      if (isMockSupabase) {
+        // In mock mode just keep in local state (already added)
+        showToast?.('Video saved locally (mock mode).');
+        return;
+      }
+      // Save to salon_youtube_videos
+      // We don't have salon_id from profile directly mapped to DB id; use profile.subdomain or a placeholder
+      // For simplicity, assume profile.id exists or use a mock owner mapping
+      const ownerId = (profile as any)?.ownerId || profile.subdomain || 'mock-owner';
+      const { error } = await supabase.from('salon_youtube_videos').insert({
+        salon_id: ownerId,
+        video_type: video.video_type,
+        youtube_url: video.youtube_url,
+        youtube_video_id: video.youtube_video_id,
+        title: video.title,
+        thumbnail_url: video.thumbnail_url,
+        description: video.description,
+        like_count: video.like_count || 0,
+        comment_count: video.comment_count || 0,
+      });
+      if (error) {
+        console.warn('DB insert error:', error);
+        showToast?.('Failed to save video to database.');
+      } else {
+        showToast?.('Video saved to database!');
+        await loadYouTubeVideos();
+      }
+    } catch (err: any) {
+      console.warn('Save video error:', err);
+      showToast?.('Failed to save video.');
+    }
+  };
+
+  const handleDeleteVideo = async (id: string, type: 'short' | 'long') => {
+    try {
+      if (!isMockSupabase && id && id.length > 10) {
+        const { error } = await supabase.from('salon_youtube_videos').delete().eq('id', id);
+        if (error) console.warn('DB delete error:', error);
+      }
+      if (type === 'short') {
+        setShorts((prev) => prev.filter((v) => v.id !== id));
+      } else {
+        setLongVideos((prev) => prev.filter((v) => v.id !== id));
+      }
+      showToast?.('Video deleted.');
+      await loadYouTubeVideos();
+    } catch (err) {
+      console.warn('Delete video error:', err);
+    }
+  };
+
+  // Load videos on mount
+  React.useEffect(() => {
+    loadYouTubeVideos();
+  }, []);
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -636,6 +825,163 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 </a>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* ===== 6. YOUTUBE MANAGEMENT (SHORTS & LONG) ===== */}
+        <section className="bg-gradient-to-r from-rose-950/5 via-slate-900/5 to-amber-950/5 border border-rose-200/40 rounded-2xl shadow-sm p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Play className="w-4 h-4 text-rose-600" />
+            <h2 className="font-display font-bold text-base text-gray-900">YouTube Videos &amp; Shorts</h2>
+            <span className="text-[10px] font-mono font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">Admin Only</span>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">
+            Manage up to 5 Shorts and 5 Long Videos that appear on your live site feed.
+          </p>
+
+          {/* SHORTS SECTION */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-sm text-rose-700 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                Shorts (Max 5)
+              </h3>
+              <span className="text-[10px] font-mono text-gray-500">
+                {shorts.length} / 5
+              </span>
+            </div>
+
+            {/* Input */}
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={shortUrlInput}
+                onChange={(e) => setShortUrlInput(e.target.value)}
+                placeholder="Paste YouTube Shorts URL (e.g. youtube.com/shorts/...)"
+                className="flex-1 p-2.5 rounded-xl border border-rose-200 text-xs focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none bg-rose-50/30"
+                disabled={shorts.length >= 5 || isFetchingMeta}
+              />
+              <button
+                type="button"
+                onClick={() => handleFetchMeta(shortUrlInput, 'short')}
+                disabled={!shortUrlInput.trim() || shorts.length >= 5 || isFetchingMeta}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm"
+              >
+                {isFetchingMeta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                <span>Add Short</span>
+              </button>
+            </div>
+
+            {fetchStatus && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-[11px] font-medium mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-base text-rose-600">info</span>
+                <span>{fetchStatus}</span>
+              </div>
+            )}
+
+            {/* List */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {shorts.map((v) => (
+                <div key={v.id || v.youtube_video_id} className="relative p-3 rounded-xl bg-white border border-rose-100 shadow-xs hover:shadow-md transition-all">
+                  <div className="flex gap-3">
+                    <img src={v.thumbnail_url || `https://img.youtube.com/vi/${v.youtube_video_id}/hqdefault.jpg`} alt={v.title} className="w-20 h-14 rounded-lg object-cover border border-gray-200 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-xs text-gray-900 truncate">{v.title || 'Untitled'}</h4>
+                      <p className="text-[10px] text-gray-500 truncate">{v.description || 'No description'}</p>
+                      <div className="flex items-center gap-1 mt-1 text-[9px] text-gray-400 font-mono">
+                        <span>{v.like_count || 0} likes</span>
+                        <span>·</span>
+                        <span>{v.comment_count || 0} comments</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-rose-50">
+                    <a href={v.youtube_url} target="_blank" rel="noreferrer" className="text-[10px] font-mono text-rose-600 hover:text-rose-800 underline">{v.youtube_video_id}</a>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVideo(v.id || v.youtube_video_id, 'short')}
+                      className="text-[10px] font-bold text-rose-500 hover:text-rose-700 px-2 py-0.5 rounded hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {shorts.length === 0 && (
+              <div className="text-center text-xs text-gray-400 py-4 border border-dashed border-rose-200 rounded-xl">
+                No Shorts added. Paste a YouTube Shorts URL above.
+              </div>
+            )}
+          </div>
+
+          {/* LONG VIDEOS SECTION */}
+          <div className="pt-6 border-t border-rose-200/40">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-sm text-sky-700 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                Long Videos (Max 5)
+              </h3>
+              <span className="text-[10px] font-mono text-gray-500">
+                {longVideos.length} / 5
+              </span>
+            </div>
+
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={longUrlInput}
+                onChange={(e) => setLongUrlInput(e.target.value)}
+                placeholder="Paste YouTube video URL (e.g. youtube.com/watch?v=...)"
+                className="flex-1 p-2.5 rounded-xl border border-sky-200 text-xs focus:ring-2 focus:ring-sky-300 focus:border-sky-400 outline-none bg-sky-50/30"
+                disabled={longVideos.length >= 5 || isFetchingMeta}
+              />
+              <button
+                type="button"
+                onClick={() => handleFetchMeta(longUrlInput, 'long')}
+                disabled={!longUrlInput.trim() || longVideos.length >= 5 || isFetchingMeta}
+                className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm"
+              >
+                {isFetchingMeta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                <span>Add Video</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {longVideos.map((v) => (
+                <div key={v.id || v.youtube_video_id} className="relative p-3 rounded-xl bg-white border border-sky-100 shadow-xs hover:shadow-md transition-all">
+                  <div className="flex gap-3">
+                    <img src={v.thumbnail_url || `https://img.youtube.com/vi/${v.youtube_video_id}/hqdefault.jpg`} alt={v.title} className="w-20 h-14 rounded-lg object-cover border border-gray-200 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-xs text-gray-900 truncate">{v.title || 'Untitled'}</h4>
+                      <p className="text-[10px] text-gray-500 truncate">{v.description || 'No description'}</p>
+                      <div className="flex items-center gap-1 mt-1 text-[9px] text-gray-400 font-mono">
+                        <span>{v.like_count || 0} likes</span>
+                        <span>·</span>
+                        <span>{v.comment_count || 0} comments</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-sky-50">
+                    <a href={v.youtube_url} target="_blank" rel="noreferrer" className="text-[10px] font-mono text-sky-600 hover:text-sky-800 underline">{v.youtube_video_id}</a>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVideo(v.id || v.youtube_video_id, 'long')}
+                      className="text-[10px] font-bold text-sky-500 hover:text-sky-700 px-2 py-0.5 rounded hover:bg-sky-50 transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {longVideos.length === 0 && (
+              <div className="text-center text-xs text-gray-400 py-4 border border-dashed border-sky-200 rounded-xl">
+                No Long Videos added. Paste a YouTube video URL above.
+              </div>
+            )}
           </div>
         </section>
 

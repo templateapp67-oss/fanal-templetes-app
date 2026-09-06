@@ -484,3 +484,43 @@ begin
   return p_owner_id;
 end;
 $$;
+
+-- ============================================================================
+-- SOCIAL VIDEOS (YouTube shorts / showcase / long videos per salon)
+-- ============================================================================
+create table if not exists public.social_videos (
+  id               uuid primary key default gen_random_uuid(),
+  owner_id         uuid not null references auth.users(id) on delete cascade,
+  youtube_url      text not null,
+  video_id         text not null,
+  title            text not null,
+  description      text,
+  channel_title    text,
+  thumbnail_url    text,
+  category_tag     text default 'SHORT',
+  is_owner_video   boolean default true,
+  views            text,
+  transformation_tag text,
+  sort_order       integer default 0,
+  created_at       timestamptz default now(),
+  updated_at       timestamptz default now()
+);
+
+alter table public.social_videos enable row level security;
+create index if not exists idx_social_videos_owner on public.social_videos(owner_id);
+create index if not exists idx_social_videos_tag on public.social_videos(category_tag);
+
+create policy "social_videos_select_owner" on public.social_videos
+  for select using (owner_id = auth.uid());
+create policy "social_videos_insert_owner" on public.social_videos
+  for insert with check (owner_id = auth.uid());
+create policy "social_videos_update_owner" on public.social_videos
+  for update using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "social_videos_delete_owner" on public.social_videos
+  for delete using (owner_id = auth.uid());
+
+drop trigger if exists trg_social_videos_updated_at on public.social_videos;
+create trigger trg_social_videos_updated_at
+  before update on public.social_videos
+  for each row execute procedure public.set_updated_at();
+
