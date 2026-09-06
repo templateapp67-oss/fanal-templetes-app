@@ -38,6 +38,12 @@ import { SALON_IMAGES } from '../assets/images';
 import { validateAndReadImageFile, compressAndResizeImage } from '../utils/imageUploadHelper';
 import { AILogoSuiteModal } from './AILogoSuiteModal';
 import { ImageCompressorWidget } from './ImageCompressorWidget';
+import {
+  buildYouTubeShortsUrl,
+  buildYouTubeThumbnailUrl,
+  buildYouTubeWatchUrl,
+  extractYouTubeId,
+} from '../utils/youtube';
 
 export interface SectionVisibilityState {
   header: boolean;
@@ -1059,36 +1065,62 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                   placeholder="Paste YouTube Shorts URL..."
                   className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] outline-none focus:border-teal-600 font-mono"
                   onKeyDown={async (e) => {
-                    if (e.key === 'Enter') {
-                      const url = e.currentTarget.value;
-                      const videoId = url.split('/').pop()?.split('?')[0] || '';
-                      
-                      let title = 'YouTube Shorts';
-                      let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/0.jpg`;
-                      
-                      try {
-                        const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
-                        if (response.ok) {
-                          const data = await response.json();
-                          title = data.title;
-                          thumbnailUrl = data.thumbnail_url;
-                        }
-                      } catch (err) {
-                        console.error('Could not fetch video metadata', err);
-                      }
+                    if (e.key !== 'Enter') return;
+                    const pastedUrl = e.currentTarget.value.trim();
+                    if (!pastedUrl) return;
 
-                      const newVideo: SocialVideo = {
-                          id: `video-${Date.now()}`,
-                          youtubeUrl: url,
-                          videoId: videoId,
-                          title: title,
-                          thumbnailUrl: thumbnailUrl,
-                          categoryTag: 'SHORT',
-                          isOwnerVideo: true
-                      };
-                      setProfile((prev) => ({ ...prev, socialVideos: [...(prev.socialVideos || []), newVideo] }));
-                      e.currentTarget.value = '';
+                    // Extract the clean 11-char video id from ANY YouTube
+                    // format (watch, youtu.be, shorts, embed …) even when the
+                    // link carries ?si=… / &feature=shared query parameters.
+                    const videoId = extractYouTubeId(pastedUrl);
+                    if (!videoId) {
+                      showToast('Invalid YouTube URL');
+                      return;
                     }
+
+                    const alreadyExists = (profile.socialVideos || []).some(
+                      (v) =>
+                        v.videoId === videoId ||
+                        extractYouTubeId(v.youtubeUrl) === videoId
+                    );
+                    if (alreadyExists) {
+                      showToast('That video is already in your feed.');
+                      return;
+                    }
+
+                    let title = 'YouTube Shorts';
+                    let thumbnailUrl = buildYouTubeThumbnailUrl(videoId, 'hqdefault');
+
+                    try {
+                      // oEmbed is more reliable against the canonical watch URL
+                      // than a raw short link with tracking parameters.
+                      const response = await fetch(
+                        `https://www.youtube.com/oembed?url=${encodeURIComponent(buildYouTubeWatchUrl(videoId))}&format=json`
+                      );
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.title) title = data.title;
+                        if (data.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+                      }
+                    } catch (err) {
+                      console.error('Could not fetch video metadata', err);
+                    }
+
+                    const newVideo: SocialVideo = {
+                      id: `video-${Date.now()}`,
+                      // Store the CLEAN video id and a clean canonical URL so
+                      // the live preview / public site can build embeds from
+                      // the id without raw ?si=… query parameters.
+                      youtubeUrl: buildYouTubeShortsUrl(videoId),
+                      videoId: videoId,
+                      title: title,
+                      thumbnailUrl: thumbnailUrl,
+                      categoryTag: 'SHORT',
+                      isOwnerVideo: true,
+                    };
+                    setProfile((prev) => ({ ...prev, socialVideos: [...(prev.socialVideos || []), newVideo] }));
+                    e.currentTarget.value = '';
+                    showToast('Short added to your website feed!');
                   }}
                 />
               </div>

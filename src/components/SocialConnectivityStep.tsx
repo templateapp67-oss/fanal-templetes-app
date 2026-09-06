@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SalonProfile, SocialVideo, VideoCategoryTag } from '../types';
 import { getDefaultVideosForTemplate } from '../templateSocialVideos';
+import {
+  buildYouTubeEmbedUrl,
+  buildYouTubeShortsUrl,
+  buildYouTubeThumbnailUrl,
+  buildYouTubeWatchUrl,
+  extractYouTubeId as extractYouTubeIdFromShared,
+  isYouTubeVideoId,
+  YOUTUBE_IFRAME_ALLOW,
+} from '../utils/youtube';
 
 export const DEFAULT_SHOWCASE_VIDEOS: SocialVideo[] = [
   {
@@ -101,10 +110,13 @@ export const DEFAULT_SHOWCASE_VIDEOS: SocialVideo[] = [
   }
 ];
 
+/**
+ * Extracts the 11-char YouTube video id from watch / youtu.be / Shorts /
+ * embed / path-style links, ignoring extra query params (?si=…, &feature=…).
+ * Delegates to the shared utility so every add path behaves identically.
+ */
 export function extractYouTubeId(url: string): string | null {
-  if (!url) return null;
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-  return match ? match[1] : null;
+  return extractYouTubeIdFromShared(url);
 }
 
 interface SocialConnectivityStepProps {
@@ -212,18 +224,26 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
 
     const extractedId = extractYouTubeId(videoUrlInput);
     if (!extractedId) {
-      setUrlError('Please paste a valid YouTube video or shorts URL (e.g., https://youtube.com/shorts/... or https://youtu.be/...)');
+      setUrlError(
+        'Invalid YouTube URL. Please paste a valid link (e.g., https://www.youtube.com/watch?v=..., https://youtube.com/shorts/... or https://youtu.be/...).'
+      );
       return;
     }
 
     const title = videoTitleInput.trim() || `Client Transformation Reel #${videos.length + 1}`;
     const newVideo: SocialVideo = {
       id: `vid-owner-${Date.now()}`,
-      youtubeUrl: videoUrlInput,
+      // Store the CLEAN 11-char video id plus a canonical, query-free URL
+      // (shorts stay /shorts/, everything else becomes a watch URL) so embeds
+      // on the live preview/site always render.
+      youtubeUrl:
+        videoCategoryInput === 'SHORT'
+          ? buildYouTubeShortsUrl(extractedId)
+          : buildYouTubeWatchUrl(extractedId),
       videoId: extractedId,
       title,
       channelTitle: profile?.businessName || 'Your Salon Channel',
-      thumbnailUrl: `https://img.youtube.com/vi/${extractedId}/hqdefault.jpg`,
+      thumbnailUrl: buildYouTubeThumbnailUrl(extractedId, 'hqdefault'),
       categoryTag: videoCategoryInput,
       isOwnerVideo: true, // "yours"
       views: '1.2k views',
@@ -281,11 +301,20 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
       });
       const data = await res.json();
       if (data.success && data.videos && data.videos.length > 0) {
-        const fetched = data.videos.map((v: any, i: number) => ({
-          ...v,
-          id: `vid-auto-${Date.now()}-${i}`,
-          isOwnerVideo: false,
-        }));
+        const fetched = data.videos.map((v: any, i: number) => {
+          const videoId = isYouTubeVideoId(v.videoId)
+            ? v.videoId
+            : extractYouTubeId(v.youtubeUrl) || '';
+          return {
+            ...v,
+            id: `vid-auto-${Date.now()}-${i}`,
+            videoId,
+            // Normalize whatever the API returned into a clean watch URL.
+            youtubeUrl: videoId ? buildYouTubeWatchUrl(videoId) : v.youtubeUrl || '',
+            thumbnailUrl: v.thumbnailUrl || (videoId ? buildYouTubeThumbnailUrl(videoId) : ''),
+            isOwnerVideo: false,
+          };
+        });
         setFetchedVideos(fetched);
         setFetchStatus(`Auto-fetched ${fetched.length} videos from YouTube.`);
         // Optionally append fetched videos to main list
@@ -340,6 +369,15 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
     if (activeTabFilter === 'SHOWCASE') return !v.isOwnerVideo;
     return true;
   });
+
+  // Resolve the id used by the lightbox player (fall back to extracting from
+  // the URL for videos added before normalization).
+  const previewVideoId = previewActiveVideo
+    ? isYouTubeVideoId(previewActiveVideo.videoId)
+      ? previewActiveVideo.videoId
+      : extractYouTubeId(previewActiveVideo.youtubeUrl) || ''
+    : '';
+  const previewEmbedSrc = buildYouTubeEmbedUrl(previewVideoId, { autoplay: true });
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
@@ -1344,13 +1382,19 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
             </div>
 
             <div className="aspect-video w-full rounded-xl bg-black overflow-hidden border border-slate-800">
-              <iframe
-                src={`https://www.youtube.com/embed/${previewActiveVideo.videoId}?autoplay=1`}
-                title={previewActiveVideo.title}
-                className="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              {previewEmbedSrc ? (
+                <iframe
+                  src={previewEmbedSrc}
+                  title={previewActiveVideo.title}
+                  className="w-full h-full border-0"
+                  allow={YOUTUBE_IFRAME_ALLOW}
+                  allowFullScreen
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs font-mono">
+                  Video unavailable
+                </div>
+              )}
             </div>
           </div>
         </div>

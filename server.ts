@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "./src/lib/supabaseClient";
 import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "./src/types";
+import { extractYouTubeId } from "./src/utils/youtube";
 
 // In-memory fallback for preview mode without DB
 let mockBookings: any[] = [];
@@ -696,6 +697,157 @@ Return strictly JSON with the following keys:
         headline: `Special Offer: ${req.body.serviceName || 'Signature Service'}`,
         badgeText: req.body.offer ? req.body.offer.toUpperCase() : 'LIMITED SPECIAL'
       });
+    }
+  });
+
+
+  // -------------------------------------------------------------------------
+  // YOUTUBE MANAGEMENT API (mirrors api/index.ts so the editor works in dev)
+  // -------------------------------------------------------------------------
+
+  // Auto-fetch latest videos from a YouTube channel via the Data API.
+  app.post("/api/youtube/fetch-videos", async (req, res) => {
+    try {
+      const { channelUrl, maxResults = 10 } = req.body;
+      const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
+
+      if (!apiKey || apiKey === 'YOUR_YOUTUBE_DATA_API_KEY') {
+        return res.json({
+          success: false,
+          notice: 'YouTube Data API key is not configured. Please set YOUTUBE_API_KEY.',
+          videos: []
+        });
+      }
+
+      // Extract channel handle or ID from URL
+      let query = '';
+      if (channelUrl) {
+        const matchHandle = channelUrl.match(/youtube\.com\/@([\w_-]+)/);
+        const matchChannelId = channelUrl.match(/youtube\.com\/channel\/([\w_-]+)/);
+        if (matchHandle) {
+          query = matchHandle[1];
+        } else if (matchChannelId) {
+          query = matchChannelId[1];
+        } else if (channelUrl.includes('@')) {
+          query = channelUrl.split('@').pop()?.split('/')[0] || '';
+        }
+      }
+
+      let videos: any[] = [];
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&channelType=any&q=${encodeURIComponent(query || 'salon')}&maxResults=${maxResults}&key=${apiKey}`;
+
+      try {
+        const response = await fetch(searchUrl);
+        const data = await response.json();
+        if (data.items && data.items.length > 0) {
+          videos = data.items.map((item: any) => ({
+            youtubeUrl: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+            videoId: item.id.videoId,
+            title: item.snippet.title,
+            description: item.snippet.description,
+            channelTitle: item.snippet.channelTitle,
+            thumbnailUrl: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url || '',
+            categoryTag: 'SHORT',
+            isOwnerVideo: false,
+            views: 'Auto-fetched via YouTube Data API',
+            transformationTag: 'Auto-Fetched Reel'
+          }));
+        }
+      } catch (err: any) {
+        console.warn('YouTube API fetch error:', err?.message || err);
+      }
+
+      return res.json({ success: true, videos, notice: videos.length ? `Fetched ${videos.length} videos from YouTube.` : 'No videos found for this channel.' });
+    } catch (err: any) {
+      console.warn('YouTube fetch endpoint error:', err?.message || err);
+      return res.json({ success: false, notice: 'Failed to fetch videos from YouTube.', videos: [] });
+    }
+  });
+
+  // Fetch metadata (title / thumbnail / likes) for a single YouTube URL.
+  app.post("/api/fetch-youtube-meta", async (req, res) => {
+    try {
+      const { youtubeUrl } = req.body;
+      if (!youtubeUrl || typeof youtubeUrl !== 'string') {
+        return res.status(400).json({ success: false, notice: 'youtubeUrl is required.' });
+      }
+
+      // 1. Extract the clean 11-char Video ID. The shared helper understands
+      //    watch / youtu.be / Shorts / embed / path-style links and ignores
+      //    extra query parameters such as ?si=... or &feature=shared.
+      const url = youtubeUrl.trim();
+      const videoId = extractYouTubeId(url);
+
+      if (!videoId) {
+        return res.status(400).json({ success: false, notice: 'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...' });
+      }
+
+      const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
+
+      // 2. Metadata Fetching via YouTube Data API v3
+      if (apiKey && apiKey !== 'YOUR_YOUTUBE_DATA_API_KEY') {
+        const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet,statistics&key=${apiKey}`;
+        try {
+          const response = await fetch(apiUrl);
+          const data = await response.json();
+          if (data.items && data.items.length > 0) {
+            const item = data.items[0];
+            const snippet = item.snippet || {};
+            const statistics = item.statistics || {};
+            const thumbnails = snippet.thumbnails || {};
+
+            return res.json({
+              success: true,
+              videoId,
+              youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+              title: snippet.title || '',
+              description: snippet.description || '',
+              thumbnailUrl: thumbnails.maxres?.url || thumbnails.high?.url || thumbnails.default?.url || '',
+              likeCount: Number(statistics.likeCount || 0),
+              commentCount: Number(statistics.commentCount || 0),
+              source: 'youtube_data_api'
+            });
+          }
+        } catch (err: any) {
+          console.warn('YouTube Data API error:', err?.message || err);
+        }
+      }
+
+      // 3. Fallback Fetcher (No API Key Required)
+      // oEmbed for title and description (queried with a canonical watch URL —
+      // raw links may carry ?si=... / &feature=shared that confuse parsers).
+      let title = '';
+      let description = '';
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
+        const oembedResponse = await fetch(oembedUrl);
+        const oembedData = await oembedResponse.json();
+        if (oembedData && oembedData.title) {
+          title = oembedData.title || '';
+          description = oembedData.author_name ? `By ${oembedData.author_name}` : '';
+        }
+      } catch (err: any) {
+        console.warn('oEmbed fallback error:', err?.message || err);
+      }
+
+      // Standard thumbnail URL fallback
+      const fallbackThumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+
+      return res.json({
+        success: true,
+        videoId,
+        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        title: title || 'Unknown Title',
+        description: description || '',
+        thumbnailUrl: fallbackThumbnail,
+        likeCount: 0,
+        commentCount: 0,
+        source: 'oembed_fallback',
+        notice: apiKey ? (title ? '' : 'YouTube Data API returned no results; using oEmbed fallback.') : 'No YOUTUBE_API_KEY configured; using oEmbed fallback.'
+      });
+    } catch (err: any) {
+      console.warn('Fetch YouTube meta endpoint error:', err?.message || err);
+      return res.status(500).json({ success: false, notice: 'Failed to fetch YouTube metadata.', error: err?.message || 'Unknown error' });
     }
   });
 

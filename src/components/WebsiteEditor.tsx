@@ -29,6 +29,13 @@ import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
 import { AIBioModal } from './AIBioModal';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import {
+  buildYouTubeShortsUrl,
+  buildYouTubeThumbnailUrl,
+  buildYouTubeWatchUrl,
+  extractYouTubeId,
+  isYouTubeVideoId,
+} from '../utils/youtube';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -43,7 +50,7 @@ interface WebsiteEditorProps {
   selectedTemplateId?: BusinessTypeId;
   siteUrl?: string;
   onSave?: () => void;
-  showToast?: (message: string) => void;
+  showToast?: (message: string, type?: 'success' | 'error') => void;
 }
 
 const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
@@ -51,26 +58,20 @@ const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
 const MAX_SHORTS = 5;
 const MAX_LONG_VIDEOS = 5;
 
-const YOUTUBE_SHORTS_URL_REGEX =
-  /^(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})(?:[?&#].*)?$/i;
-
-const YOUTUBE_VIDEO_URL_PATTERNS = [
-  /^(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/|shorts\/)([a-zA-Z0-9_-]{11})/i,
-  /^(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})/i,
-];
-
-function extractShortVideoId(url: string): string | null {
-  const match = url.trim().match(YOUTUBE_SHORTS_URL_REGEX);
-  return match ? match[1] : null;
+/**
+ * True when the pasted link is genuinely a Shorts URL
+ * (https://www.youtube.com/shorts/VIDEO_ID). Keeps long videos out of the
+ * vertical Shorts rail.
+ */
+function isYouTubeShortsLink(url: string): boolean {
+  const trimmed = url.trim();
+  return /(?:^|\/)(?:www\.|m\.|music\.)?youtube\.com\/shorts\//i.test(trimmed) &&
+    extractYouTubeId(trimmed) !== null;
 }
 
-function extractVideoIdFromUrl(url: string): string | null {
-  const trimmed = url.trim();
-  for (const pattern of YOUTUBE_VIDEO_URL_PATTERNS) {
-    const match = trimmed.match(pattern);
-    if (match) return match[1];
-  }
-  return null;
+/** Canonical clean link for a stored row (Short → /shorts/ID, Long → watch). */
+function canonicalYouTubeUrl(videoId: string, type: 'short' | 'long'): string {
+  return type === 'short' ? buildYouTubeShortsUrl(videoId) : buildYouTubeWatchUrl(videoId);
 }
 
 export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
@@ -115,6 +116,33 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const shortsRef = useRef<YtVideoRow[]>([]);
   const longVideosRef = useRef<YtVideoRow[]>([]);
 
+  // Normalizes a DB row into the editor's YtVideoRow shape. Legacy rows may
+  // have stored a raw URL (with ?si=…, &feature=shared, etc.) or a malformed
+  // video id, so we always recover/clean the 11-char video id here.
+  const mapVideoRow = (r: any, videoType: 'short' | 'long'): YtVideoRow => {
+    const rawUrl = typeof r.youtube_url === 'string' ? r.youtube_url.trim() : '';
+    const rawId = typeof r.youtube_video_id === 'string' ? r.youtube_video_id.trim() : '';
+    const videoId = isYouTubeVideoId(rawId)
+      ? rawId
+      : isYouTubeVideoId(rawUrl)
+      ? rawUrl
+      : extractYouTubeId(rawUrl) || rawId;
+    const youtubeUrl = videoId
+      ? canonicalYouTubeUrl(videoId, videoType)
+      : rawUrl;
+    return {
+      id: r.id,
+      video_type: videoType,
+      youtube_url: youtubeUrl,
+      youtube_video_id: videoId,
+      title: r.title || '',
+      thumbnail_url: r.thumbnail_url || (videoId ? buildYouTubeThumbnailUrl(videoId) : undefined),
+      description: r.description,
+      like_count: r.like_count,
+      comment_count: r.comment_count,
+    };
+  };
+
   const loadYouTubeVideos = async () => {
     setIsLoadingVideos(true);
     try {
@@ -133,28 +161,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         shortsData = sData || [];
         longData = lData || [];
       }
-      const shortsRows = (shortsData || []).map((r: any) => ({
-        id: r.id,
-        video_type: r.video_type as 'short',
-        youtube_url: r.youtube_url,
-        youtube_video_id: r.youtube_video_id,
-        title: r.title || '',
-        thumbnail_url: r.thumbnail_url,
-        description: r.description,
-        like_count: r.like_count,
-        comment_count: r.comment_count,
-      }));
-      const longRows = (longData || []).map((r: any) => ({
-        id: r.id,
-        video_type: r.video_type as 'long',
-        youtube_url: r.youtube_url,
-        youtube_video_id: r.youtube_video_id,
-        title: r.title || '',
-        thumbnail_url: r.thumbnail_url,
-        description: r.description,
-        like_count: r.like_count,
-        comment_count: r.comment_count,
-      }));
+      const shortsRows = (shortsData || []).map((r: any) => mapVideoRow(r, 'short'));
+      const longRows = (longData || []).map((r: any) => mapVideoRow(r, 'long'));
       shortsRef.current = shortsRows;
       longVideosRef.current = longRows;
       setShorts(shortsRows);
@@ -170,24 +178,26 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return;
 
-    // Validate the link client-side before calling the API. Shorts must use the
-    // /shorts/ URL format so a long video cannot be added to the Shorts list.
-    if (type === 'short') {
-      const shortsVideoId = extractShortVideoId(trimmedUrl);
-      if (!shortsVideoId) {
-        setFetchStatus(
-          'Invalid YouTube Shorts URL. Please paste a link like https://www.youtube.com/shorts/VIDEO_ID.'
-        );
-        return;
-      }
-    } else {
-      const videoId = extractVideoIdFromUrl(trimmedUrl);
-      if (!videoId) {
-        setFetchStatus(
-          'Invalid YouTube video URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/...'
-        );
-        return;
-      }
+    // 1. Extract & validate the clean 11-char video id BEFORE adding it to the
+    //    Shorts / Long Videos list. Works for watch, youtu.be, Shorts, embed
+    //    and path-style links, ignoring ?si=…, &feature=shared etc.
+    const extractedId = extractYouTubeId(trimmedUrl);
+    if (!extractedId) {
+      const invalidMsg =
+        'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...';
+      setFetchStatus(invalidMsg);
+      showToast?.('Invalid YouTube URL', 'error');
+      return;
+    }
+
+    // Shorts must use the /shorts/ URL format so a long video cannot be added
+    // to the vertical Shorts list.
+    if (type === 'short' && !isYouTubeShortsLink(trimmedUrl)) {
+      const notShortsMsg =
+        'That looks like a regular YouTube video, not a Short. Paste a https://youtube.com/shorts/VIDEO_ID link here, or use "Add Video" below for long videos.';
+      setFetchStatus(notShortsMsg);
+      showToast?.('Please paste a valid YouTube Shorts URL.', 'error');
+      return;
     }
 
     // Enforce the 5-video limit with the live refs so rapid clicks cannot exceed it.
@@ -226,12 +236,17 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           return;
         }
 
+        const videoId = isYouTubeVideoId(data.videoId)
+          ? data.videoId
+          : extractedId;
         const newRow: YtVideoRow = {
           video_type: type,
-          youtube_url: data.youtubeUrl || trimmedUrl,
-          youtube_video_id: data.videoId,
+          // Store a CLEAN, canonical URL (no ?si=… / &feature=shared leftovers)
+          // alongside the clean video id.
+          youtube_url: canonicalYouTubeUrl(videoId, type),
+          youtube_video_id: videoId,
           title: data.title || '',
-          thumbnail_url: data.thumbnailUrl || '',
+          thumbnail_url: data.thumbnailUrl || buildYouTubeThumbnailUrl(videoId),
           description: data.description || '',
           like_count: data.likeCount || 0,
           comment_count: data.commentCount || 0,
