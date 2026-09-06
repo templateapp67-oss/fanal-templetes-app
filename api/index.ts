@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "../src/types";
-import { extractYouTubeId } from "../src/utils/youtube";
+import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
 
 const app = express();
 app.use(express.json());
@@ -672,91 +672,6 @@ app.post("/api/youtube/fetch-videos", async (req, res) => {
   }
 });
 
-app.post("/api/fetch-youtube-meta", async (req, res) => {
-  try {
-    const { youtubeUrl } = req.body;
-    if (!youtubeUrl || typeof youtubeUrl !== 'string') {
-      return res.status(400).json({ success: false, notice: 'youtubeUrl is required.' });
-    }
-
-    // 1. Extract the clean 11-char Video ID. The shared helper understands
-    //    watch / youtu.be / Shorts / embed / path-style links and ignores
-    //    extra query parameters such as ?si=... or &feature=shared.
-    const url = youtubeUrl.trim();
-    const videoId = extractYouTubeId(url);
-
-    if (!videoId) {
-      return res.status(400).json({ success: false, notice: 'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...' });
-    }
-
-    const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
-
-    // 2. Metadata Fetching via YouTube Data API v3
-    if (apiKey && apiKey !== 'YOUR_YOUTUBE_DATA_API_KEY') {
-      const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet,statistics&key=${apiKey}`;
-      try {
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-        if (data.items && data.items.length > 0) {
-          const item = data.items[0];
-          const snippet = item.snippet || {};
-          const statistics = item.statistics || {};
-          const thumbnails = snippet.thumbnails || {};
-
-          return res.json({
-            success: true,
-            videoId,
-            youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            title: snippet.title || '',
-            description: snippet.description || '',
-            thumbnailUrl: thumbnails.maxres?.url || thumbnails.high?.url || thumbnails.default?.url || '',
-            likeCount: Number(statistics.likeCount || 0),
-            commentCount: Number(statistics.commentCount || 0),
-            source: 'youtube_data_api'
-          });
-        }
-      } catch (err: any) {
-        console.warn('YouTube Data API error:', err?.message || err);
-      }
-    }
-
-    // 3. Fallback Fetcher (No API Key Required)
-    // oEmbed for title and description
-    let title = '';
-    let description = '';
-    try {
-      // Query the oEmbed API with a canonical watch URL (raw links may
-      // carry ?si=... / &feature=shared parameters that confuse the parser).
-      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
-      const oembedResponse = await fetch(oembedUrl);
-      const oembedData = await oembedResponse.json();
-      if (oembedData && oembedData.title) {
-        title = oembedData.title || '';
-        description = oembedData.author_name ? `By ${oembedData.author_name}` : '';
-      }
-    } catch (err: any) {
-      console.warn('oEmbed fallback error:', err?.message || err);
-    }
-
-    // Standard thumbnail URL fallback
-    const fallbackThumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-
-    return res.json({
-      success: true,
-      videoId,
-      youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-      title: title || 'Unknown Title',
-      description: description || '',
-      thumbnailUrl: fallbackThumbnail,
-      likeCount: 0,
-      commentCount: 0,
-      source: 'oembed_fallback',
-      notice: apiKey ? (title ? '' : 'YouTube Data API returned no results; using oEmbed fallback.') : 'No YOUTUBE_API_KEY configured; using oEmbed fallback.'
-    });
-  } catch (err: any) {
-    console.warn('Fetch YouTube meta endpoint error:', err?.message || err);
-    return res.status(500).json({ success: false, notice: 'Failed to fetch YouTube metadata.', error: err?.message || 'Unknown error' });
-  }
-});
+app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
 
 export default app;

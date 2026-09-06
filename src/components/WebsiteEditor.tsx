@@ -36,6 +36,7 @@ import {
   extractYouTubeId,
   isYouTubeVideoId,
 } from '../utils/youtube';
+import { addYouTubeItem } from '../utils/youtubeMetadata';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -57,17 +58,6 @@ const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
 
 const MAX_SHORTS = 5;
 const MAX_LONG_VIDEOS = 5;
-
-/**
- * True when the pasted link is genuinely a Shorts URL
- * (https://www.youtube.com/shorts/VIDEO_ID). Keeps long videos out of the
- * vertical Shorts rail.
- */
-function isYouTubeShortsLink(url: string): boolean {
-  const trimmed = url.trim();
-  return /(?:^|\/)(?:www\.|m\.|music\.)?youtube\.com\/shorts\//i.test(trimmed) &&
-    extractYouTubeId(trimmed) !== null;
-}
 
 /** Canonical clean link for a stored row (Short → /shorts/ID, Long → watch). */
 function canonicalYouTubeUrl(videoId: string, type: 'short' | 'long'): string {
@@ -108,7 +98,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [shortUrlInput, setShortUrlInput] = useState('');
   const [longUrlInput, setLongUrlInput] = useState('');
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
-  const [isFetchingMeta, setIsFetchingMeta] = useState(false);
+  const [isAddingVideo, setIsAddingVideo] = useState(false);
+  const isAddingVideoRef = useRef(false);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
 
   // Keep live refs alongside state so the max-5 checks stay accurate even when
@@ -174,33 +165,22 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     }
   };
 
-  const handleFetchMeta = async (url: string, type: 'short' | 'long') => {
+  const handleAddYouTubeVideo = async (url: string, type: 'short' | 'long') => {
+    // A ref also blocks same-tick clicks while metadata AND persistence are pending.
+    if (isAddingVideoRef.current || isLoadingVideos) return;
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return;
 
-    // 1. Extract & validate the clean 11-char video id BEFORE adding it to the
-    //    Shorts / Long Videos list. Works for watch, youtu.be, Shorts, embed
-    //    and path-style links, ignoring ?si=…, &feature=shared etc.
-    const extractedId = extractYouTubeId(trimmedUrl);
-    if (!extractedId) {
-      const invalidMsg =
-        'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...';
-      setFetchStatus(invalidMsg);
+    if (!extractYouTubeId(trimmedUrl)) {
+      setFetchStatus(
+        'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...'
+      );
       showToast?.('Invalid YouTube URL', 'error');
       return;
     }
 
-    // Shorts must use the /shorts/ URL format so a long video cannot be added
-    // to the vertical Shorts list.
-    if (type === 'short' && !isYouTubeShortsLink(trimmedUrl)) {
-      const notShortsMsg =
-        'That looks like a regular YouTube video, not a Short. Paste a https://youtube.com/shorts/VIDEO_ID link here, or use "Add Video" below for long videos.';
-      setFetchStatus(notShortsMsg);
-      showToast?.('Please paste a valid YouTube Shorts URL.', 'error');
-      return;
-    }
-
-    // Enforce the 5-video limit with the live refs so rapid clicks cannot exceed it.
+    // The selected section determines the category, not the URL format: a Short
+    // can also be shared as a youtu.be link or a watch URL.
     const currentCount = type === 'short' ? shortsRef.current.length : longVideosRef.current.length;
     const maxAllowed = type === 'short' ? MAX_SHORTS : MAX_LONG_VIDEOS;
     if (currentCount >= maxAllowed) {
@@ -212,106 +192,68 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
       return;
     }
 
-    setIsFetchingMeta(true);
-    setFetchStatus('Fetching metadata from YouTube...');
+    isAddingVideoRef.current = true;
+    setIsAddingVideo(true);
+    setFetchStatus('Adding video… Metadata is optional.');
     try {
-      const res = await fetch('/api/fetch-youtube-meta', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeUrl: trimmedUrl }),
-      });
-      const data = await res.json();
-      if (data.success && data.videoId) {
-        // Re-check after the async fetch because another request may have
-        // already filled the slot while this one was in flight.
-        if (
-          (type === 'short' && shortsRef.current.length >= MAX_SHORTS) ||
-          (type === 'long' && longVideosRef.current.length >= MAX_LONG_VIDEOS)
-        ) {
-          setFetchStatus(
-            type === 'short'
-              ? 'Shorts limit reached (max 5). Delete one to add another.'
-              : 'Long Videos limit reached (max 5). Delete one to add another.'
-          );
-          return;
-        }
-
-        const videoId = isYouTubeVideoId(data.videoId)
-          ? data.videoId
-          : extractedId;
-        const newRow: YtVideoRow = {
+      const savedRow = await addYouTubeItem(
+        trimmedUrl,
+        type === 'short' ? 'YouTube Short' : 'YouTube Video',
+        (metadata) => handleSaveVideoToDb({
           video_type: type,
-          // Store a CLEAN, canonical URL (no ?si=… / &feature=shared leftovers)
-          // alongside the clean video id.
-          youtube_url: canonicalYouTubeUrl(videoId, type),
-          youtube_video_id: videoId,
-          title: data.title || '',
-          thumbnail_url: data.thumbnailUrl || buildYouTubeThumbnailUrl(videoId),
-          description: data.description || '',
-          like_count: data.likeCount || 0,
-          comment_count: data.commentCount || 0,
-        };
+          youtube_url: canonicalYouTubeUrl(metadata.videoId, type),
+          youtube_video_id: metadata.videoId,
+          title: metadata.title,
+          thumbnail_url: metadata.thumbnailUrl,
+          description: metadata.description,
+          like_count: metadata.likeCount,
+          comment_count: metadata.commentCount,
+        }),
+      );
 
-        if (type === 'short') {
-          const updated = [...shortsRef.current, newRow];
-          shortsRef.current = updated;
-          setShorts(updated);
-          setShortUrlInput('');
-        } else {
-          const updated = [...longVideosRef.current, newRow];
-          longVideosRef.current = updated;
-          setLongVideos(updated);
-          setLongUrlInput('');
-        }
-
-        // Async save after state update
-        setTimeout(() => handleSaveVideoToDb(newRow), 100);
-        setFetchStatus('Video metadata fetched and added!');
+      // Only publish to editor state after persistence succeeds. A failed save
+      // leaves the input intact and must not appear as a successfully added row.
+      if (type === 'short') {
+        const updated = [...shortsRef.current, savedRow];
+        shortsRef.current = updated;
+        setShorts(updated);
+        setShortUrlInput('');
       } else {
-        setFetchStatus(data.notice || 'Failed to fetch metadata.');
+        const updated = [...longVideosRef.current, savedRow];
+        longVideosRef.current = updated;
+        setLongVideos(updated);
+        setLongUrlInput('');
       }
-    } catch (err: any) {
-      console.warn('Fetch meta error:', err);
-      setFetchStatus('Failed to fetch YouTube metadata.');
+      setFetchStatus('Video added!');
+      showToast?.(isMockSupabase ? 'Video added (preview mode).' : 'Video saved to database!', 'success');
+    } catch (err) {
+      console.warn('Save video error:', err);
+      setFetchStatus('Failed to save video. Please try again.');
+      showToast?.('Failed to save video.', 'error');
     } finally {
-      setIsFetchingMeta(false);
-      setTimeout(() => setFetchStatus(null), 4000);
+      isAddingVideoRef.current = false;
+      setIsAddingVideo(false);
     }
   };
 
-  const handleSaveVideoToDb = async (video: YtVideoRow) => {
-    try {
-      if (isMockSupabase) {
-        // In mock mode just keep in local state (already added)
-        showToast?.('Video saved locally (mock mode).');
-        return;
-      }
-      // Save to salon_youtube_videos
-      // We don't have salon_id from profile directly mapped to DB id; use profile.subdomain or a placeholder
-      // For simplicity, assume profile.id exists or use a mock owner mapping
-      const ownerId = (profile as any)?.ownerId || profile.subdomain || 'mock-owner';
-      const { error } = await supabase.from('salon_youtube_videos').insert({
-        salon_id: ownerId,
-        video_type: video.video_type,
-        youtube_url: video.youtube_url,
-        youtube_video_id: video.youtube_video_id,
-        title: video.title,
-        thumbnail_url: video.thumbnail_url,
-        description: video.description,
-        like_count: video.like_count || 0,
-        comment_count: video.comment_count || 0,
-      });
-      if (error) {
-        console.warn('DB insert error:', error);
-        showToast?.('Failed to save video to database.');
-      } else {
-        showToast?.('Video saved to database!');
-        await loadYouTubeVideos();
-      }
-    } catch (err: any) {
-      console.warn('Save video error:', err);
-      showToast?.('Failed to save video.');
-    }
+  const handleSaveVideoToDb = async (video: YtVideoRow): Promise<YtVideoRow> => {
+    if (isMockSupabase) return video;
+
+    // This table references profiles.id (the authenticated owner), not a subdomain.
+    if (!profile.ownerId) throw new Error('Sign in to save videos.');
+    const { data, error } = await supabase.from('salon_youtube_videos').insert({
+      salon_id: profile.ownerId,
+      video_type: video.video_type,
+      youtube_url: video.youtube_url,
+      youtube_video_id: video.youtube_video_id,
+      title: video.title,
+      thumbnail_url: video.thumbnail_url,
+      description: video.description,
+      like_count: video.like_count || 0,
+      comment_count: video.comment_count || 0,
+    }).select('id').single();
+    if (error) throw error;
+    return { ...video, id: data.id };
   };
 
   const handleDeleteVideo = async (id: string, type: 'short' | 'long') => {
@@ -926,8 +868,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <span className="text-[10px] font-mono font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">Admin Only</span>
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
-            Manage up to 5 Shorts and 5 Long Videos that appear on your live site feed.
+            Manage up to 5 Shorts and 5 Long Videos that appear on your live site feed. Any supported YouTube link works in either section; unavailable metadata uses fallback details.
           </p>
+
+          {fetchStatus && (
+            <div role="status" aria-live="polite" className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-[11px] font-medium mb-3 flex items-center gap-2">
+              <span className="material-symbols-outlined text-base text-rose-600">info</span>
+              <span>{fetchStatus}</span>
+            </div>
+          )}
 
           {/* SHORTS SECTION */}
           <div className="mb-6">
@@ -946,29 +895,23 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <input
                 type="text"
                 value={shortUrlInput}
+                disabled={isAddingVideo}
                 onChange={(e) => setShortUrlInput(e.target.value)}
-                placeholder="Social Proof & Reels Showcase — Paste YouTube Shorts URL (e.g. https://www.youtube.com/shorts/...)"
+                placeholder="Paste a YouTube link (shorts, youtu.be or watch URL)"
                 aria-label="Shorts YouTube URL"
                 autoComplete="off"
                 className="flex-1 p-2.5 rounded-xl border border-rose-200 text-xs focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none bg-rose-50/30"
               />
               <button
                 type="button"
-                onClick={() => handleFetchMeta(shortUrlInput, 'short')}
-                disabled={!shortUrlInput.trim() || shorts.length >= 5 || isFetchingMeta}
+                onClick={() => handleAddYouTubeVideo(shortUrlInput, 'short')}
+                disabled={!shortUrlInput.trim() || shorts.length >= MAX_SHORTS || isAddingVideo || isLoadingVideos}
                 className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm"
               >
-                {isFetchingMeta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                {isAddingVideo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                 <span>Add Short</span>
               </button>
             </div>
-
-            {fetchStatus && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-[11px] font-medium mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-base text-rose-600">info</span>
-                <span>{fetchStatus}</span>
-              </div>
-            )}
 
             {/* List */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -1002,7 +945,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </div>
             {shorts.length === 0 && (
               <div className="text-center text-xs text-gray-400 py-4 border border-dashed border-rose-200 rounded-xl">
-                No Shorts added. Paste a YouTube Shorts URL above.
+                No Shorts added. Paste a YouTube link above.
               </div>
             )}
           </div>
@@ -1023,6 +966,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <input
                 type="text"
                 value={longUrlInput}
+                disabled={isAddingVideo}
                 onChange={(e) => setLongUrlInput(e.target.value)}
                 placeholder="Paste YouTube video URL (e.g. https://www.youtube.com/watch?v=...)"
                 aria-label="Long YouTube video URL"
@@ -1031,11 +975,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               />
               <button
                 type="button"
-                onClick={() => handleFetchMeta(longUrlInput, 'long')}
-                disabled={!longUrlInput.trim() || longVideos.length >= 5 || isFetchingMeta}
+                onClick={() => handleAddYouTubeVideo(longUrlInput, 'long')}
+                disabled={!longUrlInput.trim() || longVideos.length >= MAX_LONG_VIDEOS || isAddingVideo || isLoadingVideos}
                 className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm"
               >
-                {isFetchingMeta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                {isAddingVideo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                 <span>Add Video</span>
               </button>
             </div>
