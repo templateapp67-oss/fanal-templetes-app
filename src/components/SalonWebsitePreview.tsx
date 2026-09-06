@@ -49,6 +49,14 @@ import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY
 import { InteractiveMapSetup } from './InteractiveMapSetup';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 import { TestimonialModal } from './ClientTestimonials';
+import {
+  buildYouTubeEmbedUrl,
+  buildYouTubeShortsUrl,
+  buildYouTubeWatchUrl,
+  extractYouTubeId,
+  isYouTubeVideoId,
+  YOUTUBE_IFRAME_ALLOW,
+} from '../utils/youtube';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -1889,7 +1897,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="flex gap-3 min-w-max sm:min-w-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                       {(activeProfile.socialVideos || [])
                         .filter((video) => video.categoryTag === 'SHORT')
-                        .map((video) => (
+                        .map((video) => {
+                          // Use the clean stored id when present; otherwise
+                          // recover it from the original URL so embeds keep
+                          // working for videos added before normalization.
+                          const playerVideoId = isYouTubeVideoId(video.videoId)
+                            ? video.videoId
+                            : extractYouTubeId(video.youtubeUrl) || '';
+                          // Build the iframe src from the clean parsed video id
+                          // (never from a raw URL replace) so Shorts links with
+                          // ?si=… and watch links with &feature=shared render.
+                          const embedSrc = buildYouTubeEmbedUrl(playerVideoId, { autoplay: false });
+                          return (
                           <div
                             key={video.id}
                             className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer w-[220px] sm:w-auto shrink-0 sm:shrink hover:shadow-md transition-all"
@@ -1901,6 +1920,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                                   url.searchParams.set('autoplay', '1');
                                   url.searchParams.set('mute', '1');
                                   url.searchParams.set('loop', '1');
+                                  if (playerVideoId) url.searchParams.set('playlist', playerVideoId);
                                   iframe.src = url.toString();
                                 } catch {}
                               }
@@ -1913,19 +1933,28 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                                   url.searchParams.set('autoplay', '0');
                                   url.searchParams.delete('mute');
                                   url.searchParams.delete('loop');
+                                  url.searchParams.delete('playlist');
                                   iframe.src = url.toString();
                                 } catch {}
                               }
                             }}
-                            onClick={() => window.open(video.youtubeUrl, '_blank')}
+                            onClick={() =>
+                              playerVideoId && window.open(buildYouTubeShortsUrl(playerVideoId), '_blank')
+                            }
                           >
-                            <iframe
-                              src={video.youtubeUrl.replace('watch?v=', 'embed/') + '?autoplay=0'}
-                              className="w-full aspect-[9/16]"
-                              title={video.title}
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
+                            {embedSrc ? (
+                              <iframe
+                                src={embedSrc}
+                                className="w-full aspect-[9/16]"
+                                title={video.title}
+                                allow={YOUTUBE_IFRAME_ALLOW}
+                                allowFullScreen
+                              />
+                            ) : (
+                              <div className="w-full aspect-[9/16] bg-slate-950 flex items-center justify-center text-white/50 text-[10px] font-mono px-3 text-center">
+                                Unavailable video
+                              </div>
+                            )}
                             <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-[10px] font-bold text-white flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
                               SHORT
@@ -1935,7 +1964,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                               <p className="text-[9px] text-white/80 truncate">{video.transformationTag || 'Transformation'}</p>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length === 0 && (
                         <div className="w-[220px] sm:w-auto shrink-0 sm:shrink flex items-center justify-center h-[320px] border border-dashed border-slate-200 rounded-2xl text-xs text-slate-400">
                           No Shorts added yet.
@@ -1957,14 +1987,21 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {(activeProfile.socialVideos || [])
                       .filter((video) => video.categoryTag === 'LONG' || video.categoryTag === 'SHOWCASE')
-                      .map((video) => (
+                      .map((video) => {
+                        const playerVideoId = isYouTubeVideoId(video.videoId)
+                          ? video.videoId
+                          : extractYouTubeId(video.youtubeUrl) || '';
+                        const watchUrl = playerVideoId
+                          ? buildYouTubeWatchUrl(playerVideoId)
+                          : video.youtubeUrl;
+                        return (
                         <div
                           key={video.id}
                           className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-lg transition-all cursor-pointer bg-white"
-                          onClick={() => window.open(video.youtubeUrl, '_blank')}
+                          onClick={() => window.open(watchUrl, '_blank')}
                         >
                           <div className="relative">
-                            <img src={video.thumbnailUrl || `https://img.youtube.com/vi/${video.videoId}/maxresdefault.jpg`} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
+                            <img src={video.thumbnailUrl || (playerVideoId ? `https://img.youtube.com/vi/${playerVideoId}/maxresdefault.jpg` : '')} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
                             <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
                             <div className="absolute top-2 left-2 bg-sky-600/90 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs">
                               {video.categoryTag || 'SHOWCASE'}
@@ -1984,7 +2021,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length === 0 && (
                       <div className="col-span-full text-center text-xs text-slate-400 py-8 border border-dashed border-slate-200 rounded-2xl">
                         No showcase videos added yet. Add transformation reels from the editor.

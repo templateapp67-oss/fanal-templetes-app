@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "../src/types";
+import { extractYouTubeId } from "../src/utils/youtube";
 
 const app = express();
 app.use(express.json());
@@ -678,23 +679,14 @@ app.post("/api/fetch-youtube-meta", async (req, res) => {
       return res.status(400).json({ success: false, notice: 'youtubeUrl is required.' });
     }
 
-    // 1. Extract Video ID
-    let videoId: string | null = null;
+    // 1. Extract the clean 11-char Video ID. The shared helper understands
+    //    watch / youtu.be / Shorts / embed / path-style links and ignores
+    //    extra query parameters such as ?si=... or &feature=shared.
     const url = youtubeUrl.trim();
-
-    // Standard watch URL: https://www.youtube.com/watch?v=VIDEO_ID
-    const watchMatch = url.match(/(?:youtube\.com\/watch\?.*v=|youtube\.com\/embed\/|youtube\.com\/v\/)([\w_-]{11})/);
-    // Shorts URL: https://www.youtube.com/shorts/VIDEO_ID
-    const shortsMatch = url.match(/youtube\.com\/shorts\/([\w_-]{11})/);
-    // Short URL: https://youtu.be/VIDEO_ID
-    const shortUrlMatch = url.match(/youtu\.be\/([\w_-]{11})/);
-
-    if (watchMatch) videoId = watchMatch[1];
-    else if (shortsMatch) videoId = shortsMatch[1];
-    else if (shortUrlMatch) videoId = shortUrlMatch[1];
+    const videoId = extractYouTubeId(url);
 
     if (!videoId) {
-      return res.status(400).json({ success: false, notice: 'Could not extract YouTube video ID from URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/...' });
+      return res.status(400).json({ success: false, notice: 'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...' });
     }
 
     const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
@@ -733,7 +725,9 @@ app.post("/api/fetch-youtube-meta", async (req, res) => {
     let title = '';
     let description = '';
     try {
-      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+      // Query the oEmbed API with a canonical watch URL (raw links may
+      // carry ?si=... / &feature=shared parameters that confuse the parser).
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
       const oembedResponse = await fetch(oembedUrl);
       const oembedData = await oembedResponse.json();
       if (oembedData && oembedData.title) {
@@ -750,7 +744,7 @@ app.post("/api/fetch-youtube-meta", async (req, res) => {
     return res.json({
       success: true,
       videoId,
-      youtubeUrl: url,
+      youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
       title: title || 'Unknown Title',
       description: description || '',
       thumbnailUrl: fallbackThumbnail,
