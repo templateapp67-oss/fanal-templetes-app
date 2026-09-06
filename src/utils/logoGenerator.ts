@@ -35,13 +35,49 @@ function getCategoryIconSvg(categoryKey: BusinessTypeId, color: string): string 
       return `<path d="M12 2C8.5 2 6 4.5 6 8v8c0 3.5 2.5 6 6 6s6-2.5 6-6V8c0-3.5-2.5-6-6-6zm0 2c2.2 0 4 1.8 4 4v3H8V8c0-2.2 1.8-4 4-4z" fill="${color}"/>
               <circle cx="12" cy="7" r="1.5" fill="#ffffff" opacity="0.8"/>
               <path d="M12 12l1 2h2l-1.5 1.5.5 2-2-1-2 1 .5-2L8.5 14H11z" fill="${color}" opacity="0.9"/>`;
+    case 'nails_lash_brow_bar':
+      return `<rect x="10" y="2" width="4" height="5" rx="1" fill="${color}"/>
+              <path d="M9 9h6v10a3 3 0 01-3 3 3 3 0 01-3-3V9z" fill="${color}"/>
+              <path d="M17 4l1.2-1.2M18.5 6.5H20.5M17 9l1.2 1.2" stroke="${color}" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/>`;
     case 'barber':
+    case 'barber_grooming_club':
       return `<path d="M6 3l12 12M18 3L6 15M12 9a2 2 0 100-4 2 2 0 000 4z" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
               <circle cx="6" cy="18" r="3" stroke="${color}" stroke-width="2" fill="none"/>
               <circle cx="18" cy="18" r="3" stroke="${color}" stroke-width="2" fill="none"/>`;
     case 'lash_brow':
       return `<path d="M3 14c4-6 14-6 18 0M6 11l-2-3M10 9L9 5M14 9l1-4M18 11l2-3" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`;
+    case 'medispa_aesthetics':
+      return `<circle cx="12" cy="12" r="9" stroke="${color}" stroke-width="2" fill="none"/>
+              <path d="M6.5 12h2.5l1.5-3.5 2 7 1.5-3.5h3.5" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`;
+    case 'organic_bio_salon':
+      return `<path d="M12 22V11" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
+              <path d="M12 11C7 11 5 8 5 4c4.5 0 7 3 7 7z" fill="${color}"/>
+              <path d="M12 13c0-4.5 3-7 7.5-7 0 4.5-3 7-7.5 7z" fill="${color}" opacity="0.75"/>`;
+    case 'express_beauty_bar':
+      return `<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="${color}"/>`;
+    case 'thai_massage_center':
+      return `<path d="M12 3c1.8 2.4 2.7 4.8 2.7 7.2 0 2.7-1.2 4.8-2.7 6-1.5-1.2-2.7-3.3-2.7-6C9.3 7.8 10.2 5.4 12 3z" fill="${color}"/>
+              <path d="M4 9c2.5.4 4.4 1.6 5.6 3.4-1.3 1.8-2.4 3.2-4 3.8C4.4 14.6 3.8 12 4 9z" fill="${color}" opacity="0.8"/>
+              <path d="M20 9c-2.5.4-4.4 1.6-5.6 3.4 1.3 1.8 2.4 3.2 4 3.8 1.2-1.6 1.8-4.2 1.6-8.2z" fill="${color}" opacity="0.8"/>
+              <path d="M5 17c2 2 4.5 3 7 3s5-1 7-3" stroke="${color}" stroke-width="1.8" stroke-linecap="round" fill="none"/>`;
+    case 'kids_teens_studio':
+      return `<path d="M7 5a3 3 0 100 6 3 3 0 000-6zm0 2a1 1 0 110 2 1 1 0 010-2zM17 5a3 3 0 100 6 3 3 0 000-6zm0 2a1 1 0 110 2 1 1 0 010-2zM12 10l-4 8M12 10l4 8" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
+              <path d="M20.5 15l.8 1.6 1.8.3-1.3 1.3.3 1.8-1.6-.8-1.6.8.3-1.8-1.3-1.3 1.8-.3z" fill="${color}" opacity="0.85"/>`;
+    case 'resort_spa':
+      return `<circle cx="12" cy="9" r="4" fill="${color}"/>
+              <path d="M12 1.5v2M5.6 3.5l1.4 1.4M18.4 3.5L17 4.9M2 9h2M20 9h2" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M3 16c2.2-1.6 4.8-1.6 7 0s4.8 1.6 7 0" stroke="${color}" stroke-width="2" stroke-linecap="round" fill="none"/>
+              <path d="M4 20c2-1.4 4.3-1.4 6.3 0s4.4 1.4 6.4 0 2-1 2-1" stroke="${color}" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.7"/>`;
+    case 'vedic_ayurveda_studio':
+      return `<path d="M12 2c3.2 4.2 6 7.6 6 11a6 6 0 01-12 0c0-3.4 2.8-6.8 6-11z" fill="${color}"/>
+              <path d="M9.5 13c0-1.8.8-3.4 2.5-5 1.7 1.6 2.5 3.2 2.5 5a2.5 2.5 0 01-5 0z" fill="#ffffff" opacity="0.85"/>
+              <path d="M12 8v10" stroke="${color}" stroke-width="1.2" stroke-linecap="round"/>`;
+    case 'bridal_makeover_studio':
+      return `<path d="M9 4l3-3 3 3-3 3z" fill="${color}"/>
+              <circle cx="12" cy="13" r="7" stroke="${color}" stroke-width="2" fill="none"/>
+              <path d="M8.5 13a3.5 3.5 0 007 0" stroke="${color}" stroke-width="1.5" fill="none" opacity="0.6"/>`;
     case 'ayurvedic_spa':
+    case 'ayurvedic_wellness_spa':
     case 'massage_wellness':
     case 'hair_spa':
       return `<path d="M12 2c0 5-4 9-9 9 5 0 9 4 9 9 0-5 4-9 9-9-5 0-9-4-9-9z" fill="${color}"/>`;

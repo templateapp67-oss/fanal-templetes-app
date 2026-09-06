@@ -135,7 +135,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       themeAccentKey: palKey,
       customAccentColor: undefined,
     }));
-    // Updates the primary accent CSS variable across all 14 templates
+    // Updates the primary accent CSS variable across all 27 templates
     applyPrimaryAccentCssVar(pal.primaryHex, pal.secondaryHex);
     setCustomHexInput(pal.primaryHex);
     setAccentAppliedFeedback(`Applied "${pal.name}" (${pal.primaryHex}) to CSS variable --primary-accent!`);
@@ -153,7 +153,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       ...prev,
       customAccentColor: formatted,
     }));
-    // Updates the primary accent CSS variable across all 14 templates
+    // Updates the primary accent CSS variable across all 27 templates
     applyPrimaryAccentCssVar(formatted);
     setCustomHexInput(formatted);
     setAccentAppliedFeedback(`Applied custom accent ${formatted} to CSS variable --primary-accent!`);
@@ -696,7 +696,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   </h2>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Customize your salon's brand assets and accent palette. Upload custom logos and hero cover banners (converted to data URLs and saved to localStorage), or pick a Theme Accent color (<code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono text-[11px]">--primary-accent</code>) used across all 14 templates.
+                  Customize your salon's brand assets and accent palette. Upload custom logos and hero cover banners (converted to data URLs and saved to localStorage), or pick a Theme Accent color (<code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono text-[11px]">--primary-accent</code>) used across all 27 templates.
                 </p>
               </div>
 

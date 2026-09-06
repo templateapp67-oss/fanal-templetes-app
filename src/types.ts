@@ -14,7 +14,20 @@ export type BusinessTypeId =
   | 'bridal_lounge'      // Bridal Makeup & Makeover Lounge
   | 'tattoo_studio'      // Tattoo & Body Art Studio
   | 'lash_brow'          // Lash & Brow Bar
-  | 'ayurvedic_spa';     // Ayurvedic Rejuvenation Spa
+  | 'ayurvedic_spa'      // Ayurvedic Rejuvenation Spa
+  | 'ayurvedic_wellness_spa' // Ayurvedic & Wellness Spa
+  | 'luxury_hair_salon' // Premium Luxury Hair Salon
+  | 'bridal_makeover_studio' // Bridal & Makeover Studio
+  | 'family_salon' // Modern Unisex Family Salon
+  | 'barber_grooming_club' // Gentlemen's Barber & Grooming Club
+  | 'nails_lash_brow_bar' // Nails, Lash & Brow Bar
+  | 'medispa_aesthetics' // Medi-Spa & Skin Aesthetics Clinic
+  | 'organic_bio_salon' // Organic & Eco-Friendly Bio-Salon
+  | 'express_beauty_bar' // Express & Quick Beauty Bar
+  | 'thai_massage_center' // Thai & Oriental Massage Center
+  | 'kids_teens_studio' // Kids & Teens Fun Hair Studio
+  | 'resort_spa' // Luxury Hotel & Resort Spa
+  | 'vedic_ayurveda_studio'; // Vedic Ayurveda Wellness Studio
 
 export type LayoutStyle = 
   | 'modern_minimalist'
@@ -30,7 +43,20 @@ export type LayoutStyle =
   | 'royal_crimson'
   | 'urban_monochrome'
   | 'chic_nude'
-  | 'ayurvedic_terracotta';
+  | 'ayurvedic_terracotta'
+  | 'botanical_wellness'
+  | 'haute_luxe'
+  | 'ivory_pearl_bridal'
+  | 'family_fresh'
+  | 'gents_club'
+  | 'berry_pearl_bar'
+  | 'medispa_porcelain'
+  | 'organic_meadow'
+  | 'express_pop'
+  | 'oriental_silk'
+  | 'candy_playroom'
+  | 'resort_luxe'
+  | 'vedic_marigold';
 
 export interface BusinessTypeOption {
   id: BusinessTypeId;
@@ -58,7 +84,20 @@ export type SalonThemePreset =
   | 'royal_crimson_gold'
   | 'urban_monochrome'
   | 'chic_nude_beige'
-  | 'ayurvedic_terracotta';
+  | 'ayurvedic_terracotta'
+  | 'sage_jade_botanical'
+  | 'onyx_champagne_gold'
+  | 'ivory_blush_pearl'
+  | 'sky_cream_family'
+  | 'midnight_copper_club'
+  | 'berry_blush_pearl'
+  | 'porcelain_sage_teal'
+  | 'fern_linen_organic'
+  | 'coral_slate_express'
+  | 'temple_saffron_silk'
+  | 'cotton_candy_sky'
+  | 'azure_champagne_luxe'
+  | 'marigold_warm_sand';
 
 export interface CategoryTemplateConfig {
   id: BusinessTypeId;

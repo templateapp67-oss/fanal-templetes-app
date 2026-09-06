@@ -399,9 +399,9 @@ export const CATEGORY_STANDARDIZED_DATA: Record<BusinessTypeId, CategoryStandard
       { id: 'ts-g6', url: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=80', title: 'Implant-Grade Titanium Ear Curation', tag: 'Piercing' }
     ],
     reviews: [
-      { id: 'ts-r1', name: 'Devendra Gowda', location: 'Church Street, Bengaluru', rating: 5, serviceName: 'Custom Fine-Line Sacred Geometry Tattoo', comment: 'Rudra is a genius. Cleanest needle work in India. The studio hygiene looks cleaner than a hospital operating theatre. 10/10.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: 'Yesterday' },
-      { id: 'ts-r2', name: 'Natasha D’Souza', location: 'MG Road, Bengaluru', rating: 5, serviceName: 'Micro-Realism Pet Portrait', comment: 'The fine line detail on my dog’s portrait blew my mind. Healed seamlessly with the Derm-Shield they provided.', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
-      { id: 'ts-r3', name: 'Karthik Raman', location: 'Indiranagar, Bengaluru', rating: 5, serviceName: 'Implant-Grade Titanium Helix Piercing', comment: 'Pierced with surgical needle, not a gun! Virtually zero pain, and the titanium jewelry looks stunning.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+      { id: 'ts-r1', name: 'Devendra Gowda', location: 'Church Street, Bengaluru', rating: 5, serviceName: 'Custom Dark Realism', comment: 'Rudra is a genius. Cleanest needle work in India. The studio hygiene looks cleaner than a hospital operating theatre. 10/10.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: 'Yesterday' },
+      { id: 'ts-r2', name: 'Natasha D’Souza', location: 'MG Road, Bengaluru', rating: 5, serviceName: 'High-Contrast Monochrome', comment: 'The fine line detail on my dog’s portrait blew my mind. Healed seamlessly with the Derm-Shield they provided.', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'ts-r3', name: 'Karthik Raman', location: 'Indiranagar, Bengaluru', rating: 5, serviceName: 'Surgical Body Piercings', comment: 'Pierced with surgical needle, not a gun! Virtually zero pain, and the titanium jewelry looks stunning.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
     ],
     totalReviewCount: 790,
     averageRating: 4.99,
@@ -444,7 +444,7 @@ export const CATEGORY_STANDARDIZED_DATA: Record<BusinessTypeId, CategoryStandard
 
   ayurvedic_spa: {
     foundingYear: '2016',
-    foundingNarrative: 'Sanjivani Ayurvedic Rejuvenation Spa honors the centuries-old Kerala Vaidya tradition in Chennai. We practice authentic Panchakarma therapies, continuous warm herbal Shirodhara oil streams, and Kizhi herbal poultice therapies.',
+    foundingNarrative: 'Sanjivani Ayurvedic Rejuvenation Spa honors the centuries-old Kerala Vaidya tradition in Chennai. We practice authentic Panchakarma therapies, continuous warm herbal Shirodhara oil streams, Vedic herbal lepams, and authentic panchakarma rituals.',
     specialties: ['Shirodhara Medicated Oil Stream', 'Traditional Kerala Abhyanga', 'Navara Kizhi Rice Poultice', 'Mukha Lepam Herbal Facial'],
     certifications: [
       { icon: 'verified', title: 'Authentic Kerala Droni Wooden Beds', description: 'Handcrafted seasoned Neem and Vengai wood massage tables.' },
@@ -461,15 +461,418 @@ export const CATEGORY_STANDARDIZED_DATA: Record<BusinessTypeId, CategoryStandard
       { id: 'ay-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Classical Medicated Tailam Dispensary', tag: 'Herbal Oils' }
     ],
     reviews: [
-      { id: 'ay-r1', name: 'Sundararajan Krishnan', location: 'Besant Nagar, Chennai', rating: 5, serviceName: 'Authentic Kerala Shirodhara & Abhyanga', comment: 'The Shirodhara with warm medicated sesame oil cured my insomnia within 2 sessions. Genuine Kerala Vaidyas and pristine herbal aromas.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
-      { id: 'ay-r2', name: 'Lakshmi Narayanan', location: 'Adyar, Chennai', rating: 5, serviceName: 'Navara Kizhi Herbal Rice Poultice', comment: 'Healed severe joint stiffness in my knees. Dr. Nair conducted an in-depth pulse reading and prescribed the exact herbal regimen.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '6 days ago' },
-      { id: 'ay-r3', name: 'Madhavan Venkat', location: 'Thiruvanmiyur, Chennai', rating: 5, serviceName: 'Traditional Mukha Lepam Herbal Facial', comment: 'Leaves you completely grounded and peaceful. The teakwood droni and copper vessels show their deep respect for classical tradition.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '2 weeks ago' }
+      { id: 'ay-r1', name: 'Sundararajan Krishnan', location: 'Besant Nagar, Chennai', rating: 5, serviceName: 'Medicated Shirodhara', comment: 'The Shirodhara with warm medicated sesame oil cured my insomnia within 2 sessions. Genuine Kerala Vaidyas and pristine herbal aromas.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
+      { id: 'ay-r2', name: 'Lakshmi Narayanan', location: 'Adyar, Chennai', rating: 5, serviceName: 'Authentic Kerala Panchakarma', comment: 'Healed severe joint stiffness in my knees. Dr. Nair conducted an in-depth pulse reading and prescribed the exact herbal regimen.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '6 days ago' },
+      { id: 'ay-r3', name: 'Madhavan Venkat', location: 'Thiruvanmiyur, Chennai', rating: 5, serviceName: 'Vedic Herbal Lepams', comment: 'Leaves you completely grounded and peaceful. The teakwood droni and copper vessels show their deep respect for classical tradition.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '2 weeks ago' }
     ],
     totalReviewCount: 810,
     averageRating: 4.98,
     landmark: 'Beach Road, Besant Nagar, Near Elliot’s Beach Promenade',
     parkingInfo: 'Private garden compound with ample car parking space',
     openHourText: '08:30 AM',
+    closeHourText: '8:30 PM'
+  },
+
+  ayurvedic_wellness_spa: {
+    foundingYear: '2018',
+    foundingNarrative: 'Sattva Ayurvedic & Wellness Spa began as a family vaidya practice in Rishikesh and has grown into a holistic wellness destination where every therapy starts with Nadi Pariksha pulse diagnosis and authentic herbal oils prepared the classical way.',
+    specialties: ['Nadi Pariksha Pulse Diagnosis', 'Dhanwantharam Abhyangam', 'Bringamadi Shirodhara', 'Dosha-Balancing Detox Protocols'],
+    certifications: [
+      { icon: 'verified', title: 'Classical Ashtanga Ayurveda Training', description: 'Therapists trained per Charaka Samhita protocols under registered BAMS physicians.' },
+      { icon: 'eco', title: 'Authentic Medicated Herbal Oils', description: 'Sun-dried Dhanwantharam and Bringamadi herbs slow-cooked in cold-pressed sesame oil.' },
+      { icon: 'monitoring', title: 'Personalized Dosha Mapping', description: 'Vata, Pitta, and Kapha constitution charted through pulse diagnosis before every regimen.' },
+      { icon: 'spa', title: 'Ganges-Adjacent Panchakarma Suites', description: 'Private therapy rooms with traditional wooden dronis and copper steam systems.' }
+    ],
+    gallery: [
+      { id: 'aws-g1', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80', title: 'Bronze Vessel Shirodhara Oil Stream', tag: 'Shirodhara' },
+      { id: 'aws-g2', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80', title: 'Teakwood Droni Therapy Bed', tag: 'Traditional Bed' },
+      { id: 'aws-g3', url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=800&q=80', title: 'Elakizhi Herbal Poultice Preparation', tag: 'Herbal Kizhi' },
+      { id: 'aws-g4', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Swedana Copper Herbal Steam Bath', tag: 'Herbal Steam' },
+      { id: 'aws-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Nadi Pariksha Pulse Diagnosis Chamber', tag: 'Diagnostics' },
+      { id: 'aws-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Medicated Tailam Oil Dispensary', tag: 'Herbal Oils' }
+    ],
+    reviews: [
+      { id: 'aws-r1', name: 'Kavita Bhattacharya', location: 'Dehradun', rating: 5, serviceName: 'Abhyangam Full Body Therapy', comment: 'After the Nadi Pariksha consult, my Vata-imbalance insomnia simply melted away. The Dhanwantharam oil massage left my whole body sinking into deep, restful physical relaxation.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'aws-r2', name: 'Arjun Malhotra', location: 'New Delhi', rating: 5, serviceName: 'Medicated Shirodhara Stream', comment: 'The warm Bringamadi oil stream over my third eye is the closest thing to true silence I have ever felt. My Pitta headaches vanished within a week of sessions.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' },
+      { id: 'aws-r3', name: 'Divya Menon', location: 'Kochi', rating: 5, serviceName: 'Swedana Steam & Detox', comment: 'The herbal steam detox drew out years of sluggish Kapha. I have never left a spa feeling this light, clean, and deeply relaxed.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '2 weeks ago' }
+    ],
+    totalReviewCount: 640,
+    averageRating: 4.97,
+    landmark: 'Lakshman Jhula, Tapovan, Near Parvati Ashram',
+    parkingInfo: 'Covered ashram-side parking 100 m from the spa courtyard',
+    openHourText: '08:00 AM',
+    closeHourText: '8:00 PM'
+  },
+
+  luxury_hair_salon: {
+    foundingYear: '2015',
+    foundingNarrative: 'Maison Éclat began as a private hair atelier in Delhi’s South Extension, serving a select clientele with haute-couture cuts, hand-painted color, and Kérastase- and Olaplex-driven repair rituals that treat every head of hair as a couture canvas.',
+    specialties: ['Haute-Couture Precision Cutting', 'French Balayage & Tonal Glossing', 'Olaplex Molecular Bond Repair', 'Long-Lasting Keratin Glossing'],
+    certifications: [
+      { icon: 'verified', title: 'Kérastase Institute Certified Artists', description: 'Every stylist trained on the Kérastase Studio Paris cutting, color, and care curriculum.' },
+      { icon: 'auto_awesome', title: 'Olaplex Bond Builder Protocol', description: 'Bond repair performed to the clinical Olaplex in-salon treatment protocol.' },
+      { icon: 'face_retouching_natural', title: 'Bespoke Hair-Mapping Consultation', description: 'Face geometry, density, and fiber diagnostics mapped before every cut or color.' },
+      { icon: 'workspace_premium', title: 'Private Atelier Appointments', description: 'One client at a time in a private suite, with champagne service on request.' }
+    ],
+    gallery: [
+      { id: 'lhx-g1', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80', title: 'Precision Sculpt at the Styling Station', tag: 'Precision Cut' },
+      { id: 'lhx-g2', url: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=800&q=80', title: 'Hand-Painted Balayage & Tonal Gloss', tag: 'Balayage' },
+      { id: 'lhx-g3', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Champagne Private Hair Atelier', tag: 'Atelier Interior' },
+      { id: 'lhx-g4', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Olaplex Bond Repair Immersion', tag: 'Bond Repair' },
+      { id: 'lhx-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Keratin Smoothing Steam Suite', tag: 'Keratin' },
+      { id: 'lhx-g6', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Luxe Treatment Bed & Gloss Ritual', tag: 'Glossing' }
+    ],
+    reviews: [
+      { id: 'lhx-r1', name: 'Rhea Bedi', location: 'New Delhi', rating: 5, serviceName: 'Balayage & French Glossing', comment: 'The hair-mapping consultation felt like a couture fitting. Three months on, my balayage still carries that glassy, liquid gloss.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
+      { id: 'lhx-r2', name: 'Ansh Verma', location: 'Gurugram', rating: 5, serviceName: 'Olaplex Bond Repair Spa', comment: 'My bleached hair was practically thread. After the hair-mapping bond audit and the Olaplex ritual, it feels stronger than it has in years.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '5 days ago' },
+      { id: 'lhx-r3', name: 'Nidhi Saxena', location: 'Mumbai', rating: 5, serviceName: 'Precision Sculpt & Hair Design', comment: 'The dry cut was surgical — every strand mapped to my face geometry. I have never worn my hair with this much confidence.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 980,
+    averageRating: 4.98,
+    landmark: 'Lavelle Road, South Extension II, Near ITC Maurya',
+    parkingInfo: 'Concierge valet parking on Lavelle Road, 2 minutes walk',
+    openHourText: '11:00 AM',
+    closeHourText: '9:00 PM'
+  },
+
+  bridal_makeover_studio: {
+    foundingYear: '2017',
+    foundingNarrative: 'Rose & Ivory was founded by a film makeup artist who wanted bridal styling that survives real weddings—long ceremonies, humid evenings, and hundreds of candid photos—without ever losing that first-moment camera-ready glow.',
+    specialties: ['HD Airbrush Bridal Glam', 'Moodboard-Driven Styling', 'Pre-Bridal Skin Prep Rituals', 'Royal Saree Draping & Hair Sculpting'],
+    certifications: [
+      { icon: 'verified', title: 'Long-Lasting Sweatproof Formulas', description: 'Premium 18-hour-wear airbrush and setting systems built for humid Indian summers.' },
+      { icon: 'spa', title: 'Skin Prep Hydration Protocol', description: 'Hyaluronic-infused pre-bridal rituals that build a dewy, even canvas before the big day.' },
+      { icon: 'palette', title: 'Personalized Bridal Moodboards', description: 'Bride-curated moodboards with fabric, jewelry, and floral swatches before every appointment.' },
+      { icon: 'camera', title: 'Candid-Proof Camera-Ready Finish', description: 'Looks color-corrected under natural, candlelight, and studio flash for flawless portraits.' }
+    ],
+    gallery: [
+      { id: 'bms-g1', url: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80', title: 'HD Airbrush Bridal Portrait', tag: 'Bridal Glam' },
+      { id: 'bms-g2', url: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=800&q=80', title: 'Pre-Bridal Radiance Session', tag: 'Skin Prep' },
+      { id: 'bms-g3', url: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?auto=format&fit=crop&w=800&q=80', title: 'Moodboard & Swatch Wall', tag: 'Moodboard' },
+      { id: 'bms-g4', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Prep Suite & Hydration Ritual', tag: 'Prep Ritual' },
+      { id: 'bms-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Draping Studio & Mirror Wall', tag: 'Draping' },
+      { id: 'bms-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Engagement Makeover Detail', tag: 'Engagement' }
+    ],
+    reviews: [
+      { id: 'bms-r1', name: 'Priyanka Deshmukh', location: 'Bandra, Mumbai', rating: 5, serviceName: 'HD Airbrush Bridal Makeup', comment: 'Six-hour wedding under December sun—zero transfer by the time the baraat reached. The moodboard session made me feel like a co-director of my own look.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'bms-r2', name: 'Zara Khan', location: 'Andheri, Mumbai', rating: 5, serviceName: 'Pre-Bridal Radiance Ritual', comment: 'Three sessions before the wedding and my skin looked lit from within. The hydration protocol is real—my makeup artist kept praising how smooth the base was.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '4 days ago' },
+      { id: 'bms-r3', name: 'Aisha Farooqui', location: 'Powai, Mumbai', rating: 5, serviceName: 'Royal Engagement Makeover', comment: 'The engagement candid looked like a magazine page. The sweatproof finish stayed dewy through dinner and dancing, and the drape held all evening.', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 720,
+    averageRating: 4.97,
+    landmark: 'Linking Road, Bandra West, Near Gazebo Shopping',
+    parkingInfo: 'Verified parking on Bandra West lanes, 3 minutes walk',
+    openHourText: '10:00 AM',
+    closeHourText: '9:00 PM'
+  },
+
+  family_salon: {
+    foundingYear: '2019',
+    foundingNarrative: 'Cedar & Bloom was founded on a simple idea: a modern, unisex family salon where grandparents, parents, and kids can be seated together, and quality hair and skin care fits neatly into even the busiest weekday.',
+    specialties: ['Quick Family Cuts & Styling', 'Express Glow Facials', 'Hydra-Infusion Hair Spas', 'Anti-Dandruff Scalp Therapy'],
+    certifications: [
+      { icon: 'verified', title: 'Quick-Service Promise', description: 'Most services completed in 30–45 minutes, with dedicated express slots for working families.' },
+      { icon: 'eco', title: 'Gentle Nourishing Ingredients', description: 'Argan, coconut, neem, and tea tree formulations safe for every age and hair type.' },
+      { icon: 'diversity_2', title: 'All-Age Styling Expertise', description: 'Stylists trained in family grooming, from a child’s first cut to silver-hair styling.' },
+      { icon: 'self_improvement', title: 'Everyday Hair Health Program', description: 'Repeatable monthly hair and scalp care routines that keep the whole family looking and feeling their best.' }
+    ],
+    gallery: [
+      { id: 'fam-g1', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80', title: 'Signature Wash & Style Station', tag: 'Cuts & Styling' },
+      { id: 'fam-g2', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Hydra-Infusion Hair Spa Suite', tag: 'Hair Spa' },
+      { id: 'fam-g3', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Express Glow Facial Chair', tag: 'Facials' },
+      { id: 'fam-g4', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Bright Family Salon Interior', tag: 'Interior' },
+      { id: 'fam-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Scalp Treatment Room', tag: 'Scalp Care' },
+      { id: 'fam-g6', url: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?auto=format&fit=crop&w=800&q=80', title: 'Family Waiting Lounge', tag: 'Family Lounge' }
+    ],
+    reviews: [
+      { id: 'fam-r1', name: 'Meera Kulkarni', location: 'Viman Nagar, Pune', rating: 5, serviceName: 'Signature Wash & Style Cut', comment: 'Took my 8-year-old and my mom in the same visit—both were seated and done within 35 minutes. The style held perfectly all week.', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'fam-r2', name: 'Aditya Patil', location: 'Koregaon Park, Pune', rating: 5, serviceName: 'Hydra-Infusion Hair Spa', comment: 'Quick, affordable, and my hair genuinely feels nourished. The keratin and coconut blend fixed my frizz once and for all.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'fam-r3', name: 'Shalini Ramesh', location: 'Baner, Pune', rating: 5, serviceName: 'Anti-Dandruff Scalp Treatment', comment: 'The neem and tea tree treatment cleared my flakes in two sessions. Gentle, quick, and they happily treat the whole family.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 560,
+    averageRating: 4.93,
+    landmark: 'Viman Nagar, Near Phoenix Marketcity',
+    parkingInfo: 'Marketcity public parking, 4 minutes walk',
+    openHourText: '10:00 AM',
+    closeHourText: '9:00 PM'
+  },
+
+  barber_grooming_club: {
+    foundingYear: '2016',
+    foundingNarrative: 'The Iron Standard began as a two-chair barbershop with one simple rule—no rush, no noise, just precision work, hot towels, and a clean sharp look for every man who walks in.',
+    specialties: ['Royal Straight-Razor Beard Sculpt', 'Executive Cuts & Scalp Rub', 'Charcoal Detox Facials', 'Natural Grey Blending'],
+    certifications: [
+      { icon: 'verified', title: 'German Steel Straight Razors', description: 'Single-edge blades hand-stropped before every shave and sterilized between clients.' },
+      { icon: 'local_fire_department', title: 'Hot Towel Therapy Protocol', description: 'Triple hot towel rituals that soften whiskers, open pores, and calm post-shave skin.' },
+      { icon: 'face', title: 'Post-Shave Skin Hydration', description: 'Cooling aloe and charcoal balms that hydrate and protect sensitive post-razor skin.' },
+      { icon: 'local_bar', title: 'Members-Grade Lounge', description: 'Whiskey barbers, leather chairs, and a quiet club atmosphere—no waiting rooms.' }
+    ],
+    gallery: [
+      { id: 'club-g1', url: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80', title: 'Classic Barber Chair Setup', tag: 'Club Interior' },
+      { id: 'club-g2', url: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=800&q=80', title: 'Hot Towel Shave Ritual', tag: 'Hot Towel' },
+      { id: 'club-g3', url: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=800&q=80', title: 'Precision Beard Line Work', tag: 'Beard Sculpt' },
+      { id: 'club-g4', url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80', title: 'Executive Cut in Progress', tag: 'Executive Cut' },
+      { id: 'club-g5', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80', title: 'Grey Blending Color Mix', tag: 'Grey Blend' },
+      { id: 'club-g6', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Charcoal Detox Facial Station', tag: 'Facials' }
+    ],
+    reviews: [
+      { id: 'club-r1', name: 'Rohan Bahl', location: 'Cyber City, Gurugram', rating: 5, serviceName: 'Royal Straight-Razor Beard Sculpt', comment: 'Triple hot towel, one razor, a beard with geometry. Cleanest neckline in Gurugram—and it still looks sharp five days later.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'club-r2', name: 'Nikhil Anand', location: 'Dwarka, New Delhi', rating: 5, serviceName: 'Executive Hair Cut & Scalp Rub', comment: 'The scalp rub alone is worth the trip. Precision cut, comfortable chair, and I walked out with a clean sharp look ready for the boardroom.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '4 days ago' },
+      { id: 'club-r3', name: 'Jasmeet Singh', location: 'Saket, New Delhi', rating: 5, serviceName: 'Grey Blending & Beard Color', comment: 'Nobody can tell I color my hair—it looks like natural depth. Skin felt hydrated, not tight, after the shave.', avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 610,
+    averageRating: 4.95,
+    landmark: 'Cyber City Phase II, Near DLF Corporate Park',
+    parkingInfo: 'DLF Phase II basement parking, 5 minutes walk',
+    openHourText: '11:00 AM',
+    closeHourText: '10:00 PM'
+  },
+
+  nails_lash_brow_bar: {
+    foundingYear: '2021',
+    foundingNarrative: 'Peony & Lacquer began as a one-chair setup in a Frazer Town flat. When clients kept booking all three services in the same visit, the bar grew into a dedicated nails, lash & brow micro-studio built around organic formulas and long retention.',
+    specialties: ['Gel Extensions & Nail Art', 'Russian Volume Lashes', 'Brow Lamination & Henna', 'Paraffin Pedicure Rituals'],
+    certifications: [
+      { icon: 'verified', title: '10-Free Organic Formulas', description: 'Formaldehyde- and toluene-free gels with organic adhesives safe for sensitive skin.' },
+      { icon: 'visibility', title: 'Long-Lasting Retention Standard', description: 'Every lash and nail service includes a retention check and a free touch-up window.' },
+      { icon: 'auto_awesome', title: 'Precision Detailing Tools', description: 'Single-use sterilized kits, e-file precision, and magnified lash lamps for every artist.' },
+      { icon: 'palette', title: 'Monthly Trend Board', description: 'A curated monthly board of nail art, lash styles, and brow shapes refreshed every season.' }
+    ],
+    gallery: [
+      { id: 'nlb-g1', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Nail Art & Chrome Detailing', tag: 'Nail Couture' },
+      { id: 'nlb-g2', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Lash Station & Laminated Brows', tag: 'Lash Bar' },
+      { id: 'nlb-g3', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Brow Lamination Mirror Wall', tag: 'Brows' },
+      { id: 'nlb-g4', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Paraffin Pedicure Suite', tag: 'Pedicure' },
+      { id: 'nlb-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Micro-Bar Interior', tag: 'Interior' },
+      { id: 'nlb-g6', url: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?auto=format&fit=crop&w=800&q=80', title: 'Trend Board & Gel Library', tag: 'Trends' }
+    ],
+    reviews: [
+      { id: 'nlb-r1', name: 'Aishwarya Rao', location: 'Frazer Town, Bengaluru', rating: 5, serviceName: 'Gel Extension & Custom Nail Art', comment: 'Three weeks in, zero chips. The micro-art detailing is worth every rupee—my almond chrome set has been the talk of the month.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'nlb-r2', name: 'Ritu Chawla', location: 'Koramangala, Bengaluru', rating: 5, serviceName: 'Russian Volume Lash Extensions', comment: 'Fluffy but weightless—my natural lashes were not damaged at all. Retention stayed perfect for over three weeks.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'nlb-r3', name: 'Devika Nair', location: 'Indiranagar, Bengaluru', rating: 5, serviceName: 'Brow Lamination & Henna Tint', comment: 'Woke up to the exact fluffy arch I wanted, no daily gel. The organic henna tint stayed rich even in Bengaluru humidity.', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 480,
+    averageRating: 4.94,
+    landmark: 'Frazer Town, Near Halasuru Circle',
+    parkingInfo: 'Two-wheeler parking in the lane; car parking at Halasuru complex, 200 m',
+    openHourText: '10:30 AM',
+    closeHourText: '8:30 PM'
+  },
+
+  medispa_aesthetics: {
+    foundingYear: '2019',
+    foundingNarrative: 'Porcelain Skin Lab was founded by a dermatologist who believed medical skin science should never feel cold or clinical. Every protocol here is dermatologist-tested, and every treatment ends like a spa visit—with zero downtime.',
+    specialties: ['Advanced HydraFacial MD', 'LED Light Anti-Aging', 'Chemical Peel & Pigmentation Care', 'Micro-needling Collagen Boost'],
+    certifications: [
+      { icon: 'verified', title: 'Dermatologist-Tested Protocols', description: 'Every treatment sequence designed and supervised by practising consultant dermatologists.' },
+      { icon: 'science', title: 'Certified Medical-Grade Devices', description: 'HydraFacial MD vial sets, calibrated LED matrices, and single-use micro-needling cartridges.' },
+      { icon: 'water_drop', title: 'Deep Cellular Renewal Formulas', description: 'Hyaluronic, vitamin-C, and peptide serums engineered to rejuvenate at the cellular level.' },
+      { icon: 'schedule', title: 'Zero-Downtime Promise', description: 'Every treatment is designed so you can return to work the same day—no redness, no peeling, no social pause.' }
+    ],
+    gallery: [
+      { id: 'mds-g1', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'HydraFacial MD Station', tag: 'Signature Facial' },
+      { id: 'mds-g2', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'LED Light Therapy Pod', tag: 'Light Therapy' },
+      { id: 'mds-g3', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Peel & Pigmentation Consult', tag: 'Peels' },
+      { id: 'mds-g4', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Micro-needling Suite', tag: 'Collagen' },
+      { id: 'mds-g5', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Porcelain Waiting Lounge', tag: 'Interior' },
+      { id: 'mds-g6', url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=800&q=80', title: 'Serum & Vial Library', tag: 'Formulas' }
+    ],
+    reviews: [
+      { id: 'mds-r1', name: 'Ankita Bose', location: 'Alipore, Kolkata', rating: 5, serviceName: 'Advanced HydraFacial MD', comment: 'Did my HydraFacial MD at 10 AM and presented to a client at 1 PM. Zero redness, and my skin texture looked smoother after a single session.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'mds-r2', name: 'Sourav Ghosh', location: 'Salt Lake, Kolkata', rating: 5, serviceName: 'LED Light Anti-Aging Therapy', comment: 'Six weeks of LED sessions and my colleagues keep asking what changed. No downtime, no irritation—just smoother, brighter skin.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'mds-r3', name: 'Rituparna Das', location: 'Gariahat, Kolkata', rating: 5, serviceName: 'Chemical Peel & Pigmentation Correction', comment: 'Dr. Chatterjee’s lactic peel protocol cleared years of melasma in four sessions. My skin texture is even, and the post-peel glow is addictive.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 430,
+    averageRating: 4.96,
+    landmark: 'Alipore Road, Near M.G. Road Bridge',
+    parkingInfo: 'Kolkata Medical Park basement parking, 3 minutes walk',
+    openHourText: '10:00 AM',
+    closeHourText: '8:00 PM'
+  },
+
+  organic_bio_salon: {
+    foundingYear: '2020',
+    foundingNarrative: 'Terra Botanica was born from a simple frustration—nowhere in Coimbatore offered salon services without a chemistry lecture on the receipt. The founders opened a zero-waste, 100% vegan bio-salon where every bowl, bottle, and blend is ethically sourced.',
+    specialties: ['Botanical Herbal Hair Color', 'Plant-Based Vegan Facials', 'Organic Clay Scalp Detox', 'Cold-Pressed Eco-Gloss Spas'],
+    certifications: [
+      { icon: 'verified', title: '100% Vegan, Ammonia-Free Formulas', description: 'Every color, facial, and spa blend is 100% vegan, ammonia-free, paraben-free, and cruelty-free.' },
+      { icon: 'local_florist', title: 'Ethically Sourced Botanicals', description: 'Henna, indigo, amla, and clays purchased directly from certified organic farms in Tamil Nadu.' },
+      { icon: 'recycling', title: 'Zero-Waste Salon Practices', description: 'Compostable bowls, refillable glass vials, and plastic-free packaging in every treatment room.' },
+      { icon: 'water_drop', title: 'Gentle Natural Radiance Promise', description: 'No synthetic dyes, no harsh sulfates—only plant-based care that brings out your skin and hair’s own glow.' }
+    ],
+    gallery: [
+      { id: 'bio-g1', url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=800&q=80', title: 'Botanical Hair Color Mixing', tag: 'Herbal Color' },
+      { id: 'bio-g2', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Plant-Based Facial Station', tag: 'Vegan Facial' },
+      { id: 'bio-g3', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Clay Scalp Detox Bowl', tag: 'Scalp Detox' },
+      { id: 'bio-g4', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80', title: 'Cold-Pressed Oil Spa Suite', tag: 'Eco Gloss' },
+      { id: 'bio-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Zero-Waste Treatment Room', tag: 'Interior' },
+      { id: 'bio-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Refillable Glass Vial Library', tag: 'Formulas' }
+    ],
+    reviews: [
+      { id: 'bio-r1', name: 'Kavitha Subramanian', location: 'Gandhipuram, Coimbatore', rating: 5, serviceName: 'Botanical Herbal Hair Color', comment: 'My henna-amla color has more softness than any chemical dye I have ever tried. Zero ammonia, zero regret—and it smells like a garden.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'bio-r2', name: 'Aravind Kumar', location: 'RS Puram, Coimbatore', rating: 5, serviceName: 'Organic Clay Scalp Detox', comment: 'The green clay and amla rinse fixed my oily scalp in a week. You can smell the difference—clean, herbal, chemical-free.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'bio-r3', name: 'Lakshmi Priya', location: 'Saibaba Colony, Coimbatore', rating: 5, serviceName: 'Plant-Based Vegan Facial', comment: 'Sensitive skin, and I trust their 100% vegan formulas completely. My skin has a gentle natural radiance, not a filtered one.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 350,
+    averageRating: 4.92,
+    landmark: 'Gandhipuram, Near Bakers Road',
+    parkingInfo: 'Shared parking at Coimbatore Bio Park, 2 minutes walk',
+    openHourText: '9:30 AM',
+    closeHourText: '8:00 PM'
+  },
+
+  express_beauty_bar: {
+    foundingYear: '2022',
+    foundingNarrative: 'Blink started because a stylist kept losing 40 minutes of every morning to a 15-minute blowdry wait. The bar she opened answers one question: how fast can we make you look perfect? The answer—15 minutes, zero wait.',
+    specialties: ['15-Min Express Blowdry', 'Instant Flash Glow Cleanups', 'Quick Shape & Polish', 'Rapid Threading Touchups'],
+    certifications: [
+      { icon: 'bolt', title: 'Zero-Wait Walk-In Guarantee', description: 'Slot-based scheduling with a dedicated express lane—average wait under 5 minutes.' },
+      { icon: 'timer', title: '15-Minute Precision Protocols', description: 'Every service follows a timed protocol so speed never costs quality.' },
+      { icon: 'spa', title: 'Fast-Application Products', description: 'Professional-strength, quick-setting formulas built for rapid salon work.' },
+      { icon: 'self_improvement', title: 'Instant Visible Freshness Promise', description: 'If you do not see the difference before you leave, your next service is on us.' }
+    ],
+    gallery: [
+      { id: 'exp-g1', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80', title: '15-Min Blowdry Station', tag: 'Express Styling' },
+      { id: 'exp-g2', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Flash Glow Cleanup Chair', tag: 'Flash Facial' },
+      { id: 'exp-g3', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Gel Polish Wall', tag: 'Polish' },
+      { id: 'exp-g4', url: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=800&q=80', title: 'Threading & Touchup Counter', tag: 'Threading' },
+      { id: 'exp-g5', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Express Bar Interior', tag: 'Interior' },
+      { id: 'exp-g6', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Quick Scheduling Wall', tag: 'Scheduling' }
+    ],
+    reviews: [
+      { id: 'exp-r1', name: 'Pooja Hegde', location: 'Jayanagar, Bengaluru', rating: 5, serviceName: '15-Min Express Blowdry', comment: 'Booked at 9:45, left at 10:00 with a red-carpet blowout for my board meeting. Zero wait, perfect volume all day.', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'exp-r2', name: 'Aakash Nair', location: 'Frazer Town, Bengaluru', rating: 5, serviceName: 'Quick Shape & Polish', comment: 'Shape-up plus polish in 20 minutes on my lunch break. Fast, clean, and the polish is still glossy three weeks later.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
+      { id: 'exp-r3', name: 'Divya Shetty', location: 'Banashankari, Bengaluru', rating: 5, serviceName: 'Threading & Upper Lip Touchup', comment: 'Walked in, walked out in 10 minutes with an instant fresh face. Perfect for exam days and early meetings.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '5 days ago' }
+    ],
+    totalReviewCount: 310,
+    averageRating: 4.90,
+    landmark: 'Jayanagar 4th Block, Near Metro Station',
+    parkingInfo: 'Metro station parking 1 minute walk; two-wheeler stand in front',
+    openHourText: '8:00 AM',
+    closeHourText: '10:00 PM'
+  },
+
+  thai_massage_center: {
+    foundingYear: '2017',
+    foundingNarrative: 'Baan Sen opened when a Thai healer and a Keralan spa owner realised their traditions shared one soul—energy, touch, and stillness. Today the centre trains therapists in both Thai Sen line work and oriental herbal therapy.',
+    specialties: ['Traditional Thai Dry Stretch', 'Sen Energy Line Therapy', 'Herbal Oil & Aromatherapy', 'Reflexology Foot Pressure'],
+    certifications: [
+      { icon: 'verified', title: 'Certified Thai Massage Lineage', description: 'Therapists trained by certified Thai healing-lineage masters with 200+ hours of supervised practice.' },
+      { icon: 'spa', title: 'Authentic Oriental Herbal Blends', description: 'Turmeric, lemongrass, and ylang-ylang infused oils prepared in small traditional batches.' },
+      { icon: 'self_improvement', title: 'Sen Energy Line Mapping', description: 'Every session begins with an assessment of the body’s seven Sen lines before treatment starts.' },
+      { icon: 'bedtime', title: 'Deep Mental Rejuvenation Spaces', description: 'Silent treatment rooms, low lighting, and soft gamelan sound for complete mental reset.' }
+    ],
+    gallery: [
+      { id: 'thai-g1', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80', title: 'Thai Stretch Treatment Room', tag: 'Thai Stretch' },
+      { id: 'thai-g2', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Herbal Oil Therapy Suite', tag: 'Herbal Oil' },
+      { id: 'thai-g3', url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=800&q=80', title: 'Herbal Infusion Preparation', tag: 'Herbal Blends' },
+      { id: 'thai-g4', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Reflexology Foot Chair', tag: 'Reflexology' },
+      { id: 'thai-g5', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80', title: 'Deep Tissue Workstation', tag: 'Deep Tissue' },
+      { id: 'thai-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Oriental Waiting Lounge', tag: 'Interior' }
+    ],
+    reviews: [
+      { id: 'thai-r1', name: 'Suresh Menon', location: 'Kovalam, Kerala', rating: 5, serviceName: 'Traditional Thai Dry Stretch Massage', comment: 'Ninety minutes of Thai stretch and my back felt ten years younger. I walked out taller—the Sen line work is real.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'thai-r2', name: 'Emily Watson', location: 'Dubai', rating: 5, serviceName: 'Aroma Herbal Oil Therapy', comment: 'The herbal oil therapy melted every knot in my shoulders. I slept like the dead for two nights—deep mental rejuvenation is an understatement.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'thai-r3', name: 'Karthik Raghavan', location: 'Trivandrum, Kerala', rating: 5, serviceName: 'Reflexology Foot Pressure Therapy', comment: 'Forty-five minutes of foot pressure and my whole body felt lighter. The Sen line pressure points are surprisingly precise.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 520,
+    averageRating: 4.95,
+    landmark: 'Kovalam Beach Road, Near Lighthouse',
+    parkingInfo: 'Shared beach-road parking, 3 minutes walk',
+    openHourText: '9:00 AM',
+    closeHourText: '9:00 PM'
+  },
+
+  kids_teens_studio: {
+    foundingYear: '2021',
+    foundingNarrative: 'Scissors & Sprinkles was born when the founder watched her own nephew cry through a ten-minute haircut. So she built a studio where the waiting room is a playroom, the products are tear-free gentle, and no child has left in tears since.',
+    specialties: ['First Haircut Memory Package', 'Cool Kid Sculpt Cuts', 'Non-Toxic Feather Extensions', 'Teen Acne Fresh Cleanups'],
+    certifications: [
+      { icon: 'verified', title: 'Tear-Free Gentle Product Line', description: '100% fragrance-light, alcohol-free, tear-free gentle products in every chair, for every age.' },
+      { icon: 'emoji_emotions', title: 'Interactive Fun Environment Design', description: 'Playroom waiting area, music curation, sticker rewards, and haircut certificates at every visit.' },
+      { icon: 'auto_awesome', title: 'Trendy Safe Styling Standards', description: 'Kid-safe gels, non-toxic extension bonds, and teen-safe skin formulas reviewed by dermatologists.' },
+      { icon: 'child_care', title: 'Certified Child Grooming Care', description: 'Stylists trained in paediatric grooming, patience-first technique, and first-haircut rituals.' }
+    ],
+    gallery: [
+      { id: 'kid-g1', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80', title: 'First Haircut Celebration Chair', tag: 'First Haircut' },
+      { id: 'kid-g2', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Candy Playroom Interior', tag: 'Interior' },
+      { id: 'kid-g3', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Feather Extensions Styling', tag: 'Extensions' },
+      { id: 'kid-g4', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Teen Fresh Cleanup Station', tag: 'Teen Skin' },
+      { id: 'kid-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Cool Kid Gel Styling', tag: 'Gel Style' },
+      { id: 'kid-g6', url: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?auto=format&fit=crop&w=800&q=80', title: 'Sticker & Trophy Wall', tag: 'Rewards' }
+    ],
+    reviews: [
+      { id: 'kid-r1', name: 'Vidhya Krishnan', location: 'Adyar, Chennai', rating: 5, serviceName: 'First Haircut Memory Package', comment: 'My daughter was nervous, but she left grinning with a sticker crown and her trophy. The interactive fun environment made it the best 45 minutes of our week.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'kid-r2', name: 'Rahul Prasad', location: 'Nungambakkam, Chennai', rating: 5, serviceName: 'Cool Kid Sculpt Cut & Gel Style', comment: 'My son picked his own cut from the trend board, and the gel held through a full football practice. Trendy, safe, zero tears.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
+      { id: 'kid-r3', name: 'Meera Sundaram', location: 'Mylapore, Chennai', rating: 5, serviceName: 'Teen Acne Skin Fresh Cleanup', comment: 'My 13-year-old actually looks forward to her cleanups. Gentle tear-free products and a playlist she chose—her skin has never been fresher.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '4 days ago' }
+    ],
+    totalReviewCount: 290,
+    averageRating: 4.93,
+    landmark: 'Adyar, Near College Street Metro',
+    parkingInfo: 'College Street metro parking, 2 minutes walk',
+    openHourText: '10:00 AM',
+    closeHourText: '8:00 PM'
+  },
+
+  resort_spa: {
+    foundingYear: '2015',
+    foundingNarrative: 'Azure Palms began as the spa wing of a 1930s lake villa, and the founding team’s brief was simple: make guests feel as pampered as the palace royalty of old. Every ritual, from turndown to towel temperature, is designed to that standard.',
+    specialties: ['Destination Sunset Body Polish', 'Hot Stone Muscle Melting Rituals', 'Rose & Wine Couple Journeys', 'Lavender Aromatherapy Detox'],
+    certifications: [
+      { icon: 'verified', title: '5-Star Resort Service Standards', description: 'Every suite, scent, and service calibrated to international 5-star resort hospitality standards.' },
+      { icon: 'local_florist', title: 'Signature Essential Oil Blends', description: 'In-house blended orange blossom, cedarwood, rose, and lavender oils used in every ritual.' },
+      { icon: 'workspace_premium', title: 'Private Lake-View Suites', description: 'Each treatment takes place in a private, candle-lit suite overlooking Lake Pichola.' },
+      { icon: 'restaurant', title: 'Spa Dine & Wine Cellar', description: 'Post-ritual recovery platters and a curated wine cellar for couple journeys.' }
+    ],
+    gallery: [
+      { id: 'res-g1', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80', title: 'Sunset Body Polish Suite', tag: 'Body Ritual' },
+      { id: 'res-g2', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Hot Stone Treatment Room', tag: 'Stone Therapy' },
+      { id: 'res-g3', url: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=800&q=80', title: 'Rose Petal Couple Suite', tag: 'Couples' },
+      { id: 'res-g4', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Lavender Aromatherapy Lounge', tag: 'Aromatherapy' },
+      { id: 'res-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Lake-View Private Suite', tag: 'Suite' },
+      { id: 'res-g6', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Resort Spa Atrium', tag: 'Interior' }
+    ],
+    reviews: [
+      { id: 'res-r1', name: 'Rohan Malhotra', location: 'Udaipur, Rajasthan', rating: 5, serviceName: 'Destination Sunset Body Polish', comment: 'The suite faces a lake sunset, and the sugar-coconut polish left my skin glowing like silk. The finest 5-star resort experience I have had in India.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'res-r2', name: 'Sophie Tan', location: 'Singapore', rating: 5, serviceName: 'Rose & Wine Couple Spa Journey', comment: 'The couple journey was pure indulgence—rose-scented massages, private toasts, candlelight everywhere. My wife is still talking about it a month later.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'res-r3', name: 'Aditya Bansal', location: 'Jaipur, Rajasthan', rating: 5, serviceName: 'Hot Stone Muscle Melting Ritual', comment: 'After weeks of travel, the hot stone ritual melted every knot in my back. The cedarwood essential oil scent is still in my memory.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 680,
+    averageRating: 4.97,
+    landmark: 'Lake Pichola, Fateh Sagar Marg',
+    parkingInfo: 'Private resort valet parking at the main gate',
+    openHourText: '10:00 AM',
+    closeHourText: '10:00 PM'
+  },
+
+  vedic_ayurveda_studio: {
+    foundingYear: '2018',
+    foundingNarrative: 'Vedvriksha began when Acharya Saxena left his hospital practice to open a small therapy room with two treatment beds. Word of the authentic Vedic treatments spread across Jaipur, and the studio now runs six therapy suites.',
+    specialties: ['Abhyanga Warm Oil Massage', 'Shirodhara Oil Stream Therapy', 'Kashaya Sekam Herbal Detox', 'Vedic Mukh Lepam Facial', 'Kadi/Janu Vashti Pain Relief'],
+    certifications: [
+      { icon: 'verified', title: 'Registered BAMS Ayurvedic Practitioner', description: 'All treatment protocols designed and supervised by a registered BAMS Ayurvedic physician.' },
+      { icon: 'eco', title: 'Classical Herbal Formulations', description: 'Medicated oils, kashaya decoctions, and facial lepams prepared per classical Ayurvedic texts.' },
+      { icon: 'monitoring', title: 'Personalized Dosha Consultation', description: 'Every first visit includes a pulse and dosha assessment to customise each therapy.' },
+      { icon: 'healing', title: 'Pain Relief Therapy Certification', description: 'Vashti and kizhi pain-relief techniques trained under traditional Kerala Ayurveda lineage.' }
+    ],
+    gallery: [
+      { id: 'ved-g1', url: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=800&q=80', title: 'Herbal Oil & Decoction Prep', tag: 'Herbal Prep' },
+      { id: 'ved-g2', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80', title: 'Shirodhara Treatment Room', tag: 'Shirodhara' },
+      { id: 'ved-g3', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80', title: 'Abhyanga Therapy Bed', tag: 'Abhyanga' },
+      { id: 'ved-g4', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Kashaya Sekam Steam Bath', tag: 'Detox' },
+      { id: 'ved-g5', url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80', title: 'Vedic Facial Station', tag: 'Mukh Lepam' },
+      { id: 'ved-g6', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Vashti Pain Relief Suite', tag: 'Pain Relief' }
+    ],
+    reviews: [
+      { id: 'ved-r1', name: 'Rajesh Choudhary', location: 'Ajmeri Gate, Jaipur', rating: 5, serviceName: 'Kadi Vashti / Janu Vashti (Localized Pain Relief)', comment: 'The warm oil held on my knee for 45 minutes did what months of painkillers could not. I climb stairs without thinking about the pain again.', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80', date: '1 day ago' },
+      { id: 'ved-r2', name: 'Pooja Ahuja', location: 'Malviya Nagar, Jaipur', rating: 5, serviceName: 'Shirodhara Therapy', comment: 'I walked in with chronic insomnia and walked out in a calm daze. I have slept through the night every single day for three weeks now.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '3 days ago' },
+      { id: 'ved-r3', name: 'Vikram Singh', location: 'Bapu Nagar, Jaipur', rating: 5, serviceName: 'Kashaya Sekam & Body Detox', comment: 'The herbal steam bath left my skin glowing. My pigmentation has visibly lightened after a month of sessions.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+    ],
+    totalReviewCount: 380,
+    averageRating: 4.94,
+    landmark: 'Gopalpura, Near Ajmeri Gate',
+    parkingInfo: 'Open street parking in front, 1 minute walk',
+    openHourText: '9:00 AM',
     closeHourText: '8:30 PM'
   }
 };
