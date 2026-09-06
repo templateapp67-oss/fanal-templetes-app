@@ -598,7 +598,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   LIVE
                 </span>
                 <span className="font-bold truncate max-w-[260px]">
-                  {siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`)}
+                  {siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `arts-by-uma`)}
                 </span>
                 <span className="text-slate-400">•</span>
                 <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200 shrink-0">
@@ -610,10 +610,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const u = siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`);
+                  const u = siteUrl || (activeProfile.customDomain ? `https://${activeProfile.customDomain}` : (typeof window !== 'undefined' ? `${window.location.origin}/?site=${activeProfile.subdomain || 'arts-by-uma'}` : `https://${activeProfile.subdomain}.nexora.in`));
                   navigator.clipboard?.writeText(u);
                   setCopiedSubdomain(true);
-                  showNotification('Website link copied to clipboard!');
+                  showNotification('Live website link copied to clipboard!');
                   setTimeout(() => setCopiedSubdomain(false), 2000);
                 }}
                 className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
@@ -625,7 +625,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
               {/* Open Site */}
               <a
-                href={siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `${activeProfile.subdomain}.nexora.in`)}
+                href={siteUrl || (activeProfile.customDomain ? `https://${activeProfile.customDomain}` : (typeof window !== 'undefined' ? `${window.location.origin}/?site=${activeProfile.subdomain || 'arts-by-uma'}` : `https://${activeProfile.subdomain}.nexora.in`))}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-colors shrink-0"

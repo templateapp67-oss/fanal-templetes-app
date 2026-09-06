@@ -9,6 +9,7 @@ import { PromoStudio } from './PromoStudio';
 import { LoyaltyManagement } from './LoyaltyManagement';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
+import { getSiteUrl } from '../lib/salonStore';
 
 import { BookingManager } from './BookingManager';
 
@@ -161,9 +162,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
   const handleGenerateSms = () => {
     setMarketingLoading(true);
+    const liveLink = siteUrl || getSiteUrl(profile);
     setTimeout(() => {
       setMarketingSms(
-        `Namaste [Client Name]! We miss your glow at ${profile?.businessName || 'Our Salon'}. Book your favorite service this week and receive an exclusive complimentary botanical scalp or hand spa therapy. Claim your slot: https://${profile?.subdomain || 'salon'}.nexora.in/book`
+        `Namaste [Client Name]! We miss your glow at ${profile?.businessName || 'Arts By Uma'}. Book your favorite service this week and receive an exclusive complimentary treatment. Claim your slot: ${liveLink}`
       );
       setMarketingLoading(false);
     }, 1000);

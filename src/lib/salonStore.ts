@@ -47,6 +47,32 @@ export function getSiteUrl(profile: SalonProfile): string {
     return `https://${profile.customDomain}`;
   }
   const sub = profile.subdomain || slugifySalonName(profile.businessName);
+
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    const host = window.location.hostname;
+    // When running on Vercel (*.vercel.app), sandbox (*.e2b.app), localhost, or Google Cloud Run:
+    // Generate direct shareable live URL so the live customer site is instantly testable/viewable!
+    if (
+      host.includes('vercel.app') ||
+      host.includes('e2b.app') ||
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.endsWith('.run.app')
+    ) {
+      return `${origin}/?site=${sub}`;
+    }
+  }
+
+  return `https://${sub}.nexora.in`;
+}
+
+/** Get the official subdomain format URL (e.g. https://arts-by-uma.nexora.in). */
+export function getSubdomainUrl(profile: SalonProfile): string {
+  if (profile.customDomain) {
+    return `https://${profile.customDomain}`;
+  }
+  const sub = profile.subdomain || slugifySalonName(profile.businessName);
   return `https://${sub}.nexora.in`;
 }
 
