@@ -87,15 +87,6 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Global Error Handler for better debugging
-  app.use((err: any, _req: any, res: any, next: any) => {
-    if (res.headersSent) {
-      return next(err);
-    }
-    console.error('Unhandled Server Error:', err);
-    res.status(500).json({ success: false, error: 'Internal Server Error', details: err.message });
-  });
-
   // API Routes
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", app: "Nexora Salon OS", mode: isMockSupabase ? 'mock' : 'live' });
@@ -106,7 +97,11 @@ async function startServer() {
   // -------------------------------------------------------------------------
   // Map a snake_case Supabase profiles row to the app's SalonProfile shape.
   function mapProfileRow(row: any): SalonProfile {
+    const workingHours = row.working_hours || {};
     return {
+      workingHoursMonFri: workingHours.monFri || '',
+      workingHoursSat: workingHours.saturday || '',
+      workingHoursSun: workingHours.sunday || '',
       ownerId: row.id,
       businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
       businessName: row.salon_name || 'Arts By Uma',
@@ -766,6 +761,18 @@ Return strictly JSON with the following keys:
 
   // Fetch metadata (title / thumbnail / likes) for a single YouTube URL.
   app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+
+  // Global Error Handler for better debugging.
+  // NOTE: must be registered AFTER the routes above — an error middleware
+  // registered before them never fires, so route crashes used to surface as
+  // opaque HTML error pages instead of this JSON payload.
+  app.use((err: any, _req: any, res: any, next: any) => {
+    if (res.headersSent) {
+      return next(err);
+    }
+    console.error('Unhandled Server Error:', err);
+    res.status(500).json({ success: false, error: 'Internal Server Error', details: err.message });
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

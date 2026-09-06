@@ -82,15 +82,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     }
 
     if (result.dataUrl) {
-      setProfile((prev) => {
-        const updated = { ...prev, logoUrl: result.dataUrl };
-        try {
-          localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(updated));
-        } catch (err) {
-          console.warn('LocalStorage save warning:', err);
-        }
-        return updated;
-      });
+      setProfile((prev) => ({
+        ...prev,
+        logoUrl: result.dataUrl,
+      }));
       setAppearanceSuccess(`Logo optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & saved!`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
     }
@@ -110,15 +105,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     }
 
     if (result.dataUrl) {
-      setProfile((prev) => {
-        const updated = { ...prev, coverImageUrl: result.dataUrl };
-        try {
-          localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(updated));
-        } catch (err) {
-          console.warn('LocalStorage save warning:', err);
-        }
-        return updated;
-      });
+      setProfile((prev) => ({
+        ...prev,
+        coverImageUrl: result.dataUrl,
+      }));
       setAppearanceSuccess(`Hero cover optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & saved!`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
     }
@@ -760,15 +750,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            setProfile((prev) => {
-                              const updated = { ...prev, logoUrl: undefined };
-                              try {
-                                localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(updated));
-                              } catch (e) {
-                                console.warn('LocalStorage save warning:', e);
-                              }
-                              return updated;
-                            });
+                            setProfile((prev) => ({
+                              ...prev,
+                              logoUrl: undefined,
+                            }));
                             setAppearanceSuccess('Custom header logo cleared.');
                             setTimeout(() => setAppearanceSuccess(null), 3000);
                           }}
