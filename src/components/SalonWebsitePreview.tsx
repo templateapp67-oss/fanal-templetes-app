@@ -608,10 +608,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 <span className="font-bold truncate max-w-[260px]">
                   {siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `arts-by-uma`)}
                 </span>
-                <span className="text-slate-400">•</span>
-                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200 shrink-0">
-                  INR (₹) Live
-                </span>
               </div>
 
               {/* Copy Link */}

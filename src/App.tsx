@@ -534,7 +534,7 @@ export default function App() {
   }, [user?.id, isMockSupabase]);
 
   // Unified, debounced save
-  const persistSalonState = async (message?: string) => {
+  const persistSalonState = async (message?: string): Promise<boolean> => {
     setSaveStatus('saving');
     try {
       saveSalonState({ profile, services, stylists, loyaltyConfig, selectedTemplateId });
@@ -542,7 +542,7 @@ export default function App() {
 
       if (user && !isMockSupabase) {
         const ownerId = user.id;
-        const ops: unknown[] = [
+        const ops: PromiseLike<{ error: unknown }>[] = [
           supabase.from('profiles').upsert({
             id: ownerId,
             full_name: profile.ownerName,
@@ -572,7 +572,7 @@ export default function App() {
           );
         }
         const results = await Promise.allSettled(ops);
-        if (results.some((r) => r.status === 'rejected')) {
+        if (results.some((r) => r.status === 'rejected' || r.value.error)) {
           throw new Error('One or more cloud tables failed to sync');
         }
       }
@@ -580,10 +580,12 @@ export default function App() {
       setSaveStatus('saved');
       showToast(message || (user ? 'All changes saved to cloud.' : 'Auto-Saved. Website updated.'));
       setTimeout(() => setSaveStatus('idle'), 2500);
+      return true;
     } catch (err) {
       console.warn('Save failed:', err);
       setSaveStatus('error');
       showToast('Save failed. Please try again.', 'error');
+      return false;
     }
   };
 
@@ -601,7 +603,7 @@ export default function App() {
   }, [profile, services, stylists, loyaltyConfig, selectedTemplateId, user?.id, isMockSupabase]);
 
   const handleSaveNow = () => {
-    persistSalonState('Website details updated successfully!');
+    return persistSalonState('Website details updated successfully!');
   };
 
   useEffect(() => {
@@ -804,8 +806,9 @@ export default function App() {
           onComplete={handleWizardComplete}
           selectedTemplateId={selectedTemplateId}
           onSelectTemplate={handleSelectTemplate}
-          siteUrl={getSiteUrl(profile)}
+          siteUrl={getSiteUrl(profile, 'https://fanal-templetes-app.vercel.app')}
           onSave={handleSaveNow}
+          onBackToDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}
         />
       )}
@@ -858,7 +861,11 @@ export default function App() {
 
       {/* Global save toast */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1200] animate-in slide-in-from-bottom">
+        <div
+          role={toast.type === 'error' ? 'alert' : 'status'}
+          aria-atomic="true"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1200] animate-in slide-in-from-bottom"
+        >
           <div
             className={`flex items-center gap-2 px-5 py-3 rounded-2xl shadow-2xl text-sm font-bold border ${
               toast.type === 'error'
