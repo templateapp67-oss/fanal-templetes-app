@@ -21,10 +21,12 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
+import { AIBioModal } from './AIBioModal';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -58,6 +60,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   showToast,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isBioModalOpen, setIsBioModalOpen] = useState(false);
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -213,9 +216,19 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </div>
 
             <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Tagline / Catchphrase
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold font-mono-caps text-gray-700">
+                  Tagline / Catchphrase
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsBioModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#C20E5A] hover:text-[#A30B4A] hover:underline cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Generate with AI / Voice</span>
+                </button>
+              </div>
               <input
                 type="text"
                 value={profile.tagline}
@@ -226,9 +239,19 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </div>
 
             <div className="md:col-span-2">
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                About / Story
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold font-mono-caps text-gray-700">
+                  About / Story
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsBioModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#C20E5A] hover:text-[#A30B4A] hover:underline cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Write with AI</span>
+                </button>
+              </div>
               <textarea
                 rows={3}
                 value={profile.about}
@@ -651,6 +674,18 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           One form • Each field asked once • Auto-synced with the live template
         </p>
       </div>
+
+      <AIBioModal
+        isOpen={isBioModalOpen}
+        onClose={() => setIsBioModalOpen(false)}
+        businessName={profile.businessName}
+        businessType={profile.businessType}
+        ownerName={profile.ownerName}
+        onApply={(bio, tagline) => {
+          upd({ about: bio, tagline });
+          showToast?.('AI Bio & Tagline generated and applied!');
+        }}
+      />
     </div>
   );
 };

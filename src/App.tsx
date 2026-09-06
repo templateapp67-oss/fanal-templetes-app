@@ -250,8 +250,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  // Load the single persistent salon state (profile, services, stylists,
-  // loyalty, and the active template) from localStorage on initial mount.
+  // Load the persistent salon state from localStorage on initial mount.
   const initialSaved = typeof window !== 'undefined' ? loadSalonState() : null;
   const previousTemplateIdRef = React.useRef<BusinessTypeId>(
     initialSaved?.selectedTemplateId || INITIAL_SALON_PROFILE.businessType
@@ -263,12 +262,31 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [user, setUser] = useState<any>(null);
 
+  const [services, setServices] = useState<SalonService[]>(
+    initialSaved?.services || INITIAL_SERVICES
+  );
+  const [stylists, setStylists] = useState<Stylist[]>(
+    initialSaved?.stylists || INITIAL_STYLISTS
+  );
+  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
+  const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
+  const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(
+    initialSaved?.loyaltyConfig || DEFAULT_LOYALTY_CONFIG
+  );
+
+  // Active template id — the single source of truth across the whole app.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<BusinessTypeId>(
+    initialSaved?.selectedTemplateId ||
+      initialSaved?.profile?.businessType ||
+      INITIAL_SALON_PROFILE.businessType
+  );
+
   // -------------------------------------------------------------------------
   // WHITE-LABEL TENANT BOOTSTRAP
-  // When the app is opened on a salon's own public subdomain/custom domain
-  // (e.g. https://uma-hair-cut-styling-studio.nexora.in) we must render that
-  // salon's LIVE public site — NOT the owner dashboard. We detect this by
-  // fetching /api/site (same-origin) which resolves the tenant from the Host.
+  // Supports:
+  //   1. Subdomain / Host lookup (e.g. https://arts-by-uma.nexora.in)
+  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site=arts-by-uma)
+  //   3. Direct public view mode (?view=public)
   // -------------------------------------------------------------------------
   const [siteTenant, setSiteTenant] = useState<{
     isTenant: boolean;
@@ -280,18 +298,51 @@ export default function App() {
     stylists?: Stylist[];
   } | null>(null);
   const [siteLoading, setSiteLoading] = useState<boolean>(true);
-  // True when this page is a salon's public white-label site (not the owner app).
   const isPublicSite = !!siteTenant?.isTenant && siteTenant.found;
 
   useEffect(() => {
     let cancelled = false;
-    const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-    // Skip tenant probing on the app's own/about hosts. We still call /api/site
-    // which returns isTenant:false there; the fetch guards this explicitly.
-    void hostname;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const requestedSite = params?.get('site') || params?.get('subdomain') || params?.get('tenant');
+    const isPublicParam = params?.get('view') === 'public' || params?.has('public');
 
     (async () => {
       try {
+        if (requestedSite) {
+          try {
+            const res = await fetch(`/api/site/${encodeURIComponent(requestedSite)}`, { headers: { Accept: 'application/json' } });
+            const data = await res.json();
+            if (cancelled) return;
+            if (data && data.found && data.salon) {
+              setSiteTenant({
+                isTenant: true,
+                found: true,
+                subdomain: requestedSite,
+                customDomain: null,
+                profile: data.salon?.profile || profile,
+                services: data.salon?.services || services,
+                stylists: data.salon?.stylists || stylists,
+              });
+              return;
+            }
+          } catch {
+            // fallback below
+          }
+
+          // In-memory fallback for Arts By Uma or current active profile
+          if (cancelled) return;
+          setSiteTenant({
+            isTenant: true,
+            found: true,
+            subdomain: requestedSite,
+            customDomain: null,
+            profile: profile,
+            services: services,
+            stylists: stylists,
+          });
+          return;
+        }
+
         const res = await fetch('/api/site', { headers: { Accept: 'application/json' } });
         const data = await res.json();
         if (cancelled) return;
@@ -301,16 +352,38 @@ export default function App() {
             found: !!data.found,
             subdomain: data.tenant?.subdomain,
             customDomain: data.tenant?.customDomain,
-            profile: data.salon?.profile,
-            services: data.salon?.services,
-            stylists: data.salon?.stylists,
+            profile: data.salon?.profile || profile,
+            services: data.salon?.services || services,
+            stylists: data.salon?.stylists || stylists,
+          });
+        } else if (isPublicParam) {
+          setSiteTenant({
+            isTenant: true,
+            found: true,
+            subdomain: profile.subdomain || 'arts-by-uma',
+            customDomain: null,
+            profile: profile,
+            services: services,
+            stylists: stylists,
           });
         } else {
           setSiteTenant({ isTenant: false, found: false });
         }
       } catch (err) {
         console.warn('Could not resolve site tenant:', err);
-        if (!cancelled) setSiteTenant({ isTenant: false, found: false });
+        if (requestedSite || isPublicParam) {
+          setSiteTenant({
+            isTenant: true,
+            found: true,
+            subdomain: requestedSite || profile.subdomain || 'arts-by-uma',
+            customDomain: null,
+            profile: profile,
+            services: services,
+            stylists: stylists,
+          });
+        } else {
+          setSiteTenant({ isTenant: false, found: false });
+        }
       } finally {
         if (!cancelled) setSiteLoading(false);
       }
@@ -331,13 +404,6 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 3200);
   };
 
-  // Active template id — the single source of truth across the whole app.
-  const [selectedTemplateId, setSelectedTemplateId] = useState<BusinessTypeId>(
-    initialSaved?.selectedTemplateId ||
-      initialSaved?.profile?.businessType ||
-      INITIAL_SALON_PROFILE.businessType
-  );
-
   useEffect(() => {
     previousTemplateIdRef.current = selectedTemplateId;
   }, [selectedTemplateId]);
@@ -345,7 +411,6 @@ export default function App() {
   // Auth State Listener
   useEffect(() => {
     if (isMockSupabase) {
-      console.log('Running in Mock Auth Mode');
       return;
     }
 
@@ -360,16 +425,12 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Keep the logged-in owner id available on the profile so records (bookings,
-  // appointments, clients) can be attributed to the right owner.
   useEffect(() => {
     if (isMockSupabase) return;
     setProfile((prev) => ({ ...prev, ownerId: user?.id ?? undefined }));
   }, [user?.id, isMockSupabase]);
 
-  // Auto-Fetch Profile Sync — autofills salon name, phone, city, owner name
-  // from the logged-in user's Supabase profile AND their auth metadata, so the
-  // onboarding form is pre-populated the moment they sign in.
+  // Auto-Fetch Profile Sync
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user || isMockSupabase) return;
@@ -377,7 +438,7 @@ export default function App() {
       const meta = user.user_metadata || {};
 
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
@@ -398,7 +459,6 @@ export default function App() {
             landmark: data.landmark || prev.landmark,
           }));
         } else {
-          // No profile row yet — seed from auth metadata.
           setProfile((prev) => ({
             ...prev,
             businessName: meta.salon_name || prev.businessName,
@@ -416,18 +476,6 @@ export default function App() {
     fetchProfile();
   }, [user]);
 
-  const [services, setServices] = useState<SalonService[]>(
-    initialSaved?.services || INITIAL_SERVICES
-  );
-  const [stylists, setStylists] = useState<Stylist[]>(
-    initialSaved?.stylists || INITIAL_STYLISTS
-  );
-  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
-  const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
-  const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(
-    initialSaved?.loyaltyConfig || DEFAULT_LOYALTY_CONFIG
-  );
-
   // Sync Supabase Realtime Data
   useEffect(() => {
     const fetchSyncData = async () => {
@@ -444,12 +492,11 @@ export default function App() {
     };
 
     fetchSyncData();
-    const interval = setInterval(fetchSyncData, 3000); // Polling for mock mode support and fast sync
+    const interval = setInterval(fetchSyncData, 3000);
     return () => clearInterval(interval);
   }, []);
 
-  // Hydrate services / staff / loyalty from Supabase once the owner logs in,
-  // so their management screens reflect the persisted catalogue.
+  // Hydrate services / staff / loyalty from Supabase once the owner logs in
   useEffect(() => {
     if (!user || isMockSupabase) return;
     let cancelled = false;
@@ -486,19 +533,13 @@ export default function App() {
     };
   }, [user?.id, isMockSupabase]);
 
-  // -------------------------------------------------------------------------
-  // Unified, debounced save: every change to the global salon state is written
-  // to localStorage (always) and to Supabase (when the owner is signed in),
-  // then the save-status pill + toast give instant feedback.
-  // -------------------------------------------------------------------------
+  // Unified, debounced save
   const persistSalonState = async (message?: string) => {
     setSaveStatus('saving');
     try {
-      // Always persist to localStorage (works even in preview/mock mode).
       saveSalonState({ profile, services, stylists, loyaltyConfig, selectedTemplateId });
       localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(profile));
 
-      // Sync to Supabase when an owner is signed in.
       if (user && !isMockSupabase) {
         const ownerId = user.id;
         const ops: unknown[] = [
@@ -537,7 +578,7 @@ export default function App() {
       }
 
       setSaveStatus('saved');
-      showToast(message || (user ? 'All changes saved to cloud.' : 'Auto-Saved. Website updated locally.'));
+      showToast(message || (user ? 'All changes saved to cloud.' : 'Auto-Saved. Website updated.'));
       setTimeout(() => setSaveStatus('idle'), 2500);
     } catch (err) {
       console.warn('Save failed:', err);
@@ -546,7 +587,6 @@ export default function App() {
     }
   };
 
-  // Auto-save (debounced) whenever the global salon state changes.
   useEffect(() => {
     if (firstPersistRef.current) {
       firstPersistRef.current = false;
@@ -560,12 +600,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, services, stylists, loyaltyConfig, selectedTemplateId, user?.id, isMockSupabase]);
 
-  // Explicit "Save & Update Website" button.
   const handleSaveNow = () => {
     persistSalonState('Website details updated successfully!');
   };
 
-  // Sync primary accent CSS variable to :root whenever profile theme changes
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
     const pal = ACCENT_PALETTES[accentKey];
@@ -574,9 +612,6 @@ export default function App() {
     applyPrimaryAccentCssVar(primaryColor, secondaryColor);
   }, [profile.themeAccentKey, profile.customAccentColor]);
 
-  // Single source of truth for template selection across the whole app.
-  // Switching templates THEMES the layout but PRESERVES the owner's own input
-  // (salon name, phone, city, address, services, pricing, etc.).
   const handleSelectTemplate = (catId: BusinessTypeId) => {
     const tmpl = CATEGORY_TEMPLATES[catId];
     if (!tmpl) return;
@@ -590,8 +625,6 @@ export default function App() {
     previousTemplateIdRef.current = catId;
   };
 
-  // From the landing-page template cards -> open the onboarding wizard at the
-  // business details step with the template pre-applied (data preserved).
   const handleSelectCategory = (catId: BusinessTypeId) => {
     handleSelectTemplate(catId);
     setWizardStartingStep(2);
@@ -599,10 +632,8 @@ export default function App() {
   };
 
   const handleAddAppointment = async (newApt: Appointment) => {
-    // 1. Optimistic Update of Local State
     setAppointments((prev) => [newApt, ...prev]);
 
-    // Calculate loyalty points earned: base visit points + spend points * multiplier
     const spendPoints = Math.round((newApt.servicePrice / 100) * loyaltyConfig.pointsPerHundredSpent);
     const baseVisitPoints = loyaltyConfig.pointsPerVisit;
     const earnedPoints = baseVisitPoints + spendPoints;
@@ -674,15 +705,7 @@ export default function App() {
       setClients((prev) => [newClientRecord as ClientRecord, ...prev]);
     }
 
-    // 2. Sync to Supabase in Background
-    if (isMockSupabase) return;
-
-    // On a public (white-label) site the guest has no auth session, so we must
-    // NOT attempt a direct client-side insert — the BookingModal already
-    // persisted the booking through the trusted /api/bookings/create endpoint
-    // (service-role). Only mirror the optimistic appointment to Supabase for
-    // the signed-in owner's dashboard.
-    if (isPublicSite) return;
+    if (isMockSupabase || isPublicSite) return;
 
     const ownerId = user?.id ?? profile.ownerId;
 
@@ -698,7 +721,7 @@ export default function App() {
         await supabase.from('clients').insert([toClientInsert(newClientRecord, ownerId)]);
       }
     } catch (err) {
-      console.warn('Supabase real-time sync failed for add appointment, relying on mock fallback.', err);
+      console.warn('Supabase real-time sync fallback.', err);
     }
   };
 
@@ -712,23 +735,18 @@ export default function App() {
     }
   };
 
-  // Completing the wizard -> immediately jump straight into the full live
-  // interactive preview using the owner's saved data + selected template.
   const handleWizardComplete = () => {
     localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
     setCurrentView('preview');
   };
 
-  // -------------------------------------------------------------------------
-  // PUBLIC (WHITE-LABEL) SITE RENDER
-  // On a salon's own subdomain/custom domain we render the tenant's LIVE site
-  // in read-only mode — no owner header, no dashboard, no editable controls.
-  // The salon's services feed through the existing booking flow.
-  // -------------------------------------------------------------------------
   const publicProfile = (siteTenant?.profile || profile) as SalonProfile;
   const publicServices = (siteTenant?.services || services) as SalonService[];
   const publicStylists = (siteTenant?.stylists || stylists) as Stylist[];
 
+  // -------------------------------------------------------------------------
+  // PUBLIC LIVE SITE RENDER
+  // -------------------------------------------------------------------------
   if (isPublicSite) {
     return (
       <div className="min-h-screen bg-surface text-on-surface">
@@ -766,7 +784,6 @@ export default function App() {
         <LandingPage 
           setCurrentView={(view) => {
             if (view === 'preview') {
-              // If user clicks "Explore", we start wizard at Step 1 (Category Select)
               setWizardStartingStep(1);
               setCurrentView('wizard');
             } else {

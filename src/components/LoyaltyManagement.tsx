@@ -14,6 +14,7 @@ import {
   calculateRewardProgress, 
   generateCouponCode 
 } from '../loyaltyData';
+import { getSiteUrl } from '../lib/salonStore';
 
 interface LoyaltyManagementProps {
   clients: ClientRecord[];
@@ -298,7 +299,7 @@ ${
 }
 
 📍 *Book your next appointment online*:
-https://${profile.subdomain}.nexora.in/book
+${getSiteUrl(profile)}
 
 We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
 

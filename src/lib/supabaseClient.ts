@@ -5,15 +5,27 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 // The browser build only ever gets the *anon* key; the service-role key is
 // read exclusively in the Node server/Edge Functions and is NEVER bundled.
 // ---------------------------------------------------------------------------
-const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
-const nodeEnv = typeof process !== 'undefined' ? (process.env ?? {}) : {};
+const getEnvVar = (key: string, viteKey?: string): string => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key] || '';
+  }
+  if (viteKey && typeof process !== 'undefined' && process.env && process.env[viteKey]) {
+    return process.env[viteKey] || '';
+  }
+  try {
+    const metaEnv = (import.meta as any)?.env;
+    if (metaEnv) {
+      return (viteKey && metaEnv[viteKey]) || metaEnv[key] || '';
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+};
 
-export const SUPABASE_URL: string =
-  env.VITE_SUPABASE_URL || nodeEnv.VITE_SUPABASE_URL || nodeEnv.SUPABASE_URL || '';
-export const SUPABASE_ANON_KEY: string =
-  env.VITE_SUPABASE_ANON_KEY || nodeEnv.VITE_SUPABASE_ANON_KEY || nodeEnv.SUPABASE_ANON_KEY || '';
-export const SUPABASE_SERVICE_ROLE_KEY: string =
-  nodeEnv.SUPABASE_SERVICE_ROLE_KEY || nodeEnv.SUPABASE_SERVICE_KEY || '';
+export const SUPABASE_URL: string = getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL');
+export const SUPABASE_ANON_KEY: string = getEnvVar('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY');
+export const SUPABASE_SERVICE_ROLE_KEY: string = getEnvVar('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY');
 
 const isRealSupabase =
   !!SUPABASE_URL &&

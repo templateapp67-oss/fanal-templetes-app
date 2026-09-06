@@ -47,6 +47,27 @@ export function getSiteUrl(profile: SalonProfile): string {
     return `https://${profile.customDomain}`;
   }
   const sub = profile.subdomain || slugifySalonName(profile.businessName);
+
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    const host = window.location.hostname;
+    // If running under official nexora.in production domain:
+    if (host.endsWith('nexora.in') && !host.startsWith('localhost')) {
+      return `https://${sub}.nexora.in`;
+    }
+    // For Vercel deployments, preview hosts, sandbox, localhost:
+    return `${origin}/?site=${sub}`;
+  }
+
+  return `https://${sub}.nexora.in`;
+}
+
+/** Get the official subdomain format URL (e.g. https://arts-by-uma.nexora.in). */
+export function getSubdomainUrl(profile: SalonProfile): string {
+  if (profile.customDomain) {
+    return `https://${profile.customDomain}`;
+  }
+  const sub = profile.subdomain || slugifySalonName(profile.businessName);
   return `https://${sub}.nexora.in`;
 }
 

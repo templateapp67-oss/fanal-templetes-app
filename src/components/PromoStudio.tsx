@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SalonProfile, SalonService } from '../types';
 import { CATEGORY_STANDARDIZED_DATA } from '../templateData';
+import { getSiteUrl } from '../lib/salonStore';
 
 interface PromoStudioProps {
   profile: SalonProfile;
@@ -123,7 +124,8 @@ export const PromoStudio: React.FC<PromoStudioProps> = ({
     }
 
     // Generate WhatsApp Template
-    const bookingUrl = `https://${subDomain}.nexora.in/book?service=${encodeURIComponent(selectedService.name)}`;
+    const liveSite = getSiteUrl(profile);
+    const bookingUrl = liveSite;
     const waText = `✨ *SPECIAL INVITATION FROM ${bizName.toUpperCase()}* ✨
 
 Namaste! 🌸
@@ -334,8 +336,9 @@ ${bookingUrl}
       // 7. Bottom Call To Action & Subdomain
       const bottomY = height - 70;
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
-      ctx.fillText(`Book Online: https://${profile.subdomain || 'salon'}.nexora.in`, 60, bottomY);
+      ctx.font = 'bold 24px "Plus Jakarta Sans", sans-serif';
+      const displayUrl = getSiteUrl(profile).replace(/^https?:\/\//, '');
+      ctx.fillText(`Book Online: ${displayUrl}`, 60, bottomY);
 
       // Trigger Download
       const link = document.createElement('a');
@@ -769,8 +772,8 @@ ${bookingUrl}
 
                   <div className="text-right">
                     <div className="text-[9px] text-gray-300 font-mono">Book Instantly Online:</div>
-                    <div className="text-[11px] font-bold text-emerald-400 font-mono truncate max-w-[150px]">
-                      {profile.subdomain}.nexora.in
+                    <div className="text-[11px] font-bold text-emerald-400 font-mono truncate max-w-[180px]">
+                      {getSiteUrl(profile).replace(/^https?:\/\//, '')}
                     </div>
                   </div>
                 </div>
