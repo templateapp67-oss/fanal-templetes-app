@@ -41,7 +41,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
               </h1>
 
               <p className="text-base text-on-surface-variant max-w-xl leading-relaxed">
-                14 handcrafted category templates designed specifically for Indian salons, spas, aesthetic clinics, and parlours. Complete with INR (₹) rates, localized sub-categories, stylist portfolios, and instant WhatsApp booking.
+                27 handcrafted category templates designed specifically for Indian salons, spas, aesthetic clinics, and parlours. Complete with INR (₹) rates, localized sub-categories, stylist portfolios, and instant WhatsApp booking.
               </p>
             </div>
 

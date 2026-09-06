@@ -172,7 +172,20 @@ export const DEFAULT_CATEGORY_ACCENTS: Record<BusinessTypeId, AccentPaletteKey> 
   bridal_lounge: 'crimson',
   tattoo_studio: 'obsidian',
   lash_brow: 'purple',
-  ayurvedic_spa: 'emerald'
+  ayurvedic_spa: 'emerald',
+  ayurvedic_wellness_spa: 'emerald',
+  luxury_hair_salon: 'obsidian',
+  bridal_makeover_studio: 'rose',
+  family_salon: 'ocean',
+  barber_grooming_club: 'mahogany',
+  nails_lash_brow_bar: 'crimson',
+  medispa_aesthetics: 'ocean',
+  organic_bio_salon: 'emerald',
+  express_beauty_bar: 'crimson',
+  thai_massage_center: 'mahogany',
+  kids_teens_studio: 'rose',
+  resort_spa: 'ocean',
+  vedic_ayurveda_studio: 'mahogany'
 };
 
 /**

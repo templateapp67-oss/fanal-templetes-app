@@ -1281,7 +1281,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     layoutStyle: 'urban_monochrome',
     paletteLabel: 'Edgy Dark Urban Layout & Monochrome Design',
     themePreset: 'urban_monochrome',
-    subCategories: ['Custom Blackwork', 'Fine-Line Realism', 'Body Piercing', 'Tattoo Cover-ups'],
+    subCategories: ['Dark Realism', 'Monochrome', 'Body Piercing', 'Flash Art'],
     defaultCity: 'New Delhi',
     defaultAddress: 'Building 14, Hauz Khas Village, Near Deer Park',
     defaultPostalCode: '110016',
@@ -1311,50 +1311,41 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     services: [
       {
         id: 'ts-1',
-        name: 'Custom Blackwork Full Sleeve Session (3 Hours)',
-        category: 'Custom Blackwork',
+        name: 'Custom Dark Realism',
+        category: 'Dark Realism',
         durationMinutes: 180,
         price: 6000,
-        description: 'Bespoke geometric dotwork, dark mythological themes, and solid black saturation using Dynamic Triple Black ink.',
+        description: 'In a sleek dark-mode urban studio, every custom dark realism piece is built as a bespoke work of art—deep blacks, razor-precise shading, zero compromise. Sterile surgical precision meets raw edge, and the finished tattoo becomes a bold act of self-expression.',
         icon: 'brush',
         popular: true
       },
       {
         id: 'ts-2',
-        name: 'Minimalist Micro Fine-Line Script / Botanical',
-        category: 'Fine-Line Realism',
-        durationMinutes: 60,
-        price: 2500,
-        description: 'Single-needle precise lettering, Devanagari calligraphy, or delicate wildflower outlines.',
-        icon: 'edit',
-        popular: true
+        name: 'High-Contrast Monochrome',
+        category: 'Monochrome',
+        durationMinutes: 120,
+        price: 4500,
+        description: 'Jet-black saturation against bare skin, carved in high-contrast monochrome that reads sharp from across the room. Bespoke artistic craftsmanship and sterile surgical precision deliver a sleek, urban statement of pure self-expression.',
+        icon: 'invert_colors'
       },
       {
         id: 'ts-3',
-        name: 'Hyper-Realistic Portrait & Shading Art',
-        category: 'Fine-Line Realism',
-        durationMinutes: 240,
-        price: 8500,
-        description: 'Smooth greywash transitions and photo-realistic animal/portrait execution by master artists.',
-        icon: 'image'
-      },
-      {
-        id: 'ts-4',
-        name: 'Implant-Grade Titanium Ear/Nose Piercing',
+        name: 'Surgical Body Piercings',
         category: 'Body Piercing',
-        durationMinutes: 30,
-        price: 1200,
-        description: 'Surgical aseptic technique, sterile needle puncture, and ASTM F-136 titanium stud included.',
+        durationMinutes: 45,
+        price: 1500,
+        description: 'Implant-grade titanium, single-use surgical needles, and spotless sterile technique—body piercing with surgical precision in a sleek dark-mode urban setting. Every piercing is a deliberate, bespoke act of self-expression, crafted with edge-driven care.',
         icon: 'adjust'
       },
       {
-        id: 'ts-5',
-        name: 'Old Tattoo Redesign & Blast-Over Cover-up',
-        category: 'Tattoo Cover-ups',
-        durationMinutes: 150,
-        price: 5000,
-        description: 'Clever restructuring of faded, unwanted ink into a contemporary high-density dark art piece.',
-        icon: 'recycling'
+        id: 'ts-4',
+        name: 'Flash Art Tattoos',
+        category: 'Flash Art',
+        durationMinutes: 60,
+        price: 2500,
+        description: 'Bold designs from the studio’s ever-evolving flash wall, laid down with a steady, edge-driven hand and sterile surgical precision. Each piece is finished with bespoke artistic craftsmanship—instant, unmistakable self-expression in sleek dark style.',
+        icon: 'image',
+        popular: true
       }
     ],
     stylists: [
@@ -1507,12 +1498,12 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     title: 'Veda Sanjeevani Ayurvedic Wellness & Spa',
     shortName: 'Ayurvedic Rejuvenation Spa',
     tagline: 'Authentic Kerala Panchakarma, Medicated Shirodhara & Vedic Herbal Lepams',
-    about: 'Housed in an authentic heritage courtyard in Fort Kochi, Kerala, Veda Sanjeevani practices pure Ashtanga Ayurveda under the stewardship of traditional Vaidyas. Experience centuries-old 4-hand Abhyangam, warm oil Shirodhara, and custom herbal Kizhies.',
+    about: 'Housed in an authentic heritage courtyard in Fort Kochi, Kerala, Veda Sanjeevani practices pure Ashtanga Ayurveda under the stewardship of traditional Vaidyas. Experience centuries-old Abhyanga, warm oil Shirodhara, Vedic herbal lepams, and authentic panchakarma rituals.',
     icon: 'eco',
     layoutStyle: 'ayurvedic_terracotta',
     paletteLabel: 'Traditional Indian Heritage & Terracotta/Copper Accents',
     themePreset: 'ayurvedic_terracotta',
-    subCategories: ['Abhyangam Therapies', 'Shirodhara Streams', 'Herbal Kizhies', 'Panchakarma Detox'],
+    subCategories: ['Panchakarma', 'Shirodhara Streams', 'Herbal Lepams', 'Abhyangam Therapies'],
     defaultCity: 'Fort Kochi, Kerala',
     defaultAddress: 'Princess Street Heritage Zone, Fort Kochi',
     defaultPostalCode: '682001',
@@ -1542,51 +1533,41 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     services: [
       {
         id: 'as-1',
-        name: 'Traditional 4-Hand Abhyangam Full Body Therapy',
-        category: 'Abhyangam Therapies',
-        durationMinutes: 75,
-        price: 2800,
-        description: 'Synchronized massage by two certified masseurs using medicated Dhanwantharam warm herbal oil over wood Droni.',
-        icon: 'self_improvement',
+        name: 'Authentic Kerala Panchakarma',
+        category: 'Panchakarma',
+        durationMinutes: 90,
+        price: 4500,
+        description: 'The five-fold purification ritual of traditional Kerala Ayurvedic heritage, performed with authentic herbal remedies prepared according to classical texts. This deeply healing journey restores holistic mind-body balance inside a tranquil sensory retreat by the backwaters.',
+        icon: 'spa',
         popular: true
       },
       {
         id: 'as-2',
-        name: 'Medicated Herbal Oil Shirodhara Stream Therapy',
+        name: 'Medicated Shirodhara',
         category: 'Shirodhara Streams',
         durationMinutes: 60,
         price: 3200,
-        description: 'Continuous soothing stream of warm herbal oil poured onto the Ajna third-eye chakra for profound mental peace.',
+        description: 'A continuous stream of warm medicated oil, drawn from traditional Kerala Ayurvedic heritage, is poured in perfect unbroken rhythm over the Ajna third-eye point. Authentic herbal remedies calm the mind deeply, restoring holistic mind-body balance within a tranquil sensory retreat.',
         icon: 'water_drop',
         popular: true
       },
       {
         id: 'as-3',
-        name: 'Elakizhi Warm Herbal Leaf Poultice Relief',
-        category: 'Herbal Kizhies',
-        durationMinutes: 60,
-        price: 2600,
-        description: 'Herbal leaves fried in castor oil packed in cloth boluses to eliminate joint inflammation and chronic pain.',
-        icon: 'eco'
+        name: 'Vedic Herbal Lepams',
+        category: 'Herbal Lepams',
+        durationMinutes: 50,
+        price: 1800,
+        description: 'Fresh-ground packs of sandalwood, turmeric, and seasonal Kerala botanicals are applied in the time-honoured tradition of Vedic lepams. Authentic herbal remedies work gently on skin and spirit alike—a deeply healing step toward holistic mind-body balance.',
+        icon: 'face'
       },
       {
         id: 'as-4',
-        name: 'Full Panchakarma Detox & Vaidya Pulse Diagnosis',
-        category: 'Panchakarma Detox',
-        durationMinutes: 90,
-        price: 4500,
-        description: 'Detailed Nadi Pariksha, dosha constitutional mapping, herbal steam bath (Swedana), and personalized dietary chart.',
-        icon: 'spa',
-        popular: true
-      },
-      {
-        id: 'as-5',
-        name: 'Mukha Lepam Ayurvedic Sandalwood Radiance Pack',
+        name: 'Abhyanga Body Massage',
         category: 'Abhyangam Therapies',
-        durationMinutes: 50,
-        price: 1500,
-        description: 'Exfoliation with green gram flour followed by fresh red sandalwood and saffron paste for natural glow.',
-        icon: 'face'
+        durationMinutes: 75,
+        price: 2800,
+        description: 'Warm, authentic herbal oils glide over the body in slow, synchronized strokes, honouring the traditional Kerala Ayurvedic heritage of Abhyanga. The deeply healing rhythm eases fatigue and restores holistic mind-body balance, grounding you in a tranquil sensory retreat.',
+        icon: 'self_improvement'
       }
     ],
     stylists: [
@@ -1613,6 +1594,1393 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
         avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
         specialties: ['Shirodhara Streams', 'Mukha Lepam'],
         rating: 4.92
+      }
+    ]
+  },
+
+  // 15. Ayurvedic & Wellness Spa (Newly Added)
+  ayurvedic_wellness_spa: {
+    id: 'ayurvedic_wellness_spa',
+    title: 'Sattva Ayurvedic & Wellness Spa',
+    shortName: 'Ayurvedic & Wellness Spa',
+    tagline: 'Dosha-Balancing Herbal Therapies, Nadi Pariksha Consultations & Deep Restorative Wellness',
+    about: 'Set beside the Ganges in Rishikesh, Sattva Ayurvedic & Wellness Spa unites classical Ashtanga Ayurveda with modern wellness care. Every journey begins with a Nadi Pariksha pulse diagnosis, followed by bespoke therapies in authentic Dhanwantharam and Bringamadi herbs that restore Vata, Pitta, and Kapha balance.',
+    icon: 'spa',
+    layoutStyle: 'botanical_wellness',
+    paletteLabel: 'Sage Jade & Botanical Wellness Theme',
+    themePreset: 'sage_jade_botanical',
+    subCategories: ['Abhyangam Therapies', 'Shirodhara Streams', 'Herbal Kizhies', 'Panchakarma Detox'],
+    defaultCity: 'Rishikesh, Uttarakhand',
+    defaultAddress: 'Lakshman Jhula, Tapovan, Near Parvati Ashram',
+    defaultPostalCode: '249201',
+    phone: '+91 98970 66241',
+    whatsapp: '+91 98970 66241',
+    ownerName: 'Dr. Ananya Vaidya',
+    ownerRole: 'BAMS Ayurvedic Physician & Wellness Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@sattvaayurveda.rishikesh',
+    themeStyle: {
+      heroBackground: 'bg-[#122b23]',
+      heroTextColor: 'text-[#f2f7f0]',
+      cardBorder: 'border-[#cfe3d4]',
+      cardBackground: 'bg-[#f8fbf7]',
+      cardRadius: 'rounded-2xl',
+      accentColor: 'text-[#1f6f4a]',
+      accentBg: 'bg-[#1f6f4a]',
+      badgeBg: 'bg-[#e4f2e8]',
+      badgeText: 'text-[#14532d]',
+      buttonBg: 'bg-[#1f6f4a] hover:bg-[#175138]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#175138]',
+      isDark: false,
+      headerBanner: 'bg-[#f0f7f1] border-b border-[#d7e9dc]'
+    },
+    services: [
+      {
+        id: 'aws-1',
+        name: 'Abhyangam Full Body Therapy',
+        category: 'Abhyangam Therapies',
+        durationMinutes: 75,
+        price: 2800,
+        description: 'Following a Nadi Pariksha pulse diagnosis that tunes the oil and pressure to your constitution, two therapists perform synchronized strokes of warm medicated Dhanwantharam tailam over the entire body on a traditional wooden droni. The rhythmic herbal massage settles aggravated Vata, dissolves Kapha heaviness in the muscles, and carries you into deep, whole-body physical relaxation.',
+        icon: 'self_improvement',
+        popular: true
+      },
+      {
+        id: 'aws-2',
+        name: 'Medicated Shirodhara Stream',
+        category: 'Shirodhara Streams',
+        durationMinutes: 60,
+        price: 3200,
+        description: 'A continuous, unbroken stream of warm Bringamadi oil—slow-infused with bhringraj, brahmi, and ashwagandha—is poured rhythmically over the Ajna third-eye point for a full hour of meditative stillness. This classical therapy cools an overheated Pitta mind, calms a racing Vata, and soothes the nervous system into profound mental peace and deep physical relaxation.',
+        icon: 'water_drop',
+        popular: true
+      },
+      {
+        id: 'aws-3',
+        name: 'Elakizhi Warm Herbal Poultice',
+        category: 'Herbal Kizhies',
+        durationMinutes: 60,
+        price: 2600,
+        description: 'Fresh medicinal leaves fried in a Dhanwantharam oil base are bound in hand-woven cloth boluses and tapped with warm, percussive pressure over aching joints and stiff muscles. The penetrating herbal heat loosens Vata-trapped stiffness, unblocks stagnant Kapha, and melts chronic tension into a warm, deep physical relaxation.',
+        icon: 'eco'
+      },
+      {
+        id: 'aws-4',
+        name: 'Swedana Steam & Detox',
+        category: 'Panchakarma Detox',
+        durationMinutes: 45,
+        price: 2400,
+        description: 'Guided by a Nadi Pariksha pulse reading that gauges the right heat and duration for your dosha, aromatic herbal steam (swedana) opens the pores and draws out accumulated ama toxins from deep in the tissues. This dosha-targeted detox bath softens hardened Pitta and Kapha deposits while the gentle, fragrant heat melts away fatigue for complete, deep physical relaxation.',
+        icon: 'spa'
+      }
+    ],
+    stylists: [
+      {
+        id: 'aws-st-1',
+        name: 'Dr. Ananya Vaidya',
+        role: 'BAMS Ayurvedic Physician',
+        avatarUrl: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Nadi Pariksha', 'Dosha Balancing', 'Panchakarma Protocols'],
+        rating: 4.98
+      },
+      {
+        id: 'aws-st-2',
+        name: 'Ramesh Thampuran',
+        role: 'Senior Ayurvedic Masseur & Marma Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['4-Hand Abhyangam', 'Elakizhi Kizhi', 'Swedana Steam'],
+        rating: 4.94
+      },
+      {
+        id: 'aws-st-3',
+        name: 'Lakshmi Raghavan',
+        role: 'Shirodhara & Herbal Therapy Expert',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Bringamadi Shirodhara', 'Herbal Lepams', 'Wellness Nutrition'],
+        rating: 4.91
+      }
+    ]
+  },
+
+  // 16. Premium Luxury Hair Salon (Newly Added)
+  luxury_hair_salon: {
+    id: 'luxury_hair_salon',
+    title: 'Maison Éclat Hair Atelier',
+    shortName: 'Premium Luxury Hair Salon',
+    tagline: 'Haute Hair Couture, Kérastase Rituals & Red-Carpet Precision Gloss',
+    about: 'Housed in a private atelier on Lavelle Road, New Delhi, Maison Éclat is a luxury hair house where every appointment opens with a bespoke hair-mapping consultation. Our Kérastase-certified master artists craft precision dry sculpting, hand-painted balayage, Olaplex molecular repair, and mirror-gloss keratin rituals with couture precision.',
+    icon: 'workspace_premium',
+    layoutStyle: 'haute_luxe',
+    paletteLabel: 'Onyx & Champagne Gold Theme',
+    themePreset: 'onyx_champagne_gold',
+    subCategories: ['Precision Sculpting', 'Color & Glossing', 'Bond Repair & Care', 'Smoothing & Gloss'],
+    defaultCity: 'New Delhi',
+    defaultAddress: 'Lavelle Road, South Extension II, Near ITC Maurya',
+    defaultPostalCode: '110049',
+    phone: '+91 98108 55672',
+    whatsapp: '+91 98108 55672',
+    ownerName: 'Aarav Malhotra',
+    ownerRole: 'Founder & Creative Hair Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@maisoneclat.delhi',
+    themeStyle: {
+      heroBackground: 'bg-[#101014]',
+      heroTextColor: 'text-[#f6f1e7]',
+      cardBorder: 'border-[#e6d9bd]',
+      cardBackground: 'bg-[#fdfbf7]',
+      cardRadius: 'rounded-xl',
+      accentColor: 'text-[#a0824a]',
+      accentBg: 'bg-[#a0824a]',
+      badgeBg: 'bg-[#f3ead6]',
+      badgeText: 'text-[#6f5827]',
+      buttonBg: 'bg-[#a0824a] hover:bg-[#8a6d3c]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#8a6d3c]',
+      isDark: false,
+      headerBanner: 'bg-[#faf7f0] border-b border-[#e6d9bd]'
+    },
+    services: [
+      {
+        id: 'lhx-1',
+        name: 'Precision Sculpt & Hair Design',
+        category: 'Precision Sculpting',
+        durationMinutes: 60,
+        price: 4500,
+        description: 'Every cut opens with a bespoke hair-mapping consultation where the master artist reads your face geometry, density, and growth patterns before sculpting begins. Haute-styling techniques—dry-cut architecture, razor-pointing, and thermal memory styling sealed with Kérastase Élixir Ultime—deliver a precision silhouette with long-lasting shape and mirror-finish gloss.',
+        icon: 'content_cut',
+        popular: true
+      },
+      {
+        id: 'lhx-2',
+        name: 'Balayage & French Glossing',
+        category: 'Color & Glossing',
+        durationMinutes: 180,
+        price: 12000,
+        description: 'Hand-painted balayage is artfully mapped to your face and skin undertones, then sealed with a Kérastase Gloss Absolu tonal gloss that wraps every strand in liquid-light shine. The couture finish keeps dimension luminous and the gloss long-lasting for up to eight weeks after your visit.',
+        icon: 'brush',
+        popular: true
+      },
+      {
+        id: 'lhx-3',
+        name: 'Olaplex Bond Repair Spa',
+        category: 'Bond Repair & Care',
+        durationMinutes: 90,
+        price: 6500,
+        description: 'A personalized hair-mapping diagnosis pinpoints broken disulfide bonds, then Olaplex No. 1, No. 2, and No. 3 rebuild strength from within the fiber in a haute-styling molecular repair ritual. The session closes with a Kérastase rescue mask and silk pressing, leaving every strand fortified, elastic, and resilient.',
+        icon: 'auto_awesome'
+      },
+      {
+        id: 'lhx-4',
+        name: 'Keratin Smoothing Treatment',
+        category: 'Smoothing & Gloss',
+        durationMinutes: 150,
+        price: 15000,
+        description: 'Following a strand-by-strand hair-mapping assessment, a Kérastase-infused formaldehyde-light keratin complex is bonded into the fiber with couture-grade flat-iron sealing, erasing up to 95% of frizz from root to tip. The result is long-lasting strength and a liquid gloss that keeps hair smooth, bouncy, and mirror-shine for up to four months.',
+        icon: 'auto_fix_high'
+      }
+    ],
+    stylists: [
+      {
+        id: 'lhx-st-1',
+        name: 'Aarav Malhotra',
+        role: 'Creative Director & Master Stylist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Precision Dry Cutting', 'Face-Geometry Mapping', 'Haute Styling'],
+        rating: 4.99
+      },
+      {
+        id: 'lhx-st-2',
+        name: 'Ishita Kapoor',
+        role: 'Director of Color & Gloss',
+        avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+        specialties: ['French Balayage', 'Tonal Glossing', 'Kérastase Color'],
+        rating: 4.96
+      },
+      {
+        id: 'lhx-st-3',
+        name: 'Zoya Fernandes',
+        role: 'Senior Keratin & Texture Stylist',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Keratin Smoothing', 'Thermal Sculpting', 'Olaplex Rituals'],
+        rating: 4.92
+      }
+    ]
+  },
+
+  // 17. Bridal & Makeover Studio (Newly Added)
+  bridal_makeover_studio: {
+    id: 'bridal_makeover_studio',
+    title: 'Rose & Ivory Bridal Atelier',
+    shortName: 'Bridal & Makeover Studio',
+    tagline: 'HD Airbrush Bridal Glam, Moodboard-Driven Styling & Flawless Camera-Ready Portraits',
+    about: 'Tucked into a sunlit studio off Linking Road, Bandra, Rose & Ivory is a high-end bridal and makeover house where every bridal story begins with a personalized moodboard. From sweatproof HD airbrush glam to deep skin prep hydration rituals and sculptural saree draping, our artists craft camera-ready looks that hold their glow through the longest celebrations.',
+    icon: 'engagement',
+    layoutStyle: 'ivory_pearl_bridal',
+    paletteLabel: 'Ivory Blush & Pearl Theme',
+    themePreset: 'ivory_blush_pearl',
+    subCategories: ['Bridal Glam', 'Pre-Bridal Glow', 'Engagement & Sangeet', 'Draping & Hair'],
+    defaultCity: 'Mumbai, Maharashtra',
+    defaultAddress: 'Linking Road, Near Gazebo Shopping, Bandra West',
+    defaultPostalCode: '400050',
+    phone: '+91 98211 74826',
+    whatsapp: '+91 98211 74826',
+    ownerName: 'Madhurima Bose',
+    ownerRole: 'Founder & Lead Bridal Artist',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@roseandivory.mum',
+    themeStyle: {
+      heroBackground: 'bg-[#fdf8f5]',
+      heroTextColor: 'text-[#5c2e3a]',
+      cardBorder: 'border-[#f3dcd3]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-2xl',
+      accentColor: 'text-[#a84a5e]',
+      accentBg: 'bg-[#a84a5e]',
+      badgeBg: 'bg-[#fbe9e7]',
+      badgeText: 'text-[#7c2d3e]',
+      buttonBg: 'bg-[#a84a5e] hover:bg-[#8f3b4e]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#8f3b4e]',
+      isDark: false,
+      headerBanner: 'bg-[#fdf3f0] border-b border-[#f3dcd3]'
+    },
+    services: [
+      {
+        id: 'bms-1',
+        name: 'HD Airbrush Bridal Makeup',
+        category: 'Bridal Glam',
+        durationMinutes: 150,
+        price: 35000,
+        description: 'Every bridal look begins with a personalized moodboard session, where the artist maps your dream aesthetic to your features before a deep skin prep hydration ritual primes the canvas. Micro-mist HD airbrushing in a long-lasting sweatproof formula delivers a weightless, camera-ready glow that stays flawless through teary vows, candlelight, and the celebration that follows.',
+        icon: 'face_retouching_natural',
+        popular: true
+      },
+      {
+        id: 'bms-2',
+        name: 'Pre-Bridal Radiance Ritual',
+        category: 'Pre-Bridal Glow',
+        durationMinutes: 120,
+        price: 9500,
+        description: 'A multi-stage skin prep ritual of botanical exfoliation, hyaluronic infusion, and gold-peptide facials is tailored to your personalized moodboard to build an even, deeply hydrated canvas weeks before the big day. The result is a long-lasting, camera-ready glow that lets your wedding-day makeup sit smoother and wear even more beautifully.',
+        icon: 'spa',
+        popular: true
+      },
+      {
+        id: 'bms-3',
+        name: 'Royal Engagement Makeover',
+        category: 'Engagement & Sangeet',
+        durationMinutes: 120,
+        price: 15000,
+        description: 'From a personalized moodboard of regal tones to a dewy, sweatproof base, this engagement ritual transforms you for ring vows and family portraits with a polished, camera-ready glow. A premium long-wear setting seal locks the look for 14-hour ceremonies, so every candid carries the same luminous finish as the first frame.',
+        icon: 'celebration'
+      },
+      {
+        id: 'bms-4',
+        name: 'Saree Draping & Hair Sculpting',
+        category: 'Draping & Hair',
+        durationMinutes: 60,
+        price: 4500,
+        description: 'Your personalized moodboard guides every pleat and twist—from structured nivi drapes to royal can-can volume—while sculpted bridal hair is set with a long-lasting hold that survives baraat winds and endless photo sessions. The finished styling pairs seamlessly with your makeup for a cohesive, camera-ready silhouette from crown to hem.',
+        icon: 'styler'
+      }
+    ],
+    stylists: [
+      {
+        id: 'bms-st-1',
+        name: 'Madhurima Bose',
+        role: 'Founder & Lead Bridal Artist',
+        avatarUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=400&q=80',
+        specialties: ['HD Airbrush', 'Moodboard Styling', 'Bridal Portraits'],
+        rating: 4.99
+      },
+      {
+        id: 'bms-st-2',
+        name: 'Ananya Pillai',
+        role: 'Senior Pre-Bridal Skin Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Radiance Rituals', 'Skin Prep Hydration', 'Gold Peptide Facials'],
+        rating: 4.95
+      },
+      {
+        id: 'bms-st-3',
+        name: 'Sneha Kulkarni',
+        role: 'Draping & Hair Sculpt Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Royal Saree Drapes', 'Bridal Hair Sculpting', 'Engagement Styling'],
+        rating: 4.92
+      }
+    ]
+  },
+
+  // 18. Modern Unisex Family Salon (Newly Added)
+  family_salon: {
+    id: 'family_salon',
+    title: 'Cedar & Bloom Family Salon',
+    shortName: 'Modern Unisex Family Salon',
+    tagline: 'Quick Family Cuts, Express Glow & Everyday Hair Health for Every Generation',
+    about: 'Tucked into a bright corner of Viman Nagar, Cedar & Bloom is a modern unisex family salon built for busy households. From signature wash and style cuts to express glow facials and hydra-infusion hair spas, our quick, nourishing services suit all age groups—because healthy hair and skin should never require a whole day.',
+    icon: 'diversity_2',
+    layoutStyle: 'family_fresh',
+    paletteLabel: 'Sky Blue & Warm Cream Theme',
+    themePreset: 'sky_cream_family',
+    subCategories: ['Everyday Cuts', 'Quick Glow', 'Hair Spa & Care', 'Scalp Care'],
+    defaultCity: 'Pune, Maharashtra',
+    defaultAddress: 'Viman Nagar, Near Phoenix Marketcity',
+    defaultPostalCode: '411014',
+    phone: '+91 98500 44719',
+    whatsapp: '+91 98500 44719',
+    ownerName: 'Rahul Nair',
+    ownerRole: 'Founder & Styling Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@cedarandbloom.pune',
+    themeStyle: {
+      heroBackground: 'bg-[#f4faff]',
+      heroTextColor: 'text-[#123a5c]',
+      cardBorder: 'border-[#d3e7f7]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-2xl',
+      accentColor: 'text-[#1d74b5]',
+      accentBg: 'bg-[#1d74b5]',
+      badgeBg: 'bg-[#e3f2fd]',
+      badgeText: 'text-[#0d4f80]',
+      buttonBg: 'bg-[#1d74b5] hover:bg-[#155d92]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#155d92]',
+      isDark: false,
+      headerBanner: 'bg-[#f0f9ff] border-b border-[#d3e7f7]'
+    },
+    services: [
+      {
+        id: 'fam-1',
+        name: 'Signature Wash & Style Cut',
+        category: 'Everyday Cuts',
+        durationMinutes: 30,
+        price: 400,
+        description: 'A quick 30-minute wash, cut, and style finished with everyday hair health in mind. Nourishing argan-infused shampoo and a versatile, all-age-group finish keep you looking polished from school runs to office deadlines.',
+        icon: 'content_cut',
+        popular: true
+      },
+      {
+        id: 'fam-2',
+        name: 'Express Glow Facial',
+        category: 'Quick Glow',
+        durationMinutes: 20,
+        price: 600,
+        description: 'A refreshing 20-minute facial powered by gentle, nourishing aloe and honey cleansers that brighten without harshness. Fast enough for a lunch break and mild enough for every age group—an easy everyday pick-me-up glow.',
+        icon: 'face'
+      },
+      {
+        id: 'fam-3',
+        name: 'Hydra-Infusion Hair Spa',
+        category: 'Hair Spa & Care',
+        durationMinutes: 45,
+        price: 900,
+        description: 'A 45-minute hydrating hair spa that infuses keratin and cold-pressed coconut oil to rebuild everyday hair health. This quick, nourishing treatment leaves hair soft, strong, and glossy for all hair types and every age group.',
+        icon: 'spa',
+        popular: true
+      },
+      {
+        id: 'fam-4',
+        name: 'Anti-Dandruff Scalp Treatment',
+        category: 'Scalp Care',
+        durationMinutes: 30,
+        price: 800,
+        description: 'A fast 30-minute scalp treatment with nourishing neem and tea tree that clears flakes and calms itchiness at the root. A gentle, effective everyday hair health habit that keeps the whole family’s scalps fresh and comfortable.',
+        icon: 'healing'
+      }
+    ],
+    stylists: [
+      {
+        id: 'fam-st-1',
+        name: 'Rahul Nair',
+        role: 'Founder & Styling Director',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Family Cuts & Styles', 'Express Services', 'Scalp Care'],
+        rating: 4.95
+      },
+      {
+        id: 'fam-st-2',
+        name: 'Pooja Iyer',
+        role: 'Senior Stylist & Skin Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Express Facials', 'Hydra Hair Spas', 'Kid-Friendly Styling'],
+        rating: 4.92
+      },
+      {
+        id: 'fam-st-3',
+        name: 'Farhan Shaikh',
+        role: 'Scalp & Treatment Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Anti-Dandruff Therapy', 'Nourishing Hair Spas', 'Men & Women Cuts'],
+        rating: 4.89
+      }
+    ]
+  },
+
+  // 19. Gentlemen's Barber & Grooming Club (Newly Added)
+  barber_grooming_club: {
+    id: 'barber_grooming_club',
+    title: 'The Iron Standard Barber & Grooming Club',
+    shortName: "Gentlemen's Barber & Grooming Club",
+    tagline: 'Straight-Razor Precision, Hot Towel Rituals & Members-Grade Grooming',
+    about: 'A members-grade gentlemen’s club in Cyber City, Gurugram, where The Iron Standard treats grooming as a daily ritual. Royal straight-razor beard sculpts, executive cuts with scalp rubs, and charcoal detox facials—every visit closes with hot towel therapy and a clean, sharp look.',
+    icon: 'local_bar',
+    layoutStyle: 'gents_club',
+    paletteLabel: 'Midnight Navy & Copper Brass Theme',
+    themePreset: 'midnight_copper_club',
+    subCategories: ['Beard Sculpting', 'Executive Cuts', 'Face & Skin', 'Color & Blend'],
+    defaultCity: 'Gurugram, Haryana',
+    defaultAddress: 'Cyber City Phase II, Near DLF Corporate Park',
+    defaultPostalCode: '122002',
+    phone: '+91 99998 23407',
+    whatsapp: '+91 99998 23407',
+    ownerName: "Vikrant 'The Blade' Joshi",
+    ownerRole: 'Founder & Master Barber',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@ironstandard.club',
+    themeStyle: {
+      heroBackground: 'bg-[#0d1526]',
+      heroTextColor: 'text-[#f3ede2]',
+      cardBorder: 'border-[#c98a5e]/40',
+      cardBackground: 'bg-[#111c30]',
+      cardRadius: 'rounded-lg',
+      accentColor: 'text-[#d99a6c]',
+      accentBg: 'bg-[#c98a5e]',
+      badgeBg: 'bg-[#1d2c47]',
+      badgeText: 'text-[#e8b98d]',
+      buttonBg: 'bg-[#c98a5e] hover:bg-[#b57748]',
+      buttonText: 'text-[#0d1526]',
+      priceColor: 'text-[#e8b98d]',
+      isDark: true,
+      headerBanner: 'bg-[#0a111f] border-b border-[#c98a5e]/30'
+    },
+    services: [
+      {
+        id: 'club-1',
+        name: 'Royal Straight-Razor Beard Sculpt',
+        category: 'Beard Sculpting',
+        durationMinutes: 45,
+        price: 750,
+        description: 'Hot towel therapy softens the whisker before the straight razor draws every line, with precision trimming along cheek, neck, and jaw for a clean sharp look. A cooling skin hydration balm finishes the ritual, leaving the beard sculpted and the face smooth.',
+        icon: 'content_cut',
+        popular: true
+      },
+      {
+        id: 'club-2',
+        name: 'Executive Hair Cut & Scalp Rub',
+        category: 'Executive Cuts',
+        durationMinutes: 40,
+        price: 650,
+        description: 'A precision-trimmed cut tailored to your head shape and hair density, closed with a deep scalp rub in a hydrating charcoal tea-tree wash. Hot towel therapy and a matte finish leave you with a clean sharp look that holds from morning standups to evening calls.',
+        icon: 'styler',
+        popular: true
+      },
+      {
+        id: 'club-3',
+        name: 'Charcoal Detox Facial',
+        category: 'Face & Skin',
+        durationMinutes: 30,
+        price: 900,
+        description: 'Hot towel therapy opens the pores while activated charcoal pulls impurities from oil-clogged zones, followed by precision trimming of stray brow and temple lines. A skin hydration balm seals the detox, leaving a matte complexion and a clean sharp look.',
+        icon: 'face'
+      },
+      {
+        id: 'club-4',
+        name: 'Grey Blending & Beard Color',
+        category: 'Color & Blend',
+        durationMinutes: 45,
+        price: 1200,
+        description: 'Salon-grade botanical color melts grey strands into natural salt-and-pepper depth, finished with precision trimming for zero visible line. A hot towel pre-treatment shields the skin, and the final hydration seal delivers a clean sharp look that reads healthy, not dyed.',
+        icon: 'brush'
+      }
+    ],
+    stylists: [
+      {
+        id: 'club-st-1',
+        name: "Vikrant 'The Blade' Joshi",
+        role: 'Founder & Master Barber',
+        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Straight-Razor Shaves', 'Beard Architecture', 'Grey Blending'],
+        rating: 4.97
+      },
+      {
+        id: 'club-st-2',
+        name: 'Arjun Deshmukh',
+        role: 'Executive Cut Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Precision Cuts', 'Scalp Therapy', 'Executive Styling'],
+        rating: 4.93
+      },
+      {
+        id: 'club-st-3',
+        name: 'Sameer Qureshi',
+        role: 'Grooming & Skin Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Charcoal Facials', 'Beard Color', 'Hot Towel Rituals'],
+        rating: 4.90
+      }
+    ]
+  },
+
+  // 20. Nails, Lash & Brow Bar (Newly Added)
+  nails_lash_brow_bar: {
+    id: 'nails_lash_brow_bar',
+    title: 'Peony & Lacquer Lash, Brow & Nail Bar',
+    shortName: 'Nails, Lash & Brow Bar',
+    tagline: 'Lacquer Couture, Feather Lashes & Laminated Brows—All in One Bar',
+    about: 'A three-in-one micro-bar in Frazer Town, Bengaluru, where Peony & Lacquer unites nail couture, Russian volume lashes, and brow lamination under one roof. Every service runs on non-damaging organic formulas, precise detailing, and long-lasting retention—so your trendy aesthetic holds from day one to day twenty.',
+    icon: 'auto_awesome',
+    layoutStyle: 'berry_pearl_bar',
+    paletteLabel: 'Berry Blush & Pearl Theme',
+    themePreset: 'berry_blush_pearl',
+    subCategories: ['Nail Couture', 'Lash Extensions', 'Brow Bar', 'Hand & Foot Spa'],
+    defaultCity: 'Bengaluru, Karnataka',
+    defaultAddress: 'Frazer Town, Near Halasuru Circle',
+    defaultPostalCode: '560005',
+    phone: '+91 99000 87214',
+    whatsapp: '+91 99000 87214',
+    ownerName: "Kritika 'Kiki' Menon",
+    ownerRole: 'Founder & Nail Couture Artist',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@peonyandlacquer.blr',
+    themeStyle: {
+      heroBackground: 'bg-[#fdf2f6]',
+      heroTextColor: 'text-[#5a1029]',
+      cardBorder: 'border-[#f5cfd9]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-2xl',
+      accentColor: 'text-[#a3124b]',
+      accentBg: 'bg-[#a3124b]',
+      badgeBg: 'bg-[#fbe3ea]',
+      badgeText: 'text-[#7a0c38]',
+      buttonBg: 'bg-[#a3124b] hover:bg-[#86103d]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#86103d]',
+      isDark: false,
+      headerBanner: 'bg-[#fdf0f4] border-b border-[#f5cfd9]'
+    },
+    services: [
+      {
+        id: 'nlb-1',
+        name: 'Gel Extension & Custom Nail Art',
+        category: 'Nail Couture',
+        durationMinutes: 90,
+        price: 1800,
+        description: 'Hand-sculpted gel extensions finished with precise detailing—handpainted micro-art, chrome flakes, and pearl drops in the season’s trendiest aesthetics. A 10-free organic formula flexes with your natural nail for long-lasting retention that stays chip-free for weeks.',
+        icon: 'pan_tool_alt',
+        popular: true
+      },
+      {
+        id: 'nlb-2',
+        name: 'Russian Volume Lash Extensions',
+        category: 'Lash Extensions',
+        durationMinutes: 120,
+        price: 3000,
+        description: 'Handmade 4D-6D feather fans are placed one by one with precise detailing for that fluttery, wide-eye look trending everywhere right now. Non-damaging organic low-latex adhesive protects natural lashes while delivering long-lasting retention without weight or breakage.',
+        icon: 'visibility',
+        popular: true
+      },
+      {
+        id: 'nlb-3',
+        name: 'Brow Lamination & Henna Tint',
+        category: 'Brow Bar',
+        durationMinutes: 50,
+        price: 1500,
+        description: 'Keratin lamination re-sets every brow hair upward with precise detailing, then an organic plant-based henna tint deepens the shade for weeks. A trendy fluffy-arch aesthetic with long-lasting retention—no daily gel, no fading.',
+        icon: 'brush'
+      },
+      {
+        id: 'nlb-4',
+        name: 'Luxury Paraffin Pedicure',
+        category: 'Hand & Foot Spa',
+        durationMinutes: 50,
+        price: 1200,
+        description: 'A bubbling eucalyptus soak, pumice pedicure, and warm paraffin dip infused with organic shea butter melts even the roughest heels. The precise detailing ritual leaves feet silky, glowing, and long-lasting soft—trendy aesthetics for your feet too.',
+        icon: 'spa'
+      }
+    ],
+    stylists: [
+      {
+        id: 'nlb-st-1',
+        name: "Kritika 'Kiki' Menon",
+        role: 'Founder & Nail Couture Artist',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Gel Extensions', 'Micro Nail Art', 'Chrome & Glaze'],
+        rating: 4.98
+      },
+      {
+        id: 'nlb-st-2',
+        name: "Meera D'Souza",
+        role: 'Russian Lash Artist',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Russian Volume Lashes', 'Lash Retention Care', 'Fluffy Fans'],
+        rating: 4.95
+      },
+      {
+        id: 'nlb-st-3',
+        name: 'Tisha Fernandes',
+        role: 'Brow & Foot Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Brow Lamination', 'Henna Tint', 'Paraffin Pedicures'],
+        rating: 4.91
+      }
+    ]
+  },
+
+  // 21. Medi-Spa & Skin Aesthetics Clinic (Newly Added)
+  medispa_aesthetics: {
+    id: 'medispa_aesthetics',
+    title: 'Porcelain Skin Lab Medi-Spa & Aesthetics Clinic',
+    shortName: 'Medi-Spa & Skin Aesthetics Clinic',
+    tagline: 'Dermatologist-Led Skin Science, Spa-Grade Comfort & Zero-Downtime Glow',
+    about: 'A calm, porcelain-white clinic in Alipore, Kolkata, where Porcelain Skin Lab pairs dermatologist-tested protocols with the comfort of a spa. From Advanced HydraFacial MD to LED anti-aging and micro-needling collagen boosters, every treatment targets deep cellular renewal and skin texture smoothing—with zero downtime.',
+    icon: 'monitor_heart',
+    layoutStyle: 'medispa_porcelain',
+    paletteLabel: 'Porcelain White & Sage Teal Theme',
+    themePreset: 'porcelain_sage_teal',
+    subCategories: ['Signature Facials', 'Light Therapy', 'Peels & Pigmentation', 'Collagen & Texture'],
+    defaultCity: 'Kolkata, West Bengal',
+    defaultAddress: 'Alipore Road, Near M.G. Road Bridge',
+    defaultPostalCode: '700027',
+    phone: '+91 98310 45627',
+    whatsapp: '+91 98310 45627',
+    ownerName: 'Dr. Sneha Chatterjee',
+    ownerRole: 'Consultant Dermatologist & Founder',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@porcelainskinlab.kolkata',
+    themeStyle: {
+      heroBackground: 'bg-[#f7faf9]',
+      heroTextColor: 'text-[#123c36]',
+      cardBorder: 'border-[#cde4de]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-xl',
+      accentColor: 'text-[#2a7a6d]',
+      accentBg: 'bg-[#2a7a6d]',
+      badgeBg: 'bg-[#e4f2ef]',
+      badgeText: 'text-[#14534b]',
+      buttonBg: 'bg-[#2a7a6d] hover:bg-[#1f5f55]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#1f5f55]',
+      isDark: false,
+      headerBanner: 'bg-[#f2f9f7] border-b border-[#cde4de]'
+    },
+    services: [
+      {
+        id: 'mds-1',
+        name: 'Advanced HydraFacial MD',
+        category: 'Signature Facials',
+        durationMinutes: 45,
+        price: 4500,
+        description: 'A dermatologist-tested vortex protocol cleanses, gently exfoliates, and infuses hyaluronic antioxidants in one seamless session. Expect deep cellular renewal and instant skin texture smoothing with zero downtime—walk straight into your next meeting, glowing.',
+        icon: 'water_drop',
+        popular: true
+      },
+      {
+        id: 'mds-2',
+        name: 'LED Light Anti-Aging Therapy',
+        category: 'Light Therapy',
+        durationMinutes: 30,
+        price: 2800,
+        description: 'Dermatologist-tested red (633nm) and near-infrared light protocols energize cells for deep cellular renewal—no heat, no irritation, no recovery. This 30-minute, zero-downtime session smooths fine lines and evens skin texture session after session.',
+        icon: 'lightbulb'
+      },
+      {
+        id: 'mds-3',
+        name: 'Chemical Peel & Pigmentation Correction',
+        category: 'Peels & Pigmentation',
+        durationMinutes: 40,
+        price: 3800,
+        description: 'A dermatologist-selected blend of lactic and mandelic acids lifts pigmentation at a precise depth, driving deep cellular renewal while visibly smoothing skin texture and brightening melasma, tan, and dark spots. Every peel follows a dermatologist-tested protocol with zero downtime and a fresh, luminous finish.',
+        icon: 'science',
+        popular: true
+      },
+      {
+        id: 'mds-4',
+        name: 'Micro-needling Collagen Booster',
+        category: 'Collagen & Texture',
+        durationMinutes: 60,
+        price: 5500,
+        description: 'Fine sterile needles create micro-channels that let a vitamin-rich growth serum stimulate collagen production for genuine deep cellular renewal. The dermatologist-tested protocol offers zero downtime—you go home the same day with a progressively smoother, firmer complexion.',
+        icon: 'vital_signs'
+      }
+    ],
+    stylists: [
+      {
+        id: 'mds-st-1',
+        name: 'Dr. Sneha Chatterjee',
+        role: 'Consultant Dermatologist & Founder',
+        avatarUrl: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Medical Facials', 'Pigmentation Protocols', 'Skin Diagnostics'],
+        rating: 4.98
+      },
+      {
+        id: 'mds-st-2',
+        name: 'Riya Sen',
+        role: 'Senior Derma-Trained Aesthetician',
+        avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+        specialties: ['HydraFacial MD', 'LED Light Therapy', 'Chemical Peels'],
+        rating: 4.95
+      },
+      {
+        id: 'mds-st-3',
+        name: 'Dr. Abhishek Roy',
+        role: 'Anti-Aging & Texture Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Micro-needling', 'Collagen Protocols', 'Anti-Aging Care'],
+        rating: 4.92
+      }
+    ]
+  },
+
+  // 22. Organic & Eco-Friendly Bio-Salon (Newly Added)
+  organic_bio_salon: {
+    id: 'organic_bio_salon',
+    title: 'Terra Botanica Organic & Bio-Salon',
+    shortName: 'Organic & Eco-Friendly Bio-Salon',
+    tagline: '100% Vegan Color, Plant-Based Facials & Zero-Waste Hair Rituals',
+    about: 'A zero-waste bio-salon in Gandhipuram, Coimbatore, where Terra Botanica cares for hair and skin with 100% vegan, chemical-free formulations. From botanical herbal color to cold-pressed eco-gloss spas, every ingredient is ethically sourced to nurture—so the radiance you see is gentle, natural, and unmistakably you.',
+    icon: 'sprout',
+    layoutStyle: 'organic_meadow',
+    paletteLabel: 'Fern Green & Natural Linen Theme',
+    themePreset: 'fern_linen_organic',
+    subCategories: ['Botanical Color', 'Vegan Facials', 'Scalp Detox', 'Cold-Pressed Spas'],
+    defaultCity: 'Coimbatore, Tamil Nadu',
+    defaultAddress: 'Gandhipuram, Near Bakers Road',
+    defaultPostalCode: '641012',
+    phone: '+91 95000 33861',
+    whatsapp: '+91 95000 33861',
+    ownerName: "Anirudh 'Root' Iyer",
+    ownerRole: 'Founder & Botanical Colorist',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@terrabotanica.cbe',
+    themeStyle: {
+      heroBackground: 'bg-[#f6f4ec]',
+      heroTextColor: 'text-[#2c4a2e]',
+      cardBorder: 'border-[#d6d3c0]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-xl',
+      accentColor: 'text-[#3d7a45]',
+      accentBg: 'bg-[#3d7a45]',
+      badgeBg: 'bg-[#e9efdd]',
+      badgeText: 'text-[#33552f]',
+      buttonBg: 'bg-[#3d7a45] hover:bg-[#316137]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#316137]',
+      isDark: false,
+      headerBanner: 'bg-[#f4f2e7] border-b border-[#d6d3c0]'
+    },
+    services: [
+      {
+        id: 'bio-1',
+        name: 'Botanical Herbal Hair Color',
+        category: 'Botanical Color',
+        durationMinutes: 120,
+        price: 2200,
+        description: '100% vegan henna, indigo, and amla paint every strand in a completely ammonia-free, chemical-free formula, ethically sourced from certified organic farms. The gentle herbal color develops over 48 hours into a soft natural radiance that never strips your hair.',
+        icon: 'eco',
+        popular: true
+      },
+      {
+        id: 'bio-2',
+        name: 'Plant-Based Vegan Facial',
+        category: 'Vegan Facials',
+        durationMinutes: 45,
+        price: 1400,
+        description: 'A 45-minute, 100% vegan facial built from ethically sourced aloe, green clay, and cold-pressed rosehip—zero synthetic chemicals and cruelty-free throughout. Clean botanicals lift dullness and leave your skin with a gentle natural radiance that lasts the week.',
+        icon: 'face'
+      },
+      {
+        id: 'bio-3',
+        name: 'Organic Clay Scalp Detox',
+        category: 'Scalp Detox',
+        durationMinutes: 40,
+        price: 1100,
+        description: 'Mineral-rich green and kaolin clays, ethically sourced and free of synthetic surfactants, draw out buildup, pollution, and excess sebum. This 100% vegan, chemical-free ritual rebalances the scalp and leaves hair with a gentle natural radiance.',
+        icon: 'healing'
+      },
+      {
+        id: 'bio-4',
+        name: 'Eco-Gloss Cold Pressed Hair Spa',
+        category: 'Cold-Pressed Spas',
+        durationMinutes: 60,
+        price: 1600,
+        description: 'First-press, chemical-free oils—cold-pressed coconut, amla, and moringa—are warmed and massaged in under herbal steam to revive tired hair. The 100% vegan ritual is ethically sourced and deeply nourishing, leaving every strand with a soft, healthy, gentle natural radiance.',
+        icon: 'spa',
+        popular: true
+      }
+    ],
+    stylists: [
+      {
+        id: 'bio-st-1',
+        name: "Anirudh 'Root' Iyer",
+        role: 'Founder & Botanical Colorist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Herbal Color', 'Cold-Pressed Spas', 'Zero-Waste Styling'],
+        rating: 4.96
+      },
+      {
+        id: 'bio-st-2',
+        name: 'Devika Shetty',
+        role: 'Vegan Skin Aesthetics Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Vegan Facials', 'Clay Detox', 'Plant Formulas'],
+        rating: 4.93
+      },
+      {
+        id: 'bio-st-3',
+        name: 'Mohammed Salim',
+        role: 'Organic Scalp & Hair Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Scalp Detox', 'Herbal Rinses', 'Natural Radiance'],
+        rating: 4.90
+      }
+    ]
+  },
+
+  // 23. Express & Quick Beauty Bar (Newly Added)
+  express_beauty_bar: {
+    id: 'express_beauty_bar',
+    title: 'Blink Express Beauty Bar',
+    shortName: 'Express & Quick Beauty Bar',
+    tagline: 'Walk-In Express Beauty—Perfect Freshness in 15 Minutes, Zero Wait',
+    about: 'A zero-wait express beauty bar in Jayanagar, Bengaluru, where Blink turns your busiest routine into a perfect 15-minute refresh. From 15-Min Express Blowdries to Instant Flash Glow Cleanups, every service delivers fast application, instant visible freshness, and perfect results for busy routines.',
+    icon: 'bolt',
+    layoutStyle: 'express_pop',
+    paletteLabel: 'Coral Pop & Dark Slate Theme',
+    themePreset: 'coral_slate_express',
+    subCategories: ['Express Styling', 'Flash Facials', 'Express Grooming', 'Rapid Threading'],
+    defaultCity: 'Bengaluru, Karnataka',
+    defaultAddress: 'Jayanagar 4th Block, Near Metro Station',
+    defaultPostalCode: '560011',
+    phone: '+91 97400 21583',
+    whatsapp: '+91 97400 21583',
+    ownerName: "Nisha 'Zip' Kapoor",
+    ownerRole: 'Founder & Express Styling Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@blinkbeautybar.blr',
+    themeStyle: {
+      heroBackground: 'bg-[#1c1c22]',
+      heroTextColor: 'text-[#fff4ee]',
+      cardBorder: 'border-[#f2b8a2]/40',
+      cardBackground: 'bg-[#232329]',
+      cardRadius: 'rounded-lg',
+      accentColor: 'text-[#ff6b4a]',
+      accentBg: 'bg-[#ff6b4a]',
+      badgeBg: 'bg-[#3a2a26]',
+      badgeText: 'text-[#ffb49e]',
+      buttonBg: 'bg-[#ff6b4a] hover:bg-[#e5533a]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#ffb49e]',
+      isDark: true,
+      headerBanner: 'bg-[#17171c] border-b border-[#f2b8a2]/30'
+    },
+    services: [
+      {
+        id: 'exp-1',
+        name: '15-Min Express Blowdry',
+        category: 'Express Styling',
+        durationMinutes: 15,
+        price: 450,
+        description: 'Walk in, walk out with perfect volume—hot towel, scalp massage, and high-heat round-brush styling in exactly 15 minutes with zero wait time. Fast application, instant visible freshness, and perfect results for your busiest mornings.',
+        icon: 'styler',
+        popular: true
+      },
+      {
+        id: 'exp-2',
+        name: 'Instant Flash Glow Cleanup',
+        category: 'Flash Facials',
+        durationMinutes: 15,
+        price: 700,
+        description: 'A 15-minute flash cleanup with gentle enzyme wash, 5-minute mask, and instant brightening toner delivers visible freshness in under twenty minutes. Fast application, zero wait time, and perfect results for busy routines—camera-ready glow, guaranteed.',
+        icon: 'face',
+        popular: true
+      },
+      {
+        id: 'exp-3',
+        name: 'Quick Shape & Polish',
+        category: 'Express Grooming',
+        durationMinutes: 20,
+        price: 500,
+        description: 'Face shape-up and 10-finger gel polish in a single 20-minute slot—fast application, zero wait time, instant visible freshness. Perfect results for busy routines, no reshuffling your schedule required.',
+        icon: 'pan_tool'
+      },
+      {
+        id: 'exp-4',
+        name: 'Threading & Upper Lip Touchup',
+        category: 'Rapid Threading',
+        durationMinutes: 10,
+        price: 200,
+        description: 'Brow, upper lip, and chin threading in exactly 10 minutes—fast application, zero wait time, and no appointment needed. Walk out with an instant visible fresh face and perfect results for your busiest day.',
+        icon: 'content_cut'
+      }
+    ],
+    stylists: [
+      {
+        id: 'exp-st-1',
+        name: "Nisha 'Zip' Kapoor",
+        role: 'Founder & Express Styling Director',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['15-Min Blowdry', 'Flash Cleanups', 'Zero-Wait Scheduling'],
+        rating: 4.94
+      },
+      {
+        id: 'exp-st-2',
+        name: 'Rajesh Kumar',
+        role: 'Express Grooming Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Quick Shape-Up', 'Gel Polish', 'Edge Cleanups'],
+        rating: 4.91
+      },
+      {
+        id: 'exp-st-3',
+        name: 'Sana Qureshi',
+        role: 'Rapid Threading Expert',
+        avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Threading', 'Lip & Chin Touchups', 'Brow Precision'],
+        rating: 4.89
+      }
+    ]
+  },
+
+  // 24. Thai & Oriental Massage Center (Newly Added)
+  thai_massage_center: {
+    id: 'thai_massage_center',
+    title: 'Baan Sen Thai & Oriental Massage Center',
+    shortName: 'Thai & Oriental Massage Center',
+    tagline: 'Ancient Thai Stretch, Sen Line Therapy & Oriental Calm',
+    about: 'A candle-lit oriental sanctuary in Kovalam, Kerala, where Baan Sen practices traditional Thai and oriental massage exactly as generations of healers taught it. From dry Thai stretches to aroma herbal oils and reflexology foot pressure, every session unblocks the body’s Sen energy lines—delivering full muscle tension relief and deep mental rejuvenation.',
+    icon: 'self_improvement',
+    layoutStyle: 'oriental_silk',
+    paletteLabel: 'Temple Saffron & Silk Theme',
+    themePreset: 'temple_saffron_silk',
+    subCategories: ['Thai Stretch', 'Herbal Oil Therapy', 'Deep Tissue', 'Reflexology'],
+    defaultCity: 'Kovalam, Kerala',
+    defaultAddress: 'Kovalam Beach Road, Near Lighthouse',
+    defaultPostalCode: '691512',
+    phone: '+91 98460 78235',
+    whatsapp: '+91 98460 78235',
+    ownerName: 'Kamla "Mae" Thongprachan',
+    ownerRole: 'Head Thai Massage Therapist & Founder',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@baansen.kovalam',
+    themeStyle: {
+      heroBackground: 'bg-[#2a1220]',
+      heroTextColor: 'text-[#f8ecd9]',
+      cardBorder: 'border-[#e0b57a]/40',
+      cardBackground: 'bg-[#231019]',
+      cardRadius: 'rounded-xl',
+      accentColor: 'text-[#e8a33d]',
+      accentBg: 'bg-[#e8a33d]',
+      badgeBg: 'bg-[#3a1f2b]',
+      badgeText: 'text-[#f5c989]',
+      buttonBg: 'bg-[#e8a33d] hover:bg-[#d48d2b]',
+      buttonText: 'text-[#2a1220]',
+      priceColor: 'text-[#f5c989]',
+      isDark: true,
+      headerBanner: 'bg-[#200d17] border-b border-[#e0b57a]/30'
+    },
+    services: [
+      {
+        id: 'thai-1',
+        name: 'Traditional Thai Dry Stretch Massage',
+        category: 'Thai Stretch',
+        durationMinutes: 90,
+        price: 2200,
+        description: 'Ancient stretching techniques passed down through Thai healing lineages as your therapist rhythmically compresses, kneads, and stretches along the body’s seven Sen energy lines. Every knot of muscle tension releases, every blocked Sen opens, and deep mental rejuvenation follows—full-body re-balance from head to toe.',
+        icon: 'self_improvement',
+        popular: true
+      },
+      {
+        id: 'thai-2',
+        name: 'Aroma Herbal Oil Therapy',
+        category: 'Herbal Oil Therapy',
+        durationMinutes: 75,
+        price: 2500,
+        description: 'Warm aromatic essential oils glide in slow, unhurried strokes over aching muscles, easing deep muscle tension while gentle Sen line pressure restores the body’s natural energy flow. The relaxing rhythm of breath and touch settles the mind into genuine deep mental rejuvenation.',
+        icon: 'local_florist',
+        popular: true
+      },
+      {
+        id: 'thai-3',
+        name: 'Deep Tissue Trigger Point Therapy',
+        category: 'Deep Tissue',
+        durationMinutes: 60,
+        price: 2000,
+        description: 'Focused, anciently informed strokes locate and release stubborn trigger points, unwinding layers of muscle tension knot by knot. As pressure traces the body’s Sen energy lines, blocked energy flows freely again and the mind drifts into deep mental rejuvenation.',
+        icon: 'healing'
+      },
+      {
+        id: 'thai-4',
+        name: 'Reflexology Foot Pressure Therapy',
+        category: 'Reflexology',
+        durationMinutes: 45,
+        price: 1500,
+        description: 'Rhythmic pressure on precise foot reflex zones sends calming signals through every organ system, dissolving the deep muscle tension of a tired body. Rooted in ancient stretching and pressure traditions, this quiet ritual unblocks the Sen energy lines and leaves you in deep mental rejuvenation from the ground up.',
+        icon: 'pan_tool'
+      }
+    ],
+    stylists: [
+      {
+        id: 'thai-st-1',
+        name: 'Kamla "Mae" Thongprachan',
+        role: 'Head Thai Massage Therapist & Founder',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Sen Line Therapy', 'Thai Stretch', 'Oriental Healing'],
+        rating: 4.98
+      },
+      {
+        id: 'thai-st-2',
+        name: 'Somchai Srinawin',
+        role: 'Senior Deep Tissue Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Trigger Point Release', 'Deep Tissue', 'Herbal Oil Work'],
+        rating: 4.94
+      },
+      {
+        id: 'thai-st-3',
+        name: 'Anjali Devi',
+        role: 'Reflexology & Aroma Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Foot Pressure Therapy', 'Aromatherapy', 'Mental Rejuvenation'],
+        rating: 4.91
+      }
+    ]
+  },
+
+  // 25. Kids & Teens Fun Hair Studio (Newly Added)
+  kids_teens_studio: {
+    id: 'kids_teens_studio',
+    title: 'Scissors & Sprinkles Kids & Teens Fun Hair Studio',
+    shortName: 'Kids & Teens Fun Hair Studio',
+    tagline: 'First Haircuts, Cool Cuts & Tween Fresh—Fun, Fear-Free & Trendy',
+    about: 'A candy-coloured playroom salon in Adyar, Chennai, where Scissors & Sprinkles turns haircuts into celebrations. Every service runs on tear-free gentle products inside an interactive fun environment, so kids walk out grinning with trendy safe styling—and parents walk out relaxed.',
+    icon: 'emoji_emotions',
+    layoutStyle: 'candy_playroom',
+    paletteLabel: 'Cotton Candy & Sky Pop Theme',
+    themePreset: 'cotton_candy_sky',
+    subCategories: ['First Haircut', 'Kid Cuts & Styles', 'Safe Extensions', 'Teen Skin'],
+    defaultCity: 'Chennai, Tamil Nadu',
+    defaultAddress: 'Adyar, Near College Street Metro',
+    defaultPostalCode: '600020',
+    phone: '+91 98405 67290',
+    whatsapp: '+91 98405 67290',
+    ownerName: 'Sneha "Scissors" Raman',
+    ownerRole: 'Founder & Kids Styling Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@scissorsandsprinkles.cbe',
+    themeStyle: {
+      heroBackground: 'bg-[#fff8f0]',
+      heroTextColor: 'text-[#5b2b8a]',
+      cardBorder: 'border-[#ffd9a8]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-3xl',
+      accentColor: 'text-[#e84393]',
+      accentBg: 'bg-[#e84393]',
+      badgeBg: 'bg-[#fff0d4]',
+      badgeText: 'text-[#b06a1f]',
+      buttonBg: 'bg-[#e84393] hover:bg-[#d63384]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#d63384]',
+      isDark: false,
+      headerBanner: 'bg-[#fff5ec] border-b border-[#ffd9a8]'
+    },
+    services: [
+      {
+        id: 'kid-1',
+        name: 'First Haircut Memory Package',
+        category: 'First Haircut',
+        durationMinutes: 45,
+        price: 999,
+        description: 'Turn the very first haircut into a big happy memory with tear-free gentle scissors, a sticker crown, and a "Big Kid" certificate complete with a mini haircut trophy. An interactive fun environment, trendy safe styling, and a keepsake photo to frame—every single time.',
+        icon: 'cake',
+        popular: true
+      },
+      {
+        id: 'kid-2',
+        name: 'Cool Kid Sculpt Cut & Gel Style',
+        category: 'Kid Cuts & Styles',
+        durationMinutes: 30,
+        price: 600,
+        description: 'Your little stylist picks a look from our trend board, then we sculpt a cool cut with trendy safe styling built for active kids. Tear-free gentle gel keeps the shape through playgrounds, practice matches, and everything in between—in an interactive fun environment with comfy chairs and real snacks.',
+        icon: 'styler',
+        popular: true
+      },
+      {
+        id: 'kid-3',
+        name: 'Non-Toxic Feather Hair Extensions',
+        category: 'Safe Extensions',
+        durationMinutes: 60,
+        price: 2500,
+        description: 'Soft feather clips with 100% non-toxic, tear-free gentle bonds add playful length in minutes—no glue, no tugging, no tears. Trendy safe styling that kids and parents alike cannot stop admiring, set to a live music playlist in our interactive fun environment.',
+        icon: 'eco'
+      },
+      {
+        id: 'kid-4',
+        name: 'Teen Acne Skin Fresh Cleanup',
+        category: 'Teen Skin',
+        durationMinutes: 30,
+        price: 800,
+        description: 'An ultra-gentle enzyme cleanup targets teen acne without harsh chemicals or tears—our products are 100% tear-free gentle, even for the most sensitive tweens. Teens love the interactive fun environment, the mini facial massage, and the trendy safe styling tips that keep skin fresh all week.',
+        icon: 'face'
+      }
+    ],
+    stylists: [
+      {
+        id: 'kid-st-1',
+        name: 'Sneha "Scissors" Raman',
+        role: 'Founder & Kids Styling Director',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['First Haircut Rituals', 'Trendy Safe Styling', 'Tear-Free Care'],
+        rating: 4.97
+      },
+      {
+        id: 'kid-st-2',
+        name: 'Deepak Pillai',
+        role: 'Cool Kid Cut Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Sculpt Cuts', 'Gel Styling', 'Active Kid Cuts'],
+        rating: 4.93
+      },
+      {
+        id: 'kid-st-3',
+        name: 'Ritika Jain',
+        role: 'Teen Skin & Extensions Artist',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Acne Cleanups', 'Feather Extensions', 'Teen Trends'],
+        rating: 4.91
+      }
+    ]
+  },
+
+  // 26. Luxury Hotel & Resort Spa (Newly Added)
+  resort_spa: {
+    id: 'resort_spa',
+    title: 'Azure Palms Luxury Hotel & Resort Spa',
+    shortName: 'Luxury Hotel & Resort Spa',
+    tagline: 'Lake-View Suites, Sunset Rituals & 5-Star Sensory Pampering',
+    about: 'Perched on the shores of Lake Pichola, Udaipur, Azure Palms is a 5-star resort spa where every ritual is an occasion. From Destination Sunset Body Polishes to Rose & Wine Couple Journeys, essential oil scents, deep stress relief, and pampering sensory experiences define every corner of the estate.',
+    icon: 'hotel',
+    layoutStyle: 'resort_luxe',
+    paletteLabel: 'Azure & Champagne Gold Theme',
+    themePreset: 'azure_champagne_luxe',
+    subCategories: ['Body Rituals', 'Stone Therapy', 'Couples Journey', 'Aromatherapy & Detox'],
+    defaultCity: 'Udaipur, Rajasthan',
+    defaultAddress: 'Fateh Sagar Marg, Lake Pichola',
+    defaultPostalCode: '313001',
+    phone: '+91 94250 91873',
+    whatsapp: '+91 94250 91873',
+    ownerName: 'Amanda Fernandes',
+    ownerRole: 'Spa Director & Head Aesthetician',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@azurepalms.udaipur',
+    themeStyle: {
+      heroBackground: 'bg-[#0b2540]',
+      heroTextColor: 'text-[#f5f1e6]',
+      cardBorder: 'border-[#7fb5c4]/40',
+      cardBackground: 'bg-[#0e2d4d]',
+      cardRadius: 'rounded-2xl',
+      accentColor: 'text-[#e6c188]',
+      accentBg: 'bg-[#e6c188]',
+      badgeBg: 'bg-[#173d5e]',
+      badgeText: 'text-[#f0d9ad]',
+      buttonBg: 'bg-[#e6c188] hover:bg-[#d4ad6e]',
+      buttonText: 'text-[#0b2540]',
+      priceColor: 'text-[#f0d9ad]',
+      isDark: true,
+      headerBanner: 'bg-[#081d33] border-b border-[#7fb5c4]/30'
+    },
+    services: [
+      {
+        id: 'res-1',
+        name: 'Destination Sunset Body Polish',
+        category: 'Body Rituals',
+        durationMinutes: 90,
+        price: 6500,
+        description: 'As the lake turns gold, a master aesthetician works sugar, sea salt, and warm coconut oil into your skin in a private suite facing the sunset. This 5-star resort ritual, scented with orange blossom and vanilla essential oils, melts deep stress away and leaves you with a silken, pampering sensory glow that lasts.',
+        icon: 'beach_access',
+        popular: true
+      },
+      {
+        id: 'res-2',
+        name: 'Hot Stone Muscle Melting Ritual',
+        category: 'Stone Therapy',
+        durationMinutes: 80,
+        price: 7500,
+        description: 'Volcanic hot stones, warmed in rose water, settle along your body in a private 5-star resort sanctuary while cedarwood and eucalyptus essential oil scents fill the air. Deep stress relief and a pampering sensory experience that melts every knot—leave feeling reborn.',
+        icon: 'local_fire_department',
+        popular: true
+      },
+      {
+        id: 'res-3',
+        name: 'Rose & Wine Couple Spa Journey',
+        category: 'Couples Journey',
+        durationMinutes: 120,
+        price: 14000,
+        description: 'Two private suites, one shared rose-petal ritual, and a curated wine cellar guide you and your partner through a 5-star resort couples journey designed for total deep stress relief. A pampering sensory experience of rose-essential-oil scented massages, warm towels, and private candlelit toasts.',
+        icon: 'favorite'
+      },
+      {
+        id: 'res-4',
+        name: 'Lavender Aromatherapy Detox',
+        category: 'Aromatherapy & Detox',
+        durationMinutes: 60,
+        price: 5800,
+        description: 'In a serene 5-star resort suite, the essential oil scents of lavender, geranium, and sweet orange guide you through a full-body detox journey. Deep stress relief, slow rhythmic strokes, and a pampering sensory finale with warm herbal compresses and chilled rose-water tonics—sleep deeper, wake radiant.',
+        icon: 'spa'
+      }
+    ],
+    stylists: [
+      {
+        id: 'res-st-1',
+        name: 'Amanda Fernandes',
+        role: 'Spa Director & Head Aesthetician',
+        avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Destination Rituals', 'Couples Journeys', '5-Star Service Design'],
+        rating: 4.98
+      },
+      {
+        id: 'res-st-2',
+        name: 'Rajesh "Stone" Menon',
+        role: 'Master Stone Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Hot Stone Rituals', 'Deep Tissue', 'Essential Oil Blending'],
+        rating: 4.95
+      },
+      {
+        id: 'res-st-3',
+        name: "Elisa D'Costa",
+        role: 'Aromatherapy & Detox Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Aromatherapy Detox', 'Body Polishes', 'Sensory Design'],
+        rating: 4.92
+      }
+    ]
+  },
+
+  // 27. Vedic Ayurveda Wellness Studio (Newly Added)
+  vedic_ayurveda_studio: {
+    id: 'vedic_ayurveda_studio',
+    title: 'Vedvriksha Vedic Ayurveda Wellness Studio',
+    shortName: 'Vedic Ayurveda Wellness Studio',
+    tagline: 'Time-Honoured Ayurvedic Therapies—Abhyanga, Shirodhara & Vedic Herbal Care',
+    about: 'A warm, marigold-scented wellness studio in Gopalpura, Jaipur, where Vedvriksha practices time-honoured Ayurvedic therapy with modern care. From Abhyanga body massage and Shirodhara to Kashaya Sekam detox and Kadi/Janu Vashti pain relief, every treatment is designed to restore your body’s natural balance.',
+    icon: 'healing',
+    layoutStyle: 'vedic_marigold',
+    paletteLabel: 'Marigold & Warm Sand Theme',
+    themePreset: 'marigold_warm_sand',
+    subCategories: ['Abhyanga & Body Care', 'Shirodhara & Mind Calm', 'Herbal Detox', 'Vedic Facials', 'Joint & Pain Relief'],
+    defaultCity: 'Jaipur, Rajasthan',
+    defaultAddress: 'Gopalpura, Near Ajmeri Gate',
+    defaultPostalCode: '302004',
+    phone: '+91 97820 54617',
+    whatsapp: '+91 97820 54617',
+    ownerName: 'Acharya Rajiv Saxena',
+    ownerRole: 'BAMS Ayurvedic Physician & Founder',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@vedvriksha.jaipur',
+    themeStyle: {
+      heroBackground: 'bg-[#fffaf0]',
+      heroTextColor: 'text-[#5c3a10]',
+      cardBorder: 'border-[#f0d9a8]',
+      cardBackground: 'bg-white',
+      cardRadius: 'rounded-2xl',
+      accentColor: 'text-[#c77b1e]',
+      accentBg: 'bg-[#c77b1e]',
+      badgeBg: 'bg-[#fdf2dc]',
+      badgeText: 'text-[#8a5312]',
+      buttonBg: 'bg-[#c77b1e] hover:bg-[#a86516]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#a86516]',
+      isDark: false,
+      headerBanner: 'bg-[#fff8e8] border-b border-[#f0d9a8]'
+    },
+    services: [
+      {
+        id: 'ved-1',
+        name: 'Abhyanga Body Massage',
+        category: 'Abhyanga & Body Care',
+        durationMinutes: 60,
+        price: 2200,
+        description: 'A traditional warm herbal oil massage designed to improve body circulation, melt away fatigue, and deeply relax tired muscles. Rhythmic Ayurvedic strokes restore balance, leaving the body warm, supple, and completely renewed.',
+        icon: 'self_improvement',
+        popular: true
+      },
+      {
+        id: 'ved-2',
+        name: 'Shirodhara Therapy',
+        category: 'Shirodhara & Mind Calm',
+        durationMinutes: 60,
+        price: 2800,
+        description: 'A continuous stream of warm medicated oil is poured over the scalp and forehead, gently dissolving mental stress, anxiety, and insomnia. The deep meditative calm it brings feels like the mind finally switching off—sleep follows naturally.',
+        icon: 'water_drop',
+        popular: true
+      },
+      {
+        id: 'ved-3',
+        name: 'Kashaya Sekam & Body Detox',
+        category: 'Herbal Detox',
+        durationMinutes: 45,
+        price: 2000,
+        description: 'A healing herbal decoction bath (Kashaya Sekam) steams the body with Ayurvedic herbs, drawing out skin toxins from within. The natural detox leaves the skin clean, clear, and glowing with healthy radiance.',
+        icon: 'eco'
+      },
+      {
+        id: 'ved-4',
+        name: 'Vedic Herbal Facial (Mukh Lepam)',
+        category: 'Vedic Facials',
+        durationMinutes: 45,
+        price: 1500,
+        description: 'A fresh pack of herbs, turmeric, and sandalwood is ground to order and applied for a deep, natural cleanse. It lifts impurities gently and restores the skin’s own glow—pure Ayurvedic rejuvenation, zero chemicals.',
+        icon: 'face'
+      },
+      {
+        id: 'ved-5',
+        name: 'Kadi Vashti / Janu Vashti (Localized Pain Relief)',
+        category: 'Joint & Pain Relief',
+        durationMinutes: 45,
+        price: 1800,
+        description: 'Warm medicated oil is held over the back, knees, or aching joints (Kadi/Janu Vashti), delivering deep, focused heat exactly where it is needed. Chronic joint pain and stiffness respond with instant, lasting relief.',
+        icon: 'healing'
+      }
+    ],
+    stylists: [
+      {
+        id: 'ved-st-1',
+        name: 'Acharya Rajiv Saxena',
+        role: 'BAMS Ayurvedic Physician & Founder',
+        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Nadi Pariksha', 'Pain Relief Protocols', 'Dosha Mapping'],
+        rating: 4.97
+      },
+      {
+        id: 'ved-st-2',
+        name: 'Lakshmi Devi',
+        role: 'Senior Ayurvedic Massage Therapist',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Abhyanga', 'Kashaya Sekam', 'Kadi/Janu Vashti'],
+        rating: 4.94
+      },
+      {
+        id: 'ved-st-3',
+        name: 'Sunita Bhandari',
+        role: 'Shirodhara & Mukh Lepam Specialist',
+        avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Shirodhara', 'Vedic Facials', 'Herbal Preparation'],
+        rating: 4.90
       }
     ]
   }
@@ -1823,6 +3191,201 @@ export const ALL_CATEGORY_OPTIONS: BusinessTypeOption[] = [
     paletteName: 'Terracotta & Copper',
     badge: 'Newly Added',
     defaultServices: CATEGORY_TEMPLATES.ayurvedic_spa.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'ayurvedic_wellness_spa',
+    title: 'Ayurvedic & Wellness Spa',
+    categoryTag: 'Ayurvedic Wellness',
+    icon: 'spa',
+    aestheticDescription: 'Serene botanical wellness layout, sage jade & soft cream theme.',
+    paletteName: 'Sage Jade & Botanical',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.ayurvedic_wellness_spa.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'luxury_hair_salon',
+    title: 'Premium Luxury Hair Salon',
+    categoryTag: 'Haute Hair Couture',
+    icon: 'workspace_premium',
+    aestheticDescription: 'High-fashion editorial layout, onyx & champagne gold luxury theme.',
+    paletteName: 'Onyx & Champagne Gold',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.luxury_hair_salon.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'bridal_makeover_studio',
+    title: 'Bridal & Makeover Studio',
+    categoryTag: 'Bridal Couture',
+    icon: 'engagement',
+    aestheticDescription: 'Soft ivory & blush pearl bridal layout, rose & pearl accents.',
+    paletteName: 'Ivory Blush & Pearl',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.bridal_makeover_studio.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'family_salon',
+    title: 'Modern Unisex Family Salon',
+    categoryTag: 'Family Friendly',
+    icon: 'diversity_2',
+    aestheticDescription: 'Fresh, modern family layout, sky blue & warm cream theme.',
+    paletteName: 'Sky Blue & Warm Cream',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.family_salon.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'barber_grooming_club',
+    title: "Gentlemen's Barber & Grooming Club",
+    categoryTag: "Gentleman's Club",
+    icon: 'local_bar',
+    aestheticDescription: "Dark gentleman's club layout, midnight navy & copper brass theme.",
+    paletteName: 'Midnight Navy & Copper',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.barber_grooming_club.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'nails_lash_brow_bar',
+    title: 'Nails, Lash & Brow Bar',
+    categoryTag: 'Micro-Service Bar',
+    icon: 'auto_awesome',
+    aestheticDescription: 'Vibrant berry & pearl micro-bar layout, raspberry & cream accents.',
+    paletteName: 'Berry Blush & Pearl',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.nails_lash_brow_bar.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'medispa_aesthetics',
+    title: 'Medi-Spa & Skin Aesthetics Clinic',
+    categoryTag: 'Medi-Aesthetic',
+    icon: 'monitor_heart',
+    aestheticDescription: 'Calm clinical medi-spa layout, porcelain white & sage teal theme.',
+    paletteName: 'Porcelain & Sage Teal',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.medispa_aesthetics.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'organic_bio_salon',
+    title: 'Organic & Eco-Friendly Bio-Salon',
+    categoryTag: 'Zero-Waste Vegan',
+    icon: 'sprout',
+    aestheticDescription: 'Fresh organic meadow layout, fern green & natural linen theme.',
+    paletteName: 'Fern Green & Natural Linen',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.organic_bio_salon.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'express_beauty_bar',
+    title: 'Express & Quick Beauty Bar',
+    categoryTag: 'Zero-Wait Express',
+    icon: 'bolt',
+    aestheticDescription: 'Punchy dark express-bar layout, coral pop & slate theme.',
+    paletteName: 'Coral Pop & Slate',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.express_beauty_bar.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'thai_massage_center',
+    title: 'Thai & Oriental Massage Center',
+    categoryTag: 'Oriental Healing',
+    icon: 'self_improvement',
+    aestheticDescription: 'Serene oriental sanctuary layout, temple saffron & silk theme.',
+    paletteName: 'Temple Saffron & Silk',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.thai_massage_center.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'kids_teens_studio',
+    title: 'Kids & Teens Fun Hair Studio',
+    categoryTag: 'Kids & Teens',
+    icon: 'emoji_emotions',
+    aestheticDescription: 'Playful candy playroom layout, cotton candy & sky pop theme.',
+    paletteName: 'Cotton Candy & Sky Pop',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.kids_teens_studio.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'resort_spa',
+    title: 'Luxury Hotel & Resort Spa',
+    categoryTag: 'Resort Luxury',
+    icon: 'hotel',
+    aestheticDescription: 'Opulent lakeside resort layout, deep azure & champagne gold theme.',
+    paletteName: 'Azure & Champagne Gold',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.resort_spa.services.map((s) => ({
+      name: s.name,
+      price: s.price,
+      duration: s.durationMinutes,
+      category: s.category
+    }))
+  },
+  {
+    id: 'vedic_ayurveda_studio',
+    title: 'Vedic Ayurveda Wellness Studio',
+    categoryTag: 'Vedic Therapy',
+    icon: 'healing',
+    aestheticDescription: 'Warm Vedic wellness layout, marigold & warm sand theme.',
+    paletteName: 'Marigold & Warm Sand',
+    badge: 'Newly Added',
+    defaultServices: CATEGORY_TEMPLATES.vedic_ayurveda_studio.services.map((s) => ({
       name: s.name,
       price: s.price,
       duration: s.durationMinutes,
