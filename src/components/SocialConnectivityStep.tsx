@@ -270,58 +270,17 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
-      {/* HEADER CONTROLS: BRANDING, STEP PROGRESS, STATUS & SECTION DROPDOWN */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#b0004a] to-[#d81b60] text-white flex items-center justify-center font-display font-black text-xl shadow-md shrink-0">
-            N
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-display font-extrabold text-lg text-gray-900 tracking-tight">Nexora</span>
-              <span className="text-[10px] font-mono font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md border border-gray-200">BUILDER v2.4</span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <select 
-                value="06"
-                onChange={() => {}}
-                className="text-xs font-bold font-mono text-[#b0004a] bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer"
-              >
-                <option value="06">OWNER SETUP 06 — Socials & Reels</option>
-                <option value="01">OWNER SETUP 01 — Salon Basics</option>
-                <option value="02">OWNER SETUP 02 — Category Templates</option>
-                <option value="03">OWNER SETUP 03 — AI Bio & Story</option>
-                <option value="04">OWNER SETUP 04 — Service Menu</option>
-                <option value="05">OWNER SETUP 05 — Photo Gallery</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 self-end md:self-center">
-          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold px-3 py-1.5 rounded-xl">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Saved ✓</span>
-          </div>
-          <div className="bg-gray-900 text-white text-xs font-mono font-bold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xs">
-            <span className="text-rose-400">Step 6</span>
-            <span className="text-gray-500">of</span>
-            <span>14</span>
-          </div>
-        </div>
-      </div>
-
       {/* STEP TITLE HEADER */}
       <div className="flex flex-col gap-1 bg-gradient-to-r from-rose-50/50 via-white to-purple-50/30 p-5 rounded-2xl border border-gray-200/80">
         <span className="font-mono-caps text-xs font-bold text-[#b0004a] tracking-widest uppercase flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-[#b0004a] animate-pulse" />
-          <span>STEP 06 • SOCIAL CONNECTIVITY</span>
+          <span>SOCIAL MEDIA & REELS SHOWCASE</span>
         </span>
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-          Connect your social media
+          Connect your social channels & video feeds
         </h1>
         <p className="text-gray-600 text-xs sm:text-sm max-w-3xl leading-relaxed">
-          Add your profiles and short videos. They'll appear directly on your website to build social proof and showcase real client transformations.
+          Add your social profiles and YouTube short transformation videos. They appear directly on your live website to build social trust and attract more bookings.
         </p>
       </div>
 
@@ -1204,26 +1163,32 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
         </div>
       )}
 
-      {/* NAVIGATION FOOTER */}
-      <div className="flex justify-between items-center border-t border-gray-200 pt-6 mt-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="px-6 py-3 rounded-xl border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center gap-1.5 cursor-pointer shadow-xs"
-        >
-          <span className="material-symbols-outlined text-sm">arrow_back</span>
-          <span>Back</span>
-        </button>
+      {/* NAVIGATION FOOTER (IF WIZARD MODE) */}
+      {(onBack || onContinue) && (
+        <div className="flex justify-between items-center border-t border-gray-200 pt-6 mt-4">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-6 py-3 rounded-xl border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <span className="material-symbols-outlined text-sm">arrow_back</span>
+              <span>Back</span>
+            </button>
+          )}
 
-        <button
-          type="button"
-          onClick={onContinue}
-          className="bg-[#b0004a] hover:bg-[#d81b60] text-white text-xs font-bold px-8 py-3.5 rounded-xl shadow-md shadow-[#b0004a]/20 hover:shadow-lg flex items-center gap-2 transition-all cursor-pointer"
-        >
-          <span>Continue</span>
-          <span className="material-symbols-outlined text-sm">arrow_forward</span>
-        </button>
-      </div>
+          {onContinue && (
+            <button
+              type="button"
+              onClick={onContinue}
+              className="ml-auto bg-[#b0004a] hover:bg-[#d81b60] text-white text-xs font-bold px-8 py-3.5 rounded-xl shadow-md shadow-[#b0004a]/20 hover:shadow-lg flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <span>Continue</span>
+              <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

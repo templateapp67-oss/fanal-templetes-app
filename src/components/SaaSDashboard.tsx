@@ -305,8 +305,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             { id: 'team', label: 'Team Management', icon: 'badge' },
             { id: 'clients', label: 'Clients CRM', icon: 'group' },
             { id: 'loyalty', label: 'Loyalty & Rewards', icon: 'military_tech' },
-            { id: 'marketing', label: 'Promo Image & Social', icon: 'photo_camera_back' },
-            { id: 'social_connectivity', label: 'Step 06 • Social Connectivity', icon: 'share' },
+            { id: 'marketing', label: 'Promo Studio', icon: 'photo_camera_back' },
+            { id: 'social_connectivity', label: 'Social & Reels', icon: 'share' },
             { id: 'appearance', label: 'Appearance', icon: 'palette' },
             { id: 'website', label: 'Salon Info', icon: 'storefront' }
           ].map((tab) => {
