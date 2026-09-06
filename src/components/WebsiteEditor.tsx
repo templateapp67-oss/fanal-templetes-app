@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Sparkles,
   Play,
+  X,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
@@ -97,7 +98,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [longVideos, setLongVideos] = useState<YtVideoRow[]>([]);
   const [shortUrlInput, setShortUrlInput] = useState('');
   const [longUrlInput, setLongUrlInput] = useState('');
-  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
+  const [fetchStatus, setFetchStatus] = useState<{
+    message: string;
+    tone: 'info' | 'success' | 'error';
+  } | null>(null);
+  // Which section owns the link currently shown in the status card, so the
+  // "Clear link" action can wipe the right input when an error is dismissed.
+  const [failedSection, setFailedSection] = useState<'short' | 'long' | null>(null);
   const [isAddingVideo, setIsAddingVideo] = useState(false);
   const isAddingVideoRef = useRef(false);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
@@ -172,9 +179,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     if (!trimmedUrl) return;
 
     if (!extractYouTubeId(trimmedUrl)) {
-      setFetchStatus(
-        'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...'
-      );
+      setFailedSection(type);
+      setFetchStatus({
+        message:
+          'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...',
+        tone: 'error',
+      });
       showToast?.('Invalid YouTube URL', 'error');
       return;
     }
@@ -184,17 +194,21 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     const currentCount = type === 'short' ? shortsRef.current.length : longVideosRef.current.length;
     const maxAllowed = type === 'short' ? MAX_SHORTS : MAX_LONG_VIDEOS;
     if (currentCount >= maxAllowed) {
-      setFetchStatus(
-        type === 'short'
-          ? 'Shorts limit reached (max 5). Delete one to add another.'
-          : 'Long Videos limit reached (max 5). Delete one to add another.'
-      );
+      setFailedSection(type);
+      setFetchStatus({
+        message:
+          type === 'short'
+            ? 'Shorts limit reached (max 5). Delete one to add another.'
+            : 'Long Videos limit reached (max 5). Delete one to add another.',
+        tone: 'error',
+      });
       return;
     }
 
     isAddingVideoRef.current = true;
     setIsAddingVideo(true);
-    setFetchStatus('Adding video… Metadata is optional.');
+    setFailedSection(null);
+    setFetchStatus({ message: 'Adding video… Metadata is optional.', tone: 'info' });
     try {
       const savedRow = await addYouTubeItem(
         trimmedUrl,
@@ -224,11 +238,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         setLongVideos(updated);
         setLongUrlInput('');
       }
-      setFetchStatus('Video added!');
+      setFetchStatus({ message: 'Video added!', tone: 'success' });
       showToast?.(isMockSupabase ? 'Video added (preview mode).' : 'Video saved to database!', 'success');
     } catch (err) {
       console.warn('Save video error:', err);
-      setFetchStatus('Failed to save video. Please try again.');
+      // Keep the failed link in the input and surface a card with a one-click
+      // "Clear link" action so the user can dismiss the error and wipe the URL.
+      setFailedSection(type);
+      setFetchStatus({ message: 'Failed to save video. Please try again.', tone: 'error' });
       showToast?.('Failed to save video.', 'error');
     } finally {
       isAddingVideoRef.current = false;
@@ -282,6 +299,18 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   React.useEffect(() => {
     loadYouTubeVideos();
   }, []);
+
+  // One-click dismissal for a failed/invalid link: clears the status card and
+  // the pasted URL for the section that failed, so the user starts fresh.
+  const clearYouTubeError = (section: 'short' | 'long') => {
+    if (section === 'short') {
+      setShortUrlInput('');
+    } else {
+      setLongUrlInput('');
+    }
+    setFailedSection(null);
+    setFetchStatus(null);
+  };
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -872,9 +901,40 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </p>
 
           {fetchStatus && (
-            <div role="status" aria-live="polite" className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-[11px] font-medium mb-3 flex items-center gap-2">
-              <span className="material-symbols-outlined text-base text-rose-600">info</span>
-              <span>{fetchStatus}</span>
+            <div
+              role="status"
+              aria-live="polite"
+              className={`p-2.5 rounded-xl text-[11px] font-medium mb-3 flex items-center gap-2 border ${
+                fetchStatus.tone === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : fetchStatus.tone === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-blue-50 border-blue-200 text-blue-800'
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-base ${
+                  fetchStatus.tone === 'error'
+                    ? 'text-rose-600'
+                    : fetchStatus.tone === 'success'
+                    ? 'text-emerald-600'
+                    : 'text-blue-600'
+                }`}
+              >
+                {fetchStatus.tone === 'error' ? 'error' : fetchStatus.tone === 'success' ? 'check_circle' : 'info'}
+              </span>
+              <span className="flex-1">{fetchStatus.message}</span>
+              {failedSection && (
+                <button
+                  type="button"
+                  onClick={() => clearYouTubeError(failedSection)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold transition-colors cursor-pointer whitespace-nowrap"
+                  title="Dismiss error and clear the failed link"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Clear link</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -892,16 +952,33 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
             {/* Input */}
             <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                value={shortUrlInput}
-                disabled={isAddingVideo}
-                onChange={(e) => setShortUrlInput(e.target.value)}
-                placeholder="Paste a YouTube link (shorts, youtu.be or watch URL)"
-                aria-label="Shorts YouTube URL"
-                autoComplete="off"
-                className="flex-1 p-2.5 rounded-xl border border-rose-200 text-xs focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none bg-rose-50/30"
-              />
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={shortUrlInput}
+                  disabled={isAddingVideo}
+                  onChange={(e) => setShortUrlInput(e.target.value)}
+                  placeholder="Paste a YouTube link (shorts, youtu.be or watch URL)"
+                  aria-label="Shorts YouTube URL"
+                  autoComplete="off"
+                  className="w-full p-2.5 pr-9 rounded-xl border border-rose-200 text-xs focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none bg-rose-50/30"
+                />
+                {shortUrlInput && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShortUrlInput('');
+                      if (failedSection === 'short') clearYouTubeError('short');
+                    }}
+                    disabled={isAddingVideo}
+                    aria-label="Clear Shorts link"
+                    title="Clear link"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-rose-600 hover:bg-rose-100 disabled:opacity-40 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => handleAddYouTubeVideo(shortUrlInput, 'short')}
@@ -963,16 +1040,33 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </div>
 
             <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                value={longUrlInput}
-                disabled={isAddingVideo}
-                onChange={(e) => setLongUrlInput(e.target.value)}
-                placeholder="Paste YouTube video URL (e.g. https://www.youtube.com/watch?v=...)"
-                aria-label="Long YouTube video URL"
-                autoComplete="off"
-                className="flex-1 p-2.5 rounded-xl border border-sky-200 text-xs focus:ring-2 focus:ring-sky-300 focus:border-sky-400 outline-none bg-sky-50/30"
-              />
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={longUrlInput}
+                  disabled={isAddingVideo}
+                  onChange={(e) => setLongUrlInput(e.target.value)}
+                  placeholder="Paste YouTube video URL (e.g. https://www.youtube.com/watch?v=...)"
+                  aria-label="Long YouTube video URL"
+                  autoComplete="off"
+                  className="w-full p-2.5 pr-9 rounded-xl border border-sky-200 text-xs focus:ring-2 focus:ring-sky-300 focus:border-sky-400 outline-none bg-sky-50/30"
+                />
+                {longUrlInput && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLongUrlInput('');
+                      if (failedSection === 'long') clearYouTubeError('long');
+                    }}
+                    disabled={isAddingVideo}
+                    aria-label="Clear Long Video link"
+                    title="Clear link"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-sky-600 hover:bg-sky-100 disabled:opacity-40 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => handleAddYouTubeVideo(longUrlInput, 'long')}
