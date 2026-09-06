@@ -248,20 +248,9 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
     showToast(`Location set to ${cityName}`);
   };
 
+  // The preview toolbar owns the single Side Customizer launcher.
   if (!isOpen) {
-    return (
-      <button
-        onClick={onToggle}
-        className="fixed right-0 top-36 z-40 bg-slate-900 hover:bg-slate-800 text-white p-2.5 rounded-l-2xl shadow-2xl flex items-center gap-2 border-y border-l border-slate-700 transition-all hover:pl-3 cursor-pointer group"
-        title="Open Visual Customizer Side-Panel"
-        id="open-customizer-btn"
-      >
-        <Sliders className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform" />
-        <span className="text-xs font-bold [writing-mode:vertical-lr] rotate-180 py-1 tracking-wider uppercase">
-          Customize
-        </span>
-      </button>
-    );
+    return null;
   }
 
   return (

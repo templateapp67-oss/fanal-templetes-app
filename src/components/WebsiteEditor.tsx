@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Save,
   Eye,
@@ -27,6 +27,7 @@ import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
 import { AIBioModal } from './AIBioModal';
+import { WebsiteSavedModal } from './WebsiteSavedModal';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -39,8 +40,9 @@ interface WebsiteEditorProps {
   onComplete: () => void;
   onSelectTemplate?: (catId: BusinessTypeId) => void;
   selectedTemplateId?: BusinessTypeId;
-  siteUrl?: string;
-  onSave?: () => void;
+  siteUrl: string;
+  onSave: () => Promise<boolean>;
+  onBackToDashboard: () => void;
   showToast?: (message: string, type?: 'success' | 'error') => void;
 }
 
@@ -57,10 +59,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   selectedTemplateId,
   siteUrl,
   onSave,
+  onBackToDashboard,
   showToast,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
+  const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const isSavePending = isSaving || saveStatus === 'saving';
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -93,24 +100,38 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     onSelectTemplate?.(catId);
   };
 
-  const handleCopyLink = () => {
-    if (!siteUrl) return;
-    navigator.clipboard?.writeText(siteUrl);
-    setCopied(true);
-    showToast?.('Website link copied to clipboard!');
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyLink = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(siteUrl);
+      setCopied(true);
+      showToast?.('Website link copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      showToast?.('Couldn’t copy the link. Please copy the displayed site URL manually.', 'error');
+    }
   };
 
-  const handleSave = () => {
-    onSave?.();
-    showToast?.('Website details updated successfully!');
+  const handleSave = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (isSavePending) return;
+    saveTriggerRef.current = event.currentTarget;
+    setIsSaving(true);
+    try {
+      // Only an explicit, successful save opens the next-step dialog, never an autosave.
+      if (await onSave()) setSavedSiteUrl(siteUrl);
+    } catch {
+      showToast?.('Save failed. Please try again.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const subCategories =
     CATEGORY_TEMPLATES[selectedTemplateId || profile.businessType]?.subCategories || [];
 
   const saveLabel =
-    saveStatus === 'saving'
+    isSavePending
       ? 'Saving…'
       : saveStatus === 'error'
       ? 'Save failed'
@@ -145,7 +166,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <div className="flex items-center gap-2">
             <div
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${
-                saveStatus === 'saving'
+                isSavePending
                   ? 'bg-blue-50 border-blue-200 text-blue-700'
                   : saveStatus === 'error'
                   ? 'bg-rose-50 border-rose-200 text-rose-700'
@@ -154,7 +175,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   : 'bg-gray-50 border-gray-200 text-gray-600'
               }`}
             >
-              {saveStatus === 'saving' ? (
+              {isSavePending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : saveStatus === 'error' ? (
                 <AlertCircle className="w-3.5 h-3.5" />
@@ -167,15 +188,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <button
               type="button"
               onClick={handleSave}
-              disabled={saveStatus === 'saving'}
+              disabled={isSavePending}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#C20E5A] hover:bg-[#A30B4A] disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
-              {saveStatus === 'saving' ? (
+              {isSavePending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              <span>Save &amp; Update Website</span>
+              <span>{isSavePending ? 'Saving…' : 'Save & Update Website'}</span>
             </button>
 
             <button
@@ -619,23 +640,25 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             )}
             <span>
-              {saveStatus === 'error'
+              {isSavePending
+                ? 'Saving your changes…'
+                : saveStatus === 'error'
                 ? 'We couldn’t save your changes. Please try again.'
-                : 'Your details are saved and already reflected in the live preview.'}
+                : 'Save your changes, then preview your website, share its link, or return to your dashboard.'}
             </span>
           </div>
           <button
             type="button"
             onClick={handleSave}
-            disabled={saveStatus === 'saving'}
+            disabled={isSavePending}
             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#C20E5A] hover:bg-[#A30B4A] disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
           >
-            {saveStatus === 'saving' ? (
+            {isSavePending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Save className="w-4 h-4" />
             )}
-            <span>Save &amp; Update Website</span>
+            <span>{isSavePending ? 'Saving…' : 'Save & Update Website'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -645,6 +668,18 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           One form • Each field asked once • Auto-synced with the live template
         </p>
       </div>
+
+      {savedSiteUrl && (
+        <WebsiteSavedModal
+          siteUrl={savedSiteUrl}
+          returnFocusTo={saveTriggerRef.current}
+          onClose={() => setSavedSiteUrl(null)}
+          onBackToDashboard={() => {
+            setSavedSiteUrl(null);
+            onBackToDashboard();
+          }}
+        />
+      )}
 
       <AIBioModal
         isOpen={isBioModalOpen}

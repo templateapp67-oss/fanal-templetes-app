@@ -42,11 +42,18 @@ export function slugifySalonName(name: string): string {
 }
 
 /** Build the public (white-label) site URL from a profile. */
-export function getSiteUrl(profile: SalonProfile): string {
+export function getSiteUrl(profile: SalonProfile, publishedOrigin?: string): string {
   if (profile.customDomain) {
     return `https://${profile.customDomain}`;
   }
   const sub = profile.subdomain || slugifySalonName(profile.businessName);
+
+  // Share the published deployment, not the editor's temporary preview origin.
+  if (publishedOrigin) {
+    const url = new URL('/', publishedOrigin);
+    url.searchParams.set('site', sub);
+    return url.toString();
+  }
 
   if (typeof window !== 'undefined') {
     const origin = window.location.origin;
@@ -222,11 +229,8 @@ export function loadSalonState(): SalonState | null {
 }
 
 export function saveSalonState(state: SalonState): void {
-  try {
-    localStorage.setItem(SALON_STATE_STORAGE_KEY, JSON.stringify(state));
-  } catch (err) {
-    console.warn('Could not persist salon state:', err);
-  }
+  // Let the save flow report storage failures instead of claiming success.
+  localStorage.setItem(SALON_STATE_STORAGE_KEY, JSON.stringify(state));
 }
 
 // Legacy key the app previously wrote to; we migrate it on first load.
