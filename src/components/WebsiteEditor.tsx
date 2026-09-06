@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Save,
   Eye,
@@ -22,22 +22,11 @@ import {
   AlertCircle,
   ArrowRight,
   Sparkles,
-  Play,
-  X,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
 import { AIBioModal } from './AIBioModal';
-import { supabase, isMockSupabase } from '../lib/supabaseClient';
-import {
-  buildYouTubeShortsUrl,
-  buildYouTubeThumbnailUrl,
-  buildYouTubeWatchUrl,
-  extractYouTubeId,
-  isYouTubeVideoId,
-} from '../utils/youtube';
-import { addYouTubeItem } from '../utils/youtubeMetadata';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -57,14 +46,6 @@ interface WebsiteEditorProps {
 
 const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
 
-const MAX_SHORTS = 5;
-const MAX_LONG_VIDEOS = 5;
-
-/** Canonical clean link for a stored row (Short → /shorts/ID, Long → watch). */
-function canonicalYouTubeUrl(videoId: string, type: 'short' | 'long'): string {
-  return type === 'short' ? buildYouTubeShortsUrl(videoId) : buildYouTubeWatchUrl(videoId);
-}
-
 export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   profile,
   setProfile,
@@ -80,237 +61,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
-
-  // -- YouTube Management ---------------------------------------------------
-  interface YtVideoRow {
-    id?: string;
-    video_type: 'short' | 'long';
-    youtube_url: string;
-    youtube_video_id: string;
-    title: string;
-    thumbnail_url?: string;
-    description?: string;
-    like_count?: number;
-    comment_count?: number;
-  }
-
-  const [shorts, setShorts] = useState<YtVideoRow[]>([]);
-  const [longVideos, setLongVideos] = useState<YtVideoRow[]>([]);
-  const [shortUrlInput, setShortUrlInput] = useState('');
-  const [longUrlInput, setLongUrlInput] = useState('');
-  const [fetchStatus, setFetchStatus] = useState<{
-    message: string;
-    tone: 'info' | 'success' | 'error';
-  } | null>(null);
-  // Which section owns the link currently shown in the status card, so the
-  // "Clear link" action can wipe the right input when an error is dismissed.
-  const [failedSection, setFailedSection] = useState<'short' | 'long' | null>(null);
-  const [isAddingVideo, setIsAddingVideo] = useState(false);
-  const isAddingVideoRef = useRef(false);
-  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
-
-  // Keep live refs alongside state so the max-5 checks stay accurate even when
-  // multiple add actions happen quickly, without relying on a stale closure.
-  const shortsRef = useRef<YtVideoRow[]>([]);
-  const longVideosRef = useRef<YtVideoRow[]>([]);
-
-  // Normalizes a DB row into the editor's YtVideoRow shape. Legacy rows may
-  // have stored a raw URL (with ?si=…, &feature=shared, etc.) or a malformed
-  // video id, so we always recover/clean the 11-char video id here.
-  const mapVideoRow = (r: any, videoType: 'short' | 'long'): YtVideoRow => {
-    const rawUrl = typeof r.youtube_url === 'string' ? r.youtube_url.trim() : '';
-    const rawId = typeof r.youtube_video_id === 'string' ? r.youtube_video_id.trim() : '';
-    const videoId = isYouTubeVideoId(rawId)
-      ? rawId
-      : isYouTubeVideoId(rawUrl)
-      ? rawUrl
-      : extractYouTubeId(rawUrl) || rawId;
-    const youtubeUrl = videoId
-      ? canonicalYouTubeUrl(videoId, videoType)
-      : rawUrl;
-    return {
-      id: r.id,
-      video_type: videoType,
-      youtube_url: youtubeUrl,
-      youtube_video_id: videoId,
-      title: r.title || '',
-      thumbnail_url: r.thumbnail_url || (videoId ? buildYouTubeThumbnailUrl(videoId) : undefined),
-      description: r.description,
-      like_count: r.like_count,
-      comment_count: r.comment_count,
-    };
-  };
-
-  const loadYouTubeVideos = async () => {
-    setIsLoadingVideos(true);
-    try {
-      // Try to load from DB; fall back to empty arrays in mock mode
-      let shortsData: any[] = [];
-      let longData: any[] = [];
-      if (!isMockSupabase) {
-        const { data: sData } = await supabase
-          .from('salon_youtube_videos')
-          .select('*')
-          .eq('video_type', 'short');
-        const { data: lData } = await supabase
-          .from('salon_youtube_videos')
-          .select('*')
-          .eq('video_type', 'long');
-        shortsData = sData || [];
-        longData = lData || [];
-      }
-      const shortsRows = (shortsData || []).map((r: any) => mapVideoRow(r, 'short'));
-      const longRows = (longData || []).map((r: any) => mapVideoRow(r, 'long'));
-      shortsRef.current = shortsRows;
-      longVideosRef.current = longRows;
-      setShorts(shortsRows);
-      setLongVideos(longRows);
-    } catch (err) {
-      console.warn('Failed to load YouTube videos:', err);
-    } finally {
-      setIsLoadingVideos(false);
-    }
-  };
-
-  const handleAddYouTubeVideo = async (url: string, type: 'short' | 'long') => {
-    // A ref also blocks same-tick clicks while metadata AND persistence are pending.
-    if (isAddingVideoRef.current || isLoadingVideos) return;
-    const trimmedUrl = url.trim();
-    if (!trimmedUrl) return;
-
-    if (!extractYouTubeId(trimmedUrl)) {
-      setFailedSection(type);
-      setFetchStatus({
-        message:
-          'Invalid YouTube URL. Supported formats: youtube.com/watch?v=..., youtube.com/shorts/..., youtu.be/..., youtube.com/embed/...',
-        tone: 'error',
-      });
-      showToast?.('Invalid YouTube URL', 'error');
-      return;
-    }
-
-    // The selected section determines the category, not the URL format: a Short
-    // can also be shared as a youtu.be link or a watch URL.
-    const currentCount = type === 'short' ? shortsRef.current.length : longVideosRef.current.length;
-    const maxAllowed = type === 'short' ? MAX_SHORTS : MAX_LONG_VIDEOS;
-    if (currentCount >= maxAllowed) {
-      setFailedSection(type);
-      setFetchStatus({
-        message:
-          type === 'short'
-            ? 'Shorts limit reached (max 5). Delete one to add another.'
-            : 'Long Videos limit reached (max 5). Delete one to add another.',
-        tone: 'error',
-      });
-      return;
-    }
-
-    isAddingVideoRef.current = true;
-    setIsAddingVideo(true);
-    setFailedSection(null);
-    setFetchStatus({ message: 'Adding video… Metadata is optional.', tone: 'info' });
-    try {
-      const savedRow = await addYouTubeItem(
-        trimmedUrl,
-        type === 'short' ? 'YouTube Short' : 'YouTube Video',
-        (metadata) => handleSaveVideoToDb({
-          video_type: type,
-          youtube_url: canonicalYouTubeUrl(metadata.videoId, type),
-          youtube_video_id: metadata.videoId,
-          title: metadata.title,
-          thumbnail_url: metadata.thumbnailUrl,
-          description: metadata.description,
-          like_count: metadata.likeCount,
-          comment_count: metadata.commentCount,
-        }),
-      );
-
-      // Only publish to editor state after persistence succeeds. A failed save
-      // leaves the input intact and must not appear as a successfully added row.
-      if (type === 'short') {
-        const updated = [...shortsRef.current, savedRow];
-        shortsRef.current = updated;
-        setShorts(updated);
-        setShortUrlInput('');
-      } else {
-        const updated = [...longVideosRef.current, savedRow];
-        longVideosRef.current = updated;
-        setLongVideos(updated);
-        setLongUrlInput('');
-      }
-      setFetchStatus({ message: 'Video added!', tone: 'success' });
-      showToast?.(isMockSupabase ? 'Video added (preview mode).' : 'Video saved to database!', 'success');
-    } catch (err) {
-      console.warn('Save video error:', err);
-      // Keep the failed link in the input and surface a card with a one-click
-      // "Clear link" action so the user can dismiss the error and wipe the URL.
-      setFailedSection(type);
-      setFetchStatus({ message: 'Failed to save video. Please try again.', tone: 'error' });
-      showToast?.('Failed to save video.', 'error');
-    } finally {
-      isAddingVideoRef.current = false;
-      setIsAddingVideo(false);
-    }
-  };
-
-  const handleSaveVideoToDb = async (video: YtVideoRow): Promise<YtVideoRow> => {
-    if (isMockSupabase) return video;
-
-    // This table references profiles.id (the authenticated owner), not a subdomain.
-    if (!profile.ownerId) throw new Error('Sign in to save videos.');
-    const { data, error } = await supabase.from('salon_youtube_videos').insert({
-      salon_id: profile.ownerId,
-      video_type: video.video_type,
-      youtube_url: video.youtube_url,
-      youtube_video_id: video.youtube_video_id,
-      title: video.title,
-      thumbnail_url: video.thumbnail_url,
-      description: video.description,
-      like_count: video.like_count || 0,
-      comment_count: video.comment_count || 0,
-    }).select('id').single();
-    if (error) throw error;
-    return { ...video, id: data.id };
-  };
-
-  const handleDeleteVideo = async (id: string, type: 'short' | 'long') => {
-    try {
-      if (!isMockSupabase && id && id.length > 10) {
-        const { error } = await supabase.from('salon_youtube_videos').delete().eq('id', id);
-        if (error) console.warn('DB delete error:', error);
-      }
-      if (type === 'short') {
-        const updated = shortsRef.current.filter((v) => v.id !== id && v.youtube_video_id !== id);
-        shortsRef.current = updated;
-        setShorts(updated);
-      } else {
-        const updated = longVideosRef.current.filter((v) => v.id !== id && v.youtube_video_id !== id);
-        longVideosRef.current = updated;
-        setLongVideos(updated);
-      }
-      showToast?.('Video deleted.');
-      await loadYouTubeVideos();
-    } catch (err) {
-      console.warn('Delete video error:', err);
-    }
-  };
-
-  // Load videos on mount
-  React.useEffect(() => {
-    loadYouTubeVideos();
-  }, []);
-
-  // One-click dismissal for a failed/invalid link: clears the status card and
-  // the pasted URL for the section that failed, so the user starts fresh.
-  const clearYouTubeError = (section: 'short' | 'long') => {
-    if (section === 'short') {
-      setShortUrlInput('');
-    } else {
-      setLongUrlInput('');
-    }
-    setFailedSection(null);
-    setFetchStatus(null);
-  };
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -499,14 +249,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   className="inline-flex items-center gap-1 text-[11px] font-bold text-[#C20E5A] hover:text-[#A30B4A] hover:underline cursor-pointer"
                 >
                   <Sparkles className="w-3 h-3" />
-                  <span>Write with AI</span>
+                  <span>Generate with AI / Voice</span>
                 </button>
               </div>
               <textarea
                 rows={3}
                 value={profile.about}
                 onChange={(e) => upd({ about: e.target.value })}
-                placeholder="Tell clients what makes your salon special…"
+                placeholder="Tell clients about your salon's vision, philosophy and experience..."
                 className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
               />
             </div>
@@ -519,20 +269,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 type="text"
                 value={profile.ownerName}
                 onChange={(e) => upd({ ownerName: e.target.value })}
-                placeholder="e.g. Ananya Sharma"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Owner Role / Title
-              </label>
-              <input
-                type="text"
-                value={profile.ownerRole}
-                onChange={(e) => upd({ ownerRole: e.target.value })}
-                placeholder="e.g. Founder & Lead Stylist"
+                placeholder="e.g. Priya Sharma"
                 className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
               />
             </div>
@@ -546,7 +283,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
-            These power your click-to-call, WhatsApp booking and the map on your website.
+            How customers reach, call, WhatsApp or find your physical salon.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -554,114 +291,75 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
                 Phone Number <span className="text-rose-500">*</span>
               </label>
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className="relative">
+                <Phone className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={profile.phone}
                   onChange={(e) => upd({ phone: e.target.value })}
                   placeholder="+91 98765 43210"
-                  className="flex-1 p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
                 />
               </div>
             </div>
 
             <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                WhatsApp / Booking Line
+                WhatsApp Number
               </label>
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className="relative">
+                <MessageSquare className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={profile.whatsapp}
                   onChange={(e) => upd({ whatsapp: e.target.value })}
                   placeholder="+91 98765 43210"
-                  className="flex-1 p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
                 />
               </div>
             </div>
 
-            <div className="md:col-span-2">
+            <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
                 Email Address
               </label>
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className="relative">
+                <Mail className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="email"
                   value={profile.email}
                   onChange={(e) => upd({ email: e.target.value })}
-                  placeholder="hello@yoursalon.com"
-                  className="flex-1 p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                  placeholder="hello@miraki.com"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
                 />
               </div>
             </div>
 
             <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                City
+                Physical Address / Location <span className="text-rose-500">*</span>
               </label>
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className="relative">
+                <MapPin className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  value={profile.city}
-                  onChange={(e) => upd({ city: e.target.value })}
-                  placeholder="Mumbai"
-                  className="flex-1 p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                  value={profile.address}
+                  onChange={(e) => upd({ address: e.target.value })}
+                  placeholder="Plot 42, Road No 36, Jubilee Hills"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Postal PIN Code
-              </label>
-              <input
-                type="text"
-                value={profile.postalCode}
-                onChange={(e) => upd({ postalCode: e.target.value })}
-                placeholder="400001"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
             </div>
 
             <div className="md:col-span-2">
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Full Address
+                City / Area
               </label>
               <input
                 type="text"
-                value={profile.address}
-                onChange={(e) => upd({ address: e.target.value })}
-                placeholder="Shop No. 12, Crystal Plaza, MG Road"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Landmark
-              </label>
-              <input
-                type="text"
-                value={profile.landmark || ''}
-                onChange={(e) => upd({ landmark: e.target.value })}
-                placeholder="Near City Mall"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Instagram Handle
-              </label>
-              <input
-                type="text"
-                value={profile.instagramHandle}
-                onChange={(e) => upd({ instagramHandle: e.target.value.replace('@', '') })}
-                placeholder="@yourstudio"
+                value={profile.city}
+                onChange={(e) => upd({ city: e.target.value })}
+                placeholder="e.g. Hyderabad, Telangana"
                 className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
               />
             </div>
@@ -670,7 +368,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
         {/* ===== 3. SERVICES & PRICING ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-[#C20E5A]" />
               <h2 className="font-display font-bold text-base">Services &amp; Pricing</h2>
@@ -678,107 +376,129 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <button
               type="button"
               onClick={addService}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#C20E5A]/10 hover:bg-[#C20E5A]/20 text-[#C20E5A] text-xs font-bold transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Service</span>
             </button>
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
-            These appear on your public menu with INR (₹) pricing and duration.
+            Add or edit the treatments your customers can book online with prices in ₹.
           </p>
 
-          <div className="flex flex-col gap-3">
-            {services.map((srv) => (
+          <div className="space-y-3">
+            {services.map((srv, idx) => (
               <div
                 key={srv.id}
-                className="border border-gray-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-start sm:items-center gap-3"
+                className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-[#C20E5A]/30 transition-all flex flex-col md:flex-row md:items-center gap-3"
               >
-                <div className="flex-1 min-w-0">
-                  <input
-                    type="text"
-                    value={srv.name}
-                    onChange={(e) => updateService(srv.id, { name: e.target.value })}
-                    placeholder="Service name"
-                    className="w-full p-2 rounded-lg border border-gray-300 text-sm font-bold focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none mb-2"
-                  />
-                  <select
-                    value={srv.category}
-                    onChange={(e) => updateService(srv.id, { category: e.target.value })}
-                    className="w-full sm:w-40 p-2 rounded-lg border border-gray-300 text-xs text-gray-700 focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                  >
-                    {(subCategories.length ? subCategories : ['Hair', 'Spa', 'Care']).map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                <div className="w-6 text-center text-xs font-mono font-bold text-gray-400">
+                  {idx + 1}
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1">
-                    <span className="text-sm font-bold text-gray-500">₹</span>
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
+                      Service Name
+                    </label>
                     <input
-                      type="number"
-                      value={srv.price}
-                      onChange={(e) => updateService(srv.id, { price: Number(e.target.value) || 0 })}
-                      placeholder="500"
-                      className="w-24 p-2 rounded-lg border border-gray-300 text-sm font-mono text-right focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                      type="text"
+                      value={srv.name}
+                      onChange={(e) => updateService(srv.id, { name: e.target.value })}
+                      placeholder="e.g. Signature Haircut & Styling"
+                      className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
                     />
                   </div>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      value={srv.durationMinutes}
-                      onChange={(e) => updateService(srv.id, { durationMinutes: Number(e.target.value) || 0 })}
-                      placeholder="45"
-                      className="w-20 p-2 rounded-lg border border-gray-300 text-sm font-mono text-right focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                    />
-                    <span className="text-[10px] font-mono text-gray-400">min</span>
+
+                  <div>
+                    <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
+                      Category
+                    </label>
+                    <select
+                      value={srv.category}
+                      onChange={(e) => updateService(srv.id, { category: e.target.value })}
+                      className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                    >
+                      {subCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => removeService(srv.id)}
-                    className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                    title="Delete service"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
+                        Price (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={srv.price}
+                        onChange={(e) =>
+                          updateService(srv.id, { price: Number(e.target.value) || 0 })
+                        }
+                        className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
+                        Mins
+                      </label>
+                      <input
+                        type="number"
+                        min={5}
+                        step={5}
+                        value={srv.durationMinutes}
+                        onChange={(e) =>
+                          updateService(srv.id, {
+                            durationMinutes: Number(e.target.value) || 15,
+                          })
+                        }
+                        className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                      />
+                    </div>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => removeService(srv.id)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors self-end md:self-center cursor-pointer"
+                  title="Delete service"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))}
-
-            {services.length === 0 && (
-              <div className="text-center text-gray-400 text-sm py-8">
-                No services yet. Add your first service to display it on the menu.
-              </div>
-            )}
           </div>
         </section>
 
-        {/* ===== 4. WORKING HOURS ===== */}
+        {/* ===== 4. WORKING HOURS / TIMINGS ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <div className="flex items-center gap-2 mb-1">
             <Clock className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Timings</h2>
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
-            Shown in the location &amp; operating-hours section of your website.
+            Displayed on your website header and footer so clients know when you’re open.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Monday – Friday
+                Mon – Fri
               </label>
               <input
                 type="text"
                 value={profile.workingHoursMonFri || ''}
                 onChange={(e) => upd({ workingHoursMonFri: e.target.value })}
-                placeholder="10:00 AM – 08:00 PM"
+                placeholder="10:00 AM - 08:30 PM"
                 className="w-full p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
               />
             </div>
+
             <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
                 Saturday
@@ -787,10 +507,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 type="text"
                 value={profile.workingHoursSat || ''}
                 onChange={(e) => upd({ workingHoursSat: e.target.value })}
-                placeholder="10:00 AM – 08:00 PM"
+                placeholder="09:00 AM - 09:00 PM"
                 className="w-full p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
               />
             </div>
+
             <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
                 Sunday
@@ -886,232 +607,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 </a>
               </div>
             </div>
-          </div>
-        </section>
-
-        {/* ===== 6. YOUTUBE MANAGEMENT (SHORTS & LONG) ===== */}
-        <section className="bg-gradient-to-r from-rose-950/5 via-slate-900/5 to-amber-950/5 border border-rose-200/40 rounded-2xl shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Play className="w-4 h-4 text-rose-600" />
-            <h2 className="font-display font-bold text-base text-gray-900">YouTube Videos &amp; Shorts</h2>
-            <span className="text-[10px] font-mono font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">Admin Only</span>
-          </div>
-          <p className="text-[11px] text-gray-500 mb-5">
-            Manage up to 5 Shorts and 5 Long Videos that appear on your live site feed. Any supported YouTube link works in either section; unavailable metadata uses fallback details.
-          </p>
-
-          {fetchStatus && (
-            <div
-              role="status"
-              aria-live="polite"
-              className={`p-2.5 rounded-xl text-[11px] font-medium mb-3 flex items-center gap-2 border ${
-                fetchStatus.tone === 'error'
-                  ? 'bg-rose-50 border-rose-200 text-rose-800'
-                  : fetchStatus.tone === 'success'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-blue-50 border-blue-200 text-blue-800'
-              }`}
-            >
-              <span
-                className={`material-symbols-outlined text-base ${
-                  fetchStatus.tone === 'error'
-                    ? 'text-rose-600'
-                    : fetchStatus.tone === 'success'
-                    ? 'text-emerald-600'
-                    : 'text-blue-600'
-                }`}
-              >
-                {fetchStatus.tone === 'error' ? 'error' : fetchStatus.tone === 'success' ? 'check_circle' : 'info'}
-              </span>
-              <span className="flex-1">{fetchStatus.message}</span>
-              {failedSection && (
-                <button
-                  type="button"
-                  onClick={() => clearYouTubeError(failedSection)}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold transition-colors cursor-pointer whitespace-nowrap"
-                  title="Dismiss error and clear the failed link"
-                >
-                  <X className="w-3 h-3" />
-                  <span>Clear link</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* SHORTS SECTION */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-sm text-rose-700 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                Shorts (Max 5)
-              </h3>
-              <span className="text-[10px] font-mono text-gray-500">
-                {shorts.length} / 5
-              </span>
-            </div>
-
-            {/* Input */}
-            <div className="flex gap-2 mb-3">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={shortUrlInput}
-                  disabled={isAddingVideo}
-                  onChange={(e) => setShortUrlInput(e.target.value)}
-                  placeholder="Paste a YouTube link (shorts, youtu.be or watch URL)"
-                  aria-label="Shorts YouTube URL"
-                  autoComplete="off"
-                  className="w-full p-2.5 pr-9 rounded-xl border border-rose-200 text-xs focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none bg-rose-50/30"
-                />
-                {shortUrlInput && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShortUrlInput('');
-                      if (failedSection === 'short') clearYouTubeError('short');
-                    }}
-                    disabled={isAddingVideo}
-                    aria-label="Clear Shorts link"
-                    title="Clear link"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-rose-600 hover:bg-rose-100 disabled:opacity-40 transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleAddYouTubeVideo(shortUrlInput, 'short')}
-                disabled={!shortUrlInput.trim() || shorts.length >= MAX_SHORTS || isAddingVideo || isLoadingVideos}
-                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm"
-              >
-                {isAddingVideo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                <span>Add Short</span>
-              </button>
-            </div>
-
-            {/* List */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {shorts.map((v) => (
-                <div key={v.id || v.youtube_video_id} className="relative p-3 rounded-xl bg-white border border-rose-100 shadow-xs hover:shadow-md transition-all">
-                  <div className="flex gap-3">
-                    <img src={v.thumbnail_url || `https://img.youtube.com/vi/${v.youtube_video_id}/hqdefault.jpg`} alt={v.title} className="w-20 h-14 rounded-lg object-cover border border-gray-200 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-bold text-xs text-gray-900 truncate">{v.title || 'Untitled'}</h4>
-                      <p className="text-[10px] text-gray-500 truncate">{v.description || 'No description'}</p>
-                      <div className="flex items-center gap-1 mt-1 text-[9px] text-gray-400 font-mono">
-                        <span>{v.like_count || 0} likes</span>
-                        <span>·</span>
-                        <span>{v.comment_count || 0} comments</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-rose-50">
-                    <a href={v.youtube_url} target="_blank" rel="noreferrer" className="text-[10px] font-mono text-rose-600 hover:text-rose-800 underline">{v.youtube_video_id}</a>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteVideo(v.id || v.youtube_video_id, 'short')}
-                      className="text-[10px] font-bold text-rose-500 hover:text-rose-700 px-2 py-0.5 rounded hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {shorts.length === 0 && (
-              <div className="text-center text-xs text-gray-400 py-4 border border-dashed border-rose-200 rounded-xl">
-                No Shorts added. Paste a YouTube link above.
-              </div>
-            )}
-          </div>
-
-          {/* LONG VIDEOS SECTION */}
-          <div className="pt-6 border-t border-rose-200/40">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-sm text-sky-700 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
-                Long Videos (Max 5)
-              </h3>
-              <span className="text-[10px] font-mono text-gray-500">
-                {longVideos.length} / 5
-              </span>
-            </div>
-
-            <div className="flex gap-2 mb-3">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={longUrlInput}
-                  disabled={isAddingVideo}
-                  onChange={(e) => setLongUrlInput(e.target.value)}
-                  placeholder="Paste YouTube video URL (e.g. https://www.youtube.com/watch?v=...)"
-                  aria-label="Long YouTube video URL"
-                  autoComplete="off"
-                  className="w-full p-2.5 pr-9 rounded-xl border border-sky-200 text-xs focus:ring-2 focus:ring-sky-300 focus:border-sky-400 outline-none bg-sky-50/30"
-                />
-                {longUrlInput && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLongUrlInput('');
-                      if (failedSection === 'long') clearYouTubeError('long');
-                    }}
-                    disabled={isAddingVideo}
-                    aria-label="Clear Long Video link"
-                    title="Clear link"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-sky-600 hover:bg-sky-100 disabled:opacity-40 transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleAddYouTubeVideo(longUrlInput, 'long')}
-                disabled={!longUrlInput.trim() || longVideos.length >= MAX_LONG_VIDEOS || isAddingVideo || isLoadingVideos}
-                className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm"
-              >
-                {isAddingVideo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                <span>Add Video</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {longVideos.map((v) => (
-                <div key={v.id || v.youtube_video_id} className="relative p-3 rounded-xl bg-white border border-sky-100 shadow-xs hover:shadow-md transition-all">
-                  <div className="flex gap-3">
-                    <img src={v.thumbnail_url || `https://img.youtube.com/vi/${v.youtube_video_id}/hqdefault.jpg`} alt={v.title} className="w-20 h-14 rounded-lg object-cover border border-gray-200 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-bold text-xs text-gray-900 truncate">{v.title || 'Untitled'}</h4>
-                      <p className="text-[10px] text-gray-500 truncate">{v.description || 'No description'}</p>
-                      <div className="flex items-center gap-1 mt-1 text-[9px] text-gray-400 font-mono">
-                        <span>{v.like_count || 0} likes</span>
-                        <span>·</span>
-                        <span>{v.comment_count || 0} comments</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-sky-50">
-                    <a href={v.youtube_url} target="_blank" rel="noreferrer" className="text-[10px] font-mono text-sky-600 hover:text-sky-800 underline">{v.youtube_video_id}</a>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteVideo(v.id || v.youtube_video_id, 'long')}
-                      className="text-[10px] font-bold text-sky-500 hover:text-sky-700 px-2 py-0.5 rounded hover:bg-sky-50 transition-colors cursor-pointer flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {longVideos.length === 0 && (
-              <div className="text-center text-xs text-gray-400 py-4 border border-dashed border-sky-200 rounded-xl">
-                No Long Videos added. Paste a YouTube video URL above.
-              </div>
-            )}
           </div>
         </section>
 
