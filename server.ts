@@ -4,17 +4,24 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import { supabase, isMockSupabase, getSupabaseAdmin } from "./src/lib/supabaseClient";
+import { supabase, isMockSupabase, getSupabaseAdmin, supabaseConfig } from "./src/lib/supabaseClient";
 import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "./src/types";
 import { nexoraCors } from "./server/cors";
 import { handleWebsiteSave } from "./server/websiteSave";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
-import {
-  applyBookingUpdate,
-  buildStatusNotifications,
-} from "./server/bookingOps";
 import { createBookingHandler } from "./server/bookingCreate";
+import {
+  createBookingsListHandler,
+  createBookingGetHandler,
+  createBookingUpdateHandler,
+  createNotificationsListHandler,
+  createNotificationsReadHandler,
+  type BookingRoutesDeps,
+} from "./server/bookingRoutes";
+import { createHealthHandler } from "./server/health";
+import { withRequestTimeout, API_REQUEST_TIMEOUT_MS } from "./server/dbGuard";
+import { installProcessGuards } from "./server/processGuards";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
@@ -22,6 +29,9 @@ import {
   getRazorpayConfigIssues,
 } from "./server/razorpay";
 import { createRazorpayWebhookHandler, isWebhookConfigured } from "./server/razorpayWebhook";
+
+// Log (instead of silently dying on) stray async faults.
+installProcessGuards("server.ts");
 
 // In-memory fallback for preview mode without DB
 let mockBookings: any[] = [];
@@ -174,9 +184,18 @@ async function startServer() {
   app.use(nexoraCors);
 
   // API Routes
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", app: "Nexora Salon OS", mode: isMockSupabase ? 'mock' : 'live' });
-  });
+  // Configuration + connectivity diagnostics. `?deep=1` also round-trips the
+  // database and reports whether a guest booking could be written right now.
+  app.get(
+    "/api/health",
+    createHealthHandler({
+      db,
+      isMock: isMockSupabase,
+      hasAdminClient: !!admin,
+      supabaseConfig,
+      entrypoint: 'express (server.ts)',
+    })
+  );
 
   // -------------------------------------------------------------------------
   // MULTI-TENANT PUBLIC SITE RESOLUTION
@@ -430,190 +449,30 @@ async function startServer() {
     }
   });
 
-  // Booking Update Endpoint
-  app.post("/api/bookings/update", async (req, res) => {
-    try {
-      const { id, status, proposed_date, proposed_time_slot } = req.body ?? {};
-      if (!id || !status) {
-        return res.status(400).json({ success: false, error: 'id and status are required.' });
-      }
+  // ==========================================================================
+  // BOOKINGS + NOTIFICATIONS (read/update)
+  // --------------------------------------------------------------------------
+  // Shared with the serverless entrypoint via server/bookingRoutes.ts so the
+  // two copies can never drift again. The list endpoint is owner-scoped (it
+  // used to return every salon's bookings), every database call is time-boxed,
+  // and a database failure is reported instead of being masked with an empty
+  // in-memory result.
+  // ==========================================================================
+  const bookingRouteDeps: BookingRoutesDeps = {
+    db,
+    isMock: isMockSupabase,
+    getMockBookings: () => mockBookings,
+    getMockNotifications: () => mockNotifications,
+    setMockNotifications: (rows) => { mockNotifications = rows; },
+    addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+    resolveOwnerEmail,
+  };
 
-      let data: any;
-
-      if (isMockSupabase) {
-        const idx = mockBookings.findIndex((b) => b.id === id);
-        if (idx === -1) return res.status(404).json({ success: false, error: 'Booking not found' });
-        const existing = mockBookings[idx];
-        const changes = applyBookingUpdate(existing, { status, proposed_date, proposed_time_slot });
-        data = { ...existing, ...changes };
-        mockBookings[idx] = data;
-      } else {
-        // Live mode: read the current row first — the confirmation transition
-        // needs the proposed slot, and a read/write failure must surface as a
-        // real error, never as a fake in-memory success (that used to make the
-        // UI show "confirmed" while the database still said "pending").
-        const { data: existing, error: fetchError } = await db
-          .from('bookings')
-          .select('*')
-          .eq('id', id)
-          .maybeSingle();
-        if (fetchError) {
-          console.error('[Bookings] Failed to read booking for update:', fetchError);
-          return res.status(500).json({ success: false, error: fetchError.message });
-        }
-        if (!existing) {
-          return res.status(404).json({ success: false, error: 'Booking not found' });
-        }
-        const changes = applyBookingUpdate(existing, { status, proposed_date, proposed_time_slot });
-        const { data: updated, error: updateError } = await db
-          .from('bookings')
-          .update(changes)
-          .eq('id', id)
-          .select()
-          .single();
-        if (updateError || !updated) {
-          console.error('[Bookings] Failed to update booking:', updateError);
-          return res.status(500).json({ success: false, error: updateError?.message || 'Booking update failed.' });
-        }
-        data = updated;
-      }
-
-      // Mock sending WhatsApp/Email based on status update
-      console.log(`[TRIGGERED NOTIFICATION] Status updated to ${status} for booking ID: ${id}`);
-      const ownerEmail = await resolveOwnerEmail(data.owner_id);
-      const notifs = buildStatusNotifications(
-        data,
-        status,
-        data.proposed_date ?? proposed_date,
-        data.proposed_time_slot ?? proposed_time_slot,
-        ownerEmail
-      );
-
-      if (notifs) {
-        const rows = [notifs.owner];
-        if (notifs.customer) rows.unshift(notifs.customer);
-        if (isMockSupabase) {
-          mockNotifications.push(...rows.map((n) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
-        } else {
-          const { error: notifError } = await db.from('in_app_notifications').insert(rows);
-          if (notifError) console.warn('[Bookings] Notification insert error:', notifError);
-        }
-      }
-
-      res.json({ success: true, data });
-    } catch (err: any) {
-      console.warn('Booking update error:', err);
-      res.status(500).json({ success: false, error: err?.message || 'Booking update failed.' });
-    }
-  });
-
-  // Get all bookings
-  app.get("/api/bookings", async (req, res) => {
-    try {
-      const getMock = () => mockBookings.sort((a, b) => new Date(b.created_at || Date.now()).getTime() - new Date(a.created_at || Date.now()).getTime());
-
-      if (isMockSupabase) {
-        return res.json({ success: true, data: getMock() });
-      }
-      
-      const { data, error } = await db
-        .from('bookings')
-        .select('*')
-        .order('created_at', { ascending: false });
-        
-      if (error) {
-        return res.json({ success: true, data: getMock() });
-      }
-      
-      res.json({ success: true, data });
-    } catch (err: any) {
-      console.warn('Fetch bookings error:', err);
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // Get a single booking
-  app.get("/api/bookings/:id", async (req, res) => {
-    try {
-      const getMock = () => mockBookings.find(b => b.id === req.params.id);
-
-      if (isMockSupabase) {
-        const booking = getMock();
-        if (!booking) throw new Error('Booking not found');
-        return res.json({ success: true, data: booking });
-      }
-      
-      const { data, error } = await db
-        .from('bookings')
-        .select('*')
-        .eq('id', req.params.id)
-        .single();
-        
-      if (error) {
-        const booking = getMock();
-        if (!booking) throw new Error('Booking not found');
-        return res.json({ success: true, data: booking });
-      }
-      res.json({ success: true, data });
-    } catch (err: any) {
-      console.warn('Fetch booking error:', err);
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // Get notifications
-  app.get("/api/notifications", async (req, res) => {
-    try {
-      const { email } = req.query;
-      const getMock = () => mockNotifications.filter(n => n.user_email === email).sort((a, b) => new Date(b.created_at || Date.now()).getTime() - new Date(a.created_at || Date.now()).getTime());
-
-      if (isMockSupabase) {
-        return res.json({ success: true, data: getMock() });
-      }
-      
-      const { data, error } = await db
-        .from('in_app_notifications')
-        .select('*')
-        .eq('user_email', email)
-        .order('created_at', { ascending: false });
-        
-      if (error) {
-        return res.json({ success: true, data: getMock() });
-      }
-      res.json({ success: true, data });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // Mark notifications as read
-  app.post("/api/notifications/read", async (req, res) => {
-    try {
-      const { email } = req.body;
-      const doMock = () => {
-        mockNotifications = mockNotifications.map(n => n.user_email === email ? { ...n, is_read: true } : n);
-      };
-
-      if (isMockSupabase) {
-        doMock();
-        return res.json({ success: true });
-      }
-      
-      const { error } = await db
-        .from('in_app_notifications')
-        .update({ is_read: true })
-        .eq('user_email', email)
-        .eq('is_read', false);
-        
-      if (error) {
-        doMock();
-        return res.json({ success: true });
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
+  app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createBookingsListHandler(bookingRouteDeps));
+  app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createBookingGetHandler(bookingRouteDeps));
+  app.post("/api/bookings/update", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createBookingUpdateHandler(bookingRouteDeps));
+  app.get("/api/notifications", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createNotificationsListHandler(bookingRouteDeps));
+  app.post("/api/notifications/read", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createNotificationsReadHandler(bookingRouteDeps));
 
   // ==========================================================================
   // BOOKING CREATE — POST /api/bookings/create
@@ -625,10 +484,14 @@ async function startServer() {
   // ==========================================================================
   app.post(
     "/api/bookings/create",
+    // Answer with JSON *before* the hosting platform kills a stuck invocation
+    // and replies with its own un-parseable HTML error page.
+    withRequestTimeout(API_REQUEST_TIMEOUT_MS, 'Saving your booking took too long. Nothing was charged — please try again.'),
     createBookingHandler({
       db,
       isMock: isMockSupabase,
       addMockBooking: (row) => { mockBookings.push(row); },
+      getMockBookings: () => mockBookings,
       addMockNotifications: (rows) => { mockNotifications.push(...rows); },
       resolveOwnerEmail,
     })

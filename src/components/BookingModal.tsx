@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { postBookingWithRetry } from '../lib/bookingApi';
 import {
   X,
   CalendarCheck,
@@ -201,6 +202,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [paymentNotice, setPaymentNotice] = useState<string>('');
   const [advancePaid, setAdvancePaid] = useState<boolean>(false);
   const [paymentReceiptId, setPaymentReceiptId] = useState<string>('');
+  // Did the booking actually reach the salon's database? When the API is
+  // unreachable we still keep a local copy, but the pass must SAY it is not
+  // confirmed with the salon yet instead of implying everything is fine.
+  const [savedToCloud, setSavedToCloud] = useState<boolean>(true);
 
   // Load persistent guest details from localStorage
   useEffect(() => {
@@ -432,6 +437,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setBookingRef(refNum);
     setSubmitError('');
     setPaymentNotice('');
+    setSavedToCloud(true);
     setIsSubmitting(true);
 
     try {
@@ -484,11 +490,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
       // ---- 3. Persist the booking -------------------------------------------
       setSubmitStage('saving');
+      let savedRemotely = false;
       try {
-        const response = await fetch('/api/bookings/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const requestBody = JSON.stringify({
             owner_id: profile.ownerId || undefined,
             subdomain: profile.subdomain || undefined,
             owner_email: profile.email || undefined,
@@ -519,30 +523,40 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 message: `New booking from ${guestName} for ${selectedService.name} on ${bookingDate}. ${paidAdvance ? `25% Advance Paid: ₹${advanceTokenAmount}` : 'Advance not paid (pay at salon).'}`,
               }
             ]
-          })
-        });
+          });
 
-        let json: { success?: boolean; error?: string; notice?: string } | null = null;
-        try {
-          json = await response.json();
-        } catch {
-          // Non-JSON body — handled below through response.ok.
-        }
-        if (!response.ok || (json && json.success === false)) {
-          const detail = json?.error || json?.notice || `Server error (HTTP ${response.status})`;
-          console.error('Failed to create booking:', detail);
+        // Transient faults (cold serverless start, a database blip, a dropped
+        // mobile connection) used to surface as a dead-end "Server error
+        // (HTTP 500)". Retry those automatically before bothering the customer;
+        // 4xx answers are the customer's own input and are never retried.
+        const outcome = await postBookingWithRetry(requestBody);
+
+        if (outcome.ok) {
+          savedRemotely = true;
+        } else if (outcome.kind === 'offline') {
+          // Truly unreachable (offline / preview sandbox with no API): keep a
+          // local copy so the salon dashboard on this device still shows it,
+          // but SAY SO on the pass instead of pretending it was confirmed.
+          console.warn('Booking API unreachable — keeping a local copy only.', outcome.detail);
+        } else {
+          console.error('Failed to create booking:', outcome.detail, outcome);
+          const support = outcome.requestId ? ` (ref ${outcome.requestId})` : '';
+          const retryHint = outcome.retryable
+            ? ' This is usually temporary — please try again in a minute.'
+            : ' Please try again — your details are still here.';
           setSubmitError(
             paidAdvance
-              ? `Your payment went through (ref ${paymentPayload?.razorpay_payment_id}) but we couldn't save the booking (${detail}). Please share this reference with the salon — you will not be charged twice.`
-              : `We couldn't save your booking (${detail}). Please try again — your details are still here.`
+              ? `Your payment went through (ref ${paymentPayload?.razorpay_payment_id}) but we couldn't save the booking (${outcome.detail})${support}. Please share this reference with the salon — you will not be charged twice.`
+              : `We couldn't save your booking (${outcome.detail})${support}.${retryHint}`
           );
           return;
         }
-      } catch (e) {
-        // Network failure (offline, preview sandbox without API): keep the local
-        // demo copy so the owner dashboard still shows the request.
-        console.warn('Booking API unreachable — keeping a local copy only.', e);
+      } catch (e: any) {
+        // Nothing above should throw; treat it like an unreachable API rather
+        // than losing the customer's details.
+        console.warn('Booking save threw unexpectedly — keeping a local copy only.', e);
       }
+      setSavedToCloud(savedRemotely);
 
       const newApt: Appointment = {
         id: `apt-${Date.now()}`,
@@ -648,6 +662,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setPaymentReceiptId('');
     setIsSubmitting(false);
     setSubmitStage('idle');
+    setSavedToCloud(true);
   };
 
   return (
@@ -1545,6 +1560,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   Appointment confirmed for <strong className="text-slate-900">{guestName}</strong> at <strong className="text-slate-900">{profile.businessName}</strong>.
                 </p>
               </div>
+
+              {/* The booking could not be sent to the salon (offline / preview).
+                  Saying so is the honest alternative to a pass that looks
+                  confirmed while the salon never received anything. */}
+              {!savedToCloud && (
+                <div className="w-full flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] text-left">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    We couldn't reach the salon's booking service, so this request is saved on this device only.
+                    Please send the details on WhatsApp (button below) or call{' '}
+                    <strong>{profile.phone || profile.whatsapp || 'the salon'}</strong> to confirm your slot.
+                  </span>
+                </div>
+              )}
 
               {/* Reference Card with Copy Action */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs w-full text-left font-mono flex flex-col gap-2.5">

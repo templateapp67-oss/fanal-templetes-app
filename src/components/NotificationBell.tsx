@@ -1,48 +1,96 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+/**
+ * Owner notification bell.
+ *
+ * Previously every failure was invisible: a failed fetch left the panel empty
+ * ("No notifications yet"), and marking as read cleared the badge locally even
+ * when the server rejected the update — so the badge silently reappeared on the
+ * next poll. Polling also ran every 3 s forever against a failing endpoint.
+ */
 export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [error, setError] = useState<string>('');
+  const mountedRef = useRef(true);
+  const failureCountRef = useRef(0);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
+    if (!userEmail) return;
     try {
       const res = await fetch(`/api/notifications?email=${encodeURIComponent(userEmail)}`);
-      const json = await res.json();
-      if (json.success) {
-        setNotifications(json.data);
-        setUnreadCount(json.data.filter((n: any) => !n.is_read).length);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json || json.success === false) {
+        failureCountRef.current += 1;
+        if (mountedRef.current) {
+          setError(json?.error || `Notifications unavailable (HTTP ${res.status}).`);
+        }
+        return;
       }
-    } catch (e) {
-      console.error(e);
+      failureCountRef.current = 0;
+      if (!mountedRef.current) return;
+      const rows = Array.isArray(json.data) ? json.data : [];
+      setError('');
+      setNotifications(rows);
+      setUnreadCount(rows.filter((n: any) => !n.is_read).length);
+    } catch (e: any) {
+      failureCountRef.current += 1;
+      if (mountedRef.current) setError(e?.message ? `Notifications unavailable (${e.message}).` : 'Notifications unavailable.');
     }
-  };
-
-  useEffect(() => {
-    fetchNotifications();
-
-    const interval = setInterval(() => {
-      fetchNotifications();
-    }, 3000);
-
-    return () => clearInterval(interval);
   }, [userEmail]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    failureCountRef.current = 0;
+    fetchNotifications();
+
+    // 3s while healthy, exponential backoff (max 60s) while failing.
+    let timer: any;
+    const schedule = () => {
+      const delay = failureCountRef.current > 0
+        ? Math.min(3000 * Math.pow(2, Math.min(failureCountRef.current, 5)), 60000)
+        : 3000;
+      timer = setTimeout(async () => {
+        await fetchNotifications();
+        if (mountedRef.current) schedule();
+      }, delay);
+    };
+    schedule();
+
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timer);
+    };
+  }, [fetchNotifications]);
+
   const markAsRead = async () => {
-    setIsOpen(!isOpen);
-    if (!isOpen && unreadCount > 0) {
+    const opening = !isOpen;
+    setIsOpen(opening);
+    if (opening && unreadCount > 0) {
+      // Optimistically clear, but roll back (and say why) if the server refused.
+      const previous = notifications;
+      const previousUnread = unreadCount;
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       try {
-        await fetch('/api/notifications/read', {
+        const res = await fetch('/api/notifications/read', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: userEmail })
         });
-        setUnreadCount(0);
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-      } catch (e) {
-        console.error(e);
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json || json.success === false) {
+          setNotifications(previous);
+          setUnreadCount(previousUnread);
+          setError(json?.error || `Could not mark notifications as read (HTTP ${res.status}).`);
+        }
+      } catch (e: any) {
+        setNotifications(previous);
+        setUnreadCount(previousUnread);
+        setError(e?.message ? `Could not mark notifications as read (${e.message}).` : 'Could not mark notifications as read.');
       }
     }
   };
@@ -65,8 +113,15 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
             className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2"
           >
             <div className="font-bold text-sm text-slate-800 p-2 border-b border-slate-100 mb-2">Notifications</div>
+            {error && (
+              <div className="mx-2 mb-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-800">
+                {error}
+              </div>
+            )}
             {notifications.length === 0 ? (
-              <div className="text-xs text-slate-500 p-4 text-center">No notifications yet.</div>
+              <div className="text-xs text-slate-500 p-4 text-center">
+                {error ? 'Notifications could not be loaded.' : 'No notifications yet.'}
+              </div>
             ) : (
               <div className="flex flex-col gap-1">
                 {notifications.map((n) => (
