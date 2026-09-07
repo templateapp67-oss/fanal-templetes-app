@@ -1,4 +1,16 @@
-export type AppView = 'landing' | 'wizard' | 'preview' | 'dashboard';
+import type { BookingStatus } from './lib/bookingStatus';
+
+/**
+ * `bookings` is the customer's "My Bookings" page, and the only view with a
+ * real URL (`/customer/bookings`). The others stay state-driven.
+ */
+export type AppView =
+  | 'landing'
+  | 'wizard'
+  | 'preview'
+  | 'dashboard'
+  | 'bookings'
+  | 'bookingDetail';
 
 export type BusinessTypeId = 
   | 'hair_salon'         // Hair Cut & Styling Studio
@@ -246,6 +258,17 @@ export interface Stylist {
   schedule?: DaySchedule[];
 }
 
+/**
+ * Booking lifecycle: pending -> confirmed -> completed, with cancelled and
+ * no_show as the two terminal "did not happen" outcomes. `no_show` is distinct
+ * from `cancelled` because the money is treated differently — a customer who
+ * cancels may be refunded, one who never turns up forfeits the advance.
+ *
+ * The canonical list (labels, colours, descriptions) lives in
+ * `src/lib/bookingStatus.ts`, which the server handlers import too.
+ */
+export type AppointmentStatus = BookingStatus;
+
 export interface Appointment {
   id: string;
   clientName: string;
@@ -258,7 +281,7 @@ export interface Appointment {
   stylistName: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
-  status: 'confirmed' | 'completed' | 'cancelled' | 'pending';
+  status: AppointmentStatus;
   paymentStatus: 'paid_deposit' | 'paid_full' | 'pay_at_salon';
   amountPaid: number;
   createdAt: string;

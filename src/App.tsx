@@ -34,6 +34,15 @@ import {
   runSalonSavePipeline,
 } from './lib/autoSave';
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
+import {
+  usePathRoute,
+  isMyBookingsPath,
+  MY_BOOKINGS_PATH,
+  matchBookingDetailPath,
+  bookingDetailPath,
+} from './lib/router';
+import { MyBookingsPage } from './components/MyBookingsPage';
+import { BookingDetailPage } from './components/BookingDetailPage';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -207,7 +216,64 @@ function fromRewardRow(row: any) {
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [currentView, setCurrentViewState] = useState<AppView>('landing');
+  const { path, navigate } = usePathRoute();
+  // Which booking `/customer/booking/:id` is showing. Lives in state as well as
+  // the URL so a deep link and an in-app tap converge on the same screen.
+  const [bookingDetailId, setBookingDetailId] = useState<string | null>(null);
+
+  // One direction only: the URL drives the view (so deep links and the browser
+  // back button work). Navigation is pushed by `setCurrentView` below, so the
+  // two never chase each other in a loop.
+  useEffect(() => {
+    const detailId = matchBookingDetailPath(path);
+    if (detailId) {
+      setBookingDetailId((prev) => (prev === detailId ? prev : detailId));
+      setCurrentViewState((view) => (view === 'bookingDetail' ? view : 'bookingDetail'));
+      return;
+    }
+    if (isMyBookingsPath(path)) {
+      setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
+      return;
+    }
+    setCurrentViewState((view) =>
+      view === 'bookings' || view === 'bookingDetail' ? 'landing' : view
+    );
+  }, [path]);
+
+  /**
+   * The single way this app changes screen. Keeping the URL here (rather than in
+   * a `currentView` effect) is what makes back/forward behave: an effect would
+   * re-push the URL immediately after the user navigated away from it.
+   */
+  const setCurrentView = useCallback(
+    (view: AppView) => {
+      setCurrentViewState(view);
+      if (view === 'bookings') {
+        navigate(MY_BOOKINGS_PATH);
+      } else if (view === 'bookingDetail') {
+        navigate(bookingDetailPath(bookingDetailId ?? ''));
+      } else {
+        navigate('/');
+      }
+    },
+    [navigate, bookingDetailId]
+  );
+
+  /** Open one booking's detail page and put its id in the URL. */
+  const openBookingDetail = useCallback(
+    (id: string) => {
+      setBookingDetailId(id);
+      setCurrentViewState('bookingDetail');
+      navigate(bookingDetailPath(id));
+    },
+    [navigate]
+  );
+
+  // Set by "My Bookings" → Rebook; consumed by the salon site to pre-select the
+  // service and open the booking flow. `at` de-duplicates repeat taps.
+  const [rebookTarget, setRebookTarget] = useState<{ serviceName: string; at: number } | null>(null);
+
   const [wizardStartingStep, setWizardStartingStep] = useState<number>(1);
 
   // Auth State Listener
@@ -1392,6 +1458,7 @@ export default function App() {
           selectedTemplateId={selectedTemplateId}
           setSelectedTemplateId={setSelectedTemplateId}
           siteUrl={getSiteUrl(profile)}
+          rebookRequest={rebookTarget}
         />
       )}
 
@@ -1415,6 +1482,37 @@ export default function App() {
             setCurrentView('wizard');
           }}
           siteUrl={getSiteUrl(profile)}
+        />
+      )}
+
+      {currentView === 'bookings' && (
+        <MyBookingsPage
+          user={user}
+          onRequireAuth={openBookingAuth}
+          accentHex={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          onExploreSalons={() => setCurrentView('preview')}
+          onViewDetails={(card) => openBookingDetail(card.id)}
+          onRebook={(card) => {
+            // Rebook opens the salon site with that service pre-selected and
+            // flags the flow as coming from history, which is what makes the
+            // confirmation page offer "Book this service again".
+            setRebookTarget({ serviceName: card.serviceName, at: Date.now() });
+            setCurrentView('preview');
+          }}
+        />
+      )}
+
+      {currentView === 'bookingDetail' && (
+        <BookingDetailPage
+          bookingId={bookingDetailId ?? ''}
+          user={user}
+          onRequireAuth={openBookingAuth}
+          accentHex={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          onBack={() => setCurrentView('bookings')}
+          onRebook={(detail) => {
+            setRebookTarget({ serviceName: detail.services[0], at: Date.now() });
+            setCurrentView('preview');
+          }}
         />
       )}
 

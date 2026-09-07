@@ -8,6 +8,8 @@
 // and in production lives here.
 // ============================================================================
 
+import { bookingStatusLabel } from '../src/lib/bookingStatus';
+
 /** Postgres `uuid`-shaped value (any version). */
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -153,6 +155,7 @@ export function buildStatusNotifications(
   ownerEmail = 'owner@salon.com'
 ): { customer?: Record<string, any>; owner: Record<string, any> } | null {
   if (!booking) return null;
+  const label = bookingStatusLabel(status);
   let title = '';
   let message = '';
   if (status === 'reschedule_proposed') {
@@ -164,10 +167,24 @@ export function buildStatusNotifications(
   } else if (status === 'cancelled') {
     title = 'Booking Cancelled';
     message = 'Your booking was cancelled.';
+  } else if (status === 'completed') {
+    title = 'Appointment Completed';
+    message = `Your appointment on ${booking.booking_date} at ${booking.time_slot} is complete. Thank you for visiting!`;
+  } else if (status === 'no_show') {
+    // Told to the customer plainly: this is the outcome that forfeits the
+    // advance, so a silent status change would read as a bug.
+    title = 'Marked as No-show';
+    message = `Your booking on ${booking.booking_date} at ${booking.time_slot} was marked as a no-show. Please contact the salon if this is a mistake.`;
   } else {
     return null;
   }
-  const out: any = { owner: { user_email: ownerEmail, title: `Booking ${status}`, message: `${booking.customer_name || 'A customer'}'s booking was ${status}.` } };
+  const out: any = {
+    owner: {
+      user_email: ownerEmail,
+      title: `Booking ${label}`,
+      message: `${booking.customer_name || 'A customer'}'s booking was marked ${label.toLowerCase()}.`,
+    },
+  };
   if (booking.customer_email) {
     out.customer = { user_email: booking.customer_email, title, message };
   }
