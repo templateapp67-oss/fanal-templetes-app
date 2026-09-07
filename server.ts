@@ -1,4 +1,5 @@
-import "dotenv/config";
+// Loads process env > .env > .env.development (see server/env.ts).
+import "./server/env";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -10,10 +11,17 @@ import { nexoraCors } from "./server/cors";
 import { handleWebsiteSave } from "./server/websiteSave";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
 import {
-  sanitizeBookingRow,
   applyBookingUpdate,
   buildStatusNotifications,
 } from "./server/bookingOps";
+import { createBookingHandler } from "./server/bookingCreate";
+import {
+  handleRazorpayConfig,
+  handleCreateRazorpayOrder,
+  handleVerifyRazorpayPayment,
+  getRazorpayConfigIssues,
+} from "./server/razorpay";
+import { createRazorpayWebhookHandler, isWebhookConfigured } from "./server/razorpayWebhook";
 
 // In-memory fallback for preview mode without DB
 let mockBookings: any[] = [];
@@ -32,6 +40,33 @@ if (!isMockSupabase && !admin) {
   console.warn(
     '[Nexora] Live mode detected but SUPABASE_SERVICE_ROLE_KEY is not set. The API falls back to the anon client, so public-site reads will be blocked by Row Level Security. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side.'
   );
+}
+
+// ---------------------------------------------------------------------------
+// Startup diagnostics — make a broken payment/DB configuration obvious in the
+// logs at boot instead of at the customer's checkout click.
+// ---------------------------------------------------------------------------
+{
+  const razorpayIssues = getRazorpayConfigIssues();
+  if (razorpayIssues.length === 0) {
+    const keyId = (process.env.RAZORPAY_KEY_ID || '').trim().replace(/^['"]|['"]$/g, '');
+    console.log(`[Razorpay] Gateway ready (${keyId.startsWith('rzp_live_') ? 'LIVE' : 'TEST'} key ${keyId.slice(0, 12)}…).`);
+  } else {
+    console.warn(
+      '[Razorpay] Online payments are DISABLED — ' +
+        razorpayIssues.join(' ') +
+        ' Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env to enable checkout.'
+    );
+  }
+
+  if (isWebhookConfigured()) {
+    console.log('[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).');
+  } else {
+    console.warn(
+      '[Razorpay] RAZORPAY_WEBHOOK_SECRET is not set — incoming webhooks will be rejected with 503. ' +
+        'Use the same secret you entered in the Razorpay dashboard (Settings → Webhooks).'
+    );
+  }
 }
 
 // Define default Arts By Uma salon profile
@@ -121,7 +156,17 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "10mb" }));
+  // `verify` stashes the RAW bytes of every JSON body. The Razorpay webhook
+  // signature is an HMAC over exactly those bytes — re-serializing req.body
+  // would change key order/spacing and every signature check would fail.
+  app.use(
+    express.json({
+      limit: "10mb",
+      verify: (req: any, _res, buf) => {
+        if (buf?.length) req.rawBody = buf;
+      },
+    })
+  );
   // CORS for cross-origin API callers (split dev on different ports, preview
   // hosts, custom domains). Same-origin traffic (no Origin header) is
   // untouched. Mounted before the routes so OPTIONS preflights for
@@ -570,73 +615,49 @@ async function startServer() {
     }
   });
 
-  // Booking Create Endpoint
-  app.post("/api/bookings/create", async (req, res) => {
-    try {
-      const { booking, notifications } = req.body ?? {};
-      if (!booking || typeof booking !== 'object') {
-        return res.status(400).json({ success: false, error: 'booking payload is required.' });
-      }
+  // ==========================================================================
+  // BOOKING CREATE — POST /api/bookings/create
+  // --------------------------------------------------------------------------
+  // Shared with the serverless entrypoint (server/bookingCreate.ts). Validates
+  // the payload, resolves the NOT NULL owner_id, re-verifies any Razorpay
+  // payment signature, logs the exact failure to stdout and answers with a
+  // precise 4xx instead of an opaque HTTP 500.
+  // ==========================================================================
+  app.post(
+    "/api/bookings/create",
+    createBookingHandler({
+      db,
+      isMock: isMockSupabase,
+      addMockBooking: (row) => { mockBookings.push(row); },
+      addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+      resolveOwnerEmail,
+    })
+  );
 
-      // Only columns the schema knows, with non-UUID foreign keys (editor
-      // preview ids such as 'hs-1') downgraded to null so a guest booking can
-      // always persist via its denormalized service_name.
-      const ownerId = req.body.owner_id || booking.owner_id || process.env.DEFAULT_OWNER_ID || null;
-      const bookingRow = sanitizeBookingRow({ ...booking, owner_id: ownerId });
-      const notifRows = Array.isArray(notifications)
-        ? notifications
-            .filter((n: any) => n && typeof n === 'object')
-            .map((n: any) => ({
-              user_email: n.user_email || null,
-              title: n.title || null,
-              message: n.message || null,
-            }))
-        : [];
+  // ==========================================================================
+  // PAYMENTS — Razorpay (checkout for the 25% advance token)
+  // --------------------------------------------------------------------------
+  // GET  /api/payments/razorpay/config  -> { configured, keyId }  (public key)
+  // POST /api/payments/razorpay/order   -> creates an order for the advance
+  // POST /api/payments/razorpay/verify  -> HMAC-SHA256 signature check
+  // Credentials come from RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET in .env.
+  // ==========================================================================
+  app.get("/api/payments/razorpay/config", handleRazorpayConfig);
+  app.post("/api/payments/razorpay/order", handleCreateRazorpayOrder);
+  app.post("/api/payments/razorpay/verify", handleVerifyRazorpayPayment);
 
-      let bookingData: any;
-
-      if (isMockSupabase) {
-        bookingData = { ...bookingRow, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() };
-        mockBookings.push(bookingData);
-        mockNotifications.push(
-          ...notifRows.map((n: any) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() }))
-        );
-      } else {
-        const { data: dbData, error: bookingError } = await db
-          .from('bookings')
-          .insert([bookingRow])
-          .select()
-          .single();
-
-        if (bookingError) {
-          // Live mode: never fake success with an in-memory row — the booking
-          // would silently disappear on the next request. Surface the error.
-          console.error('[Bookings] Booking insert failed:', bookingError);
-          return res.status(500).json({ success: false, error: bookingError.message || 'Booking could not be saved.' });
-        }
-        bookingData = dbData;
-
-        if (notifRows.length > 0) {
-          const fallbackOwnerEmail = await resolveOwnerEmail(bookingData.owner_id);
-          const withOwnerEmail = notifRows.map((n: any) => ({
-            ...n,
-            // A client may not know the salon owner's email; resolve it from
-            // the booking's owner row so the owner truly gets notified.
-            user_email: n.user_email || fallbackOwnerEmail,
-          }));
-          const { error: notifError } = await db
-            .from('in_app_notifications')
-            .insert(withOwnerEmail);
-          if (notifError) console.warn('[Bookings] Notification insert error:', notifError);
-        }
-      }
-
-      res.json({ success: true, data: bookingData });
-    } catch (err: any) {
-      console.warn('Booking create error:', err);
-      res.status(500).json({ success: false, error: err?.message || 'Booking could not be saved.' });
-    }
-  });
+  // Server-to-server callback from Razorpay (payment captured / failed /
+  // refunded). Signed with RAZORPAY_WEBHOOK_SECRET — see server/razorpayWebhook.ts.
+  app.post(
+    "/api/payments/razorpay/webhook",
+    createRazorpayWebhookHandler({
+      db,
+      isMock: isMockSupabase,
+      getMockBookings: () => mockBookings,
+      addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+      resolveOwnerEmail,
+    })
+  );
 
   // AI Bio Generation Route with Gemini
   app.post("/api/generate-bio", async (req, res) => {
