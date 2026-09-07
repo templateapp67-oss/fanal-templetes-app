@@ -19,9 +19,19 @@ import {
   handleVerifyRazorpayPayment,
   getRazorpayConfigIssues,
 } from "../server/razorpay";
+import { createRazorpayWebhookHandler, isWebhookConfigured } from "../server/razorpayWebhook";
 
 const app = express();
-app.use(express.json({ limit: "10mb" }));
+// `verify` keeps the RAW body bytes around: the Razorpay webhook signature is
+// an HMAC over exactly what was sent, so the parsed object cannot be re-used.
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req: any, _res, buf) => {
+      if (buf?.length) req.rawBody = buf;
+    },
+  })
+);
 // CORS for cross-origin API callers (different preview/custom/subdomain
 // host). Same-origin traffic (no Origin header) passes through untouched.
 // Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
@@ -73,6 +83,15 @@ if (!isMockSupabase && !admin) {
       '[Razorpay] Online payments are DISABLED — ' +
         razorpayIssues.join(' ') +
         ' Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env to enable checkout.'
+    );
+  }
+
+  if (isWebhookConfigured()) {
+    console.log('[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).');
+  } else {
+    console.warn(
+      '[Razorpay] RAZORPAY_WEBHOOK_SECRET is not set — incoming webhooks will be rejected with 503. ' +
+        'Use the same secret you entered in the Razorpay dashboard (Settings → Webhooks).'
     );
   }
 }
@@ -582,6 +601,18 @@ app.post(
 app.get("/api/payments/razorpay/config", handleRazorpayConfig);
 app.post("/api/payments/razorpay/order", handleCreateRazorpayOrder);
 app.post("/api/payments/razorpay/verify", handleVerifyRazorpayPayment);
+
+// Server-to-server callback from Razorpay, signed with RAZORPAY_WEBHOOK_SECRET.
+app.post(
+  "/api/payments/razorpay/webhook",
+  createRazorpayWebhookHandler({
+    db,
+    isMock: isMockSupabase,
+    getMockBookings: () => mockBookings,
+    addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+    resolveOwnerEmail,
+  })
+);
 
 app.post("/api/generate-bio", async (req, res) => {
   try {

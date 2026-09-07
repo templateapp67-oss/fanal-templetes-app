@@ -32,6 +32,7 @@ Add these to `.env` (already git-ignored; `.env.example` documents them):
 ```dotenv
 RAZORPAY_KEY_ID="rzp_test_TIzKly1Z2NMnum"
 RAZORPAY_KEY_SECRET="9SehLfvRW6eVtHXtFXzL2Ovm"
+RAZORPAY_WEBHOOK_SECRET="C9EWXhp3cHnow4oUGIzeCTIXzbmswV3Y"
 ```
 
 * `RAZORPAY_KEY_ID` is **public** — it is served to the browser so Checkout can
@@ -97,6 +98,7 @@ DEFAULT_OWNER_ID=<auth user uuid>   # fallback owner for guest bookings
 | `GET`  | `/api/payments/razorpay/config` | `{ configured, keyId, mode }` — public key only, never the secret. |
 | `POST` | `/api/payments/razorpay/order`  | Body `{ amount (₹), currency?, receipt?, notes? }` → creates the order server-side. |
 | `POST` | `/api/payments/razorpay/verify` | Body `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }` → HMAC-SHA256 check. |
+| `POST` | `/api/payments/razorpay/webhook` | Server-to-server callback from Razorpay (captured / failed / refunded). |
 | `POST` | `/api/bookings/create`          | Validates → resolves owner → re-verifies payment → inserts the booking. |
 
 Status codes are now precise — a 500 means "genuinely unexpected", nothing else:
@@ -109,6 +111,7 @@ Status codes are now precise — a 500 means "genuinely unexpected", nothing els
 | `422` (`23502`/`23503`) | A database constraint rejected the row, explained in plain English. |
 | `503 razorpay_not_configured` | Keys missing — the UI falls back to "pay at salon". |
 | `503 razorpay_unreachable` | The gateway could not be reached from the server — same fallback. |
+| `400` (webhook) | The `X-Razorpay-Signature` did not match — the callback is ignored. |
 | `502 razorpay_order_failed` | Razorpay refused the order (message forwarded). |
 
 ---
@@ -136,9 +139,80 @@ BookingModal → payAdvanceWithRazorpay()          src/lib/razorpayCheckout.ts
 Test cards (Razorpay test mode): card `4111 1111 1111 1111`, any future expiry,
 any CVV, OTP `1234`. UPI success handle: `success@razorpay`.
 
+
 ---
 
-## 5. Owner resolution (`bookings.owner_id`)
+## 5. Webhook
+
+**URL to register:**
+
+```
+https://fanal-templetes-app.vercel.app/api/payments/razorpay/webhook
+```
+
+### Why it matters
+
+The browser flow (`/verify`) only works if the customer stays on the page. The
+webhook is the fallback that still records the money when they close the tab,
+lose network, or when Razorpay captures/refunds later — no browser involved.
+
+### Setting it up in the dashboard
+
+1. Razorpay Dashboard → **Settings → Webhooks → Add New Webhook**.
+2. **Webhook URL:** the URL above.
+3. **Secret:** a value *you* choose. It must be identical to
+   `RAZORPAY_WEBHOOK_SECRET` in the app's environment. The value currently
+   configured in `.env` / `.env.development` is:
+
+   ```
+   C9EWXhp3cHnow4oUGIzeCTIXzbmswV3Y
+   ```
+
+4. **Active events:** `payment.captured`, `payment.failed`, `order.paid`,
+   `refund.processed` (`payment.authorized` and `refund.created` are also
+   understood).
+5. Save, then use **Send Test Webhook** — the response should be
+   `200 {"success":true,"received":true,…}`.
+
+On Vercel, add `RAZORPAY_WEBHOOK_SECRET` under **Project → Settings →
+Environment Variables** and redeploy (the committed `.env.development` value is
+only a fallback for previews).
+
+### How it behaves
+
+| Situation | HTTP | Effect |
+|---|---|---|
+| Valid signature, known booking | `200` | `payment_status` → `paid_deposit` / `failed` / `refunded`, `advance_paid_amount` and the Razorpay `payment_id` are stored, owner + customer notified. |
+| Replay of the same event | `200 updated:false` | Idempotent — the row is written only once. |
+| Event we don't handle | `200 handled:false` | Acknowledged so Razorpay stops retrying. |
+| Booking not found | `200 updated:false` | Acknowledged (a retry wouldn't help); logged with the ids. |
+| **Invalid signature** | `400` | Rejected, nothing is written. |
+| Secret not configured | `503` | Logged loudly; Razorpay retries after you set it. |
+| Database failure | `500` | Razorpay retries with backoff. |
+
+The signature is `HMAC_SHA256(raw_body, secret)` from the `X-Razorpay-Signature`
+header. Both entrypoints capture the **raw bytes** via
+`express.json({ verify })` — hashing a re-serialized `req.body` is the classic
+reason webhooks fail with a permanent 400.
+
+Boot log confirms it is armed:
+
+```
+[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).
+```
+
+### Test it locally
+
+```bash
+BODY='{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_1","order_id":"order_1","amount":18800,"notes":{"booking_ref":"NX-JPR-40213"}}}}}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$RAZORPAY_WEBHOOK_SECRET" -hex | sed 's/.*= //')
+curl -X POST localhost:3000/api/payments/razorpay/webhook \
+  -H 'Content-Type: application/json' -H "X-Razorpay-Signature: $SIG" -d "$BODY"
+```
+
+---
+
+## 6. Owner resolution (`bookings.owner_id`)
 
 Because the column is `NOT NULL`, a guest booking must be attached to a salon
 owner. The server now tries, in order:
@@ -154,14 +228,15 @@ instead of letting Postgres raise a 500.
 
 ---
 
-## 6. Tests
+## 7. Tests
 
 ```bash
-npm test        # tests/razorpay.test.ts + tests/bookingCreate.test.ts (and the rest)
+npm test        # razorpay + razorpayWebhook + bookingCreate suites (and the rest)
 npm run lint    # tsc --noEmit
 ```
 
 They cover credential loading/placeholder detection, signature verification,
-the order/verify/config endpoints, payload validation, owner resolution, the
+the order/verify/config endpoints, webhook signature + event handling +
+idempotency + retry semantics, payload validation, owner resolution, the
 Postgres-code → HTTP mapping and the "NOT NULL violation must not be a 500"
 regression.

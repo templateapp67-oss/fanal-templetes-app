@@ -31,6 +31,8 @@ for (const file of ['.env', '.env.development']) {
 const clean = (v) => (v || '').trim().replace(/^['"]/, '').replace(/['"]$/, '').trim();
 const keyId = clean(process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID);
 const keySecret = clean(process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET);
+const webhookSecret = clean(process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_WEBHOOK_KEY);
+const appUrl = clean(process.env.APP_URL) || 'https://fanal-templetes-app.vercel.app';
 const mask = (v) => (v ? `${v.slice(0, 6)}${'*'.repeat(Math.max(0, v.length - 10))}${v.slice(-4)}` : '(empty)');
 
 console.log('\n— Razorpay configuration ————————————————————————————');
@@ -55,6 +57,20 @@ const verified = crypto.timingSafeEqual(
   Buffer.from(crypto.createHmac('sha256', keySecret).update('order_test|pay_test').digest('hex'))
 );
 console.log(`  signature check  : ${verified ? 'ok' : 'FAILED'}`);
+
+// --- webhook ----------------------------------------------------------------
+console.log('\n— Webhook ————————————————————————————————————————————');
+if (!webhookSecret || /^(your_|my_|xxx|<)/i.test(webhookSecret)) {
+  console.log('  RAZORPAY_WEBHOOK_SECRET: (not set) — incoming webhooks will be rejected with 503.');
+} else {
+  const sample = Buffer.from(JSON.stringify({ event: 'payment.captured' }));
+  const whSig = crypto.createHmac('sha256', webhookSecret).update(sample).digest('hex');
+  console.log(`  RAZORPAY_WEBHOOK_SECRET: ${mask(webhookSecret)}`);
+  console.log(`  sample X-Razorpay-Signature: ${whSig.slice(0, 24)}…`);
+}
+console.log(`  endpoint         : ${appUrl.replace(/\/$/, '')}/api/payments/razorpay/webhook`);
+console.log('  dashboard        : Razorpay → Settings → Webhooks → Add New Webhook');
+console.log('  events           : payment.captured, payment.failed, order.paid, refund.processed');
 
 // --- live call --------------------------------------------------------------
 console.log('\n— Calling Razorpay (creating a ₹1 test order) ————————');

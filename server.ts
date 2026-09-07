@@ -21,6 +21,7 @@ import {
   handleVerifyRazorpayPayment,
   getRazorpayConfigIssues,
 } from "./server/razorpay";
+import { createRazorpayWebhookHandler, isWebhookConfigured } from "./server/razorpayWebhook";
 
 // In-memory fallback for preview mode without DB
 let mockBookings: any[] = [];
@@ -55,6 +56,15 @@ if (!isMockSupabase && !admin) {
       '[Razorpay] Online payments are DISABLED — ' +
         razorpayIssues.join(' ') +
         ' Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env to enable checkout.'
+    );
+  }
+
+  if (isWebhookConfigured()) {
+    console.log('[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).');
+  } else {
+    console.warn(
+      '[Razorpay] RAZORPAY_WEBHOOK_SECRET is not set — incoming webhooks will be rejected with 503. ' +
+        'Use the same secret you entered in the Razorpay dashboard (Settings → Webhooks).'
     );
   }
 }
@@ -146,7 +156,17 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "10mb" }));
+  // `verify` stashes the RAW bytes of every JSON body. The Razorpay webhook
+  // signature is an HMAC over exactly those bytes — re-serializing req.body
+  // would change key order/spacing and every signature check would fail.
+  app.use(
+    express.json({
+      limit: "10mb",
+      verify: (req: any, _res, buf) => {
+        if (buf?.length) req.rawBody = buf;
+      },
+    })
+  );
   // CORS for cross-origin API callers (split dev on different ports, preview
   // hosts, custom domains). Same-origin traffic (no Origin header) is
   // untouched. Mounted before the routes so OPTIONS preflights for
@@ -625,6 +645,19 @@ async function startServer() {
   app.get("/api/payments/razorpay/config", handleRazorpayConfig);
   app.post("/api/payments/razorpay/order", handleCreateRazorpayOrder);
   app.post("/api/payments/razorpay/verify", handleVerifyRazorpayPayment);
+
+  // Server-to-server callback from Razorpay (payment captured / failed /
+  // refunded). Signed with RAZORPAY_WEBHOOK_SECRET — see server/razorpayWebhook.ts.
+  app.post(
+    "/api/payments/razorpay/webhook",
+    createRazorpayWebhookHandler({
+      db,
+      isMock: isMockSupabase,
+      getMockBookings: () => mockBookings,
+      addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+      resolveOwnerEmail,
+    })
+  );
 
   // AI Bio Generation Route with Gemini
   app.post("/api/generate-bio", async (req, res) => {
