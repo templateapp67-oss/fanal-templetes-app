@@ -250,6 +250,42 @@ export default function App() {
   // when a visitor is viewing a salon's public white-label site.
   const isPublicSite = !!siteTenant?.isTenant && siteTenant.found;
 
+  /**
+   * Fetch a same-origin JSON API route with exact diagnostics.
+   *
+   * Returns the parsed JSON on success, or `null` after logging the failure
+   * to the console for HTTP errors (404/500…), non-JSON bodies (an Express /
+   * Vercel HTML error page or the SPA fallback) and network failures. Callers
+   * can therefore distinguish "the server answered: not found" from "the
+   * request itself failed" instead of silently guessing.
+   */
+  const fetchSiteJson = useCallback(async (url: string): Promise<any | null> => {
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(
+          `[Site bootstrap] GET ${url} failed → HTTP ${res.status} ${res.statusText}.`,
+          body ? `Body (first 400 chars): ${body.slice(0, 400)}` : '(empty body)'
+        );
+        return null;
+      }
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const body = await res.text().catch(() => '');
+        console.error(
+          `[Site bootstrap] GET ${url} returned "${contentType}" instead of application/json — the API route may not be deployed.`,
+          body ? `Body (first 400 chars): ${body.slice(0, 400)}` : '(empty body)'
+        );
+        return null;
+      }
+      return await res.json();
+    } catch (err) {
+      console.error(`[Site bootstrap] GET ${url} threw:`, describeError(err));
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -259,27 +295,47 @@ export default function App() {
     (async () => {
       try {
         if (requestedSite) {
-          try {
-            const res = await fetch(`/api/site/${encodeURIComponent(requestedSite)}`, { headers: { Accept: 'application/json' } });
-            const data = await res.json();
-            if (cancelled) return;
-            if (data && data.found && data.salon) {
-              setSiteTenant({
-                isTenant: true,
-                found: true,
-                subdomain: requestedSite,
-                customDomain: null,
-                profile: data.salon?.profile || profile,
-                services: data.salon?.services || services,
-                stylists: data.salon?.stylists || stylists,
-              });
-              return;
-            }
-          } catch {
-            // fallback below
+          const data = await fetchSiteJson(`/api/site/${encodeURIComponent(requestedSite)}`);
+          if (cancelled) return;
+
+          if (data && data.found && data.salon) {
+            setSiteTenant({
+              isTenant: true,
+              found: true,
+              subdomain: requestedSite,
+              customDomain: null,
+              profile: data.salon?.profile || profile,
+              services: data.salon?.services || services,
+              stylists: data.salon?.stylists || stylists,
+            });
+            return;
           }
 
-          // In-memory fallback for Arts By Uma or current active profile
+          // A reachable live (Supabase-backed) API answering found:false is
+          // authoritative — this subdomain is not published. Show the app
+          // instead of fabricating a public site from local state (which used
+          // to make every unknown ?site= URL silently render local/demo data).
+          if (data && !isMockSupabase) {
+            console.warn(
+              `[Site bootstrap] Live API reports no published salon for "${requestedSite}" — rendering the app, not a public site.`
+            );
+            setSiteTenant({
+              isTenant: true,
+              found: false,
+              subdomain: requestedSite,
+              customDomain: null,
+            });
+            return;
+          }
+
+          // Mock/demo mode (no Supabase configured) or an unreachable API:
+          // fall back to the current local profile so the preview flow keeps
+          // working; the fetch failure itself was logged above by fetchSiteJson.
+          if (data === null) {
+            console.warn(
+              `[Site bootstrap] API unreachable for "${requestedSite}" — previewing from local state.`
+            );
+          }
           if (cancelled) return;
           setSiteTenant({
             isTenant: true,
@@ -293,8 +349,7 @@ export default function App() {
           return;
         }
 
-        const res = await fetch('/api/site', { headers: { Accept: 'application/json' } });
-        const data = await res.json();
+        const data = await fetchSiteJson('/api/site');
         if (cancelled) return;
         if (data && data.isTenant) {
           setSiteTenant({
@@ -320,7 +375,9 @@ export default function App() {
           setSiteTenant({ isTenant: false, found: false });
         }
       } catch (err) {
-        console.warn('Could not resolve site tenant:', err);
+        // Unexpected bootstrap error — never crash the app; keep the demo
+        // preview working from local state when a site was explicitly requested.
+        console.error('Could not resolve site tenant:', err);
         if (requestedSite || isPublicParam) {
           setSiteTenant({
             isTenant: true,
@@ -342,7 +399,8 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchSiteJson, isMockSupabase]);
 
   // Global save/update toast so the owner always knows their work is secure.
   const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
@@ -471,61 +529,99 @@ export default function App() {
   // to load existing rows can never wipe them.
   const hydratedForUserRef = useRef(false);
   const hydrationErrorRef = useRef<string | null>(null);
+  // Single-flight runner: the mount effect AND a save-time self-heal retry
+  // share one hydration run instead of firing overlapping queries. Keyed by
+  // owner id so a run for a previously signed-in owner can never satisfy (or
+  // unlock cleanup for) the next owner.
+  const hydrationRunRef = useRef<{ userId: string; promise: Promise<boolean> } | null>(null);
+  // Owner we are hydrating for — guards against applying a stale user's
+  // snapshot after a fast account switch.
+  const hydrationUserRef = useRef<string | null>(null);
+
+  const applyHydrationSnapshot = useCallback(
+    (snapshot: { svc: any; stf: any; lc: any; rw: any }) => {
+      const { svc, stf, lc, rw } = snapshot;
+      if (svc.data && svc.data.length) setServices(svc.data.map(fromServiceRow));
+      if (stf.data && stf.data.length) setStylists(stf.data.map(fromStylistRow));
+      if (lc.data) {
+        setLoyaltyConfig((prev) => ({
+          ...fromLoyaltyConfigRow(lc.data),
+          rewards:
+            rw.data && rw.data.length
+              ? (rw.data.map(fromRewardRow) as RewardThreshold[])
+              : prev.rewards,
+        }));
+      }
+    },
+    []
+  );
+
+  const startHydration = useCallback(
+    (userId: string): Promise<boolean> => {
+      // Re-use an in-flight run only for the SAME owner.
+      const inFlight = hydrationRunRef.current;
+      if (inFlight && inFlight.userId === userId) return inFlight.promise;
+      const run = (async (): Promise<boolean> => {
+        try {
+          const snapshot = await withRetry(
+            async () => {
+              const [svc, stf, lc, rw] = await Promise.all([
+                supabase.from('services').select('*').order('sort_order'),
+                supabase.from('stylists').select('*').order('sort_order'),
+                supabase.from('loyalty_config').select('*').eq('owner_id', userId).maybeSingle(),
+                supabase.from('loyalty_rewards').select('*').eq('owner_id', userId).order('sort_order'),
+              ]);
+              const selectError = svc.error || stf.error || lc.error || rw.error;
+              if (selectError) throw selectError;
+              return { svc, stf, lc, rw };
+            },
+            { label: 'hydrate salon data from cloud' }
+          );
+          // Only the CURRENTLY signed-in owner may have their snapshot applied
+          // or unlock destructive cleanup (a stale run for a previous owner
+          // must never satisfy the next owner's save guard).
+          if (hydrationUserRef.current === userId) {
+            applyHydrationSnapshot(snapshot);
+            hydratedForUserRef.current = true;
+            hydrationErrorRef.current = null;
+          }
+          return true;
+        } catch (err) {
+          // Hydration failed even after retries — keep the flag false so the
+          // save flow never performs destructive cleanup (deleting rows it
+          // failed to read).
+          if (hydrationUserRef.current === userId) {
+            hydratedForUserRef.current = false;
+            hydrationErrorRef.current = describeError(err);
+            console.error('[AutoSave] Cloud hydration failed:', hydrationErrorRef.current);
+          }
+          return false;
+        }
+      })();
+      hydrationRunRef.current = { userId, promise: run };
+      run.finally(() => {
+        if (hydrationRunRef.current?.promise === run) hydrationRunRef.current = null;
+      });
+      return run;
+    },
+    [applyHydrationSnapshot]
+  );
 
   useEffect(() => {
-    if (!user || isMockSupabase) return;
-    let cancelled = false;
+    if (!user || isMockSupabase) {
+      // Signed out (or mock mode): no cloud rows are loaded — clear all
+      // hydration state so a stale run for a previous owner can never unlock
+      // destructive cleanup for a later owner.
+      hydrationUserRef.current = null;
+      hydratedForUserRef.current = false;
+      hydrationErrorRef.current = null;
+      return;
+    }
     hydratedForUserRef.current = false;
     hydrationErrorRef.current = null;
-
-    const hydrate = () =>
-      withRetry(
-        async () => {
-          const [svc, stf, lc, rw] = await Promise.all([
-            supabase.from('services').select('*').order('sort_order'),
-            supabase.from('stylists').select('*').order('sort_order'),
-            supabase.from('loyalty_config').select('*').eq('owner_id', user.id).maybeSingle(),
-            supabase.from('loyalty_rewards').select('*').eq('owner_id', user.id).order('sort_order'),
-          ]);
-          const selectError = svc.error || stf.error || lc.error || rw.error;
-          if (selectError) throw selectError;
-          if (cancelled) return;
-          return { svc, stf, lc, rw };
-        },
-        { label: 'hydrate salon data from cloud' }
-      );
-
-    (async () => {
-      try {
-        const result = await hydrate();
-        if (cancelled || !result) return;
-
-        const { svc, stf, lc, rw } = result;
-        if (svc.data && svc.data.length) setServices(svc.data.map(fromServiceRow));
-        if (stf.data && stf.data.length) setStylists(stf.data.map(fromStylistRow));
-        if (lc.data) {
-          setLoyaltyConfig((prev) => ({
-            ...fromLoyaltyConfigRow(lc.data),
-            rewards:
-              rw.data && rw.data.length
-                ? (rw.data.map(fromRewardRow) as RewardThreshold[])
-                : prev.rewards,
-          }));
-        }
-        hydratedForUserRef.current = true;
-      } catch (err) {
-        // Hydration failed even after retries — keep the flag false so the
-        // save flow reports the problem instead of overwriting cloud data it
-        // never managed to read.
-        hydrationErrorRef.current = describeError(err);
-        console.error('[AutoSave] Cloud hydration failed:', hydrationErrorRef.current);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, isMockSupabase]);
+    hydrationUserRef.current = user.id;
+    void startHydration(user.id);
+  }, [user?.id, isMockSupabase, startHydration]);
 
   // -------------------------------------------------------------------------
   // AUTO-SAVE ENGINE
@@ -626,27 +722,40 @@ export default function App() {
 
         // -- 2) Cloud persistence (signed-in owners with a real project) ---
         if (state.user && !isMockSupabase) {
+          // Destructive cleanup (deleting rows removed in the editor) is only
+          // safe after a successful hydrate, so a half-loaded client can never
+          // wipe rows it hasn't seen. Previously a single flaky hydration
+          // (e.g. a network blip right after sign-in) hard-failed EVERY later
+          // auto-save with "cloud sync skipped" until a full page reload — even
+          // though the localStorage write had succeeded. Self-heal first: await
+          // an in-flight hydrate or launch one retry right now.
           if (!hydratedForUserRef.current) {
-            // Never write over cloud rows we failed to read — that used to
-            // duplicate/delete data after a flaky login.
-            const reason = hydrationErrorRef.current
-              ? `hydration failed: ${hydrationErrorRef.current}`
-              : 'hydration still pending';
-            failures.push(`cloud sync skipped (${reason})`);
-            console.error('[AutoSave] Cloud sync skipped because', reason);
-          } else {
-            const cloud = await syncSalonToSupabase(
-              supabase,
-              {
-                ownerId: state.user.id,
-                profile: state.profile,
-                services: state.services,
-                stylists: state.stylists,
-                loyaltyConfig: state.loyaltyConfig,
-              },
-              { deleteRemoved: true }
+            await startHydration(state.user.id);
+          }
+          const canCleanUpCloudRows = hydratedForUserRef.current;
+          if (!canCleanUpCloudRows) {
+            const reason = hydrationErrorRef.current || 'hydration still pending';
+            console.warn(
+              `[AutoSave] Cloud hydration unavailable (${reason}) — saving owner rows in safe (non-destructive) mode; deleted-row cleanup stays disabled.`
             );
-            if (!cloud.ok) failures.push(...cloud.errors);
+          }
+          const cloud = await syncSalonToSupabase(
+            supabase,
+            {
+              ownerId: state.user.id,
+              profile: state.profile,
+              services: state.services,
+              stylists: state.stylists,
+              loyaltyConfig: state.loyaltyConfig,
+            },
+            { deleteRemoved: canCleanUpCloudRows }
+          );
+          if (!cloud.ok) {
+            failures.push(...cloud.errors);
+          } else if (!canCleanUpCloudRows) {
+            console.warn(
+              '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
+            );
           }
         }
 
@@ -690,7 +799,7 @@ export default function App() {
         }
       }
     },
-    [showToast, scheduleStatusReset]
+    [showToast, scheduleStatusReset, startHydration]
   );
 
   // Debounced auto-save. The timer resets on every keystroke so a burst of
