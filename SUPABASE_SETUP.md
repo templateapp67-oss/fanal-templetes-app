@@ -182,17 +182,45 @@ The editor saves to **localStorage first** (instant, always works) and then
 mirrors the same payload to Supabase when an owner is signed in. A red
 "Save failed" means the **cloud mirror** failed while the local copy
 succeeded. The browser console always prints the exact per-table reason
-under `[AutoSave] …` / `[Profile] …`. Map it as follows:
+under `[Nexora Sync Error] …` / `[AutoSave] …` (table name + message +
+HTTP status), and the save pipeline automatically retries the failed state
+through `POST /api/website/save` (service role, bypasses RLS) — so a broken
+RLS policy no longer blocks the owner's save at all. Map the remaining
+symptoms as follows:
 
 | Console / toast symptom | Root cause | Permanent fix |
 |---|---|---|
-| `permission denied for table …` (401/`42501`), "new row violates row-level security policy" | The `authenticated` role has no GRANTs on the tables, or RLS policies are missing | Apply **all** migrations: `00001_init.sql` + `20260907_owner_save_grants.sql`. The grants file is idempotent and fixes projects whose default privileges were altered. Then sign out/in. |
-| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, password changed elsewhere) | Sign in again. The app now pre-flights the session before every cloud save and self-recovers. |
+| `permission denied for table …` (401/`42501`), "new row violates row-level security policy" (403) | The `authenticated` role has no GRANTs on the tables, or RLS policies are missing/broken | Apply **all** migrations: `00001_init.sql` + `20260907_owner_save_grants.sql` — or just run **`supabase/rls-restore-production.sql`** (idempotent repair: re-enables RLS, recreates the owner-scoped policies, re-grants). Then sign out/in. |
+| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, password changed elsewhere) | Sign in again. The app now pre-flights the session before every cloud save and self-recovers (degrades to a local draft meanwhile). |
 | `relation "public.…" does not exist` (`42P01`) | Migrations never applied to this project | Run `supabase db push` (or paste `supabase/migrations/*.sql` into the SQL Editor). |
+| `POST /api/website/save … HTTP 404` | The save API route is not on this deployment (older build) | Redeploy — the route ships in `api/index.ts` / `server.ts`. Edits stay on the device until then. |
+| `Failed to fetch` / "blocked by CORS" | Cross-origin caller (split dev ports, preview/custom domain) hitting the API before CORS headers existed | Fixed: `server/cors.ts` (mounted in both entrypoints) answers the preflight and echoes the origin. Also cross-check `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — a wrong project URL makes the DIRECT sync fail; the service-role fallback still saves. |
 | Network / `fetch failed` / 5xx | Transient outage | Automatic retry with backoff (3 attempts); edits stay saved on the device. |
 | "Could not load your existing data…" (legacy) | Pre-fix deployments where a one-time hydration blip blocked all later saves | Redeploy from `main` — hydration now self-heals on the next save. |
 
-Verification queries (SQL Editor):
+### 9a. Isolating an RLS problem manually (optional — testing only)
+
+If you want to prove a save failure is RLS-caused by disabling RLS, use the
+two helper scripts (they are NOT migrations — run them from the SQL Editor):
+
+1. **`supabase/rls-test-disable.sql`** — read-only diagnostics first (RLS
+   status, policy counts, role grants for the five editor tables), then
+   `ALTER TABLE … DISABLE ROW LEVEL SECURITY` on exactly
+   `profiles, services, stylists, loyalty_config, loyalty_rewards`
+   (this schema has **no** `team_members` table — the team table is
+   `stylists`). Test the save, then…
+2. **`supabase/rls-restore-production.sql`** — run IMMEDIATELY afterwards
+   (and always for the permanent fix): re-enables RLS, recreates the
+   canonical owner-scoped policies and role grants (idempotent).
+
+> ⚠️ **Security:** while RLS is disabled, the `anon` key (which ships in
+> every browser bundle) can read — and on standard projects also write —
+> ALL owners' rows. Never leave a live project in the disabled state, and
+> never disable RLS on `bookings` (guest traffic must stay
+> service-role-only).
+
+Verification queries (SQL Editor) — the same ones the two helper scripts
+print:
 
 ```sql
 -- Privileges for the authenticated role (must list select/insert/update/delete
