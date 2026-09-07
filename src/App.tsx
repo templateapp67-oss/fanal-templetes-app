@@ -28,9 +28,15 @@ import {
   summarizeSaveError,
   isAuthLikeFailure,
   isSchemaLikeFailure,
+  isUuid,
+  toDbId,
   withRetry,
 } from './lib/autoSave';
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
+
+/** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
+export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
+export const CLIENT_ID_NAMESPACE = 'nexora-client';
 
 // ---------------------------------------------------------------------------
 // Supabase row <-> App type mappers.
@@ -77,15 +83,21 @@ function toClientRecord(row: any): ClientRecord {
 
 function toAppointmentInsert(apt: Appointment, ownerId?: string | null) {
   return {
-    id: apt.id,
+    // `appointments.id` is a uuid column. Local app ids are `apt-…` strings,
+    // which Postgres rejected — the insert silently persisted zero rows.
+    // Deterministic mapping keeps repeated saves idempotent (no duplicates).
+    id: toDbId(apt.id, APPOINTMENT_ID_NAMESPACE),
     owner_id: ownerId || null,
     client_name: apt.clientName,
     client_phone: apt.clientPhone,
     client_email: apt.clientEmail,
-    service_id: apt.serviceId,
+    // Local template/service ids (`srv-…`, `hs-st-…`) are not uuid-shaped and
+    // would make the whole insert fail on these uuid columns — same class of
+    // bug as the id column. Names stay denormalized in text columns.
+    service_id: apt.serviceId && isUuid(apt.serviceId) ? apt.serviceId : null,
     service_name: apt.serviceName,
     service_price: apt.servicePrice,
-    stylist_id: apt.stylistId,
+    stylist_id: apt.stylistId && isUuid(apt.stylistId) ? apt.stylistId : null,
     stylist_name: apt.stylistName,
     date: apt.date,
     time: apt.time,
@@ -98,7 +110,9 @@ function toAppointmentInsert(apt: Appointment, ownerId?: string | null) {
 
 function toClientInsert(c: ClientRecord, ownerId?: string | null) {
   return {
-    id: c.id,
+    // `clients.id` is a uuid column; local ids are `cli-…` strings (see
+    // toAppointmentInsert for the same bug/fix).
+    id: toDbId(c.id, CLIENT_ID_NAMESPACE),
     owner_id: ownerId || null,
     name: c.name,
     phone: c.phone,
@@ -588,6 +602,7 @@ export default function App() {
               landmark: data.landmark || prev.landmark,
               subdomain: data.subdomain || prev.subdomain,
               instagramHandle: data.instagram_handle || prev.instagramHandle,
+              homeService: data.home_service ?? prev.homeService,
               themePreset: data.theme_preset || prev.themePreset,
               themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
               customAccentColor: data.custom_accent_color || prev.customAccentColor,
@@ -1164,17 +1179,30 @@ export default function App() {
     if (isMockSupabase || isPublicSite) return;
 
     const ownerId = user?.id ?? profile.ownerId;
+    if (!ownerId) {
+      // No signed-in owner: appointments/clients rows are NOT NULL on
+      // owner_id, so a cloud write can only fail — keep the local state.
+      console.warn('[Appointments] Skipped cloud sync: no owner id (sign in to persist).');
+      return;
+    }
 
     try {
-      await supabase.from('appointments').insert([toAppointmentInsert(newApt, ownerId)]);
+      const { error: aptError } = await supabase
+        .from('appointments')
+        .insert([toAppointmentInsert(newApt, ownerId)]);
+      if (aptError) console.warn('[Appointments] Insert error:', aptError);
 
       if (updatedClient) {
-        await supabase
+        const { error: clientError } = await supabase
           .from('clients')
           .update(toClientUpdate(updatedClient))
-          .eq('id', updatedClient.id);
+          .eq('id', toDbId(updatedClient.id, CLIENT_ID_NAMESPACE));
+        if (clientError) console.warn('[Appointments] Client update error:', clientError);
       } else if (newClientRecord) {
-        await supabase.from('clients').insert([toClientInsert(newClientRecord, ownerId)]);
+        const { error: clientError } = await supabase
+          .from('clients')
+          .insert([toClientInsert(newClientRecord, ownerId)]);
+        if (clientError) console.warn('[Appointments] Client insert error:', clientError);
       }
     } catch (err) {
       console.warn('Supabase real-time sync fallback.', err);

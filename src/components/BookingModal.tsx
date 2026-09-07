@@ -170,6 +170,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Step 4: Mock OTP (Static Code: '1234')
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
+  const [submitError, setSubmitError] = useState<string>('');
   const [resendTimer, setResendTimer] = useState<number>(30);
   const [otpResentNotice, setOtpResentNotice] = useState<boolean>(false);
   const otpInputRefs = [
@@ -389,7 +390,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const refNum = `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
     setBookingRef(refNum);
 
-    // Call Supabase API Endpoint
+    // Call Supabase API Endpoint. The server now answers real failures with a
+    // JSON error — show them instead of pretending the booking was stored.
+    setSubmitError('');
     try {
       const response = await fetch('/api/bookings/create', {
         method: 'POST',
@@ -419,11 +422,22 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           ]
         })
       });
-      if (!response.ok) {
-        console.error('Failed to create booking in Supabase');
+      let json: { success?: boolean; error?: string; notice?: string } | null = null;
+      try {
+        json = await response.json();
+      } catch {
+        // Non-JSON body — handled below through response.ok.
+      }
+      if (!response.ok || (json && json.success === false)) {
+        const detail = json?.error || json?.notice || `Server error (HTTP ${response.status})`;
+        console.error('Failed to create booking:', detail);
+        setSubmitError(`We couldn't save your booking (${detail}). Please try again — your details are still here.`);
+        return;
       }
     } catch (e) {
-      console.error('API Error:', e);
+      // Network failure (offline, preview sandbox without API): keep the local
+      // demo copy so the owner dashboard still shows the request.
+      console.warn('Booking API unreachable — keeping a local copy only.', e);
     }
 
     const newApt: Appointment = {
@@ -1314,11 +1328,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
               </div>
 
+              {/* Submit failure banner — the booking is NOT confirmed until the
+                  server accepts it, so surface real API errors here instead of
+                  jumping to the success screen. */}
+              {submitError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <span>{submitError}</span>
+                </div>
+              )}
+
               {/* Final Step Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setCurrentStep('guest')}
+                  onClick={() => { setSubmitError(''); setCurrentStep('guest'); }}
                   className="px-4 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer flex items-center gap-1.5"
                 >
                   <ArrowLeft className="w-4 h-4" />

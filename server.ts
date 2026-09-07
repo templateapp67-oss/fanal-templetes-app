@@ -7,6 +7,11 @@ import { supabase, isMockSupabase, getSupabaseAdmin } from "./src/lib/supabaseCl
 import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "./src/types";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
+import {
+  sanitizeBookingRow,
+  applyBookingUpdate,
+  buildStatusNotifications,
+} from "./server/bookingOps";
 
 // In-memory fallback for preview mode without DB
 let mockBookings: any[] = [];
@@ -93,6 +98,23 @@ mockSalons['mirakistudio'] = {
 // "aroma", "perfume" or "zuma" and served them Uma's salon.
 const DEMO_SUBDOMAINS = new Set(['arts-by-uma', 'artsbyuma']);
 
+/** Owner email for booking notifications, resolved from the profiles row. */
+async function resolveOwnerEmail(ownerId: string | null | undefined): Promise<string> {
+  if (ownerId && !isMockSupabase) {
+    try {
+      const { data } = await db
+        .from('profiles')
+        .select('email')
+        .eq('id', ownerId)
+        .maybeSingle();
+      if (data?.email) return data.email;
+    } catch {
+      // fall through to the demo fallback
+    }
+  }
+  return 'owner@salon.com';
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -114,6 +136,7 @@ async function startServer() {
       workingHoursMonFri: workingHours.monFri || '',
       workingHoursSat: workingHours.saturday || '',
       workingHoursSun: workingHours.sunday || '',
+      homeService: row.home_service || undefined,
       ownerId: row.id,
       businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
       businessName: row.salon_name || 'Arts By Uma',
@@ -358,80 +381,77 @@ async function startServer() {
   // Booking Update Endpoint
   app.post("/api/bookings/update", async (req, res) => {
     try {
-      const { id, status, proposed_date, proposed_time_slot } = req.body;
-      
-      const updateData: any = { status };
-      if (status === 'reschedule_proposed') {
-        updateData.proposed_date = proposed_date;
-        updateData.proposed_time_slot = proposed_time_slot;
+      const { id, status, proposed_date, proposed_time_slot } = req.body ?? {};
+      if (!id || !status) {
+        return res.status(400).json({ success: false, error: 'id and status are required.' });
       }
-      
+
       let data: any;
-      const doMockUpdate = () => {
-        const idx = mockBookings.findIndex(b => b.id === id);
-        if (idx !== -1) {
-          mockBookings[idx] = { ...mockBookings[idx], ...updateData };
-          data = mockBookings[idx];
-        } else {
-          throw new Error("Booking not found");
-        }
-      };
 
       if (isMockSupabase) {
-        doMockUpdate();
+        const idx = mockBookings.findIndex((b) => b.id === id);
+        if (idx === -1) return res.status(404).json({ success: false, error: 'Booking not found' });
+        const existing = mockBookings[idx];
+        const changes = applyBookingUpdate(existing, { status, proposed_date, proposed_time_slot });
+        data = { ...existing, ...changes };
+        mockBookings[idx] = data;
       } else {
-        const { data: dbData, error } = await db
+        // Live mode: read the current row first — the confirmation transition
+        // needs the proposed slot, and a read/write failure must surface as a
+        // real error, never as a fake in-memory success (that used to make the
+        // UI show "confirmed" while the database still said "pending").
+        const { data: existing, error: fetchError } = await db
           .from('bookings')
-          .update(updateData)
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+        if (fetchError) {
+          console.error('[Bookings] Failed to read booking for update:', fetchError);
+          return res.status(500).json({ success: false, error: fetchError.message });
+        }
+        if (!existing) {
+          return res.status(404).json({ success: false, error: 'Booking not found' });
+        }
+        const changes = applyBookingUpdate(existing, { status, proposed_date, proposed_time_slot });
+        const { data: updated, error: updateError } = await db
+          .from('bookings')
+          .update(changes)
           .eq('id', id)
           .select()
           .single();
-          
-        if (error) {
-           doMockUpdate();
-        } else {
-           data = dbData;
+        if (updateError || !updated) {
+          console.error('[Bookings] Failed to update booking:', updateError);
+          return res.status(500).json({ success: false, error: updateError?.message || 'Booking update failed.' });
         }
+        data = updated;
       }
 
       // Mock sending WhatsApp/Email based on status update
       console.log(`[TRIGGERED NOTIFICATION] Status updated to ${status} for booking ID: ${id}`);
-      let notificationMsg = '';
-      let notificationTitle = '';
+      const ownerEmail = await resolveOwnerEmail(data.owner_id);
+      const notifs = buildStatusNotifications(
+        data,
+        status,
+        data.proposed_date ?? proposed_date,
+        data.proposed_time_slot ?? proposed_time_slot,
+        ownerEmail
+      );
 
-      if (status === 'reschedule_proposed') {
-         notificationTitle = 'Reschedule Proposed';
-         notificationMsg = `The salon proposed a new time: ${proposed_date} at ${proposed_time_slot}.`;
-      } else if (status === 'confirmed') {
-         notificationTitle = 'Booking Confirmed';
-         notificationMsg = `Your booking on ${data.booking_date} at ${data.time_slot} is now confirmed.`;
-      } else if (status === 'cancelled') {
-         notificationTitle = 'Booking Cancelled';
-         notificationMsg = `Your booking was cancelled.`;
+      if (notifs) {
+        const rows = [notifs.owner];
+        if (notifs.customer) rows.unshift(notifs.customer);
+        if (isMockSupabase) {
+          mockNotifications.push(...rows.map((n) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
+        } else {
+          const { error: notifError } = await db.from('in_app_notifications').insert(rows);
+          if (notifError) console.warn('[Bookings] Notification insert error:', notifError);
+        }
       }
 
-      if (notificationMsg) {
-         const newNotifs = [{
-           user_email: data.customer_email,
-           title: notificationTitle,
-           message: notificationMsg,
-         }, {
-           user_email: 'owner@salon.com', // hardcoded for the demo owner dashboard
-           title: `Booking ${status}`,
-           message: `${data.customer_name}'s booking was ${status}.`,
-         }];
-
-         if (isMockSupabase) {
-           mockNotifications.push(...newNotifs.map(n => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
-         } else {
-           await db.from('in_app_notifications').insert(newNotifs);
-         }
-      }
-      
       res.json({ success: true, data });
     } catch (err: any) {
       console.warn('Booking update error:', err);
-      res.status(500).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err?.message || 'Booking update failed.' });
     }
   });
 
@@ -546,50 +566,68 @@ async function startServer() {
   // Booking Create Endpoint
   app.post("/api/bookings/create", async (req, res) => {
     try {
-      const { booking, notifications } = req.body;
-      
+      const { booking, notifications } = req.body ?? {};
+      if (!booking || typeof booking !== 'object') {
+        return res.status(400).json({ success: false, error: 'booking payload is required.' });
+      }
+
+      // Only columns the schema knows, with non-UUID foreign keys (editor
+      // preview ids such as 'hs-1') downgraded to null so a guest booking can
+      // always persist via its denormalized service_name.
+      const ownerId = req.body.owner_id || booking.owner_id || process.env.DEFAULT_OWNER_ID || null;
+      const bookingRow = sanitizeBookingRow({ ...booking, owner_id: ownerId });
+      const notifRows = Array.isArray(notifications)
+        ? notifications
+            .filter((n: any) => n && typeof n === 'object')
+            .map((n: any) => ({
+              user_email: n.user_email || null,
+              title: n.title || null,
+              message: n.message || null,
+            }))
+        : [];
+
       let bookingData: any;
-      const doMock = () => {
-        bookingData = { ...booking, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() };
-        mockBookings.push(bookingData);
-        
-        if (notifications && notifications.length > 0) {
-          mockNotifications.push(...notifications.map((n: any) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
-        }
-      };
 
       if (isMockSupabase) {
-        doMock();
+        bookingData = { ...bookingRow, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() };
+        mockBookings.push(bookingData);
+        mockNotifications.push(
+          ...notifRows.map((n: any) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() }))
+        );
       } else {
-        const bookingRow = {
-          ...booking,
-          owner_id: (req.body.owner_id || booking?.owner_id || process.env.DEFAULT_OWNER_ID || null),
-        };
-
         const { data: dbData, error: bookingError } = await db
           .from('bookings')
           .insert([bookingRow])
           .select()
           .single();
-          
+
         if (bookingError) {
-          doMock();
-        } else {
-          bookingData = dbData;
-          
-          if (notifications && notifications.length > 0) {
-             const { error: notifError } = await db
-              .from('in_app_notifications')
-              .insert(notifications);
-             if (notifError) console.warn('Notification insert error:', notifError);
-          }
+          // Live mode: never fake success with an in-memory row — the booking
+          // would silently disappear on the next request. Surface the error.
+          console.error('[Bookings] Booking insert failed:', bookingError);
+          return res.status(500).json({ success: false, error: bookingError.message || 'Booking could not be saved.' });
+        }
+        bookingData = dbData;
+
+        if (notifRows.length > 0) {
+          const fallbackOwnerEmail = await resolveOwnerEmail(bookingData.owner_id);
+          const withOwnerEmail = notifRows.map((n: any) => ({
+            ...n,
+            // A client may not know the salon owner's email; resolve it from
+            // the booking's owner row so the owner truly gets notified.
+            user_email: n.user_email || fallbackOwnerEmail,
+          }));
+          const { error: notifError } = await db
+            .from('in_app_notifications')
+            .insert(withOwnerEmail);
+          if (notifError) console.warn('[Bookings] Notification insert error:', notifError);
         }
       }
-      
+
       res.json({ success: true, data: bookingData });
     } catch (err: any) {
       console.warn('Booking create error:', err);
-      res.status(500).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err?.message || 'Booking could not be saved.' });
     }
   });
 

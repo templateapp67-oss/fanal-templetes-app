@@ -94,6 +94,10 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     custom_accent_color: profile.customAccentColor ?? null,
     require_deposit: profile.requireDeposit,
     deposit_percentage: profile.depositPercentage,
+    // Home-service toggle/charge/radius (edited in Side Panel Customizer) —
+    // previously stored only in localStorage, so it silently reset after a
+    // reload and never reached the public site served from the database.
+    home_service: profile.homeService ?? null,
     working_hours: buildWorkingHours(profile),
     updated_at: new Date().toISOString(),
   };
