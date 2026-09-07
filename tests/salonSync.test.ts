@@ -270,6 +270,31 @@ test('syncSalonToSupabase sends schema-matched payloads and cleans up removed ro
   assert.ok(deletes.some((c) => c.table === 'services' && c.filter && c.filter.startsWith('(')));
 });
 
+test('syncSalonToSupabase in safe mode (deleteRemoved: false) upserts but never deletes', async () => {
+  // This is the mode the auto-save engine uses while the initial cloud
+  // hydration has not succeeded yet: the owner's own rows may be pushed
+  // (upserts are RLS-scoped to auth.uid()) but rows the client never managed
+  // to read must NEVER be deleted.
+  const { db, calls } = makeMockDb();
+
+  const result = await syncSalonToSupabase(
+    db,
+    {
+      ownerId: OWNER_ID,
+      profile: PROFILE,
+      services: SERVICES,
+      stylists: STYLISTS,
+      loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+    },
+    { deleteRemoved: false }
+  );
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const ops = calls.map((c) => c.op);
+  assert.ok(ops.includes('upsert'), 'owner rows must still be upserted in safe mode');
+  assert.ok(!ops.includes('delete'), 'safe mode must never issue destructive deletes');
+});
+
 test('syncSalonToSupabase retries network failures and still succeeds', async () => {
   // services upsert fails twice with a network error, then succeeds.
   const { db, attempts } = makeMockDb({

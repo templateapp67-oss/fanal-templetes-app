@@ -262,28 +262,102 @@ export function safeWriteLocalStorage(key: string, value: string): LocalStorageW
 
 /**
  * Shorten a raw failure string into something readable for a toast, mapping
- * the most common root causes to actionable guidance.
+ * the most common root causes to actionable guidance. Full detail is always
+ * logged to the console separately; this function only picks the right
+ * owner-facing message per failure class.
  */
 export function summarizeSaveError(detail: string): string {
   const d = (detail || '').toLowerCase();
+
+  // 1) Deterministic domain problems — the exact action the owner must take.
   if (d.includes('subdomain') && (d.includes('duplicate key') || d.includes('unique constraint'))) {
     return 'This subdomain is already taken — please choose a different one.';
   }
   if (d.includes('invalid input syntax for type uuid')) {
     return 'Database rejected a record id (uuid mismatch).';
   }
-  if (d.includes('row-level security') || d.includes('permission denied')) {
-    return 'Database permission denied — please sign in again.';
+
+  // 2) Authentication / authorization problems: expired/invalid JWT or login,
+  // missing table grants for the authenticated role (PostgREST: "permission
+  // denied for table …", code 42501) or RLS policies rejecting the row
+  // ("new row violates row-level security policy"). Re-signing in and
+  // re-applying the schema/RLS/grants from supabase/migrations fixes these.
+  if (
+    d.includes('invalid jwt') ||
+    d.includes('jwt expired') ||
+    d.includes('token') ||
+    d.includes('unauthorized') ||
+    d.includes('forbidden') ||
+    d.includes('not authenticated') ||
+    d.includes('no active session') ||
+    d.includes('row-level security') ||
+    d.includes('permission denied') ||
+    d.includes('42501') ||
+    d.includes('42503') ||
+    /\b(401|403)\b/.test(d)
+  ) {
+    return 'Database permission problem — please sign in again. If it persists, confirm the Supabase schema, RLS policies and grants (supabase/migrations, SUPABASE_SETUP.md) are applied.';
   }
-  if (d.includes('fetch failed') || d.includes('network') || d.includes('timeout')) {
-    return 'Network error — could not reach the server.';
+
+  // 3) Missing schema/table — the SQL migrations were never applied to the
+  // linked Supabase project (PostgREST: "relation … does not exist", 42P01).
+  if (d.includes('does not exist') || d.includes('42p01') || d.includes('undefined table')) {
+    return 'Database schema missing — apply supabase/migrations to your Supabase project (see SUPABASE_SETUP.md).';
   }
+
+  // 4) Transient network/server problems — auto-retried with backoff; local
+  // (device) persistence already succeeded, so no data is lost.
+  if (
+    d.includes('fetch failed') ||
+    d.includes('network') ||
+    d.includes('timeout') ||
+    d.includes('econn') ||
+    d.includes('service unavailable') ||
+    d.includes('bad gateway') ||
+    d.includes('gateway timeout') ||
+    /\b(408|429|500|502|503|504)\b/.test(d)
+  ) {
+    return 'Network error — could not reach the database. Retrying automatically; your edits are kept on this device.';
+  }
+
+  // 5) Initial cloud hydration/load could not complete even after retries.
   if (d.includes('hydration') || d.includes('could not load')) {
-    return 'Could not load your existing data before saving — see console for details.';
+    return 'Could not load your existing data from the cloud — your edits stay saved on this device and the sync keeps retrying. See the console for the exact reason.';
   }
+
   const trimmed = (detail || '').trim();
   if (!trimmed) return 'Unknown error';
   return trimmed.length > 160 ? `${trimmed.slice(0, 157)}…` : trimmed;
+}
+
+/**
+ * True when a cloud-operation error message describes an authentication or
+ * authorization rejection (JWT/session, RLS, table grants) rather than a
+ * network hiccup or a data-shape problem. Used to log the right remediation
+ * hint next to the exact server error.
+ */
+export function isAuthLikeFailure(message: string): boolean {
+  const m = (message || '').toLowerCase();
+  return (
+    m.includes('invalid jwt') ||
+    m.includes('jwt expired') ||
+    m.includes('token') ||
+    m.includes('unauthorized') ||
+    m.includes('forbidden') ||
+    m.includes('not authenticated') ||
+    m.includes('no active session') ||
+    m.includes('row-level security') ||
+    m.includes('permission denied') ||
+    m.includes('42501') ||
+    m.includes('42503') ||
+    /\b(401|403)\b/.test(m)
+  );
+}
+
+/** True when a cloud-operation error message says the table itself is absent. */
+export function isSchemaLikeFailure(message: string): boolean {
+  const m = (message || '').toLowerCase();
+  return m.includes('does not exist') || m.includes('42p01') || m.includes('undefined table');
 }
 
 // ----------------------------------------------------------------------------

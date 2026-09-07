@@ -4,9 +4,31 @@ import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseC
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "../src/types";
 import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
+import {
+  sanitizeBookingRow,
+  applyBookingUpdate,
+  buildStatusNotifications,
+} from "../server/bookingOps";
 
 const app = express();
 app.use(express.json());
+
+/** Owner email for booking notifications, resolved from the profiles row. */
+async function resolveOwnerEmail(ownerId: string | null | undefined): Promise<string> {
+  if (ownerId && !isMockSupabase) {
+    try {
+      const { data } = await db
+        .from('profiles')
+        .select('email')
+        .eq('id', ownerId)
+        .maybeSingle();
+      if (data?.email) return data.email;
+    } catch {
+      // fall through to the demo fallback
+    }
+  }
+  return 'owner@salon.com';
+}
 
 // In-memory fallback
 let mockBookings: any[] = [];
@@ -15,6 +37,12 @@ const mockSalons: Record<string, any> = {};
 
 const admin = getSupabaseAdmin();
 const db = admin ?? supabase;
+
+if (!isMockSupabase && !admin) {
+  console.warn(
+    '[Nexora] Live mode detected but SUPABASE_SERVICE_ROLE_KEY is not set. The API falls back to the anon client, so public-site reads will be blocked by Row Level Security. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side.'
+  );
+}
 
 // Define default Arts By Uma salon profile
 const artsByUmaSalon = {
@@ -75,8 +103,19 @@ mockSalons['mirakistudio'] = {
   },
 };
 
+// Subdomains that legitimately fall back to the bundled demo catalogue when no
+// matching row exists in the database (and in mock mode). Exact keys only —
+// previously `sub.includes('uma')` also hijacked unrelated subdomains such as
+// "aroma", "perfume" or "zuma" and served them Uma's salon.
+const DEMO_SUBDOMAINS = new Set(['arts-by-uma', 'artsbyuma']);
+
 function mapProfileRow(row: any): SalonProfile {
+  const workingHours = row.working_hours || {};
   return {
+    workingHoursMonFri: workingHours.monFri || '',
+    workingHoursSat: workingHours.saturday || '',
+    workingHoursSun: workingHours.sunday || '',
+    homeService: row.home_service || undefined,
     ownerId: row.id,
     businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
     businessName: row.salon_name || 'Arts By Uma',
@@ -105,7 +144,7 @@ function mapProfileRow(row: any): SalonProfile {
     youtubeChannel: row.youtube_channel || undefined,
     tiktokProfile: row.tiktok_profile || undefined,
     googleBusinessUrl: row.google_business_url || undefined,
-    requireDeposit: row.require_deposit ?? true,
+    requireDeposit: row.require_deposit ?? false,
     depositPercentage: row.deposit_percentage ?? 20,
     themeAccentKey: row.theme_accent_key || 'slate',
     customAccentColor: row.custom_accent_color || undefined,
@@ -156,7 +195,8 @@ async function resolveSalonFromHost(req: any) {
   try {
     if (isMockSupabase) {
       const registryKey = tenant.customDomain || tenant.subdomain;
-      const salon = mockSalons[registryKey] || (registryKey.includes('uma') ? artsByUmaSalon : null);
+      const salon =
+        mockSalons[registryKey] || (DEMO_SUBDOMAINS.has(registryKey) ? artsByUmaSalon : null);
       if (salon) {
         return { host, tenant, salon: { ...salon, customDomain: tenant.customDomain || salon.customDomain } };
       }
@@ -173,7 +213,13 @@ async function resolveSalonFromHost(req: any) {
       .eq(query.column, query.value)
       .maybeSingle();
 
-    if (error || !profileRow) {
+    if (error) {
+      // A real DB failure must NOT be reported as "salon not found" — the
+      // /api/site handler turns this into a JSON 500 so the SPA can log it.
+      console.error(`[Site lookup] profiles query failed for ${query.column}="${query.value}":`, error);
+      return { host, tenant, salon: null, error };
+    }
+    if (!profileRow) {
       if (tenant.subdomain === 'arts-by-uma' || tenant.subdomain === 'artsbyuma') {
         return { host, tenant, salon: artsByUmaSalon };
       }
@@ -193,8 +239,8 @@ async function resolveSalonFromHost(req: any) {
     };
     return { host, tenant, salon };
   } catch (err) {
-    console.warn('Failed to resolve tenant salon:', err);
-    return { host, tenant, salon: null };
+    console.error('Failed to resolve tenant salon:', err);
+    return { host, tenant, salon: null, error: err };
   }
 }
 
@@ -203,7 +249,17 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/site", async (req, res) => {
-  const { host, tenant, salon } = await resolveSalonFromHost(req);
+  const { host, tenant, salon, error } = await resolveSalonFromHost(req);
+  if (error) {
+    // DB failure while resolving the tenant — JSON 500 (never "not found"),
+    // so the SPA logs the real status instead of guessing.
+    return res.status(500).json({
+      success: false,
+      found: false,
+      isTenant: true,
+      error: error?.message || 'Database read failed while loading this site.',
+    });
+  }
   if (!tenant) {
     return res.json({ found: false, host, isTenant: false, salon: null });
   }
@@ -218,38 +274,83 @@ app.get("/api/site", async (req, res) => {
 });
 
 app.get("/api/site/:subdomain", async (req, res) => {
-  const sub = req.params.subdomain;
-  if (isMockSupabase) {
-    const salon = mockSalons[sub] || (sub.includes('uma') ? artsByUmaSalon : artsByUmaSalon);
-    return res.json({ found: !!salon, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon });
-  }
-  const { data: profileRow } = await db
-    .from('profiles')
-    .select('*')
-    .eq('subdomain', sub)
-    .maybeSingle();
-  if (!profileRow) {
-    if (sub === 'arts-by-uma' || sub === 'artsbyuma' || sub.includes('uma')) {
-      return res.json({ found: true, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon: artsByUmaSalon, baseDomain: BASE_DOMAIN });
+  const sub = String(req.params.subdomain || '').toLowerCase();
+  try {
+    if (isMockSupabase) {
+      const salon = mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? artsByUmaSalon : null);
+      return res.json({
+        found: !!salon,
+        isTenant: true,
+        tenant: { subdomain: sub, customDomain: null },
+        salon,
+        baseDomain: BASE_DOMAIN,
+      });
     }
-    return res.json({ found: false, isTenant: true, salon: null });
+
+    // Live mode. Wrapped in try/catch so a database read failure returns a
+    // JSON 500 instead of an unhandled async rejection — Express 4 cannot
+    // route rejected promises to the error middleware, so these used to crash
+    // the request (Vercel: generic 500/HTML error page).
+    const { data: profileRow, error: profileError } = await db
+      .from('profiles')
+      .select('*')
+      .eq('subdomain', sub)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, profileError);
+      return res.status(500).json({
+        success: false,
+        found: false,
+        error: profileError.message || 'Database read failed while loading this site.',
+      });
+    }
+
+    if (!profileRow) {
+      if (DEMO_SUBDOMAINS.has(sub)) {
+        return res.json({ found: true, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon: artsByUmaSalon, baseDomain: BASE_DOMAIN });
+      }
+      // 200 + found:false — the SPA treats this as "not published", and
+      // distinguishes it from transport/HTTP failures (which return null).
+      return res.json({ found: false, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon: null, baseDomain: BASE_DOMAIN });
+    }
+
+    const ownerId = profileRow.id;
+    const [{ data: serviceRows, error: servicesError }, { data: stylistRows, error: stylistsError }] =
+      await Promise.all([
+        db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
+        db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
+      ]);
+
+    const catalogueError = servicesError || stylistsError;
+    if (catalogueError) {
+      console.error(`[Site lookup] Failed to read catalogue for subdomain "${sub}":`, catalogueError);
+      return res.status(500).json({
+        success: false,
+        found: false,
+        error: catalogueError.message || 'Database read failed while loading this site.',
+      });
+    }
+
+    return res.json({
+      found: true,
+      isTenant: true,
+      tenant: { subdomain: sub, customDomain: null },
+      salon: {
+        profile: mapProfileRow(profileRow),
+        services: (serviceRows || []).map(mapServiceRow),
+        stylists: (stylistRows || []).map(mapStylistRow),
+      },
+      baseDomain: BASE_DOMAIN,
+    });
+  } catch (err: any) {
+    console.error(`[Site lookup] Unexpected error for subdomain "${sub}":`, err);
+    return res.status(500).json({
+      success: false,
+      found: false,
+      error: err?.message || 'Internal server error while loading this site.',
+    });
   }
-  const ownerId = profileRow.id;
-  const [{ data: serviceRows }, { data: stylistRows }] = await Promise.all([
-    db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
-    db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
-  ]);
-  return res.json({
-    found: true,
-    isTenant: true,
-    tenant: { subdomain: sub, customDomain: null },
-    salon: {
-      profile: mapProfileRow(profileRow),
-      services: (serviceRows || []).map(mapServiceRow),
-      stylists: (stylistRows || []).map(mapStylistRow),
-    },
-    baseDomain: BASE_DOMAIN,
-  });
 });
 
 app.get("/api/bookings", async (req, res) => {
@@ -299,78 +400,75 @@ app.get("/api/bookings/:id", async (req, res) => {
 
 app.post("/api/bookings/update", async (req, res) => {
   try {
-    const { id, status, proposed_date, proposed_time_slot } = req.body;
-    
-    const updateData: any = { status };
-    if (status === 'reschedule_proposed') {
-      updateData.proposed_date = proposed_date;
-      updateData.proposed_time_slot = proposed_time_slot;
+    const { id, status, proposed_date, proposed_time_slot } = req.body ?? {};
+    if (!id || !status) {
+      return res.status(400).json({ success: false, error: 'id and status are required.' });
     }
-    
+
     let data: any;
-    const doMockUpdate = () => {
-      const idx = mockBookings.findIndex(b => b.id === id);
-      if (idx !== -1) {
-        mockBookings[idx] = { ...mockBookings[idx], ...updateData };
-        data = mockBookings[idx];
-      } else {
-        throw new Error("Booking not found");
-      }
-    };
 
     if (isMockSupabase) {
-      doMockUpdate();
+      const idx = mockBookings.findIndex((b) => b.id === id);
+      if (idx === -1) return res.status(404).json({ success: false, error: 'Booking not found' });
+      const existing = mockBookings[idx];
+      const changes = applyBookingUpdate(existing, { status, proposed_date, proposed_time_slot });
+      data = { ...existing, ...changes };
+      mockBookings[idx] = data;
     } else {
-      const { data: dbData, error } = await db
+      // Live mode: read the current row first — the confirmation transition
+      // needs the proposed slot, and a read/write failure must surface as a
+      // real error, never as a fake in-memory success (that used to make the
+      // UI show "confirmed" while the database still said "pending").
+      const { data: existing, error: fetchError } = await db
         .from('bookings')
-        .update(updateData)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (fetchError) {
+        console.error('[Bookings] Failed to read booking for update:', fetchError);
+        return res.status(500).json({ success: false, error: fetchError.message });
+      }
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Booking not found' });
+      }
+      const changes = applyBookingUpdate(existing, { status, proposed_date, proposed_time_slot });
+      const { data: updated, error: updateError } = await db
+        .from('bookings')
+        .update(changes)
         .eq('id', id)
         .select()
         .single();
-        
-      if (error) {
-         doMockUpdate();
+      if (updateError || !updated) {
+        console.error('[Bookings] Failed to update booking:', updateError);
+        return res.status(500).json({ success: false, error: updateError?.message || 'Booking update failed.' });
+      }
+      data = updated;
+    }
+
+    const ownerEmail = await resolveOwnerEmail(data.owner_id);
+    const notifs = buildStatusNotifications(
+      data,
+      status,
+      data.proposed_date ?? proposed_date,
+      data.proposed_time_slot ?? proposed_time_slot,
+      ownerEmail
+    );
+
+    if (notifs) {
+      const rows = [notifs.owner];
+      if (notifs.customer) rows.unshift(notifs.customer);
+      if (isMockSupabase) {
+        mockNotifications.push(...rows.map((n) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
       } else {
-         data = dbData;
+        const { error: notifError } = await db.from('in_app_notifications').insert(rows);
+        if (notifError) console.warn('[Bookings] Notification insert error:', notifError);
       }
     }
 
-    let notificationMsg = '';
-    let notificationTitle = '';
-
-    if (status === 'reschedule_proposed') {
-       notificationTitle = 'Reschedule Proposed';
-       notificationMsg = `The salon proposed a new time: ${proposed_date} at ${proposed_time_slot}.`;
-    } else if (status === 'confirmed') {
-       notificationTitle = 'Booking Confirmed';
-       notificationMsg = `Your booking on ${data?.booking_date || ''} at ${data?.time_slot || ''} is now confirmed.`;
-    } else if (status === 'cancelled') {
-       notificationTitle = 'Booking Cancelled';
-       notificationMsg = `Your booking was cancelled.`;
-    }
-
-    if (notificationMsg && data) {
-       const newNotifs = [{
-         user_email: data.customer_email,
-         title: notificationTitle,
-         message: notificationMsg,
-       }, {
-         user_email: 'owner@salon.com',
-         title: `Booking ${status}`,
-         message: `${data.customer_name}'s booking was ${status}.`,
-       }];
-
-       if (isMockSupabase) {
-         mockNotifications.push(...newNotifs.map(n => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
-       } else {
-         await db.from('in_app_notifications').insert(newNotifs);
-       }
-    }
-    
     res.json({ success: true, data });
   } catch (err: any) {
     console.warn('Booking update error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err?.message || 'Booking update failed.' });
   }
 });
 
@@ -428,37 +526,59 @@ app.post("/api/notifications/read", async (req, res) => {
 
 app.post("/api/bookings/create", async (req, res) => {
   try {
-    const { booking, notifications } = req.body;
+    const { booking, notifications } = req.body ?? {};
+    if (!booking || typeof booking !== 'object') {
+      return res.status(400).json({ success: false, error: 'booking payload is required.' });
+    }
+
+    // Only columns the schema knows, with non-UUID foreign keys (editor
+    // preview ids such as 'hs-1') downgraded to null so a guest booking can
+    // always persist via its denormalized service_name.
+    const ownerId = req.body.owner_id || booking.owner_id || process.env.DEFAULT_OWNER_ID || null;
+    const bookingRow = sanitizeBookingRow({ ...booking, owner_id: ownerId });
+    const notifRows = Array.isArray(notifications)
+      ? notifications
+          .filter((n: any) => n && typeof n === 'object')
+          .map((n: any) => ({
+            user_email: n.user_email || null,
+            title: n.title || null,
+            message: n.message || null,
+          }))
+      : [];
+
     let bookingData: any;
-    const doMock = () => {
-      bookingData = { ...booking, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() };
-      mockBookings.push(bookingData);
-      if (notifications && notifications.length > 0) {
-        mockNotifications.push(...notifications.map((n: any) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() })));
-      }
-    };
 
     if (isMockSupabase) {
-      doMock();
+      bookingData = { ...bookingRow, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() };
+      mockBookings.push(bookingData);
+      mockNotifications.push(
+        ...notifRows.map((n: any) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() }))
+      );
     } else {
-      const bookingRow = {
-        ...booking,
-        owner_id: (req.body.owner_id || booking?.owner_id || process.env.DEFAULT_OWNER_ID || null),
-      };
-
       const { data: dbData, error: bookingError } = await db.from('bookings').insert([bookingRow]).select().single();
       if (bookingError) {
-        doMock();
-      } else {
-        bookingData = dbData;
-        if (notifications && notifications.length > 0) {
-          await db.from('in_app_notifications').insert(notifications);
-        }
+        // Live mode: never fake success with an in-memory row — the booking
+        // would silently disappear on the next request. Surface the error.
+        console.error('[Bookings] Booking insert failed:', bookingError);
+        return res.status(500).json({ success: false, error: bookingError.message || 'Booking could not be saved.' });
+      }
+      bookingData = dbData;
+
+      if (notifRows.length > 0) {
+        const fallbackOwnerEmail = await resolveOwnerEmail(bookingData.owner_id);
+        const withOwnerEmail = notifRows.map((n: any) => ({
+          ...n,
+          // A client may not know the salon owner's email; resolve it from the
+          // booking's owner row so the owner truly receives the notification.
+          user_email: n.user_email || fallbackOwnerEmail,
+        }));
+        const { error: notifError } = await db.from('in_app_notifications').insert(withOwnerEmail);
+        if (notifError) console.warn('[Bookings] Notification insert error:', notifError);
       }
     }
     res.json({ success: true, data: bookingData });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err?.message || 'Booking could not be saved.' });
   }
 });
 
@@ -673,5 +793,37 @@ app.post("/api/youtube/fetch-videos", async (req, res) => {
 });
 
 app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+
+// ============================================================================
+// JSON error handling for the serverless deployment.
+// ---------------------------------------------------------------------------
+// Unknown /api/* routes and unexpected handler failures MUST answer with JSON.
+// An HTML 404/500 page breaks the SPA's res.json() callers, which previously
+// surfaced as a confusing "Unexpected token '<'" / silent fallback instead of
+// the real HTTP status and error message.
+// ============================================================================
+
+// JSON 404 for any unmatched /api/* route (registered after all routes above).
+app.use('/api', (_req, res) => {
+  res.status(404).json({ success: false, error: 'API route not found' });
+});
+
+// Global JSON error middleware (Express 4 only forwards synchronous errors
+// here; async route handlers are individually wrapped in try/catch above).
+app.use((err: any, _req: any, res: any, next: any) => {
+  if (res.headersSent) return next(err);
+  const isBodyError = err?.type === 'entity.parse.failed' || err?.type === 'entity.too.large';
+  if (isBodyError) {
+    // Malformed JSON body (e.g. a truncated fetch payload) → 400, never 500.
+    return res.status(err?.status || 400).json({ success: false, error: 'Malformed JSON request body.' });
+  }
+  const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+  console.error('[API] Unhandled server error:', err);
+  res.status(status).json({
+    success: false,
+    error: err?.message || 'Internal Server Error',
+    ...(status >= 500 ? { details: err?.message || undefined } : {}),
+  });
+});
 
 export default app;

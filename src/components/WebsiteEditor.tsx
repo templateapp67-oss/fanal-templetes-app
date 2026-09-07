@@ -126,8 +126,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     setIsSaving(true);
     try {
       // Only an explicit, successful save opens the next-step dialog, never an autosave.
+      // persistSalonState resolves false (never throws) when a save fails, so a
+      // thrown error here means an unexpected programming error — log it fully.
       if (await onSave()) setSavedSiteUrl(siteUrl);
-    } catch {
+    } catch (err) {
+      console.error('[WebsiteEditor] Unexpected error during manual save:', err);
       showToast?.('Save failed. Please try again.', 'error');
     } finally {
       setIsSaving(false);

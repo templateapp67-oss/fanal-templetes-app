@@ -9,6 +9,8 @@ import {
   withRetry,
   safeWriteLocalStorage,
   summarizeSaveError,
+  isAuthLikeFailure,
+  isSchemaLikeFailure,
   getSaveUiState,
   formatSavedAt,
 } from '../src/lib/autoSave';
@@ -154,6 +156,62 @@ test('summarizeSaveError turns raw root causes into actionable toast text', () =
   // Long raw errors are truncated instead of overflowing the toast.
   const long = summarizeSaveError('x'.repeat(400));
   assert.ok(long.length <= 165);
+});
+
+test('summarizeSaveError classifies auth/RLS/grants rejections with the right remedy', () => {
+  // PostgREST surfaces missing table grants for the authenticated role as 401.
+  assert.match(
+    summarizeSaveError('save salon profile: permission denied for table profiles | code: 42501'),
+    /sign in again/i
+  );
+  // RLS rejecting the inserted row (upsert without a matching INSERT policy).
+  assert.match(
+    summarizeSaveError(
+      'save stylists: new row violates row-level security policy on "stylists" | code: 42501'
+    ),
+    /permission problem/i
+  );
+  // Expired / invalid JWT after the session died in a backgrounded tab.
+  assert.match(
+    summarizeSaveError('save services: JWT expired | code: 403'),
+    /sign in again/i
+  );
+  // The app's own pre-flight skip when no session exists.
+  assert.match(
+    summarizeSaveError('cloud sync skipped (no active session — sign in again to save to the cloud)'),
+    /permission problem/i
+  );
+});
+
+test('summarizeSaveError classifies missing schema and transient errors distinctly', () => {
+  // Tables never created in the linked Supabase project (migrations not run).
+  assert.match(
+    summarizeSaveError('save services: relation "public.services" does not exist | code: 42P01'),
+    /schema missing/i
+  );
+  // Transient gateway/5xx errors mention the automatic retry + local fallback.
+  assert.match(
+    summarizeSaveError('save salon profile: fetch failed | code: 502'),
+    /retrying automatically/i
+  );
+  // The legacy generic "could not load" branch is reserved for real
+  // hydration-level messages and still points the owner to the console.
+  assert.match(
+    summarizeSaveError('cloud hydration failed: could not load rows from the profiles table'),
+    /could not load your existing data/i
+  );
+});
+
+test('isAuthLikeFailure and isSchemaLikeFailure flag the right server errors', () => {
+  assert.ok(isAuthLikeFailure('permission denied for table profiles | code: 42501'));
+  assert.ok(isAuthLikeFailure('new row violates row-level security policy | code: 42501'));
+  assert.ok(isAuthLikeFailure('JWT expired'));
+  assert.ok(isAuthLikeFailure('HTTP 401 Unauthorized'));
+  assert.ok(!isAuthLikeFailure('relation "public.profiles" does not exist | code: 42P01'));
+  assert.ok(isSchemaLikeFailure('relation "public.profiles" does not exist | code: 42P01'));
+  assert.ok(isSchemaLikeFailure('undefined table: services'));
+  assert.ok(!isSchemaLikeFailure('TypeError: fetch failed'));
+  assert.ok(!isAuthLikeFailure('duplicate key value violates unique constraint'));
 });
 
 // ---------------------------------------------------------------------------
