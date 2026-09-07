@@ -136,6 +136,14 @@ test('validateBookingPayload catches malformed dates, emails and amounts', () =>
   assert.ok(bad.fieldErrors.total_amount);
 });
 
+test('validateBookingPayload rejects impossible calendar dates, not just bad formatting', () => {
+  for (const booking_date of ['2026-02-29', '2026-04-31', '2026-13-01']) {
+    const bad = validateBookingPayload({ ...VALID_BOOKING, booking_date });
+    assert.equal(bad.valid, false, booking_date);
+    assert.ok(bad.fieldErrors.booking_date, booking_date);
+  }
+});
+
 test('validateBookingPayload rejects an advance larger than the total', () => {
   const bad = validateBookingPayload({ ...VALID_BOOKING, total_amount: 500, advance_paid_amount: 900 });
   assert.ok(!bad.valid);
@@ -247,6 +255,16 @@ test('handler answers 400 when no booking object is sent at all', async () => {
   const res = makeRes();
   await handler({ body: {}, headers: {} }, res);
   assert.equal(res.statusCode, 400);
+});
+
+test('a live entrypoint without a service-role client answers JSON 503 before payment/database work', async () => {
+  const handler = createBookingHandler(baseDeps({ isMock: false, hasAdminClient: false }));
+  const res = makeRes();
+  await handler({ body: { booking: VALID_BOOKING }, headers: {} }, res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.code, 'supabase_not_configured');
+  assert.equal(res.body.retryable, true);
+  assert.equal(res.body.success, false);
 });
 
 test('handler answers 422 (not 500) when the salon has no owner account', async () => {
@@ -381,6 +399,39 @@ test('an unverifiable Razorpay payment is rejected before anything is stored', a
   } finally {
     delete process.env.RAZORPAY_KEY_ID;
     delete process.env.RAZORPAY_KEY_SECRET;
+  }
+});
+
+test('an unverified payment claim cannot mark a booking paid when the gateway is unavailable', async () => {
+  const previous = {
+    id: process.env.RAZORPAY_KEY_ID,
+    secret: process.env.RAZORPAY_KEY_SECRET,
+  };
+  delete process.env.RAZORPAY_KEY_ID;
+  delete process.env.RAZORPAY_KEY_SECRET;
+  try {
+    const stored: any[] = [];
+    const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
+    const res = makeRes();
+    await handler(
+      {
+        body: {
+          booking: { ...VALID_BOOKING, payment_status: 'paid_deposit', advance_paid_amount: 188 },
+          payment: { razorpay_order_id: 'order_unverified', razorpay_payment_id: 'pay_unverified', razorpay_signature: 'missing' },
+        },
+        headers: {},
+      },
+      res
+    );
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.paymentVerified, false);
+    assert.equal(stored[0].payment_status, 'pending');
+    assert.equal(stored[0].advance_paid_amount, 0);
+  } finally {
+    if (previous.id === undefined) delete process.env.RAZORPAY_KEY_ID;
+    else process.env.RAZORPAY_KEY_ID = previous.id;
+    if (previous.secret === undefined) delete process.env.RAZORPAY_KEY_SECRET;
+    else process.env.RAZORPAY_KEY_SECRET = previous.secret;
   }
 });
 

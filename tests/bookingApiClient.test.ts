@@ -116,6 +116,27 @@ test('HTTP 200 with success:false is treated as a failure, not a saved booking',
   assert.equal(outcome.detail, 'owner unresolved');
 });
 
+test('a response whose JSON body stalls is time-boxed and not treated as offline success', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: () => new Promise<string>(() => {}),
+  });
+  const started = Date.now();
+  const outcome = await postBookingWithRetry(BODY, {
+    fetchImpl: fetchImpl as any,
+    sleepImpl: noSleep,
+    timeoutMs: 20,
+    maxAttempts: 1,
+  });
+  assert.ok(Date.now() - started < 500, 'a stalled response body must not hang checkout');
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.kind, 'server');
+  assert.equal(outcome.status, 200);
+  assert.match(outcome.detail, /did not answer within/i);
+});
+
 test('summarizeBody strips markup and truncates long error pages', () => {
   assert.equal(summarizeBody('<html><body>  Bad   Gateway </body></html>'), 'Bad Gateway');
   assert.ok(summarizeBody('x'.repeat(400)).length <= 140);

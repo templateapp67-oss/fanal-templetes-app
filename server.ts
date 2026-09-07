@@ -20,7 +20,13 @@ import {
   type BookingRoutesDeps,
 } from "./server/bookingRoutes";
 import { createHealthHandler } from "./server/health";
-import { withRequestTimeout, API_REQUEST_TIMEOUT_MS } from "./server/dbGuard";
+import {
+  withRequestTimeout,
+  API_REQUEST_TIMEOUT_MS,
+  LOOKUP_DB_TIMEOUT_MS,
+  DEFAULT_DB_TIMEOUT_MS,
+  runDb,
+} from "./server/dbGuard";
 import { installProcessGuards } from "./server/processGuards";
 import {
   handleRazorpayConfig,
@@ -29,6 +35,7 @@ import {
   getRazorpayConfigIssues,
 } from "./server/razorpay";
 import { createRazorpayWebhookHandler, isWebhookConfigured } from "./server/razorpayWebhook";
+import { asyncRoute } from "./server/expressSafety";
 
 // Log (instead of silently dying on) stray async faults.
 installProcessGuards("server.ts");
@@ -146,18 +153,14 @@ mockSalons['mirakistudio'] = {
 const DEMO_SUBDOMAINS = new Set(['arts-by-uma', 'artsbyuma']);
 
 /** Owner email for booking notifications, resolved from the profiles row. */
-async function resolveOwnerEmail(ownerId: string | null | undefined): Promise<string> {
+async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?: number): Promise<string> {
   if (ownerId && !isMockSupabase) {
-    try {
-      const { data } = await db
-        .from('profiles')
-        .select('email')
-        .eq('id', ownerId)
-        .maybeSingle();
-      if (data?.email) return data.email;
-    } catch {
-      // fall through to the demo fallback
-    }
+    const { data, error } = await runDb(
+      () => db.from('profiles').select('email').eq('id', ownerId).maybeSingle(),
+      { label: 'owner email lookup', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
+    );
+    if (error) console.warn('[Bookings] Owner email lookup failed:', error.message || error);
+    if ((data as any)?.email) return (data as any).email;
   }
   return 'owner@salon.com';
 }
@@ -188,13 +191,14 @@ async function startServer() {
   // database and reports whether a guest booking could be written right now.
   app.get(
     "/api/health",
-    createHealthHandler({
+    withRequestTimeout(API_REQUEST_TIMEOUT_MS),
+    asyncRoute(createHealthHandler({
       db,
       isMock: isMockSupabase,
       hasAdminClient: !!admin,
       supabaseConfig,
       entrypoint: 'express (server.ts)',
-    })
+    }))
   );
 
   // -------------------------------------------------------------------------
@@ -282,7 +286,7 @@ async function startServer() {
   // Given a request, resolve the tenant salon (by subdomain or custom domain)
   // and return its full public catalogue. Uses the service-role admin client
   // (bypasses RLS) so anonymous visitors can read any salon's public site.
-  async function resolveSalonFromHost(req: any) {
+  async function resolveSalonFromHost(req: any, deadlineAt?: number) {
     const host = req.headers.host || req.get('host') || '';
     const tenant = resolveTenantFromHost(host);
     if (!tenant) return { host, tenant: null, salon: null };
@@ -304,11 +308,12 @@ async function startServer() {
         ? { column: 'subdomain', value: tenant.subdomain }
         : { column: 'custom_domain', value: tenant.customDomain };
 
-      const { data: profileRow, error } = await db
-        .from('profiles')
-        .select('*')
-        .eq(query.column, query.value)
-        .maybeSingle();
+      const profileResult = await runDb(
+        () => db.from('profiles').select('*').eq(query.column, query.value).maybeSingle(),
+        { label: `site profile lookup by ${query.column}`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      );
+      const profileRow = profileResult.data;
+      const error = profileResult.error;
 
       if (error) {
         // A real DB failure must NOT be reported as "salon not found" — the
@@ -325,10 +330,23 @@ async function startServer() {
       }
 
       const ownerId = profileRow.id;
-      const [{ data: serviceRows }, { data: stylistRows }] = await Promise.all([
-        db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
-        db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
+      const [servicesResult, stylistsResult] = await Promise.all([
+        runDb(
+          () => db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
+          { label: 'site services lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+        ),
+        runDb(
+          () => db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
+          { label: 'site stylists lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+        ),
       ]);
+      if (servicesResult.error || stylistsResult.error) {
+        const error = servicesResult.error || stylistsResult.error;
+        console.error(`[Site lookup] catalogue query failed for owner ${ownerId}:`, error);
+        return { host, tenant, salon: null, error };
+      }
+      const serviceRows = servicesResult.data;
+      const stylistRows = stylistsResult.data;
 
       const salon = {
         profile: mapProfileRow(profileRow),
@@ -343,8 +361,8 @@ async function startServer() {
   }
 
   // Public JSON endpoint the SPA calls to hydrate the tenant's live site.
-  app.get("/api/site", async (req, res) => {
-    const { host, tenant, salon, error } = await resolveSalonFromHost(req);
+  app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    const { host, tenant, salon, error } = await resolveSalonFromHost(req, res.locals?.requestDeadlineAt);
     if (error) {
       // DB failure while resolving the tenant — JSON 500 (never "not found"),
       // so the SPA logs the real status instead of guessing.
@@ -366,11 +384,12 @@ async function startServer() {
       salon,
       baseDomain: BASE_DOMAIN,
     });
-  });
+  }));
 
   // Convenience: resolve by an explicit subdomain (useful for testing/SEO).
-  app.get("/api/site/:subdomain", async (req, res) => {
+  app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     const sub = String(req.params.subdomain || '').toLowerCase();
+    const deadlineAt = res.locals?.requestDeadlineAt;
     try {
       if (isMockSupabase) {
         const salon = mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? artsByUmaSalon : null);
@@ -387,11 +406,12 @@ async function startServer() {
       // JSON 500 instead of an unhandled async rejection — Express 4 cannot
       // route rejected promises to the error middleware, so these used to
       // crash the request (Vercel: generic 500/HTML error page).
-      const { data: profileRow, error: profileError } = await db
-        .from('profiles')
-        .select('*')
-        .eq('subdomain', sub)
-        .maybeSingle();
+      const profileResult = await runDb(
+        () => db.from('profiles').select('*').eq('subdomain', sub).maybeSingle(),
+        { label: 'site subdomain profile lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      );
+      const profileRow = profileResult.data;
+      const profileError = profileResult.error;
 
       if (profileError) {
         console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, profileError);
@@ -412,12 +432,20 @@ async function startServer() {
       }
 
       const ownerId = profileRow.id;
-      const [{ data: serviceRows, error: servicesError }, { data: stylistRows, error: stylistsError }] =
-        await Promise.all([
-          db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
-          db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
-        ]);
-
+      const [servicesResult, stylistsResult] = await Promise.all([
+        runDb(
+          () => db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
+          { label: 'site subdomain services lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+        ),
+        runDb(
+          () => db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
+          { label: 'site subdomain stylists lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+        ),
+      ]);
+      const serviceRows = servicesResult.data;
+      const stylistRows = stylistsResult.data;
+      const servicesError = servicesResult.error;
+      const stylistsError = stylistsResult.error;
       const catalogueError = servicesError || stylistsError;
       if (catalogueError) {
         console.error(`[Site lookup] Failed to read catalogue for subdomain "${sub}":`, catalogueError);
@@ -447,7 +475,7 @@ async function startServer() {
         error: err?.message || 'Internal server error while loading this site.',
       });
     }
-  });
+  }));
 
   // ==========================================================================
   // BOOKINGS + NOTIFICATIONS (read/update)
@@ -468,11 +496,11 @@ async function startServer() {
     resolveOwnerEmail,
   };
 
-  app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createBookingsListHandler(bookingRouteDeps));
-  app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createBookingGetHandler(bookingRouteDeps));
-  app.post("/api/bookings/update", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createBookingUpdateHandler(bookingRouteDeps));
-  app.get("/api/notifications", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createNotificationsListHandler(bookingRouteDeps));
-  app.post("/api/notifications/read", withRequestTimeout(API_REQUEST_TIMEOUT_MS), createNotificationsReadHandler(bookingRouteDeps));
+  app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
+  app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingGetHandler(bookingRouteDeps)));
+  app.post("/api/bookings/update", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingUpdateHandler(bookingRouteDeps)));
+  app.get("/api/notifications", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createNotificationsListHandler(bookingRouteDeps)));
+  app.post("/api/notifications/read", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createNotificationsReadHandler(bookingRouteDeps)));
 
   // ==========================================================================
   // BOOKING CREATE — POST /api/bookings/create
@@ -487,14 +515,15 @@ async function startServer() {
     // Answer with JSON *before* the hosting platform kills a stuck invocation
     // and replies with its own un-parseable HTML error page.
     withRequestTimeout(API_REQUEST_TIMEOUT_MS, 'Saving your booking took too long. Nothing was charged — please try again.'),
-    createBookingHandler({
+    asyncRoute(createBookingHandler({
       db,
       isMock: isMockSupabase,
+      hasAdminClient: !!admin,
       addMockBooking: (row) => { mockBookings.push(row); },
       getMockBookings: () => mockBookings,
       addMockNotifications: (rows) => { mockNotifications.push(...rows); },
       resolveOwnerEmail,
-    })
+    }))
   );
 
   // ==========================================================================
@@ -506,24 +535,25 @@ async function startServer() {
   // Credentials come from RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET in .env.
   // ==========================================================================
   app.get("/api/payments/razorpay/config", handleRazorpayConfig);
-  app.post("/api/payments/razorpay/order", handleCreateRazorpayOrder);
-  app.post("/api/payments/razorpay/verify", handleVerifyRazorpayPayment);
+  app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayOrder));
+  app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
 
   // Server-to-server callback from Razorpay (payment captured / failed /
   // refunded). Signed with RAZORPAY_WEBHOOK_SECRET — see server/razorpayWebhook.ts.
   app.post(
     "/api/payments/razorpay/webhook",
-    createRazorpayWebhookHandler({
+    withRequestTimeout(API_REQUEST_TIMEOUT_MS),
+    asyncRoute(createRazorpayWebhookHandler({
       db,
       isMock: isMockSupabase,
       getMockBookings: () => mockBookings,
       addMockNotifications: (rows) => { mockNotifications.push(...rows); },
       resolveOwnerEmail,
-    })
+    }))
   );
 
   // AI Bio Generation Route with Gemini
-  app.post("/api/generate-bio", async (req, res) => {
+  app.post("/api/generate-bio", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     try {
       const { businessName, businessType, ownerName, vibe, specialties } = req.body;
 
@@ -568,10 +598,10 @@ Return strictly valid JSON in this format:
         bio: `Welcome to ${req.body.businessName || 'our studio'}. Our passionate team offers bespoke salon treatments designed to accentuate your unique natural style.`
       });
     }
-  });
+  }));
 
   // Promotional Image Generation Endpoint with Gemini
-  app.post("/api/generate-promo-image", async (req, res) => {
+  app.post("/api/generate-promo-image", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     try {
       const { prompt, serviceName, category, style, aspectRatio = "1:1" } = req.body;
       const apiKey = process.env.GEMINI_API_KEY;
@@ -636,10 +666,10 @@ Return strictly valid JSON in this format:
         error: err?.message || "Failed to generate promotional image with AI.",
       });
     }
-  });
+  }));
 
   // Promotional Copy and Caption Generation Endpoint
-  app.post("/api/generate-promo-copy", async (req, res) => {
+  app.post("/api/generate-promo-copy", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     try {
       const { businessName, serviceName, price, offer, city, discountPercent } = req.body;
       const apiKey = process.env.GEMINI_API_KEY;
@@ -692,7 +722,7 @@ Return strictly JSON with the following keys:
         badgeText: req.body.offer ? req.body.offer.toUpperCase() : 'LIMITED SPECIAL'
       });
     }
-  });
+  }));
 
 
   // -------------------------------------------------------------------------
@@ -700,7 +730,7 @@ Return strictly JSON with the following keys:
   // -------------------------------------------------------------------------
 
   // Auto-fetch latest videos from a YouTube channel via the Data API.
-  app.post("/api/youtube/fetch-videos", async (req, res) => {
+  app.post("/api/youtube/fetch-videos", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     try {
       const { channelUrl, maxResults = 10 } = req.body;
       const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
@@ -756,10 +786,10 @@ Return strictly JSON with the following keys:
       console.warn('YouTube fetch endpoint error:', err?.message || err);
       return res.json({ success: false, notice: 'Failed to fetch videos from YouTube.', videos: [] });
     }
-  });
+  }));
 
   // Fetch metadata (title / thumbnail / likes) for a single YouTube URL.
-  app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+  app.post("/api/fetch-youtube-meta", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleFetchYouTubeMetadata));
 
   // --------------------------------------------------------------------------
   // OWNER SAVE FALLBACK — POST /api/website/save
@@ -771,7 +801,7 @@ Return strictly JSON with the following keys:
   // upserts inside a try/catch, and answers:
   //   200 { success: true, timestamp } | 500 { error: "Failed to persist site state" }
   // --------------------------------------------------------------------------
-  app.post("/api/website/save", handleWebsiteSave({ mockSalons }));
+  app.post("/api/website/save", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleWebsiteSave({ mockSalons })));
 
   // JSON 404 for unmatched /api/* routes (registered after all routes above).
   // Without this the SPA receives an HTML error page and res.json() callers

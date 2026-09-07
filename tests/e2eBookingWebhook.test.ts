@@ -124,6 +124,12 @@ test('health endpoint is reachable and reports the run mode', async () => {
   assert.ok(['mock', 'live'].includes(r.body.mode));
 });
 
+test('the serverless entrypoint also handles a rewrite that strips the /api prefix', async () => {
+  const r = await request('GET', '/health');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.status, 'ok');
+});
+
 test('POST /api/bookings/create stores a guest booking (no owner id sent)', async (t) => {
   skipUnlessMock(t);
   const r = await request('POST', '/api/bookings/create', {

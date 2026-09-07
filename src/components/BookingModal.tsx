@@ -615,7 +615,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Open WhatsApp prefilled confirmation
   const handleSendWhatsAppConfirmation = () => {
     const cleanPhone = sanitizeIndianPhone(guestPhone);
-    const msg = `Namaste ${guestName}! Your booking with ${profile.businessName} is confirmed!\n\n` +
+    const msg = `Namaste ${guestName}! ${savedToCloud ? `Your booking with ${profile.businessName} is confirmed.` : `Please confirm this booking request with ${profile.businessName}. The request is saved on this device only.`}\n\n` +
       `📅 Date: ${bookingDate}\n` +
       `⏰ Time: ${bookingTime} IST\n` +
       `💇 Service: ${selectedService.name}${selectedUpgrades.length > 0 ? ` + Add-ons (${selectedUpgrades.map(u => u.name).join(', ')})` : ''} (Total: ₹${totalAmount})\n` +
@@ -626,7 +626,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       `🔖 Reference: ${bookingRef}\n` +
       `💰 Total Price: ₹${totalAmount}\n` +
       `💳 Payment: ${paymentMethod === 'pay_advance_token' ? `25% Advance Paid: ₹${advanceTokenAmount} (Balance: ₹${remainingAmount})` : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount})`}\n\n` +
-      `Thank you for booking with us!`;
+      `${savedToCloud ? 'Thank you for booking with us!' : 'Please reply to confirm the slot with the salon.'}`;
 
     const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(msg)}`;
     window.open(whatsappUrl, '_blank');
@@ -1555,9 +1555,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               <div>
-                <h4 className="font-bold text-2xl text-slate-900">You're All Set!</h4>
+                <h4 className="font-bold text-2xl text-slate-900">
+                  {savedToCloud ? "You're All Set!" : 'Request Saved on This Device'}
+                </h4>
                 <p className="text-xs text-slate-600 max-w-sm mt-1">
-                  Appointment confirmed for <strong className="text-slate-900">{guestName}</strong> at <strong className="text-slate-900">{profile.businessName}</strong>.
+                  {savedToCloud ? (
+                    <>Appointment confirmed for <strong className="text-slate-900">{guestName}</strong> at <strong className="text-slate-900">{profile.businessName}</strong>.</>
+                  ) : (
+                    <>Your details are ready, but <strong className="text-slate-900">{profile.businessName}</strong> has not received this request yet.</>
+                  )}
                 </p>
               </div>
 

@@ -34,12 +34,28 @@ import {
   isTransientDbError,
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
+  responseAlreadyEnded,
 } from './dbGuard';
 
 const ALLOWED_STATUS = new Set(['pending', 'confirmed', 'cancelled', 'completed', 'reschedule_proposed']);
 const ALLOWED_PAYMENT_STATUS = new Set(['pending', 'paid_deposit', 'paid_full', 'pay_at_salon', 'refunded', 'failed']);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Date.parse normalizes impossible dates (2026-02-31 → March), so compare
+ * every UTC component after parsing instead of accepting a silently shifted
+ * appointment date. */
+export function isValidIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !ISO_DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() + 1 === month &&
+    parsed.getUTCDate() === day
+  );
+}
 
 export interface BookingValidationResult {
   valid: boolean;
@@ -99,7 +115,7 @@ export function validateBookingPayload(input: any): BookingValidationResult {
   // --- slot -----------------------------------------------------------------
   const bookingDate = str(input.booking_date);
   if (!bookingDate) fail('booking_date', 'A booking date is required.');
-  else if (!ISO_DATE_RE.test(bookingDate) || Number.isNaN(new Date(`${bookingDate}T00:00:00Z`).getTime())) {
+  else if (!isValidIsoDate(bookingDate)) {
     fail('booking_date', `Booking date "${bookingDate}" is not a valid YYYY-MM-DD date.`);
   }
 
@@ -163,6 +179,8 @@ export interface ResolveOwnerOptions {
   subdomain?: string | null;
   customDomain?: string | null;
   ownerEmail?: string | null;
+  /** Request deadline propagated by the Express timeout middleware. */
+  deadlineAt?: number;
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }
 
@@ -176,7 +194,7 @@ export interface ResolveOwnerOptions {
  *   5. the only profile in the database (single-salon deployments).
  */
 export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<OwnerResolution> {
-  const { db, isMock, explicitOwnerId, subdomain, customDomain, ownerEmail, env = process.env } = opts;
+  const { db, isMock, explicitOwnerId, subdomain, customDomain, ownerEmail, deadlineAt, env = process.env } = opts;
 
   if (isUuidLike(explicitOwnerId)) return { ownerId: String(explicitOwnerId), source: 'payload' };
 
@@ -198,7 +216,7 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
     if (!value) continue;
     const { data, error } = await runDb(
       () => db.from('profiles').select('id').eq(column, value).maybeSingle(),
-      { label: `owner lookup by ${column}`, timeoutMs: LOOKUP_DB_TIMEOUT_MS }
+      { label: `owner lookup by ${column}`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
     );
     if (error) console.warn(`[Bookings] Owner lookup by ${column} failed:`, error.message || error);
     if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id, source: 'subdomain' };
@@ -207,7 +225,7 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
   if (ownerEmail && EMAIL_RE.test(ownerEmail)) {
     const { data, error } = await runDb(
       () => db.from('profiles').select('id').eq('email', ownerEmail).maybeSingle(),
-      { label: 'owner lookup by email', timeoutMs: LOOKUP_DB_TIMEOUT_MS }
+      { label: 'owner lookup by email', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
     );
     if (error) console.warn('[Bookings] Owner lookup by email failed:', error.message || error);
     if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id, source: 'owner-email' };
@@ -219,6 +237,7 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
     const { data, error } = await runDb(() => db.from('profiles').select('id').limit(2), {
       label: 'sole-owner lookup',
       timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+      deadlineAt,
     });
     if (error) console.warn('[Bookings] Sole-owner lookup failed:', error.message || error);
     if (Array.isArray(data) && data.length === 1 && isUuidLike((data as any)[0]?.id)) {
@@ -338,7 +357,8 @@ export function missingColumnFromError(error: any): string | null {
 export async function insertBookingRow(
   db: any,
   row: Record<string, any>,
-  requestId: string
+  requestId: string,
+  deadlineAt?: number
 ): Promise<{ data: any; error: any; droppedColumns: string[] }> {
   const droppedColumns: string[] = [];
   let attemptRow = { ...row };
@@ -347,6 +367,7 @@ export async function insertBookingRow(
     const { data, error } = await runDb(() => db.from('bookings').insert([attemptRow]).select().single(), {
       label: `booking insert (${requestId})`,
       timeoutMs: DEFAULT_DB_TIMEOUT_MS,
+      deadlineAt,
     });
     if (!error) return { data, error: null, droppedColumns };
 
@@ -380,7 +401,8 @@ export async function insertBookingRow(
 async function findExistingBooking(
   deps: BookingCreateDeps,
   row: Record<string, any>,
-  requestId: string
+  requestId: string,
+  deadlineAt?: number
 ): Promise<any | null> {
   if (!row.payment_id) return null;
   if (deps.isMock) {
@@ -390,13 +412,19 @@ async function findExistingBooking(
     return existing || null;
   }
   try {
-    let query = deps.db.from('bookings').select('*').eq('payment_id', row.payment_id);
-    if (row.owner_id) query = query.eq('owner_id', row.owner_id);
-    const { data, error } = await runDb(() => query.maybeSingle(), {
-      label: `duplicate check (${requestId})`,
-      timeoutMs: LOOKUP_DB_TIMEOUT_MS,
-      retry: false,
-    });
+    const { data, error } = await runDb(
+      () => {
+        let query = deps.db.from('bookings').select('*').eq('payment_id', row.payment_id);
+        if (row.owner_id) query = query.eq('owner_id', row.owner_id);
+        return query.maybeSingle();
+      },
+      {
+        label: `duplicate check (${requestId})`,
+        timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+        deadlineAt,
+        retry: false,
+      }
+    );
     if (error) {
       console.warn(`[Bookings] (${requestId}) Duplicate check failed (continuing):`, error.message || error);
       return null;
@@ -416,11 +444,14 @@ export interface BookingCreateDeps {
   /** Supabase client (service-role preferred). */
   db: any;
   isMock: boolean;
+  /** Explicitly supplied by the entrypoint so missing server credentials fail
+   * as a useful 503 instead of falling through to an RLS-shaped 500. */
+  hasAdminClient?: boolean;
   addMockBooking: (row: any) => void;
   /** Mock-mode duplicate detection (optional; live mode queries the DB). */
   getMockBookings?: () => any[];
   addMockNotifications: (rows: any[]) => void;
-  resolveOwnerEmail: (ownerId: string | null | undefined) => Promise<string>;
+  resolveOwnerEmail: (ownerId: string | null | undefined, deadlineAt?: number) => Promise<string>;
 }
 
 export function createBookingHandler(deps: BookingCreateDeps) {
@@ -429,9 +460,10 @@ export function createBookingHandler(deps: BookingCreateDeps) {
     // Correlates the customer-visible error with the exact server log line.
     const requestId = newRequestId('bk');
     if (res.locals) res.locals.requestId = requestId;
+    const deadlineAt = res.locals?.requestDeadlineAt;
     /** Every answer carries the id + a machine-readable code. */
     const fail = (status: number, code: string, error: string, extra: Record<string, any> = {}) => {
-      if (res.headersSent) return;
+      if (responseAlreadyEnded(res)) return;
       res.status(status).json({ success: false, code, requestId, error, ...extra });
     };
     try {
@@ -447,6 +479,19 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         return void fail(400, 'invalid_booking', validation.errors.join(' '), {
           fieldErrors: validation.fieldErrors,
         });
+      }
+
+      // A live guest booking must be written with the service-role client. Do
+      // this check before verifying/accepting payment so a misconfigured
+      // Vercel function never charges a customer and then discovers it cannot
+      // persist the booking.
+      if (!deps.isMock && deps.hasAdminClient === false) {
+        return void fail(
+          503,
+          'supabase_not_configured',
+          'The booking service is not connected to its database yet. Nothing was charged — please try again later.',
+          { retryable: true }
+        );
       }
 
       // ---- 2. Re-verify any claimed Razorpay payment server-side -----------
@@ -495,6 +540,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         subdomain: subdomainHint,
         customDomain: customDomainHint,
         ownerEmail: ownerEmailHint,
+        deadlineAt,
       });
 
       if (!deps.isMock && !ownerId) {
@@ -511,11 +557,17 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         );
       }
 
+      // Payment fields are untrusted browser input. A public caller must not be
+      // able to set `payment_status: paid_deposit` or an advance amount without
+      // a signature that this server verified with Razorpay. Keep the booking
+      // reference for idempotency, but reset all unverified money claims.
+      const paymentWasVerified = !!verifiedPaymentId;
       const bookingRow = sanitizeBookingRow({
         ...validation.value,
         owner_id: ownerId,
+        advance_paid_amount: paymentWasVerified ? validation.value.advance_paid_amount : 0,
         payment_id: verifiedPaymentId || validation.value.payment_id,
-        payment_status: verifiedPaymentId ? 'paid_deposit' : validation.value.payment_status,
+        payment_status: paymentWasVerified ? 'paid_deposit' : 'pending',
       });
 
       const notifRows = Array.isArray(notifications)
@@ -538,12 +590,12 @@ export function createBookingHandler(deps: BookingCreateDeps) {
       // payment id, both unique per attempt, so it is a natural idempotency
       // key. If a row already exists, return it instead of double-booking.
       if (bookingRow.payment_id) {
-        const existing = await findExistingBooking(deps, bookingRow, requestId);
+        const existing = await findExistingBooking(deps, bookingRow, requestId, deadlineAt);
         if (existing) {
           console.log(
             `[Bookings] (${requestId}) Duplicate submission for payment_id ${bookingRow.payment_id} — returning the existing booking ${existing.id}.`
           );
-          if (res.headersSent) return;
+          if (responseAlreadyEnded(res)) return;
           return void res.json({
             success: true,
             requestId,
@@ -578,7 +630,8 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         const { data: dbData, error: bookingError, droppedColumns } = await insertBookingRow(
           deps.db,
           bookingRow,
-          requestId
+          requestId,
+          deadlineAt
         );
 
         if (bookingError) {
@@ -609,14 +662,14 @@ export function createBookingHandler(deps: BookingCreateDeps) {
           // Notifications are best-effort: never fail (or delay) a paid booking
           // because the owner's bell could not be updated.
           try {
-            const fallbackOwnerEmail = await deps.resolveOwnerEmail(bookingData?.owner_id);
+            const fallbackOwnerEmail = await deps.resolveOwnerEmail(bookingData?.owner_id, deadlineAt);
             const withOwnerEmail = notifRows.map((n: any) => ({
               ...n,
               user_email: n.user_email || fallbackOwnerEmail,
             }));
             const { error: notifError } = await runDb(
               () => deps.db.from('in_app_notifications').insert(withOwnerEmail),
-              { label: `booking notification (${requestId})`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, retry: false }
+              { label: `booking notification (${requestId})`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
             );
             if (notifError) console.warn('[Bookings] Notification insert error:', notifError.message || notifError);
           } catch (notifErr: any) {
@@ -625,7 +678,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         }
       }
 
-      if (res.headersSent) {
+      if (responseAlreadyEnded(res)) {
         // The request-timeout guard already answered; don't double-send, but do
         // record that the booking actually landed.
         console.warn(`[Bookings] (${requestId}) Booking ${bookingData?.id} saved after the response was already sent.`);

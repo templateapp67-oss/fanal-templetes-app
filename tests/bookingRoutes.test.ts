@@ -195,6 +195,17 @@ test('proposing a reschedule without a slot is rejected before touching the DB',
   assert.match(res.body.error, /proposed date and time/i);
 });
 
+test('rescheduling rejects an impossible ISO date before touching the database', async () => {
+  const handler = createBookingUpdateHandler(baseDeps());
+  const res = makeRes();
+  await handler(
+    { body: { id: 'b1', status: 'reschedule_proposed', proposed_date: '2026-02-29', proposed_time_slot: '10:00' } },
+    res
+  );
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'invalid_date');
+});
+
 test('confirming a proposed booking promotes the slot and clears the proposal', async () => {
   const existing = {
     id: 'b1',

@@ -97,7 +97,12 @@ export function createHealthHandler(deps: HealthDeps) {
     if (deep && !deps.isMock) {
       const bookingsProbe = await runDb(
         () => deps.db.from('bookings').select('id').limit(1),
-        { label: 'health: bookings table', timeoutMs: LOOKUP_DB_TIMEOUT_MS, retry: false }
+        {
+          label: 'health: bookings table',
+          timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+          deadlineAt: res.locals?.requestDeadlineAt,
+          retry: false,
+        }
       );
       checks.push({
         name: 'bookings_table',
@@ -111,6 +116,7 @@ export function createHealthHandler(deps: HealthDeps) {
       const ownerProbe = await runDb(() => deps.db.from('profiles').select('id').limit(1), {
         label: 'health: profiles table',
         timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+        deadlineAt: res.locals?.requestDeadlineAt,
         retry: false,
       });
       const ownerCount = Array.isArray(ownerProbe.data) ? ownerProbe.data.length : 0;
