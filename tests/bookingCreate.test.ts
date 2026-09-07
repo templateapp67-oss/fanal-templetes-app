@@ -220,6 +220,15 @@ test('describeDbError maps known Postgres failures away from a bare 500', () => 
   assert.equal(describeDbError({ message: 'boom' }).status, 500);
 });
 
+test('describeDbError maps a duplicate key to 409 instead of a 500', () => {
+  const mapped = describeDbError({
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "bookings_payment_id_key"',
+  });
+  assert.equal(mapped.status, 409);
+  assert.match(mapped.message, /already exists/);
+});
+
 // ============================================================================
 // The handler
 // ============================================================================
@@ -312,6 +321,28 @@ test('a NOT NULL violation surfaces as a readable 422 instead of HTTP 500', asyn
   assert.equal(res.statusCode, 422);
   assert.equal(res.body.success, false);
   assert.match(res.body.error, /required booking field/i);
+});
+
+test('a duplicate-key violation surfaces as a readable 409 instead of HTTP 500', async () => {
+  const { db } = makeDb({
+    profiles: { lookup: () => ({ data: null, error: null }), list: { data: [{ id: OWNER }], error: null } },
+    bookings: {
+      insert: {
+        data: null,
+        error: {
+          code: '23505',
+          message: 'duplicate key value violates unique constraint "bookings_payment_id_key"',
+        },
+      },
+    },
+  });
+  const handler = createBookingHandler(baseDeps({ db }));
+  const res = makeRes();
+  await handler({ body: { booking: VALID_BOOKING }, headers: {} }, res);
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.code, '23505');
+  assert.match(res.body.error, /already exists/);
 });
 
 test('mock mode keeps working without a database', async () => {
