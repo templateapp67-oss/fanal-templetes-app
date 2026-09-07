@@ -31,6 +31,7 @@ import {
   isUuid,
   toDbId,
   withRetry,
+  runSalonSavePipeline,
 } from './lib/autoSave';
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
 
@@ -868,14 +869,27 @@ export default function App() {
           console.warn('[AutoSave] localStorage quota exceeded — saved without inline images:', local.error);
         }
 
-        // -- 2) Cloud persistence (signed-in owners with a real project) ---
+        // -- 2) Cloud persistence — full fallback pipeline ------------------
+        // runSalonSavePipeline (src/lib/autoSave.ts) guarantees the owner's
+        // progress is never lost and the editor is never blocked:
+        //   0. unauthenticated / local mock / free-tier session
+        //        → localStorage draft (nexora_draft_salon_data),
+        //          status SUCCESS (Local Draft) — no crash, no error modal
+        //   1. direct Supabase client sync (syncSalonToSupabase)
+        //   2. network/auth/RLS failure → POST /api/website/save
+        //        (server-side upsert with the Supabase service-role key)
+        //   3. both failed → localStorage draft cache + full console
+        //        diagnostics (duplicate error popups suppressed while the
+        //        owner keeps typing)
+        let sessionOk = !isMockSupabase && !!state.user;
+        let liveOwnerId = state.user?.id ?? state.profile.ownerId ?? '';
+        let canCleanUpCloudRows = false;
+
         if (state.user && !isMockSupabase) {
           // 2a) Pre-flight: the Supabase client must hold a LIVE session for
-          // the same owner we are saving for. Without this check, an expired
-          // or backgrounded session makes every table write fail with the same
-          // JWT/auth error and the owner sees a wall of identical failures.
-          let liveOwnerId = state.user.id;
-          let sessionOk = true;
+          // the same owner we are saving for. A dead session is no longer a
+          // hard failure — the pipeline degrades to SUCCESS (Local Draft) —
+          // but we still flip the header/auth UI back to signed-out.
           try {
             const { data: sessionData, error: sessionLookupError } =
               await supabase.auth.getSession();
@@ -885,9 +899,8 @@ export default function App() {
             const sessionUser = sessionData?.session?.user ?? null;
             if (!sessionUser) {
               sessionOk = false;
-              failures.push('cloud sync skipped (no active session — sign in again to save to the cloud)');
               console.error(
-                '[AutoSave] Cloud save skipped: no active Supabase session. Sign in again to persist changes to the cloud (local edits are already saved on this device).'
+                '[AutoSave] No active Supabase session — saving as a local draft (SUCCESS (Local Draft)) instead of failing. Sign in again to resume cloud sync (local edits are already saved on this device).'
               );
               setUser(null); // flip the header/auth UI back to signed-out
             } else if (sessionUser.id !== liveOwnerId) {
@@ -903,19 +916,16 @@ export default function App() {
               hydrationUserRef.current = sessionUser.id;
             }
           } catch (err) {
-            // Session check itself failed (e.g. offline) — proceed optimistically
-            // with the known user; per-table errors below are still handled.
+            // Session check itself failed (e.g. offline) — proceed optimistically;
+            // the pipeline still logs per-path failures with table + status.
             console.warn('[AutoSave] Session pre-flight check failed (continuing):', err);
           }
 
           // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
           // in the editor) is only safe after a successful hydrate, so a
-          // half-loaded client can never wipe rows it hasn't seen. Previously
-          // a single flaky hydration (e.g. a network blip right after
-          // sign-in) hard-failed EVERY later auto-save until a full page
-          // reload — even though localStorage had succeeded. Await an in-flight
-          // hydrate or launch one retry right now, then fall back to safe
-          // (non-destructive) sync if the cloud is genuinely unreachable.
+          // half-loaded client can never wipe rows it hasn't seen. A flaky
+          // hydrate no longer hard-fails EVERY later save — the pipeline
+          // falls back to the service-role API / local draft below.
           if (sessionOk) {
             if (hydratedForUserRef.current && hydrationUserRef.current !== liveOwnerId) {
               hydratedForUserRef.current = false;
@@ -924,7 +934,7 @@ export default function App() {
             if (!hydratedForUserRef.current) {
               await startHydration(liveOwnerId);
             }
-            const canCleanUpCloudRows =
+            canCleanUpCloudRows =
               hydratedForUserRef.current && hydrationUserRef.current === liveOwnerId;
             if (!canCleanUpCloudRows) {
               const reason = hydrationErrorRef.current || 'hydration still pending';
@@ -932,43 +942,54 @@ export default function App() {
                 `[AutoSave] Cloud hydration unavailable (${reason}) — saving owner rows in safe (non-destructive) mode; deleted-row cleanup stays disabled.`
               );
             }
-            const cloud = await syncSalonToSupabase(
-              supabase,
-              {
-                ownerId: liveOwnerId,
-                profile: state.profile,
-                services: state.services,
-                stylists: state.stylists,
-                loyaltyConfig: state.loyaltyConfig,
-              },
-              { deleteRemoved: canCleanUpCloudRows }
-            );
-            if (!cloud.ok) {
-              failures.push(...cloud.errors);
-              // Classify the exact root cause for the console: auth/RLS problems
-              // need schema + re-login; schema problems need migrations; anything
-              // else is transient. The exact per-table errors are preserved above.
-              const joined = cloud.errors.join(' · ');
-              if (isAuthLikeFailure(joined)) {
-                console.error(
-                  '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.',
-                  cloud.errors
-                );
-              } else if (isSchemaLikeFailure(joined)) {
-                console.error(
-                  '[AutoSave] Cloud save rejected (SCHEMA): tables are missing. Apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).',
-                  cloud.errors
-                );
-              }
-            } else if (!canCleanUpCloudRows) {
-              console.warn(
-                '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
-              );
-            }
           }
         }
 
+        // 2c) Run the pipeline: client sync → service-role API → local draft.
+        const cloud = await runSalonSavePipeline({
+          sync: (p, o) => syncSalonToSupabase(supabase, p, o),
+          payload: {
+            ownerId: liveOwnerId,
+            profile: state.profile,
+            services: state.services,
+            stylists: state.stylists,
+            loyaltyConfig: state.loyaltyConfig,
+          },
+          deleteRemoved: canCleanUpCloudRows,
+          isMockMode: isMockSupabase,
+          authenticated: sessionOk && !!liveOwnerId,
+        });
+
+        if (cloud.errors.length) {
+          const joined = cloud.errors.join(' · ');
+          // Classify the exact root cause for the console (the pipeline has
+          // already logged each failure with table name + HTTP status).
+          if (isAuthLikeFailure(joined)) {
+            console.error(
+              '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.',
+              cloud.errors
+            );
+          } else if (isSchemaLikeFailure(joined)) {
+            console.error(
+              '[AutoSave] Cloud save rejected (SCHEMA): tables are missing. Apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).',
+              cloud.errors
+            );
+          }
+        } else if (cloud.target === 'cloud' && state.user && !isMockSupabase && !canCleanUpCloudRows) {
+          console.warn(
+            '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
+          );
+        }
+        if (cloud.target === 'api') {
+          console.warn(
+            '[AutoSave] Direct client sync failed — the server saved your site state via POST /api/website/save (Supabase service role).'
+          );
+        }
+
         if (failures.length) {
+          // Only LOCAL-storage failures reach here — cloud problems are
+          // handled by the pipeline and never block the editor with a
+          // "couldn't save your changes" error.
           const detail = failures.join(' · ');
           console.error('[AutoSave] Save failed:', detail);
           setSaveStatus('error');
@@ -981,21 +1002,61 @@ export default function App() {
           return false;
         }
 
+        if (!cloud.ok) {
+          // The single remaining hard failure: neither the cloud NOR the
+          // local draft cache could take the state (storage disabled/quota
+          // even after degradation). Surface it once; auto-saves stay quiet.
+          const detail = cloud.errors.join(' · ') || cloud.summary;
+          console.error('[Nexora Sync Error]:', { stage: 'save pipeline — no persistence target available', target: cloud.target, errors: cloud.errors });
+          setSaveStatus('error');
+          if (source === 'manual' || lastErrorToastRef.current !== detail) {
+            showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
+          }
+          lastErrorToastRef.current = detail;
+          return false;
+        }
+
         lastPersistedSnapshotRef.current = snapshot;
         lastErrorToastRef.current = '';
-        setSaveStatus('saved');
         setLastSavedAt(Date.now());
-        // Auto-saves update quietly via the status pill; only explicit saves
-        // interrupt the owner with a toast.
-        if (source === 'manual') {
-          showToast(options?.message || 'Website details updated successfully!');
+
+        const publishedToCloud = cloud.target === 'cloud' || cloud.target === 'api';
+        if (publishedToCloud) {
+          setSaveStatus('saved');
+          // Auto-saves update quietly via the status pill; only explicit
+          // saves interrupt the owner with a toast.
+          if (source === 'manual') {
+            showToast(options?.message || 'Website details updated successfully!');
+          }
+        } else {
+          // SUCCESS (Local Draft) — unauthenticated / mock session, or the
+          // cloud is unreachable. Progress is safe on this device, so the
+          // pill shows "SUCCESS (Local Draft)" instead of a blocking error.
+          // Background auto-saves stay SILENT (status pill only) — this is
+          // what suppresses the duplicate error popups while the owner is
+          // still typing; an explicit save gets one informative toast.
+          setSaveStatus('saved_local');
+          if (source === 'manual') {
+            showToast(
+              cloud.errors.length
+                ? 'Saved on this device (local draft) — cloud sync is unavailable right now. The exact error is in the browser console.'
+                : 'Saved on this device (local draft) — sign in to publish to the cloud.',
+              'success'
+            );
+          }
         }
         scheduleStatusReset();
-        return true;
+        // Manual saves report "published" only when the cloud actually took
+        // the state (the success modal promises a live link); auto-saves
+        // always succeed because the progress is persisted somewhere.
+        return publishedToCloud || source === 'auto';
       } catch (err) {
         // Unexpected (programming) errors — surface with full detail.
         const detail = describeError(err);
-        console.error('[AutoSave] Unexpected save failure:', err);
+        console.error('[Nexora Sync Error]:', {
+          stage: 'save engine — unexpected exception',
+          message: detail,
+        });
         setSaveStatus('error');
         showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
         lastErrorToastRef.current = detail;

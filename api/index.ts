@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "../src/types";
+import { handleWebsiteSave } from "../server/websiteSave";
 import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
 import {
   sanitizeBookingRow,
@@ -793,6 +794,21 @@ app.post("/api/youtube/fetch-videos", async (req, res) => {
 });
 
 app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+
+// ============================================================================
+// OWNER SAVE FALLBACK — POST /api/website/save
+// ----------------------------------------------------------------------------
+// The editor's auto-save pipeline (src/lib/autoSave.ts) calls this when the
+// direct Supabase client sync fails (network / auth / RLS). The shared handler
+// (server/websiteSave.ts) persists the incoming salonData with the Supabase
+// ADMIN service-role client (SUPABASE_SERVICE_ROLE_KEY), which safely bypasses
+// RLS policies. Essential fields (subdomain, owner_id) are validated; the
+// upserts run inside a try/catch.
+//   200 { success: true, timestamp: Date.now() }
+//   400 { success: false, error }
+//   500 { error: "Failed to persist site state" }
+// ============================================================================
+app.post("/api/website/save", handleWebsiteSave({ mockSalons }));
 
 // ============================================================================
 // JSON error handling for the serverless deployment.

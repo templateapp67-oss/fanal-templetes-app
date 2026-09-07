@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "./src/lib/supabaseClient";
 import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "./src/types";
+import { handleWebsiteSave } from "./server/websiteSave";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
 import {
   sanitizeBookingRow,
@@ -869,6 +870,18 @@ Return strictly JSON with the following keys:
 
   // Fetch metadata (title / thumbnail / likes) for a single YouTube URL.
   app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+
+  // --------------------------------------------------------------------------
+  // OWNER SAVE FALLBACK — POST /api/website/save
+  // The editor's auto-save pipeline (src/lib/autoSave.ts) POSTs the full
+  // salon state here when the direct Supabase client sync fails (network /
+  // auth / RLS). The shared handler (server/websiteSave.ts) persists it with
+  // the Supabase ADMIN service-role client (SUPABASE_SERVICE_ROLE_KEY), which
+  // safely bypasses RLS. Validates essential fields (subdomain, owner_id),
+  // upserts inside a try/catch, and answers:
+  //   200 { success: true, timestamp } | 500 { error: "Failed to persist site state" }
+  // --------------------------------------------------------------------------
+  app.post("/api/website/save", handleWebsiteSave({ mockSalons }));
 
   // JSON 404 for unmatched /api/* routes (registered after all routes above).
   // Without this the SPA receives an HTML error page and res.json() callers
