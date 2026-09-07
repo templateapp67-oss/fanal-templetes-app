@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
@@ -20,6 +20,15 @@ import {
   getSiteUrl,
   ONBOARDING_COMPLETED_KEY,
 } from './lib/salonStore';
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  SAVE_STATUS_RESET_MS,
+  SaveStatus,
+  describeError,
+  summarizeSaveError,
+  withRetry,
+} from './lib/autoSave';
+import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
 
 // ---------------------------------------------------------------------------
 // Supabase row <-> App type mappers.
@@ -119,21 +128,6 @@ function toClientUpdate(c: ClientRecord) {
 }
 
 // -- services -------------------------------------------------------------
-function toServiceRow(s: SalonService, ownerId: string) {
-  return {
-    id: s.id,
-    owner_id: ownerId,
-    name: s.name,
-    category: s.category,
-    description: s.description,
-    icon: s.icon,
-    price: s.price,
-    duration_minutes: s.durationMinutes,
-    popular: s.popular ?? false,
-    show_duration: s.showDuration ?? true,
-  };
-}
-
 function fromServiceRow(row: any): SalonService {
   return {
     id: row.id,
@@ -149,26 +143,6 @@ function fromServiceRow(row: any): SalonService {
 }
 
 // -- stylists -------------------------------------------------------------
-function toStylistRow(st: Stylist, ownerId: string) {
-  return {
-    id: st.id,
-    owner_id: ownerId,
-    name: st.name,
-    role: st.role,
-    avatar_url: st.avatarUrl,
-    bio: st.bio,
-    phone: st.phone,
-    specialties: st.specialties,
-    assigned_services: st.assignedServices,
-    rating: st.rating,
-    commission_rate: st.commissionRate,
-    status: st.status,
-    access_role: st.accessRole,
-    hide_phone: st.hidePhone ?? false,
-    schedule: st.schedule,
-  };
-}
-
 function fromStylistRow(row: any): Stylist {
   return {
     id: row.id,
@@ -189,17 +163,6 @@ function fromStylistRow(row: any): Stylist {
 }
 
 // -- loyalty --------------------------------------------------------------
-function toLoyaltyConfigRow(config: LoyaltyConfig, ownerId: string) {
-  return {
-    owner_id: ownerId,
-    program_enabled: config.programEnabled,
-    points_per_visit: config.pointsPerVisit,
-    points_per_hundred_spent: config.pointsPerHundredSpent,
-    tier_thresholds: config.tierThresholds,
-    tier_multipliers: config.tierMultipliers,
-  };
-}
-
 function fromLoyaltyConfigRow(row: any): LoyaltyConfig {
   if (!row) return DEFAULT_LOYALTY_CONFIG;
   return {
@@ -209,22 +172,6 @@ function fromLoyaltyConfigRow(row: any): LoyaltyConfig {
     pointsPerHundredSpent: row.points_per_hundred_spent ?? 10,
     tierThresholds: row.tier_thresholds || DEFAULT_LOYALTY_CONFIG.tierThresholds,
     tierMultipliers: row.tier_multipliers || DEFAULT_LOYALTY_CONFIG.tierMultipliers,
-  };
-}
-
-function toRewardRow(r: any, ownerId: string, index: number) {
-  return {
-    id: r.id,
-    owner_id: ownerId,
-    title: r.title,
-    required_points: r.requiredPoints,
-    reward_type: r.rewardType,
-    discount_value: r.discountValue,
-    applicable_category: r.applicableCategory,
-    description: r.description,
-    is_active: r.isActive,
-    coupon_code_prefix: r.couponCodePrefix,
-    sort_order: index,
   };
 }
 
@@ -259,7 +206,8 @@ export default function App() {
   const [profile, setProfile] = useState<SalonProfile>(
     initialSaved?.profile || INITIAL_SALON_PROFILE
   );
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [user, setUser] = useState<any>(null);
 
   const [services, setServices] = useState<SalonService[]>(
@@ -298,6 +246,8 @@ export default function App() {
     stylists?: Stylist[];
   } | null>(null);
   const [siteLoading, setSiteLoading] = useState<boolean>(true);
+  // Computed before the hooks below so the auto-save engine can skip saving
+  // when a visitor is viewing a salon's public white-label site.
   const isPublicSite = !!siteTenant?.isTenant && siteTenant.found;
 
   useEffect(() => {
@@ -398,11 +348,16 @@ export default function App() {
   const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const firstPersistRef = useRef(true);
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ id: Date.now(), message, type });
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 3200);
-  };
+  // Stable identity so the debounced auto-save callback does not get recreated
+  // (and its timer reset) on every unrelated re-render.
+  const showToast = useCallback(
+    (message: string, type: 'success' | 'error' = 'success') => {
+      setToast({ id: Date.now(), message, type });
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+      toastTimer.current = window.setTimeout(() => setToast(null), 3200);
+    },
+    []
+  );
 
   useEffect(() => {
     previousTemplateIdRef.current = selectedTemplateId;
@@ -445,19 +400,33 @@ export default function App() {
           .single();
 
         if (data) {
-          setProfile((prev) => ({
-            ...prev,
-            businessName: data.salon_name || meta.salon_name || prev.businessName,
-            ownerName: data.full_name || meta.full_name || prev.ownerName,
-            ownerRole: data.owner_role || prev.ownerRole,
-            phone: data.phone_number || meta.phone_number || prev.phone,
-            email: data.email || user.email || prev.email,
-            ownerPhotoUrl: data.owner_photo_url || prev.ownerPhotoUrl,
-            address: data.full_address || prev.address,
-            city: data.city || meta.city || prev.city,
-            postalCode: data.postal_code || prev.postalCode,
-            landmark: data.landmark || prev.landmark,
-          }));
+          setProfile((prev) =>
+            applyWorkingHoursFromRow(
+              {
+                ...prev,
+                businessName: data.salon_name || meta.salon_name || prev.businessName,
+                ownerName: data.full_name || meta.full_name || prev.ownerName,
+                ownerRole: data.owner_role || prev.ownerRole,
+                phone: data.phone_number || meta.phone_number || prev.phone,
+                whatsapp: data.whatsapp || prev.whatsapp,
+                email: data.email || user.email || prev.email,
+                ownerPhotoUrl: data.owner_photo_url || prev.ownerPhotoUrl,
+                coverImageUrl: data.cover_image_url || prev.coverImageUrl,
+                tagline: data.tagline || prev.tagline,
+                about: data.about || prev.about,
+                address: data.full_address || prev.address,
+                city: data.city || meta.city || prev.city,
+                postalCode: data.postal_code || prev.postalCode,
+                landmark: data.landmark || prev.landmark,
+                subdomain: data.subdomain || prev.subdomain,
+                instagramHandle: data.instagram_handle || prev.instagramHandle,
+                themePreset: data.theme_preset || prev.themePreset,
+                themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
+                customAccentColor: data.custom_accent_color || prev.customAccentColor,
+              },
+              data
+            )
+          );
         } else {
           setProfile((prev) => ({
             ...prev,
@@ -496,21 +465,42 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Hydrate services / staff / loyalty from Supabase once the owner logs in
+  // Hydrate services / staff / loyalty from Supabase once the owner logs in.
+  // The cloud sync only performs *destructive* cleanup (deleting rows removed
+  // in the editor) after this hydration has succeeded, so a client that failed
+  // to load existing rows can never wipe them.
+  const hydratedForUserRef = useRef(false);
+  const hydrationErrorRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!user || isMockSupabase) return;
     let cancelled = false;
+    hydratedForUserRef.current = false;
+    hydrationErrorRef.current = null;
 
-    const hydrate = async () => {
+    const hydrate = () =>
+      withRetry(
+        async () => {
+          const [svc, stf, lc, rw] = await Promise.all([
+            supabase.from('services').select('*').order('sort_order'),
+            supabase.from('stylists').select('*').order('sort_order'),
+            supabase.from('loyalty_config').select('*').eq('owner_id', user.id).maybeSingle(),
+            supabase.from('loyalty_rewards').select('*').eq('owner_id', user.id).order('sort_order'),
+          ]);
+          const selectError = svc.error || stf.error || lc.error || rw.error;
+          if (selectError) throw selectError;
+          if (cancelled) return;
+          return { svc, stf, lc, rw };
+        },
+        { label: 'hydrate salon data from cloud' }
+      );
+
+    (async () => {
       try {
-        const [svc, stf, lc, rw] = await Promise.all([
-          supabase.from('services').select('*').order('sort_order'),
-          supabase.from('stylists').select('*').order('sort_order'),
-          supabase.from('loyalty_config').select('*').eq('owner_id', user.id).maybeSingle(),
-          supabase.from('loyalty_rewards').select('*').eq('owner_id', user.id).order('sort_order'),
-        ]);
-        if (cancelled) return;
+        const result = await hydrate();
+        if (cancelled || !result) return;
 
+        const { svc, stf, lc, rw } = result;
         if (svc.data && svc.data.length) setServices(svc.data.map(fromServiceRow));
         if (stf.data && stf.data.length) setStylists(stf.data.map(fromStylistRow));
         if (lc.data) {
@@ -522,89 +512,250 @@ export default function App() {
                 : prev.rewards,
           }));
         }
+        hydratedForUserRef.current = true;
       } catch (err) {
-        console.warn('Could not hydrate services/staff/loyalty from Supabase', err);
+        // Hydration failed even after retries — keep the flag false so the
+        // save flow reports the problem instead of overwriting cloud data it
+        // never managed to read.
+        hydrationErrorRef.current = describeError(err);
+        console.error('[AutoSave] Cloud hydration failed:', hydrationErrorRef.current);
       }
-    };
+    })();
 
-    hydrate();
     return () => {
       cancelled = true;
     };
   }, [user?.id, isMockSupabase]);
 
-  // Unified, debounced save
-  const persistSalonState = async (message?: string): Promise<boolean> => {
-    setSaveStatus('saving');
-    try {
-      saveSalonState({ profile, services, stylists, loyaltyConfig, selectedTemplateId });
-      localStorage.setItem('pinky_nails_salon_profile_v1', JSON.stringify(profile));
+  // -------------------------------------------------------------------------
+  // AUTO-SAVE ENGINE
+  // Any change to the salon state (Salon Details, Services & Pricing,
+  // Timings, Sub-domain, theme, staff, loyalty…) schedules a debounced save
+  // that persists to localStorage immediately and to Supabase when the owner
+  // is signed in. Network failures retry with backoff and surface the exact
+  // error; the status pill in the editor shows Saving… / All changes saved /
+  // Save failed.
+  // -------------------------------------------------------------------------
+  // Always-fresh snapshot of the salon state so a debounced (or flushed) save
+  // can never persist a stale closure.
+  const salonStateRef = useRef({ profile, services, stylists, loyaltyConfig, selectedTemplateId, user });
+  salonStateRef.current = { profile, services, stylists, loyaltyConfig, selectedTemplateId, user };
 
-      if (user && !isMockSupabase) {
-        const ownerId = user.id;
-        const ops: PromiseLike<{ error: unknown }>[] = [
-          supabase.from('profiles').upsert({
-            id: ownerId,
-            full_name: profile.ownerName,
-            salon_name: profile.businessName,
-            phone_number: profile.phone,
-            email: profile.email,
-            owner_role: profile.ownerRole,
-            owner_photo_url: profile.ownerPhotoUrl,
-            full_address: profile.address,
-            postal_code: profile.postalCode,
-            landmark: profile.landmark,
-            updated_at: new Date().toISOString(),
-          }),
-        ];
-        if (services.length) {
-          ops.push(supabase.from('services').upsert(services.map((s) => toServiceRow(s, ownerId))));
-        }
-        if (stylists.length) {
-          ops.push(supabase.from('stylists').upsert(stylists.map((st) => toStylistRow(st, ownerId))));
-        }
-        ops.push(supabase.from('loyalty_config').upsert(toLoyaltyConfigRow(loyaltyConfig, ownerId)));
-        if (loyaltyConfig.rewards && loyaltyConfig.rewards.length) {
-          ops.push(
-            supabase
-              .from('loyalty_rewards')
-              .upsert(loyaltyConfig.rewards.map((r, i) => toRewardRow(r, ownerId, i)))
-          );
-        }
-        const results = await Promise.allSettled(ops);
-        if (results.some((r) => r.status === 'rejected' || r.value.error)) {
-          throw new Error('One or more cloud tables failed to sync');
-        }
+  const debounceTimerRef = useRef<number | undefined>(undefined);
+  const statusResetTimerRef = useRef<number | undefined>(undefined);
+  const saveInFlightRef = useRef(false);
+  const resaveAfterFlightRef = useRef(false);
+  const hasPendingSaveRef = useRef(false);
+  const lastErrorToastRef = useRef<string>('');
+  // Skip no-op saves (mount effects, reverted edits) by comparing snapshots.
+  const lastPersistedSnapshotRef = useRef<string | null>(null);
+  if (lastPersistedSnapshotRef.current === null) {
+    lastPersistedSnapshotRef.current = JSON.stringify({
+      profile,
+      services,
+      stylists,
+      loyaltyConfig,
+      selectedTemplateId,
+    });
+  }
+
+  const snapshotOf = (state: typeof salonStateRef.current) =>
+    JSON.stringify({
+      profile: state.profile,
+      services: state.services,
+      stylists: state.stylists,
+      loyaltyConfig: state.loyaltyConfig,
+      selectedTemplateId: state.selectedTemplateId,
+    });
+
+  const scheduleStatusReset = useCallback(() => {
+    if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
+    statusResetTimerRef.current = window.setTimeout(
+      () => setSaveStatus('idle'),
+      SAVE_STATUS_RESET_MS
+    );
+  }, []);
+
+  const persistSalonState = useCallback(
+    async (options?: { source?: 'auto' | 'manual'; message?: string }): Promise<boolean> => {
+      const source = options?.source ?? 'manual';
+      const state = salonStateRef.current;
+
+      // Coalesce auto-saves: if one is already running, remember to run again
+      // afterwards so the newest state always lands.
+      if (saveInFlightRef.current && source === 'auto') {
+        resaveAfterFlightRef.current = true;
+        return false;
       }
 
-      setSaveStatus('saved');
-      showToast(message || (user ? 'All changes saved to cloud.' : 'Auto-Saved. Website updated.'));
-      setTimeout(() => setSaveStatus('idle'), 2500);
-      return true;
-    } catch (err) {
-      console.warn('Save failed:', err);
-      setSaveStatus('error');
-      showToast('Save failed. Please try again.', 'error');
-      return false;
-    }
-  };
+      const snapshot = snapshotOf(state);
+      if (snapshot === lastPersistedSnapshotRef.current) {
+        // Nothing actually changed — don't hammer localStorage/Supabase.
+        if (source === 'manual') {
+          setSaveStatus('saved');
+          setLastSavedAt(Date.now());
+          showToast(options?.message || 'Website details updated successfully!');
+          scheduleStatusReset();
+          return true;
+        }
+        setSaveStatus((prev) => (prev === 'pending' ? 'idle' : prev));
+        return true;
+      }
 
+      saveInFlightRef.current = true;
+      if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
+      setSaveStatus('saving');
+      const failures: string[] = [];
+
+      try {
+        // -- 1) Local persistence (never throws; quota-aware) ---------------
+        const local = saveSalonState({
+          profile: state.profile,
+          services: state.services,
+          stylists: state.stylists,
+          loyaltyConfig: state.loyaltyConfig,
+          selectedTemplateId: state.selectedTemplateId,
+        });
+        if (!local.ok) {
+          failures.push(`local storage: ${local.error}`);
+          console.error('[AutoSave] localStorage write failed:', local.error);
+        } else if (local.degraded) {
+          // Saved, but inline images had to be dropped to fit the quota.
+          console.warn('[AutoSave] localStorage quota exceeded — saved without inline images:', local.error);
+        }
+
+        // -- 2) Cloud persistence (signed-in owners with a real project) ---
+        if (state.user && !isMockSupabase) {
+          if (!hydratedForUserRef.current) {
+            // Never write over cloud rows we failed to read — that used to
+            // duplicate/delete data after a flaky login.
+            const reason = hydrationErrorRef.current
+              ? `hydration failed: ${hydrationErrorRef.current}`
+              : 'hydration still pending';
+            failures.push(`cloud sync skipped (${reason})`);
+            console.error('[AutoSave] Cloud sync skipped because', reason);
+          } else {
+            const cloud = await syncSalonToSupabase(
+              supabase,
+              {
+                ownerId: state.user.id,
+                profile: state.profile,
+                services: state.services,
+                stylists: state.stylists,
+                loyaltyConfig: state.loyaltyConfig,
+              },
+              { deleteRemoved: true }
+            );
+            if (!cloud.ok) failures.push(...cloud.errors);
+          }
+        }
+
+        if (failures.length) {
+          const detail = failures.join(' · ');
+          console.error('[AutoSave] Save failed:', detail);
+          setSaveStatus('error');
+          // Show the root cause in the toast (throttled so a burst of edits
+          // doesn't spam identical errors), keep the full detail in console.
+          if (source === 'manual' || lastErrorToastRef.current !== detail) {
+            showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
+          }
+          lastErrorToastRef.current = detail;
+          return false;
+        }
+
+        lastPersistedSnapshotRef.current = snapshot;
+        lastErrorToastRef.current = '';
+        setSaveStatus('saved');
+        setLastSavedAt(Date.now());
+        // Auto-saves update quietly via the status pill; only explicit saves
+        // interrupt the owner with a toast.
+        if (source === 'manual') {
+          showToast(options?.message || 'Website details updated successfully!');
+        }
+        scheduleStatusReset();
+        return true;
+      } catch (err) {
+        // Unexpected (programming) errors — surface with full detail.
+        const detail = describeError(err);
+        console.error('[AutoSave] Unexpected save failure:', err);
+        setSaveStatus('error');
+        showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
+        lastErrorToastRef.current = detail;
+        return false;
+      } finally {
+        saveInFlightRef.current = false;
+        if (resaveAfterFlightRef.current) {
+          resaveAfterFlightRef.current = false;
+          void persistSalonState({ source: 'auto' });
+        }
+      }
+    },
+    [showToast, scheduleStatusReset]
+  );
+
+  // Debounced auto-save. The timer resets on every keystroke so a burst of
+  // edits becomes a single save ~1.2s after the last change.
   useEffect(() => {
     if (firstPersistRef.current) {
       firstPersistRef.current = false;
       return;
     }
-    setSaveStatus('saving');
-    const timer = setTimeout(() => {
-      persistSalonState();
-    }, 900);
-    return () => clearTimeout(timer);
+    if (isPublicSite) return; // visitors on a public salon site never save
+    if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
+    setSaveStatus('pending');
+    hasPendingSaveRef.current = true;
+    const timer = window.setTimeout(() => {
+      hasPendingSaveRef.current = false;
+      void persistSalonState({ source: 'auto' });
+    }, AUTOSAVE_DEBOUNCE_MS);
+    debounceTimerRef.current = timer;
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, services, stylists, loyaltyConfig, selectedTemplateId, user?.id, isMockSupabase]);
+  }, [
+    profile,
+    services,
+    stylists,
+    loyaltyConfig,
+    selectedTemplateId,
+    user?.id,
+    isMockSupabase,
+    isPublicSite,
+    persistSalonState,
+  ]);
 
-  const handleSaveNow = () => {
-    return persistSalonState('Website details updated successfully!');
-  };
+  // Flush a pending debounced save when the tab is hidden or closed so edits
+  // are never lost. The localStorage write inside persistSalonState runs
+  // synchronously before the first await, which beforeunload can rely on.
+  const flushPendingSave = useCallback(() => {
+    if (!hasPendingSaveRef.current) return;
+    if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
+    hasPendingSaveRef.current = false;
+    void persistSalonState({ source: 'auto' });
+  }, [persistSalonState]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushPendingSave();
+    };
+    window.addEventListener('beforeunload', flushPendingSave);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', flushPendingSave);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [flushPendingSave]);
+
+  const handleSaveNow = useCallback(() => {
+    // Explicit save runs immediately — don't wait out the debounce.
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      hasPendingSaveRef.current = false;
+    }
+    return persistSalonState({
+      source: 'manual',
+      message: 'Website details updated successfully!',
+    });
+  }, [persistSalonState]);
 
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
@@ -803,6 +954,7 @@ export default function App() {
           services={services}
           setServices={setServices}
           saveStatus={saveStatus}
+          lastSavedAt={lastSavedAt}
           onComplete={handleWizardComplete}
           selectedTemplateId={selectedTemplateId}
           onSelectTemplate={handleSelectTemplate}

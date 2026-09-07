@@ -22,14 +22,14 @@ import {
   AlertCircle,
   ArrowRight,
   Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
+import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
-
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 interface WebsiteEditorProps {
   profile: SalonProfile;
@@ -37,6 +37,8 @@ interface WebsiteEditorProps {
   services: SalonService[];
   setServices: React.Dispatch<React.SetStateAction<SalonService[]>>;
   saveStatus: SaveStatus;
+  /** Timestamp of the last successful (auto or manual) save. */
+  lastSavedAt?: number | null;
   onComplete: () => void;
   onSelectTemplate?: (catId: BusinessTypeId) => void;
   selectedTemplateId?: BusinessTypeId;
@@ -54,6 +56,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   services,
   setServices,
   saveStatus,
+  lastSavedAt,
   onComplete,
   onSelectTemplate,
   selectedTemplateId,
@@ -67,7 +70,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const isSavePending = isSaving || saveStatus === 'saving';
+  // 'pending' = edits are debounced and will save in ~1.2s; 'saving' = the
+  // save request is in flight. Both show as "Saving…".
+  const saveUi = getSaveUiState(saveStatus, { busyOverride: isSaving, lastSavedAt });
+  const isSavePending = saveUi.busy;
+  const isSaveFailed = saveUi.failed;
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -130,14 +137,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const subCategories =
     CATEGORY_TEMPLATES[selectedTemplateId || profile.businessType]?.subCategories || [];
 
-  const saveLabel =
-    isSavePending
-      ? 'Saving…'
-      : saveStatus === 'error'
-      ? 'Save failed'
-      : saveStatus === 'saved'
-      ? 'Auto-Saved'
-      : 'All changes saved';
+  const saveLabel = saveUi.label;
 
   return (
     <div className="min-h-screen pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
@@ -165,10 +165,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           {/* Save status pill */}
           <div className="flex items-center gap-2">
             <div
+              role="status"
+              aria-live="polite"
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${
                 isSavePending
                   ? 'bg-blue-50 border-blue-200 text-blue-700'
-                  : saveStatus === 'error'
+                  : isSaveFailed
                   ? 'bg-rose-50 border-rose-200 text-rose-700'
                   : saveStatus === 'saved'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
@@ -177,13 +179,25 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             >
               {isSavePending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : saveStatus === 'error' ? (
+              ) : isSaveFailed ? (
                 <AlertCircle className="w-3.5 h-3.5" />
               ) : (
                 <CheckCircle2 className="w-3.5 h-3.5" />
               )}
               <span>{saveLabel}</span>
             </div>
+
+            {/* Retry after a failed auto-save */}
+            {isSaveFailed && (
+              <button
+                type="button"
+                onClick={handleSave}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Retry Save</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -634,17 +648,17 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         {/* ===== BOTTOM SAVE BAR ===== */}
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-gray-600">
-            {saveStatus === 'error' ? (
+            {isSaveFailed ? (
               <AlertCircle className="w-4 h-4 text-rose-500" />
             ) : (
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             )}
             <span>
               {isSavePending
-                ? 'Saving your changes…'
-                : saveStatus === 'error'
-                ? 'We couldn’t save your changes. Please try again.'
-                : 'Save your changes, then preview your website, share its link, or return to your dashboard.'}
+                ? 'Auto-saving your changes…'
+                : isSaveFailed
+                ? 'We couldn’t save your changes. Check your connection and retry — the exact error is in the browser console.'
+                : 'Every edit auto-saves within seconds. Save to publish & update your website, share its link, or return to your dashboard.'}
             </span>
           </div>
           <button
@@ -665,7 +679,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
         {/* Count of fields for transparency (dedup guard) */}
         <p className="text-center text-[10px] text-gray-400 font-mono">
-          One form • Each field asked once • Auto-synced with the live template
+          One form • Each field asked once • Auto-saves ~1s after your last edit
         </p>
       </div>
 
