@@ -218,6 +218,17 @@ two helper scripts (they are NOT migrations — run them from the SQL Editor):
 > ALL owners' rows. Never leave a live project in the disabled state, and
 > never disable RLS on `bookings` (guest traffic must stay
 > service-role-only).
+>
+> ❌ **Anti-pattern — do NOT "fix" RLS with a permissive policy:**
+> `CREATE POLICY … FOR ALL USING (true) WITH CHECK (true)` (no `TO` role)
+> is *weaker* than owner-scoped policies in a multi-tenant app: every
+> authenticated user — including **other salons' owners** — could read,
+> edit and delete **all** owners' rows, and `anon` (every browser) can
+> read every row. If a quick test policy is unavoidable, restrict it to
+> `TO authenticated`, only on a **throwaway** project, and only on the
+> editor tables (never `bookings`). The safe equivalent is what
+> `supabase/rls-restore-production.sql` creates: full CRUD for the owner,
+> scoped with `owner_id = auth.uid()` (profiles: `id = auth.uid()`).
 
 Verification queries (SQL Editor) — the same ones the two helper scripts
 print:
