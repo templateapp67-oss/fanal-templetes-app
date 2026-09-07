@@ -539,6 +539,13 @@ export interface WebsiteApiOptions {
   fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
   /** Endpoint path. Defaults to '/api/website/save'. */
   path?: string;
+  /**
+   * The owner's current Supabase access token (session.access_token).
+   * Sent as `Authorization: Bearer <token>` so the server can verify the
+   * caller is really payload.ownerId (the endpoint is the auth boundary —
+   * the service role bypasses RLS). Omitted in mock mode.
+   */
+  accessToken?: string;
 }
 
 /**
@@ -564,9 +571,16 @@ export async function saveViaWebsiteApi(
   }
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (options.accessToken) {
+      headers.Authorization = `Bearer ${options.accessToken}`;
+    }
     const res = await fetchImpl(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers,
       body: JSON.stringify({
         salonData: {
           ownerId: payload.ownerId,
@@ -669,6 +683,13 @@ export interface SalonSavePipelineOptions {
   isMockMode?: boolean;
   /** True when the client holds a live, valid session for payload.ownerId. */
   authenticated?: boolean;
+  /**
+   * The owner's live Supabase access token (session.access_token), forwarded
+   * to POST /api/website/save as `Authorization: Bearer <token>` so the
+   * server can prove the caller is payload.ownerId (identity binding — the
+   * service-role endpoint bypasses RLS and must authorize itself).
+   */
+  accessToken?: string;
 }
 
 /**
@@ -696,7 +717,12 @@ export async function runSalonSavePipeline(
 ): Promise<SalonSaveOutcome> {
   const { payload } = options;
   const sync = options.sync;
-  const saveViaApi = options.saveViaApi ?? saveViaWebsiteApi;
+  // Default fallback forwards the owner's access token so the server can
+  // bind the request to owner_id; a caller-injected saveViaApi (tests /
+  // custom backends) is used as-is with the plain payload signature.
+  const saveViaApi =
+    options.saveViaApi ??
+    ((p: SalonSyncPayload) => saveViaWebsiteApi(p, { accessToken: options.accessToken }));
   const writeDraft = options.writeDraft ?? writeLocalDraft;
 
   const draftState = {

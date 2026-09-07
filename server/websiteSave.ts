@@ -14,16 +14,27 @@
 //
 // Contract (see src/lib/autoSave.ts saveViaWebsiteApi):
 //   POST /api/website/save
+//   headers: Authorization: Bearer <caller's Supabase access token>
 //   body: { salonData: { ownerId, profile, services, stylists, loyaltyConfig } }
 //          (a bare payload without the salonData wrapper is also accepted)
 //   200  { success: true, timestamp }            — persisted
 //   400  { success: false, error }               — subdomain / owner_id missing
+//   401  { success: false, error: "Unauthorized" } — live mode: no/invalid access
+//          token, or the token belongs to a different user than owner_id
 //   500  { error: "Failed to persist site state" } — any persistence failure
+//
+// AUTH MODEL: the service role bypasses RLS, so RLS is NOT the authorization
+// boundary for this endpoint — the endpoint IS. In live mode (service key
+// configured) the caller must present their own Supabase access token; it is
+// verified against the Supabase Auth server (GET /auth/v1/user with the
+// service-role apikey) and must belong to the same user as owner_id. Without
+// that check, any visitor could pass any owner_id and upsert that owner's
+// rows. Mock mode (no env vars, local dev/demo) skips verification.
 //
 // The service-role key is read server-side only (supabaseClient.getSupabaseAdmin)
 // and never shipped to the browser bundle.
 // ============================================================================
-import { isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";
+import { isMockSupabase, getSupabaseAdmin, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../src/lib/supabaseClient";
 import {
   toProfileRow,
   toServiceDbRow,
@@ -47,6 +58,52 @@ function syncError(message: string, extra?: unknown): void {
   } else {
     console.error('[Nexora Sync Error]:', message);
   }
+}
+
+/**
+ * Verify that the caller presenting `authorizationHeader` is the Supabase
+ * user `ownerId` — i.e. they can only save their own salon.
+ *
+ * The token is validated server-side by Supabase Auth itself
+ * (GET /auth/v1/user, same endpoint supabase.auth.getUser() uses internally)
+ * using the service-role apikey — no JWT secret or extra dependency needed.
+ * Returns a precise reason on failure so the rejection is diagnosable.
+ */
+async function verifyCallerIsOwner(
+  ownerId: string,
+  authorizationHeader: string | undefined
+): Promise<string | null> {
+  const token = (authorizationHeader || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    return "missing access token (Authorization: Bearer <token>)";
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/auth/v1/user`, {
+      method: "GET",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+  } catch (err) {
+    return `auth server unreachable (${(err as Error)?.message ?? "network error"})`;
+  }
+
+  if (!res.ok) {
+    return `access token rejected by Supabase Auth (HTTP ${res.status})`;
+  }
+
+  const user: any = await res.json().catch(() => null);
+  if (!user || typeof user.id !== "string" || !user.id) {
+    return "auth server returned no user for this token";
+  }
+  if (user.id !== ownerId) {
+    return `token belongs to user ${user.id} but owner_id is ${ownerId} — callers may only save their own salon`;
+  }
+  return null;
 }
 
 /**
@@ -104,6 +161,23 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
           tables: ["profiles"],
         });
         return res.status(400).json({ success: false, error: "owner_id must be a valid user id (uuid)." });
+      }
+
+      // ------------------------------------------------------------------
+      // Live-mode identity check: the service role bypasses RLS, so this
+      // endpoint is the authorization boundary. The caller must present
+      // their own Supabase access token and it must match owner_id —
+      // otherwise ANY visitor could upsert ANY owner's rows.
+      // Mock mode skips this (local dev/demo has no auth server).
+      // ------------------------------------------------------------------
+      if (!isMockSupabase) {
+        const authError = await verifyCallerIsOwner(ownerId, req.headers?.authorization);
+        if (authError !== null) {
+          syncError(`POST /api/website/save rejected (AUTH): ${authError}.`, {
+            owner_id: ownerId,
+          });
+          return res.status(401).json({ success: false, error: "Unauthorized" });
+        }
       }
 
       // ------------------------------------------------------------------

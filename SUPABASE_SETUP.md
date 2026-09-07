@@ -185,8 +185,14 @@ succeeded. The browser console always prints the exact per-table reason
 under `[Nexora Sync Error] …` / `[AutoSave] …` (table name + message +
 HTTP status), and the save pipeline automatically retries the failed state
 through `POST /api/website/save` (service role, bypasses RLS) — so a broken
-RLS policy no longer blocks the owner's save at all. Map the remaining
-symptoms as follows:
+RLS policy no longer blocks the owner's save at all. Because the service
+role **bypasses** RLS, that endpoint is the authorization boundary itself:
+in live mode the editor sends the owner's Supabase access token
+(`Authorization: Bearer <token>`) and the server verifies it against
+Supabase Auth (`GET /auth/v1/user`, service-role apikey) and requires
+`token.user.id === owner_id` — otherwise `401 Unauthorized`. An owner can
+therefore only ever save their own salon, even with RLS broken. Map the
+remaining symptoms as follows:
 
 | Console / toast symptom | Root cause | Permanent fix |
 |---|---|---|

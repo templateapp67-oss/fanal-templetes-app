@@ -99,6 +99,13 @@ const PAYLOAD = {
 
 const okSync = () => Promise.resolve({ ok: true as const, errors: [], blockedByAuth: false });
 
+// Live-mode auth: the handler verifies the caller's Supabase access token
+// against /auth/v1/user (service-role apikey) and requires token.user.id to
+// equal owner_id. Stubs below answer the auth endpoint with OWNER_ID.
+const OWNER_TEST_TOKEN = 'owner-access-token-for-tests';
+const OTHER_OWNER_ID = '123e4567-e89b-12d3-a456-426614174000';
+const OWNER_AUTH_HEADERS = { authorization: `Bearer ${OWNER_TEST_TOKEN}` };
+
 // ---------------------------------------------------------------------------
 // Save status vocabulary — SUCCESS (Local Draft)
 // ---------------------------------------------------------------------------
@@ -398,6 +405,13 @@ test('live mode: /api/website/save upserts every table with the service-role key
   const originalFetch = (globalThis as any).fetch;
   (globalThis as any).fetch = (async (url: string, init: any) => {
     fetchCalls.push({ url: String(url), init });
+    if (String(url).includes('/auth/v1/user')) {
+      // Supabase Auth confirms the token belongs to the owner.
+      return new Response(JSON.stringify({ id: OWNER_ID, aud: 'authenticated' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
   }) as any;
 
@@ -405,7 +419,7 @@ test('live mode: /api/website/save upserts every table with the service-role key
     const mockSalons: Record<string, any> = {};
     const handler = handleWebsiteSave({ mockSalons });
     const res = fakeRes();
-    await handler({ body: { salonData: PAYLOAD } }, res);
+    await handler({ body: { salonData: PAYLOAD }, headers: OWNER_AUTH_HEADERS }, res);
 
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.success, true);
@@ -445,6 +459,22 @@ test('live mode: /api/website/save upserts every table with the service-role key
       assert.match(getHeader('prefer'), /resolution=merge-duplicates/);
     }
 
+    // The token verification hit /auth/v1/user with the SERVICE-ROLE apikey
+    // (never the anon key), using the caller's own access token.
+    const authCalls = fetchCalls.filter((c) => String(c.url).includes('/auth/v1/user'));
+    assert.equal(authCalls.length, 1, 'the caller token must be verified exactly once');
+    {
+      const headers = authCalls[0].init?.headers as any;
+      const getHeader = (name: string): string => {
+        if (!headers) return '';
+        if (typeof headers.get === 'function') return String(headers.get(name) ?? '');
+        const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
+        return key ? String(headers[key]) : '';
+      };
+      assert.equal(getHeader('apikey'), 'service-role-test-key');
+      assert.equal(getHeader('authorization'), `Bearer ${OWNER_TEST_TOKEN}`);
+    }
+
     // The profiles row carries the validated essential fields.
     const profileCall = upserts.find((c) => String(c.url).includes('/rest/v1/profiles'));
     const profileBody = JSON.parse(String(profileCall.init.body));
@@ -460,16 +490,23 @@ test('live mode: /api/website/save upserts every table with the service-role key
 
 test('live mode: a failed upsert returns 500 { error: "Failed to persist site state" }', async () => {
   const originalFetch = (globalThis as any).fetch;
-  (globalThis as any).fetch = (async () =>
-    new Response(JSON.stringify({ message: 'permission denied for table profiles', code: '42501' }), {
+  (globalThis as any).fetch = (async (url: string) => {
+    if (String(url).includes('/auth/v1/user')) {
+      return new Response(JSON.stringify({ id: OWNER_ID, aud: 'authenticated' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ message: 'permission denied for table profiles', code: '42501' }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
-    })) as any;
+    });
+  }) as any;
 
   try {
     const handler = handleWebsiteSave({ mockSalons: {} });
     const res = fakeRes();
-    await handler({ body: { salonData: PAYLOAD } }, res);
+    await handler({ body: { salonData: PAYLOAD }, headers: OWNER_AUTH_HEADERS }, res);
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Failed to persist site state' });
   } finally {
@@ -479,14 +516,132 @@ test('live mode: a failed upsert returns 500 { error: "Failed to persist site st
 
 test('a bare payload (no salonData wrapper) is accepted', async () => {
   const originalFetch = (globalThis as any).fetch;
-  (globalThis as any).fetch = (async () =>
-    new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })) as any;
+  (globalThis as any).fetch = (async (url: string) => {
+    if (String(url).includes('/auth/v1/user')) {
+      return new Response(JSON.stringify({ id: OWNER_ID, aud: 'authenticated' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as any;
   try {
     const handler = handleWebsiteSave({ mockSalons: {} });
     const res = fakeRes();
-    await handler({ body: PAYLOAD }, res);
+    await handler({ body: PAYLOAD, headers: OWNER_AUTH_HEADERS }, res);
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.success, true);
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Live-mode identity binding: the endpoint is the auth boundary (the service
+// role bypasses RLS), so the caller must prove they ARE owner_id.
+// ---------------------------------------------------------------------------
+test('live mode: no access token → 401 Unauthorized, no PostgREST writes', async () => {
+  const fetchUrls: string[] = [];
+  const originalFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = (async (url: string) => {
+    fetchUrls.push(String(url));
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as any;
+  try {
+    const handler = handleWebsiteSave({ mockSalons: {} });
+    const res = fakeRes();
+    // No Authorization header at all.
+    await handler({ body: { salonData: PAYLOAD } }, res);
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.body, { success: false, error: 'Unauthorized' });
+    assert.ok(!fetchUrls.some((u) => u.includes('/rest/v1/')), 'no write may reach PostgREST');
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+  }
+});
+
+test('live mode: a DIFFERENT user valid token → 401 (owner_id must match token identity)', async () => {
+  const originalFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = (async (url: string) => {
+    if (String(url).includes('/auth/v1/user')) {
+      // Attacker holds a perfectly valid session — but of ANOTHER owner.
+      return new Response(JSON.stringify({ id: OTHER_OWNER_ID, aud: 'authenticated' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as any;
+  try {
+    const handler = handleWebsiteSave({ mockSalons: {} });
+    const res = fakeRes();
+    await handler(
+      { body: { salonData: PAYLOAD }, headers: { authorization: 'Bearer someone-elses-valid-token' } },
+      res
+    );
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.body, { success: false, error: 'Unauthorized' });
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+  }
+});
+
+test('saveViaWebsiteApi forwards accessToken as Authorization: Bearer <token>', async () => {
+  let capturedInit: any = null;
+  const fetchImpl = (async (_url: string, init: any) => {
+    capturedInit = init;
+    return new Response(JSON.stringify({ success: true, timestamp: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as any;
+  await saveViaWebsiteApi(PAYLOAD as any, { fetchImpl, accessToken: 'tok-abc' });
+  assert.equal(capturedInit?.headers?.Authorization, 'Bearer tok-abc');
+});
+
+test('saveViaWebsiteApi without accessToken sends no Authorization header', async () => {
+  let capturedInit: any = null;
+  const fetchImpl = (async (_url: string, init: any) => {
+    capturedInit = init;
+    return new Response(JSON.stringify({ success: true, timestamp: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as any;
+  await saveViaWebsiteApi(PAYLOAD as any, { fetchImpl });
+  assert.equal(capturedInit?.headers?.Authorization, undefined);
+});
+
+test('the pipeline forwards the owner token to the default API fallback', async () => {
+  useMemoryStorage();
+  const captured: Array<{ url: string; headers: any }> = [];
+  const originalFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = (async (url: string, init: any) => {
+    captured.push({ url: String(url), headers: init?.headers });
+    return new Response(JSON.stringify({ success: true, timestamp: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as any;
+  try {
+    const outcome = await runSalonSavePipeline({
+      payload: PAYLOAD as any,
+      // Direct sync blocked by RLS → the pipeline must use the default
+      // saveViaWebsiteApi (global fetch) with the owner's token attached.
+      sync: async () => ({
+        ok: false,
+        errors: ['permission denied for table profiles (42501)'],
+        blockedByAuth: true,
+      }),
+      isMockMode: false,
+      authenticated: true,
+      accessToken: 'pipeline-owner-token',
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.target, 'api');
+    const saveCall = captured.find((c) => c.url.includes('/api/website/save'));
+    assert.ok(saveCall, 'the fallback must hit POST /api/website/save');
+    assert.equal(saveCall.headers?.Authorization, 'Bearer pipeline-owner-token');
   } finally {
     (globalThis as any).fetch = originalFetch;
   }

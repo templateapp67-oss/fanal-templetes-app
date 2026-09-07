@@ -884,6 +884,7 @@ export default function App() {
         let sessionOk = !isMockSupabase && !!state.user;
         let liveOwnerId = state.user?.id ?? state.profile.ownerId ?? '';
         let canCleanUpCloudRows = false;
+        let liveAccessToken: string | undefined;
 
         if (state.user && !isMockSupabase) {
           // 2a) Pre-flight: the Supabase client must hold a LIVE session for
@@ -897,6 +898,11 @@ export default function App() {
               console.warn('[AutoSave] Session lookup warning:', sessionLookupError);
             }
             const sessionUser = sessionData?.session?.user ?? null;
+            if (sessionUser) {
+              // Forwarded to POST /api/website/save so the server can prove
+              // the caller is really liveOwnerId (identity binding).
+              liveAccessToken = sessionData?.session?.access_token || undefined;
+            }
             if (!sessionUser) {
               sessionOk = false;
               console.error(
@@ -958,6 +964,7 @@ export default function App() {
           deleteRemoved: canCleanUpCloudRows,
           isMockMode: isMockSupabase,
           authenticated: sessionOk && !!liveOwnerId,
+          accessToken: liveAccessToken,
         });
 
         if (cloud.errors.length) {
