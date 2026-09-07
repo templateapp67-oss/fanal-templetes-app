@@ -175,7 +175,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   ? 'bg-blue-50 border-blue-200 text-blue-700'
                   : isSaveFailed
                   ? 'bg-rose-50 border-rose-200 text-rose-700'
-                  : saveStatus === 'saved'
+                  : saveStatus === 'saved' || saveStatus === 'saved_local'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                   : 'bg-gray-50 border-gray-200 text-gray-600'
               }`}
@@ -661,6 +661,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 ? 'Auto-saving your changes…'
                 : isSaveFailed
                 ? 'We couldn’t save your changes. Check your connection and retry — the exact error is in the browser console.'
+                : saveStatus === 'saved_local'
+                ? 'Your changes are saved on this device as a local draft. Cloud sync is unavailable right now — we’ll retry automatically and the exact error is in the browser console.'
                 : 'Every edit auto-saves within seconds. Save to publish & update your website, share its link, or return to your dashboard.'}
             </span>
           </div>

@@ -12,11 +12,27 @@
 //
 // Everything written to Supabase now goes through these mappers so the request
 // payload always matches the backend schema exactly.
+//
+// ERROR HANDLING CONTRACT (unauthenticated / free-tier / RLS failures):
+//   Every database call (profiles, services, stylists, loyalty_config,
+//   loyalty_rewards — the app's equivalents of team members / gallery /
+//   branches data) is wrapped in try/catch + retry. syncSalonToSupabase
+//   NEVER throws and NEVER fails silently: each per-table failure is logged
+//   as `console.error('[Nexora Sync Error]:', …)` with the table name, the
+//   exact message and the HTTP status, and the returned SalonSyncResult
+//   flags whether RLS/auth blocked the whole sync (blockedByAuth).
+//
+//   The caller (autoSave.runSalonSavePipeline) then degrades gracefully:
+//   unauthenticated owners, local mock sessions and Supabase free-tier
+//   setups store the draft in localStorage `nexora_draft_salon_data` and the
+//   editor shows SUCCESS (Local Draft) — never a blocking "couldn't save"
+//   error. When the direct client sync is blocked by network/auth/RLS, the
+//   pipeline retries through POST /api/website/save (service role).
 // ============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from '../types';
-import { toDbId, withRetry, describeError } from './autoSave';
+import { toDbId, withRetry, describeError, isAuthLikeFailure } from './autoSave';
 
 /** Namespaces keep the same logical id from colliding across tables. */
 export const SERVICE_ID_NAMESPACE = 'nexora-service';
@@ -203,83 +219,154 @@ export interface SalonSyncResult {
   ok: boolean;
   /** Exact per-operation error messages (empty when ok). */
   errors: string[];
+  /**
+   * True when every failure is an authentication / RLS / table-grant
+   * rejection (no network or data-shape problem). The save pipeline uses
+   * this to route the retry through the service-role API instead of retrying
+   * the same blocked client session forever.
+   */
+  blockedByAuth?: boolean;
 }
+
+/** The five tables every editor save writes (see migrations/00001_init.sql). */
+export const SALON_SYNC_TABLES = [
+  'profiles',
+  'services',
+  'stylists',
+  'loyalty_config',
+  'loyalty_rewards',
+] as const;
 
 /**
  * Push the full salon state to Supabase.
  *
- * Every operation is wrapped in `withRetry` (network failures retry with
- * backoff and the exact error is logged), failures are collected per table —
- * never swallowed — and stale rows are deleted when `deleteRemoved` is set
- * (the caller only enables that after a successful hydrate so a half-loaded
- * client can never wipe rows it hasn't seen yet).
+ * NEVER throws, never fails silently:
+ *   • every operation (profiles, services, stylists, loyalty_config,
+ *     loyalty_rewards) is wrapped in try/catch + `withRetry` (network
+ *     failures retry with backoff),
+ *   • every per-table failure is logged as
+ *     `console.error('[Nexora Sync Error]:', …)` with the table name, the
+ *     exact message and the HTTP status, so network-trace issues are visible
+ *     in DevTools immediately,
+ *   • failures are collected per table (never swallowed) and reported in the
+ *     result, including whether RLS/auth blocked the sync (blockedByAuth) so
+ *     the caller can fall back to the localStorage draft (SUCCESS Local
+ *     Draft) or the service-role API instead of surfacing a blocking error.
+ *
+ * Stale rows are deleted when `deleteRemoved` is set (the caller only enables
+ * that after a successful hydrate so a half-loaded client can never wipe rows
+ * it hasn't seen yet).
  */
 export async function syncSalonToSupabase(
   db: SupabaseClient,
   payload: SalonSyncPayload,
   options: { deleteRemoved?: boolean } = {}
 ): Promise<SalonSyncResult> {
-  const { ownerId, profile, services, stylists, loyaltyConfig } = payload;
-  const errors: string[] = [];
+  try {
+    const { ownerId, profile, services, stylists, loyaltyConfig } = payload;
+    const errors: string[] = [];
 
-  const runOp = async (label: string, run: () => PromiseLike<{ error?: unknown } | void>) => {
-    try {
-      await withRetry(
-        async () => {
-          const result = await run();
-          const err =
-            result && typeof result === 'object' ? (result as { error?: unknown }).error : undefined;
-          if (err) throw err;
-        },
-        { label: `cloud sync → ${label}` }
-      );
-    } catch (err) {
-      errors.push(`${label}: ${describeError(err)}`);
+    const runOp = async (
+      table: string,
+      label: string,
+      run: () => PromiseLike<{ error?: unknown } | void>
+    ) => {
+      try {
+        await withRetry(
+          async () => {
+            const result = await run();
+            const err =
+              result && typeof result === 'object'
+                ? (result as { error?: unknown }).error
+                : undefined;
+            if (err) throw err;
+          },
+          { label: `cloud sync → ${label}` }
+        );
+      } catch (err) {
+        const detail = describeError(err);
+        errors.push(`${label}: ${detail}`);
+        // Explicit, descriptive diagnostics: exact message + HTTP status +
+        // table name, so a blocked RLS policy or a dead connection is
+        // immediately visible in DevTools.
+        const e = err as Record<string, any>;
+        console.error('[Nexora Sync Error]:', {
+          table,
+          operation: label,
+          message: detail,
+          status: e?.status ?? undefined,
+          code: e?.code ?? undefined,
+          owner_id: ownerId,
+        });
+      }
+    };
+
+    const serviceRows = services.map((s, i) => toServiceDbRow(s, ownerId, i));
+    const stylistRows = stylists.map((st, i) => toStylistDbRow(st, ownerId, i));
+    const rewardRows = (loyaltyConfig.rewards || []).map((r, i) => toRewardDbRow(r, ownerId, i));
+
+    await Promise.all([
+      runOp('profiles', 'save salon profile', () =>
+        db.from('profiles').upsert(toProfileRow(profile, ownerId))
+      ),
+
+      serviceRows.length
+        ? runOp('services', 'save services & pricing', () => db.from('services').upsert(serviceRows))
+        : Promise.resolve(),
+
+      stylistRows.length
+        ? runOp('stylists', 'save stylists', () => db.from('stylists').upsert(stylistRows))
+        : Promise.resolve(),
+
+      runOp('loyalty_config', 'save loyalty settings', () =>
+        db.from('loyalty_config').upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId))
+      ),
+
+      rewardRows.length
+        ? runOp('loyalty_rewards', 'save loyalty rewards', () =>
+            db.from('loyalty_rewards').upsert(rewardRows)
+          )
+        : Promise.resolve(),
+
+      // Only sync deletions once the client has hydrated the owner's existing
+      // rows — otherwise a stale local list could delete data it never loaded.
+      ...(options.deleteRemoved
+        ? [
+            runOp('services', 'remove deleted services', () =>
+              deleteRowsNotIn(db, 'services', ownerId, serviceRows.map((r) => r.id))
+            ),
+            runOp('stylists', 'remove deleted stylists', () =>
+              deleteRowsNotIn(db, 'stylists', ownerId, stylistRows.map((r) => r.id))
+            ),
+            runOp('loyalty_rewards', 'remove deleted rewards', () =>
+              deleteRowsNotIn(db, 'loyalty_rewards', ownerId, rewardRows.map((r) => r.id))
+            ),
+          ]
+        : []),
+    ]);
+
+    if (errors.length) {
+      const blockedByAuth = errors.every((e) => isAuthLikeFailure(e));
+      console.error('[Nexora Sync Error]:', {
+        stage: 'client sync — one or more tables failed',
+        tables: SALON_SYNC_TABLES,
+        owner_id: ownerId,
+        blockedByAuth,
+        errors,
+      });
+      return { ok: false, errors, blockedByAuth };
     }
-  };
-
-  const serviceRows = services.map((s, i) => toServiceDbRow(s, ownerId, i));
-  const stylistRows = stylists.map((st, i) => toStylistDbRow(st, ownerId, i));
-  const rewardRows = (loyaltyConfig.rewards || []).map((r, i) => toRewardDbRow(r, ownerId, i));
-
-  await Promise.all([
-    runOp('save salon profile', () => db.from('profiles').upsert(toProfileRow(profile, ownerId))),
-
-    serviceRows.length
-      ? runOp('save services & pricing', () => db.from('services').upsert(serviceRows))
-      : Promise.resolve(),
-
-    stylistRows.length
-      ? runOp('save stylists', () => db.from('stylists').upsert(stylistRows))
-      : Promise.resolve(),
-
-    runOp('save loyalty settings', () =>
-      db.from('loyalty_config').upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId))
-    ),
-
-    rewardRows.length
-      ? runOp('save loyalty rewards', () => db.from('loyalty_rewards').upsert(rewardRows))
-      : Promise.resolve(),
-
-    // Only sync deletions once the client has hydrated the owner's existing
-    // rows — otherwise a stale local list could delete data it never loaded.
-    ...(options.deleteRemoved
-      ? [
-          runOp('remove deleted services', () =>
-            deleteRowsNotIn(db, 'services', ownerId, serviceRows.map((r) => r.id))
-          ),
-          runOp('remove deleted stylists', () =>
-            deleteRowsNotIn(db, 'stylists', ownerId, stylistRows.map((r) => r.id))
-          ),
-          runOp('remove deleted rewards', () =>
-            deleteRowsNotIn(db, 'loyalty_rewards', ownerId, rewardRows.map((r) => r.id))
-          ),
-        ]
-      : []),
-  ]);
-
-  if (errors.length) {
-    console.error('[SalonSync] Some cloud saves failed:', errors);
+    return { ok: true, errors: [], blockedByAuth: false };
+  } catch (err) {
+    // Defense in depth: syncSalonToSupabase must NEVER throw, no matter what
+    // the client/middleware does. A thrown failure degrades to a result the
+    // pipeline can route to the API fallback / local draft.
+    const detail = describeError(err);
+    console.error('[Nexora Sync Error]:', {
+      stage: 'client sync — unexpected exception (no table-specific failure)',
+      tables: SALON_SYNC_TABLES,
+      message: detail,
+    });
+    return { ok: false, errors: [`unexpected sync failure: ${detail}`], blockedByAuth: false };
   }
-  return { ok: errors.length === 0, errors };
 }

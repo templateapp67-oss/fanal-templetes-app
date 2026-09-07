@@ -3,6 +3,8 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "../src/types";
+import { nexoraCors } from "../server/cors";
+import { handleWebsiteSave } from "../server/websiteSave";
 import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
 import {
   sanitizeBookingRow,
@@ -11,7 +13,12 @@ import {
 } from "../server/bookingOps";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+// CORS for cross-origin API callers (different preview/custom/subdomain
+// host). Same-origin traffic (no Origin header) passes through untouched.
+// Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
+// catch-all — that is exactly the "404 / blocked by CORS" failure mode.
+app.use(nexoraCors);
 
 /** Owner email for booking notifications, resolved from the profiles row. */
 async function resolveOwnerEmail(ownerId: string | null | undefined): Promise<string> {
@@ -793,6 +800,21 @@ app.post("/api/youtube/fetch-videos", async (req, res) => {
 });
 
 app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+
+// ============================================================================
+// OWNER SAVE FALLBACK — POST /api/website/save
+// ----------------------------------------------------------------------------
+// The editor's auto-save pipeline (src/lib/autoSave.ts) calls this when the
+// direct Supabase client sync fails (network / auth / RLS). The shared handler
+// (server/websiteSave.ts) persists the incoming salonData with the Supabase
+// ADMIN service-role client (SUPABASE_SERVICE_ROLE_KEY), which safely bypasses
+// RLS policies. Essential fields (subdomain, owner_id) are validated; the
+// upserts run inside a try/catch.
+//   200 { success: true, timestamp: Date.now() }
+//   400 { success: false, error }
+//   500 { error: "Failed to persist site state" }
+// ============================================================================
+app.post("/api/website/save", handleWebsiteSave({ mockSalons }));
 
 // ============================================================================
 // JSON error handling for the serverless deployment.

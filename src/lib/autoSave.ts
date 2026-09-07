@@ -3,13 +3,24 @@
 //
 // Shared primitives used by the debounced auto-save in App.tsx:
 //   • SaveStatus           — one status vocabulary for the whole app
+//                            (incl. 'saved_local' = SUCCESS (Local Draft))
 //   • AUTOSAVE_DEBOUNCE_MS — debounce delay (1000–1500ms window)
 //   • toDbId()             — deterministic, UUID-safe ids for Supabase rows
 //   • describeError()      — exact, human-readable error extraction
 //   • isRetriableError()   — network/transient vs deterministic DB failures
 //   • withRetry()          — retry with exponential backoff + exact logging
 //   • safeWriteLocalStorage() — quota-aware localStorage writes
+//   • writeLocalDraft()    — the nexora_draft_salon_data recovery cache
+//   • saveViaWebsiteApi()  — POST /api/website/save fallback (service role)
+//   • runSalonSavePipeline() — client sync → API fallback → local draft
+//
+// NOTE: `import type { ... } from './salonSync'` is type-only (erased at
+// compile time), so this module stays a leaf of the runtime dependency graph
+// even though the pipeline orchestrates salonSync.syncSalonToSupabase (the
+// actual function is injected by the caller — see SalonSavePipelineOptions).
 // ============================================================================
+
+import type { SalonSyncPayload, SalonSyncResult } from './salonSync';
 
 /** Auto-save debounce delay. Kept inside the 1000–1500ms sweet spot so fast
  *  typing does not spam the API while edits still persist quickly. */
@@ -24,7 +35,23 @@ export const SAVE_MAX_ATTEMPTS = 3;
 /** Base delay for retry backoff (doubles per attempt, ±jitter). */
 export const SAVE_RETRY_BASE_DELAY_MS = 600;
 
-export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+/**
+ * One status vocabulary for the whole app:
+ *   idle        — no save scheduled / in flight
+ *   pending     — edits debounced, save runs ~1.2s after the last change
+ *   saving      — save request in flight
+ *   saved       — persisted to the cloud (direct sync or the service-role API)
+ *   saved_local — SUCCESS (Local Draft): persisted to localStorage
+ *                 `nexora_draft_salon_data` because the owner is
+ *                 unauthenticated / on a local mock session, or because both
+ *                 cloud paths failed. Progress is safe on the device; this is
+ *                 a *success*, never a blocking "couldn't save" error.
+ *   error       — even the local write failed (storage disabled etc.)
+ */
+export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'saved_local' | 'error';
+
+/** Label the status pill shows for a successful local-draft save. */
+export const LOCAL_DRAFT_STATUS_LABEL = 'SUCCESS (Local Draft)';
 
 // ----------------------------------------------------------------------------
 // Deterministic UUID mapping
@@ -130,6 +157,7 @@ export function describeError(err: unknown): string {
 const RETRYABLE_PATTERNS: RegExp[] = [
   /network/i,
   /fetch failed|failed to fetch/i,
+  /blocked by cors|cors policy/i,
   /timeout|timed out/i,
   /econn|socket|connection (refused|reset|closed|terminated)/i,
   /aborted|interrupted/i,
@@ -305,10 +333,24 @@ export function summarizeSaveError(detail: string): string {
     return 'Database schema missing — apply supabase/migrations to your Supabase project (see SUPABASE_SETUP.md).';
   }
 
+  // 3b) The server-side save fallback itself is absent on the deployed host
+  // (older build without the /api/website/save route, or the API function
+  // not deployed) — the platform answers 404, not Supabase.
+  if (
+    d.includes('404') &&
+    (d.includes('api route not found') || d.includes('/api/website/save') || d.includes('not found'))
+  ) {
+    return 'The save API is not deployed on this host yet (HTTP 404) — redeploy the API (api/index.ts / server.ts). Your edits are kept on this device and retry automatically.';
+  }
+
   // 4) Transient network/server problems — auto-retried with backoff; local
-  // (device) persistence already succeeded, so no data is lost.
+  // (device) persistence already succeeded, so no data is lost. Also covers
+  // CORS aborts ("blocked by CORS policy") of cross-origin API calls.
   if (
     d.includes('fetch failed') ||
+    d.includes('failed to fetch') ||
+    d.includes('blocked by cors') ||
+    d.includes('cors policy') ||
     d.includes('network') ||
     d.includes('timeout') ||
     d.includes('econn') ||
@@ -317,7 +359,7 @@ export function summarizeSaveError(detail: string): string {
     d.includes('gateway timeout') ||
     /\b(408|429|500|502|503|504)\b/.test(d)
   ) {
-    return 'Network error — could not reach the database. Retrying automatically; your edits are kept on this device.';
+    return 'Network error — could not reach the database or the save API (connection dropped, host not deployed, or CORS blocked the cross-origin call). Retrying automatically; your edits are kept on this device.';
   }
 
   // 5) Initial cloud hydration/load could not complete even after retries.
@@ -382,8 +424,10 @@ export function formatSavedAt(ts: number): string {
 /**
  * Derive the editor's status-pill UI from a SaveStatus. 'pending' (edits are
  * debounced, the save runs ~1.2s after the last change) and 'saving' (request
- * in flight) both render as "Saving…"; success shows "All changes saved" with
- * the time of the last save; a failed attempt shows "Save failed".
+ * in flight) both render as "Saving…"; a cloud success shows "All changes
+ * saved" with the time of the last save; a local-draft success shows
+ * "SUCCESS (Local Draft)"; a failed attempt (local write itself failed) shows
+ * "Save failed".
  */
 export function getSaveUiState(
   status: SaveStatus,
@@ -391,14 +435,409 @@ export function getSaveUiState(
 ): SaveUiState {
   const busy = !!options.busyOverride || status === 'saving' || status === 'pending';
   const failed = status === 'error' && !busy;
+  const localDraft = !busy && !failed && status === 'saved_local';
   const savedAtLabel =
-    !busy && !failed && options.lastSavedAt ? formatSavedAt(options.lastSavedAt) : null;
+    !busy && !failed && !localDraft && options.lastSavedAt
+      ? formatSavedAt(options.lastSavedAt)
+      : null;
   const label = busy
     ? 'Saving…'
     : failed
     ? 'Save failed'
+    : localDraft
+    ? LOCAL_DRAFT_STATUS_LABEL
     : savedAtLabel
     ? `All changes saved · ${savedAtLabel}`
     : 'All changes saved';
   return { busy, failed, label, savedAtLabel };
+}
+
+// ----------------------------------------------------------------------------
+// Local draft cache (localStorage `nexora_draft_salon_data`)
+// ----------------------------------------------------------------------------
+/**
+ * Where pending salon state is cached when the cloud cannot take it:
+ *   • the owner is unauthenticated (no Supabase session),
+ *   • the app runs a local / free-tier mock session (Supabase not configured),
+ *   • BOTH cloud paths failed (direct client sync + POST /api/website/save).
+ *
+ * The cache is a recovery net, not the primary store: the primary
+ * `nexora_salon_state_v1` write (salonStore.saveSalonState) always runs first.
+ * A successful cloud save clears this cache (runSalonSavePipeline).
+ */
+export const DRAFT_STORAGE_KEY = 'nexora_draft_salon_data';
+
+export interface LocalDraftEnvelope {
+  ownerId: string;
+  profile: unknown;
+  services: unknown[];
+  stylists: unknown[];
+  loyaltyConfig: unknown;
+  savedAt: number;
+}
+
+/**
+ * Cache the full draft state under `nexora_draft_salon_data`. Never throws —
+ * quota errors degrade (inline images stripped) or are reported via the
+ * returned result, never by crashing the save flow.
+ */
+export function writeLocalDraft(
+  state: Omit<LocalDraftEnvelope, 'savedAt'> & { savedAt?: number }
+): LocalStorageWriteResult {
+  const envelope: LocalDraftEnvelope = { ...state, savedAt: state.savedAt ?? Date.now() };
+  return safeWriteLocalStorage(DRAFT_STORAGE_KEY, JSON.stringify(envelope));
+}
+
+/** Remove a previously cached draft (called after a successful cloud save). */
+export function clearLocalDraft(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+  } catch (err) {
+    console.warn('[Nexora Sync] Failed to clear the local draft cache:', describeError(err));
+  }
+}
+
+/** True when a pending draft is currently cached on this device. */
+export function hasLocalDraft(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(DRAFT_STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Read a previously cached draft (recovery / diagnostics helper). */
+export function loadLocalDraft(): LocalDraftEnvelope | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as LocalDraftEnvelope) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Server-side save fallback: POST /api/website/save (service role)
+// ----------------------------------------------------------------------------
+export interface ApiSaveResult {
+  ok: boolean;
+  /** HTTP status when the server answered (undefined on pure network failure). */
+  status?: number;
+  /** Exact error: the server's message (HTTP failure) or the network error. */
+  error?: string;
+  /** Server-side persistence timestamp from { success: true, timestamp }. */
+  timestamp?: number;
+}
+
+export interface WebsiteApiOptions {
+  /** Injectable for tests. Defaults to the global fetch (same-origin call). */
+  fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
+  /** Endpoint path. Defaults to '/api/website/save'. */
+  path?: string;
+  /**
+   * The owner's current Supabase access token (session.access_token).
+   * Sent as `Authorization: Bearer <token>` so the server can verify the
+   * caller is really payload.ownerId (the endpoint is the auth boundary —
+   * the service role bypasses RLS). Omitted in mock mode.
+   */
+  accessToken?: string;
+}
+
+/**
+ * Fallback persistence path: POST the full salon state to the trusted
+ * Express/Vercel server, which upserts it with the Supabase ADMIN (service
+ * role) client — SUPABASE_SERVICE_ROLE_KEY — bypassing RLS safely.
+ *
+ * Every failure is logged with the exact HTTP status so network traces are
+ * visible in DevTools immediately; the function never throws.
+ */
+export async function saveViaWebsiteApi(
+  payload: SalonSyncPayload,
+  options: WebsiteApiOptions = {}
+): Promise<ApiSaveResult> {
+  const fetchImpl =
+    options.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch.bind(globalThis) : undefined);
+  const path = options.path ?? '/api/website/save';
+
+  if (!fetchImpl) {
+    const message = `${path} cannot be called: fetch() is unavailable in this environment.`;
+    console.error('[Nexora Sync Error]:', message);
+    return { ok: false, error: message };
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (options.accessToken) {
+      headers.Authorization = `Bearer ${options.accessToken}`;
+    }
+    const res = await fetchImpl(path, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        salonData: {
+          ownerId: payload.ownerId,
+          profile: payload.profile,
+          services: payload.services,
+          stylists: payload.stylists,
+          loyaltyConfig: payload.loyaltyConfig,
+        },
+      }),
+    });
+
+    const body: any = await res.json().catch(() => null);
+
+    if (res.ok && body && body.success === true) {
+      console.info(
+        `[Nexora Sync] Server-side save succeeded via POST ${path} (HTTP ${res.status}) — ` +
+          'the service-role upsert persisted the site state.'
+      );
+      return { ok: true, status: res.status, timestamp: typeof body.timestamp === 'number' ? body.timestamp : undefined };
+    }
+
+    const serverMessage =
+      (body && typeof body.error === 'string' && body.error) ||
+      (body ? `unexpected JSON body: ${JSON.stringify(body).slice(0, 200)}` : 'no JSON body');
+    const message = `POST ${path} failed → HTTP ${res.status} ${res.statusText} | ${serverMessage}`;
+    console.error('[Nexora Sync Error]:', message, {
+      status: res.status,
+      statusText: res.statusText,
+      table: 'profiles + services + stylists + loyalty_config + loyalty_rewards (server-side upsert)',
+      body: body ?? null,
+    });
+    return { ok: false, status: res.status, error: serverMessage };
+  } catch (err) {
+    const message = `POST ${path} network failure: ${describeError(err)}`;
+    console.error('[Nexora Sync Error]:', message, { table: 'n/a (request never reached the server)' });
+    return { ok: false, error: describeError(err) };
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Full save pipeline: client sync → API fallback → local draft
+// ----------------------------------------------------------------------------
+
+/** Deterministic data problems the service-role server CANNOT fix either. */
+const DATA_SHAPE_PATTERNS: RegExp[] = [
+  /invalid input syntax/i,
+  /duplicate key|unique constraint/i,
+  /not null constraint|violat\w* null/i,
+  /value too long|invalid text representation/i,
+  /check constraint/i,
+  /must be a valid uuid/i,
+  /type \"uuid\"/i,
+];
+
+/**
+ * True when an error message is a deterministic data-shape rejection (bad
+ * uuid, duplicate subdomain, not-null violation…) — problems that would fail
+ * identically on the service-role server, so the API fallback is skipped.
+ * Auth/RLS, network and missing-schema errors are NOT data-shape problems:
+ * the service-role key fixes the first class and the server logs the rest.
+ */
+export function isDataShapeFailure(message: string): boolean {
+  return DATA_SHAPE_PATTERNS.some((re) => re.test(message || ''));
+}
+
+export interface SalonSaveOutcome {
+  /** True when the owner's progress is safely persisted somewhere. */
+  ok: boolean;
+  /** Where the state was finally persisted: cloud, service-role API, or local draft. */
+  target: 'cloud' | 'api' | 'local_draft';
+  /** True when the pending draft cache (nexora_draft_salon_data) now holds it. */
+  draftWritten: boolean;
+  /** Exact per-operation cloud errors (empty on a clean cloud success). */
+  errors: string[];
+  /** One-line human-readable summary (toast material). */
+  summary: string;
+}
+
+export interface SalonSavePipelineOptions {
+  /** The salon state to persist (SalonSyncPayload from salonSync.ts). */
+  payload: SalonSyncPayload;
+  /** Enable destructive (deleted-row) cleanup — only after a successful hydrate. */
+  deleteRemoved?: boolean;
+  /** Direct client-side Supabase sync (salonSync.syncSalonToSupabase). */
+  sync: (
+    payload: SalonSyncPayload,
+    options: { deleteRemoved?: boolean }
+  ) => Promise<SalonSyncResult>;
+  /** Server-side fallback. Defaults to saveViaWebsiteApi (POST /api/website/save). */
+  saveViaApi?: (payload: SalonSyncPayload) => Promise<ApiSaveResult>;
+  /** Local draft writer. Defaults to writeLocalDraft (nexora_draft_salon_data). */
+  writeDraft?: (state: {
+    ownerId: string;
+    profile: unknown;
+    services: unknown[];
+    stylists: unknown[];
+    loyaltyConfig: unknown;
+  }) => LocalStorageWriteResult;
+  /** True when Supabase is not configured (local mock session / free tier). */
+  isMockMode?: boolean;
+  /** True when the client holds a live, valid session for payload.ownerId. */
+  authenticated?: boolean;
+  /**
+   * The owner's live Supabase access token (session.access_token), forwarded
+   * to POST /api/website/save as `Authorization: Bearer <token>` so the
+   * server can prove the caller is payload.ownerId (identity binding — the
+   * service-role endpoint bypasses RLS and must authorize itself).
+   */
+  accessToken?: string;
+}
+
+/**
+ * Orchestrates the whole auto-save / manual-save persistence chain so the
+ * owner's progress can NEVER be lost and the editor is NEVER blocked:
+ *
+ *   0. Unauthenticated / local mock session / free tier without a linked
+ *      project → store the draft in localStorage `nexora_draft_salon_data`
+ *      and report SUCCESS (Local Draft). No crash, no blocking UI error.
+ *   1. Direct Supabase client sync (`syncSalonToSupabase`) — the normal path.
+ *   2. If that fails on network / auth / RLS / missing-schema errors, fall
+ *      back automatically to `POST /api/website/save`, which upserts with the
+ *      service-role key (bypasses RLS). Deterministic data-shape rejections
+ *      (bad uuid, duplicate subdomain…) skip the API — they'd fail identically
+ *      server-side.
+ *   3. If BOTH fail, cache the pending changes in the local draft store so
+ *      progress is never lost. The caller maps this to the SUCCESS (Local
+ *      Draft) status and suppresses duplicate error popups during background
+ *      typing (full diagnostics always go to the console).
+ *
+ * This function never throws.
+ */
+export async function runSalonSavePipeline(
+  options: SalonSavePipelineOptions
+): Promise<SalonSaveOutcome> {
+  const { payload } = options;
+  const sync = options.sync;
+  // Default fallback forwards the owner's access token so the server can
+  // bind the request to owner_id; a caller-injected saveViaApi (tests /
+  // custom backends) is used as-is with the plain payload signature.
+  const saveViaApi =
+    options.saveViaApi ??
+    ((p: SalonSyncPayload) => saveViaWebsiteApi(p, { accessToken: options.accessToken }));
+  const writeDraft = options.writeDraft ?? writeLocalDraft;
+
+  const draftState = {
+    ownerId: payload.ownerId,
+    profile: payload.profile,
+    services: payload.services,
+    stylists: payload.stylists,
+    loyaltyConfig: payload.loyaltyConfig,
+  };
+
+  const storeLocalDraft = (): { draftWritten: boolean; error?: string } => {
+    const result = writeDraft(draftState);
+    if (result.ok) return { draftWritten: true };
+    const error = result.error || 'unknown localStorage error';
+    console.error('[Nexora Sync Error]:', `local draft write failed (key: ${DRAFT_STORAGE_KEY}): ${error}`);
+    return { draftWritten: false, error };
+  };
+
+  // ---- 0) Unauthenticated / mock session → clean local draft, no error ----
+  if (options.isMockMode || !options.authenticated) {
+    const { draftWritten, error } = storeLocalDraft();
+    if (!draftWritten) {
+      return {
+        ok: false,
+        target: 'local_draft',
+        draftWritten: false,
+        errors: [`local storage: ${error}`],
+        summary: 'Local draft could not be written (storage unavailable).',
+      };
+    }
+    console.info(
+      `[Nexora Sync] No cloud session (unauthenticated owner or local/mock Supabase session) — ` +
+        `draft stored in localStorage["${DRAFT_STORAGE_KEY}"]. Save status: ${LOCAL_DRAFT_STATUS_LABEL}.`
+    );
+    return {
+      ok: true,
+      target: 'local_draft',
+      draftWritten: true,
+      errors: [],
+      summary:
+        'Saved as a local draft on this device — sign in to publish and sync to the cloud.',
+    };
+  }
+
+  // ---- 1) Direct Supabase client sync ------------------------------------
+  let cloud: SalonSyncResult;
+  try {
+    cloud = await sync(payload, { deleteRemoved: options.deleteRemoved });
+  } catch (err) {
+    // syncSalonToSupabase never throws — but a caller-injected sync could.
+    // Never let a broken sync crash the whole save: degrade to local draft.
+    const detail = describeError(err);
+    console.error(
+      '[Nexora Sync Error]:',
+      `direct Supabase sync threw (tables: profiles, services, stylists, loyalty_config, loyalty_rewards): ${detail}`
+    );
+    cloud = { ok: false, errors: [`direct supabase sync threw: ${detail}`], blockedByAuth: false };
+  }
+
+  if (cloud.ok) {
+    clearLocalDraft(); // the cloud now holds the state — drop any stale draft
+    return {
+      ok: true,
+      target: 'cloud',
+      draftWritten: false,
+      errors: [],
+      summary: 'Saved to the cloud.',
+    };
+  }
+
+  // ---- 2) Fallback: server-side save via the service-role API ------------
+  const onlyDataShapeFailures =
+    cloud.errors.length > 0 && cloud.errors.every((e) => isDataShapeFailure(e));
+
+  if (!onlyDataShapeFailures) {
+    console.warn(
+      '[Nexora Sync] Direct client sync failed (network/auth/RLS/schema) — ' +
+        'falling back to POST /api/website/save (Supabase service role).'
+    );
+    const api = await saveViaApi(payload);
+    if (api.ok) {
+      clearLocalDraft();
+      return {
+        ok: true,
+        target: 'api',
+        draftWritten: false,
+        errors: cloud.errors, // preserved for the console; the save itself succeeded
+        summary: 'Saved via the server (service role) after the direct sync failed.',
+      };
+    }
+    // api.error is already console-logged with the exact HTTP status.
+  } else {
+    console.warn(
+      '[Nexora Sync] Direct client sync failed with deterministic data errors — ' +
+        'skipping the API fallback (it would fail identically) and caching locally.'
+    );
+  }
+
+  // ---- 3) Last resort: cache the pending draft (progress never lost) -----
+  const { draftWritten, error } = storeLocalDraft();
+  console.error('[Nexora Sync Error]:', {
+    stage: 'all cloud save paths failed — changes cached as a local draft',
+    draftKey: DRAFT_STORAGE_KEY,
+    tables: 'profiles, services, stylists, loyalty_config, loyalty_rewards',
+    authBlocked: cloud.blockedByAuth ?? false,
+    cloudErrors: cloud.errors,
+    localError: error ?? null,
+  });
+  return {
+    ok: draftWritten,
+    target: 'local_draft',
+    draftWritten,
+    errors: [...cloud.errors, ...(error ? [`local storage: ${error}`] : [])],
+    summary: draftWritten
+      ? 'Cloud save failed — your changes are safely cached on this device as a local draft and will retry automatically.'
+      : 'Save failed — the cloud is unreachable and local storage is unavailable.',
+  };
 }
