@@ -88,7 +88,7 @@ export async function authenticateBookingRequest(
       signal: AbortSignal.timeout(Math.max(1, Math.min(4000, remaining))),
     });
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 400 || response.status === 401 || response.status === 403) {
       return {
         ok: false,
         status: 401,
@@ -122,11 +122,12 @@ export async function authenticateBookingRequest(
       },
     };
   } catch (error: any) {
+    console.warn('[Bookings] Supabase Auth verification request failed:', error?.message || error);
     return {
       ok: false,
       status: 503,
       code: 'auth_unavailable',
-      error: `The sign-in service could not be reached (${error?.message || 'network error'}). Please try again.`,
+      error: 'The sign-in service could not be reached. Please try again shortly.',
     };
   }
 }

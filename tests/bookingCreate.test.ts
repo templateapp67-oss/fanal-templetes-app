@@ -96,6 +96,7 @@ function makeDb(tables: Record<string, any>) {
 const baseDeps = (overrides: any = {}) => ({
   db: makeDb({}).db,
   isMock: false,
+  hasAdminClient: true,
   addMockBooking: () => {},
   addMockNotifications: () => {},
   resolveOwnerEmail: async () => 'owner@salon.com',
@@ -312,6 +313,8 @@ test('an authenticated customer can complete the normal mock booking path', asyn
   assert.equal(res.body.success, true);
   assert.equal(stored.length, 1);
   assert.equal(stored[0].customer_email, 'customer@example.com');
+  assert.equal(stored[0].user_id, null);
+  assert.equal(stored[0].metadata.user_id, 'customer-1');
 });
 
 test('handler answers 400 with field errors for an incomplete booking', async () => {

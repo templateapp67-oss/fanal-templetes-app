@@ -32,10 +32,13 @@ import {
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
 } from './dbGuard';
+import { safeDatabaseError, sendSafeError } from './safeError';
 
 export interface BookingRoutesDeps {
   db: any;
   isMock: boolean;
+  /** Explicit server-side service-role availability for live writes/reads. */
+  hasAdminClient?: boolean;
   getMockBookings: () => any[];
   setMockBookings?: (rows: any[]) => void;
   getMockNotifications: () => any[];
@@ -48,6 +51,24 @@ const byNewestFirst = (a: any, b: any) =>
   new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime();
 const ALLOWED_BOOKING_STATUSES = new Set(['pending', 'confirmed', 'cancelled', 'completed', 'reschedule_proposed']);
 
+function rejectMissingAdminClient(deps: BookingRoutesDeps, res: any, requestId: string): boolean {
+  // Production entrypoints pass an explicit false when only the anon client is
+  // available. Focused unit tests may omit the flag; that keeps the route
+  // helpers usable with lightweight database doubles without weakening the
+  // actual serverless guard.
+  if (deps.isMock || deps.hasAdminClient !== false) return false;
+  if (!responseAlreadyEnded(res)) {
+    res.status(503).json({
+      success: false,
+      code: 'supabase_not_configured',
+      requestId,
+      retryable: true,
+      error: 'The booking service is not connected to its database yet. Please try again later.',
+    });
+  }
+  return true;
+}
+
 /**
  * Resolve which salon a dashboard request is allowed to read.
  * Accepts `?owner_id=<uuid>`, `?subdomain=<slug>` or `?email=<owner email>`.
@@ -56,7 +77,7 @@ export async function resolveOwnerScope(
   deps: Pick<BookingRoutesDeps, 'db' | 'isMock'>,
   query: Record<string, any>,
   deadlineAt?: number
-): Promise<{ ownerId: string | null; error?: string }> {
+): Promise<{ ownerId: string | null; error?: string; errorStatus?: number }> {
   const ownerId = typeof query.owner_id === 'string' ? query.owner_id.trim() : '';
   if (isUuidLike(ownerId)) return { ownerId };
   if (ownerId) return { ownerId: null, error: `owner_id "${ownerId}" is not a valid uuid.` };
@@ -69,7 +90,10 @@ export async function resolveOwnerScope(
       () => deps.db.from('profiles').select('id').eq('subdomain', subdomain).maybeSingle(),
       { label: 'scope lookup by subdomain', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
     );
-    if (error) return { ownerId: null, error: error.message || 'Owner lookup failed.' };
+    if (error) {
+      const safe = safeDatabaseError(error, 'The salon could not be resolved right now.');
+      return { ownerId: null, error: safe.message, errorStatus: safe.status };
+    }
     if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id };
     return { ownerId: null, error: `No salon found for subdomain "${subdomain}".` };
   }
@@ -80,7 +104,10 @@ export async function resolveOwnerScope(
       () => deps.db.from('profiles').select('id').eq('email', email).maybeSingle(),
       { label: 'scope lookup by email', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
     );
-    if (error) return { ownerId: null, error: error.message || 'Owner lookup failed.' };
+    if (error) {
+      const safe = safeDatabaseError(error, 'The salon could not be resolved right now.');
+      return { ownerId: null, error: safe.message, errorStatus: safe.status };
+    }
     if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id };
     return { ownerId: null, error: `No salon account found for "${email}".` };
   }
@@ -95,6 +122,7 @@ export function createBookingsListHandler(deps: BookingRoutesDeps) {
   return async function listBookings(req: any, res: any): Promise<void> {
     const requestId = newRequestId('bkls');
     try {
+      if (rejectMissingAdminClient(deps, res, requestId)) return;
       const deadlineAt = res.locals?.requestDeadlineAt;
       if (deps.isMock) {
         const scope = typeof req.query?.owner_id === 'string' ? req.query.owner_id.trim() : '';
@@ -105,10 +133,16 @@ export function createBookingsListHandler(deps: BookingRoutesDeps) {
         return void res.json({ success: true, mode: 'mock', requestId, data: rows });
       }
 
-      const { ownerId, error: scopeError } = await resolveOwnerScope(deps, req.query || {}, deadlineAt);
+      const { ownerId, error: scopeError, errorStatus: scopeErrorStatus } = await resolveOwnerScope(deps, req.query || {}, deadlineAt);
       if (scopeError) {
         if (responseAlreadyEnded(res)) return;
-        return void res.status(400).json({ success: false, code: 'invalid_scope', requestId, error: scopeError });
+        return void res.status(scopeErrorStatus === 503 ? 503 : 400).json({
+          success: false,
+          code: scopeErrorStatus === 503 ? 'database_unavailable' : 'invalid_scope',
+          requestId,
+          error: scopeError,
+          ...(scopeErrorStatus === 503 ? { retryable: true } : {}),
+        });
       }
       if (!ownerId) {
         // Refusing beats leaking every salon's customer list.
@@ -136,11 +170,13 @@ export function createBookingsListHandler(deps: BookingRoutesDeps) {
       if (error) {
         console.error(`[Bookings] (${requestId}) List failed:`, error.message || error);
         if (responseAlreadyEnded(res)) return;
-        return void res.status(error.code === 'db_timeout' ? 503 : 500).json({
+        const safe = safeDatabaseError(error, 'Live bookings could not be loaded.');
+        return void res.status(safe.status).json({
           success: false,
-          code: error.code || 'db_error',
+          code: safe.code,
           requestId,
-          error: `Live bookings could not be loaded (${error.message || 'database error'}).`,
+          error: safe.message,
+          ...(safe.retryable ? { retryable: true } : {}),
         });
       }
 
@@ -149,11 +185,10 @@ export function createBookingsListHandler(deps: BookingRoutesDeps) {
     } catch (err: any) {
       console.error(`[Bookings] (${requestId}) List threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
-      res.status(500).json({
-        success: false,
-        code: 'unexpected_error',
+      sendSafeError(res, err, {
         requestId,
-        error: err?.message || 'Bookings could not be loaded.',
+        context: 'database',
+        fallbackMessage: 'Live bookings could not be loaded.',
       });
     }
   };
@@ -168,9 +203,14 @@ export function createBookingGetHandler(deps: BookingRoutesDeps) {
     const deadlineAt = res.locals?.requestDeadlineAt;
     const id = String(req.params?.id || '').trim();
     try {
+      if (rejectMissingAdminClient(deps, res, requestId)) return;
       if (!id) {
         if (responseAlreadyEnded(res)) return;
         return void res.status(400).json({ success: false, code: 'invalid_id', requestId, error: 'A booking id is required.' });
+      }
+      if (!deps.isMock && !isUuidLike(id)) {
+        if (responseAlreadyEnded(res)) return;
+        return void res.status(400).json({ success: false, code: 'invalid_id', requestId, error: 'The booking id must be a valid UUID.' });
       }
 
       if (deps.isMock) {
@@ -191,11 +231,13 @@ export function createBookingGetHandler(deps: BookingRoutesDeps) {
       if (error) {
         console.error(`[Bookings] (${requestId}) Fetch failed:`, error.message || error);
         if (responseAlreadyEnded(res)) return;
-        return void res.status(error.code === 'db_timeout' ? 503 : 500).json({
+        const safe = safeDatabaseError(error, 'This booking could not be loaded.');
+        return void res.status(safe.status).json({
           success: false,
-          code: error.code || 'db_error',
+          code: safe.code,
           requestId,
-          error: `This booking could not be loaded (${error.message || 'database error'}).`,
+          error: safe.message,
+          ...(safe.retryable ? { retryable: true } : {}),
         });
       }
       if (!data) {
@@ -207,11 +249,10 @@ export function createBookingGetHandler(deps: BookingRoutesDeps) {
     } catch (err: any) {
       console.error(`[Bookings] (${requestId}) Fetch threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
-      res.status(500).json({
-        success: false,
-        code: 'unexpected_error',
+      sendSafeError(res, err, {
         requestId,
-        error: err?.message || 'Booking could not be loaded.',
+        context: 'database',
+        fallbackMessage: 'This booking could not be loaded.',
       });
     }
   };
@@ -224,12 +265,16 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
   return async function updateBooking(req: any, res: any): Promise<void> {
     const requestId = newRequestId('bkup');
     try {
+      if (rejectMissingAdminClient(deps, res, requestId)) return;
       const deadlineAt = res.locals?.requestDeadlineAt;
       const { id, status, proposed_date, proposed_time_slot } = req.body ?? {};
       if (!id || !status) {
         return void res
           .status(400)
           .json({ success: false, code: 'invalid_request', requestId, error: 'id and status are required.' });
+      }
+      if (!deps.isMock && !isUuidLike(id)) {
+        return void res.status(400).json({ success: false, code: 'invalid_id', requestId, error: 'The booking id must be a valid UUID.' });
       }
       if (typeof status !== 'string' || !ALLOWED_BOOKING_STATUSES.has(status)) {
         return void res.status(400).json({
@@ -282,11 +327,13 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
         if (fetchError) {
           console.error(`[Bookings] (${requestId}) Failed to read booking for update:`, fetchError);
           if (responseAlreadyEnded(res)) return;
-        return void res.status(fetchError.code === 'db_timeout' ? 503 : 500).json({
+        const safe = safeDatabaseError(fetchError, 'The booking could not be loaded for update.');
+        return void res.status(safe.status).json({
             success: false,
-            code: fetchError.code || 'db_error',
+            code: safe.code,
             requestId,
-            error: fetchError.message,
+            error: safe.message,
+            ...(safe.retryable ? { retryable: true } : {}),
           });
         }
         if (!existing) {
@@ -301,11 +348,13 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
         if (updateError || !updated) {
           console.error(`[Bookings] (${requestId}) Failed to update booking:`, updateError);
           if (responseAlreadyEnded(res)) return;
-        return void res.status(updateError?.code === 'db_timeout' ? 503 : 500).json({
+        const safe = safeDatabaseError(updateError, 'Booking update failed.');
+        return void res.status(safe.status).json({
             success: false,
-            code: updateError?.code || 'db_error',
+            code: safe.code,
             requestId,
-            error: updateError?.message || 'Booking update failed.',
+            error: safe.message,
+            ...(safe.retryable ? { retryable: true } : {}),
           });
         }
         data = updated;
@@ -345,11 +394,10 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
     } catch (err: any) {
       console.error(`[Bookings] (${requestId}) Update threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
-      res.status(500).json({
-        success: false,
-        code: 'unexpected_error',
+      sendSafeError(res, err, {
         requestId,
-        error: err?.message || 'Booking update failed.',
+        context: 'database',
+        fallbackMessage: 'Booking update failed.',
       });
     }
   };
@@ -364,6 +412,7 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
     const deadlineAt = res.locals?.requestDeadlineAt;
     const email = typeof req.query?.email === 'string' ? req.query.email.trim() : '';
     try {
+      if (rejectMissingAdminClient(deps, res, requestId)) return;
       if (!email) {
         return void res
           .status(400)
@@ -390,11 +439,13 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
       if (error) {
         console.warn(`[Notifications] (${requestId}) List failed:`, error.message || error);
         if (responseAlreadyEnded(res)) return;
-        return void res.status(error.code === 'db_timeout' ? 503 : 500).json({
+        const safe = safeDatabaseError(error, 'Notifications could not be loaded.');
+        return void res.status(safe.status).json({
           success: false,
-          code: error.code || 'db_error',
+          code: safe.code,
           requestId,
-          error: `Notifications could not be loaded (${error.message || 'database error'}).`,
+          error: safe.message,
+          ...(safe.retryable ? { retryable: true } : {}),
         });
       }
       if (responseAlreadyEnded(res)) return;
@@ -402,11 +453,10 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
     } catch (err: any) {
       console.error(`[Notifications] (${requestId}) List threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
-      res.status(500).json({
-        success: false,
-        code: 'unexpected_error',
+      sendSafeError(res, err, {
         requestId,
-        error: err?.message || 'Notifications could not be loaded.',
+        context: 'database',
+        fallbackMessage: 'Notifications could not be loaded.',
       });
     }
   };
@@ -419,6 +469,7 @@ export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
   return async function markNotificationsRead(req: any, res: any): Promise<void> {
     const requestId = newRequestId('ntrd');
     try {
+      if (rejectMissingAdminClient(deps, res, requestId)) return;
       const deadlineAt = res.locals?.requestDeadlineAt;
       const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
       if (!email) {
@@ -445,11 +496,13 @@ export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
         // back on the next poll with no explanation anywhere.
         console.warn(`[Notifications] (${requestId}) Mark-read failed:`, error.message || error);
         if (responseAlreadyEnded(res)) return;
-        return void res.status(error.code === 'db_timeout' ? 503 : 500).json({
+        const safe = safeDatabaseError(error, 'Notifications could not be marked as read.');
+        return void res.status(safe.status).json({
           success: false,
-          code: error.code || 'db_error',
+          code: safe.code,
           requestId,
-          error: `Notifications could not be marked as read (${error.message || 'database error'}).`,
+          error: safe.message,
+          ...(safe.retryable ? { retryable: true } : {}),
         });
       }
       if (responseAlreadyEnded(res)) return;
@@ -457,11 +510,10 @@ export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
     } catch (err: any) {
       console.error(`[Notifications] (${requestId}) Mark-read threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
-      res.status(500).json({
-        success: false,
-        code: 'unexpected_error',
+      sendSafeError(res, err, {
         requestId,
-        error: err?.message || 'Notifications could not be marked as read.',
+        context: 'database',
+        fallbackMessage: 'Notifications could not be marked as read.',
       });
     }
   };

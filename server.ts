@@ -37,6 +37,7 @@ import {
 } from "./server/razorpay";
 import { createRazorpayWebhookHandler, isWebhookConfigured } from "./server/razorpayWebhook";
 import { asyncRoute } from "./server/expressSafety";
+import { safeDatabaseError, sendSafeError } from "./server/safeError";
 
 // Log (instead of silently dying on) stray async faults.
 installProcessGuards("server.ts");
@@ -373,11 +374,14 @@ async function startServer() {
     if (error) {
       // DB failure while resolving the tenant — JSON 500 (never "not found"),
       // so the SPA logs the real status instead of guessing.
-      return res.status(500).json({
+      const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
+      return res.status(safe.status).json({
         success: false,
         found: false,
         isTenant: true,
-        error: error?.message || 'Database read failed while loading this site.',
+        code: safe.code,
+        error: safe.message,
+        ...(safe.retryable ? { retryable: true } : {}),
       });
     }
     if (!tenant) {
@@ -422,10 +426,13 @@ async function startServer() {
 
       if (profileError) {
         console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, profileError);
-        return res.status(500).json({
+        const safe = safeDatabaseError(profileError, 'Database read failed while loading this site.');
+        return res.status(safe.status).json({
           success: false,
           found: false,
-          error: profileError.message || 'Database read failed while loading this site.',
+          code: safe.code,
+          error: safe.message,
+          ...(safe.retryable ? { retryable: true } : {}),
         });
       }
 
@@ -456,10 +463,13 @@ async function startServer() {
       const catalogueError = servicesError || stylistsError;
       if (catalogueError) {
         console.error(`[Site lookup] Failed to read catalogue for subdomain "${sub}":`, catalogueError);
-        return res.status(500).json({
+        const safe = safeDatabaseError(catalogueError, 'Database read failed while loading this site.');
+        return res.status(safe.status).json({
           success: false,
           found: false,
-          error: catalogueError.message || 'Database read failed while loading this site.',
+          code: safe.code,
+          error: safe.message,
+          ...(safe.retryable ? { retryable: true } : {}),
         });
       }
 
@@ -476,10 +486,9 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error(`[Site lookup] Unexpected error for subdomain "${sub}":`, err);
-      return res.status(500).json({
-        success: false,
-        found: false,
-        error: err?.message || 'Internal server error while loading this site.',
+      sendSafeError(res, err, {
+        context: 'database',
+        fallbackMessage: 'The site could not be loaded right now.',
       });
     }
   }));
@@ -495,7 +504,8 @@ async function startServer() {
   // ==========================================================================
   const bookingRouteDeps: BookingRoutesDeps = {
     db,
-    isMock: isMockSupabase,
+    isMock: bookingHandlerIsMock,
+    hasAdminClient: !!admin,
     getMockBookings: () => mockBookings,
     getMockNotifications: () => mockNotifications,
     setMockNotifications: (rows) => { mockNotifications = rows; },
@@ -554,6 +564,7 @@ async function startServer() {
     asyncRoute(createRazorpayWebhookHandler({
       db,
       isMock: isMockSupabase,
+      hasAdminClient: !!admin,
       getMockBookings: () => mockBookings,
       addMockNotifications: (rows) => { mockNotifications.push(...rows); },
       resolveOwnerEmail,
@@ -671,7 +682,7 @@ Return strictly valid JSON in this format:
       return res.json({
         success: false,
         imageUrl: null,
-        error: err?.message || "Failed to generate promotional image with AI.",
+        error: "Failed to generate promotional image with AI. Please try again.",
       });
     }
   }));
@@ -818,26 +829,24 @@ Return strictly JSON with the following keys:
     res.status(404).json({ success: false, error: 'API route not found' });
   });
 
-  // Global JSON error handler for better debugging.
-  // NOTE: must be registered AFTER the routes above — an error middleware
-  // registered before them never fires, so route crashes used to surface as
-  // opaque HTML error pages instead of this JSON payload. (Express 4 only
-  // forwards *synchronous* errors here; async route handlers are individually
-  // wrapped in try/catch above so rejected promises never escape as crashes.)
+  // Global JSON error handler. It is the final safety net for synchronous
+  // middleware failures; async routes are wrapped with asyncRoute above.
   app.use((err: any, _req: any, res: any, next: any) => {
-    if (res.headersSent) {
-      return next(err);
-    }
-    // Malformed JSON bodies (e.g. a truncated fetch payload) are client errors
-    // (400), not server crashes (500).
+    if (res.headersSent) return next(err);
     const isBodyError = err?.type === 'entity.parse.failed' || err?.type === 'entity.too.large';
     if (isBodyError) {
-      console.warn('[API] Malformed request body:', err?.message);
-      return res.status(err?.status || 400).json({ success: false, error: 'Malformed JSON request body.' });
+      console.warn('[API] Malformed request body.');
+      return res.status(err?.type === 'entity.too.large' ? 413 : 400).json({
+        success: false,
+        code: 'malformed_json',
+        error: 'Malformed JSON request body.',
+      });
     }
-    const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
-    console.error('Unhandled Server Error:', err);
-    res.status(status).json({ success: false, error: err?.message || 'Internal Server Error' });
+    console.error('[API] Unhandled server error:', err?.stack || err);
+    sendSafeError(res, err, {
+      requestId: res.locals?.requestId,
+      context: 'request',
+    });
   });
 
   if (process.env.NODE_ENV !== "production") {

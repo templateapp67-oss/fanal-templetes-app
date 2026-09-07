@@ -257,7 +257,7 @@ export function handleRazorpayConfig(_req: any, res: any): void {
     res.json({ success: true, configured: true, keyId, mode: keyId.startsWith('rzp_live_') ? 'live' : 'test' });
   } catch (err: any) {
     console.error('[Razorpay] config endpoint error:', err?.stack || err?.message || err);
-    res.status(500).json({ success: false, configured: false, error: err?.message || 'Razorpay config unavailable.' });
+    res.status(500).json({ success: false, configured: false, code: 'razorpay_config_error', error: 'Razorpay configuration is unavailable.' });
   }
 }
 
@@ -321,8 +321,7 @@ export async function handleCreateRazorpayOrder(req: any, res: any): Promise<voi
         ? 'The payment gateway took too long to respond. No payment was charged — please try again.'
         : unreachable
           ? 'Online payment is temporarily unreachable from the server. You can still confirm your booking and pay at the salon.'
-          : err?.message || 'Could not start the payment. Please try again.',
-      details: err?.message,
+          : 'The payment gateway could not start the order. No payment was charged — please try again.',
     });
   }
 }
@@ -378,6 +377,11 @@ export function handleVerifyRazorpayPayment(req: any, res: any): void {
     res.json({ success: true, verified: true, paymentId, orderId });
   } catch (err: any) {
     console.error('[Razorpay] Verification error:', err?.stack || err?.message || err);
-    res.status(500).json({ success: false, verified: false, error: err?.message || 'Payment verification failed.' });
+    res.status(500).json({
+      success: false,
+      verified: false,
+      code: 'payment_verification_error',
+      error: 'Payment verification could not be completed. Please try again.',
+    });
   }
 }

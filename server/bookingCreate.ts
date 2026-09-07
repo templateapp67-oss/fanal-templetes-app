@@ -171,6 +171,8 @@ export interface OwnerResolution {
   ownerId: string | null;
   /** Where the id came from — logged so misconfiguration is diagnosable. */
   source: 'payload' | 'subdomain' | 'owner-email' | 'env' | 'sole-profile' | 'mock' | 'unresolved';
+  /** A database/auth service failure occurred while resolving the tenant. */
+  unavailable?: boolean;
 }
 
 export interface ResolveOwnerOptions {
@@ -219,7 +221,10 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
       () => db.from('profiles').select('id').eq(column, value).maybeSingle(),
       { label: `owner lookup by ${column}`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
     );
-    if (error) console.warn(`[Bookings] Owner lookup by ${column} failed:`, error.message || error);
+    if (error) {
+      console.warn(`[Bookings] Owner lookup by ${column} failed:`, error.message || error);
+      return { ownerId: null, source: 'unresolved', unavailable: true };
+    }
     if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id, source: 'subdomain' };
   }
 
@@ -228,7 +233,10 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
       () => db.from('profiles').select('id').eq('email', ownerEmail).maybeSingle(),
       { label: 'owner lookup by email', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
     );
-    if (error) console.warn('[Bookings] Owner lookup by email failed:', error.message || error);
+    if (error) {
+      console.warn('[Bookings] Owner lookup by email failed:', error.message || error);
+      return { ownerId: null, source: 'unresolved', unavailable: true };
+    }
     if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id, source: 'owner-email' };
   }
 
@@ -240,7 +248,10 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
       timeoutMs: LOOKUP_DB_TIMEOUT_MS,
       deadlineAt,
     });
-    if (error) console.warn('[Bookings] Sole-owner lookup failed:', error.message || error);
+    if (error) {
+      console.warn('[Bookings] Sole-owner lookup failed:', error.message || error);
+      return { ownerId: null, source: 'unresolved', unavailable: true };
+    }
     if (Array.isArray(data) && data.length === 1 && isUuidLike((data as any)[0]?.id)) {
       return { ownerId: (data as any)[0].id, source: 'sole-profile' };
     }
@@ -255,7 +266,6 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
 
 export function describeDbError(error: any): { status: number; message: string } {
   const code = error?.code ? String(error.code) : '';
-  const raw = error?.message || 'Unknown database error';
   // A transport-level fault (connection reset, DNS, gateway 502/503) arrives
   // without a Postgres code — e.g. `TypeError: fetch failed`. It is temporary
   // and retryable, so answer 503 with a human sentence rather than a raw 500.
@@ -266,7 +276,7 @@ export function describeDbError(error: any): { status: number; message: string }
         message:
           code === 'db_timeout'
             ? 'The booking database is not responding right now. Nothing was charged — please try again in a minute.'
-            : `The booking database could not be reached (${raw}). Nothing was charged — please try again in a minute.`,
+            : 'The booking database could not be reached. Nothing was charged — please try again in a minute.',
       };
     }
   }
@@ -283,10 +293,10 @@ export function describeDbError(error: any): { status: number; message: string }
     case 'db_unreachable':
       return {
         status: 503,
-        message: `The booking database could not be reached (${raw}). Nothing was charged — please try again in a minute.`,
+        message: 'The booking database could not be reached. Nothing was charged — please try again in a minute.',
       };
     case '23502':
-      return { status: 422, message: `A required booking field was empty (${raw}).` };
+      return { status: 422, message: 'A required booking field was empty.' };
     case '23503':
       return {
         status: 422,
@@ -301,18 +311,18 @@ export function describeDbError(error: any): { status: number; message: string }
         message: 'A booking with these details already exists — it may have been created just now. Please refresh to see it, or retry once.',
       };
     case '23514':
-      return { status: 400, message: `The booking details were rejected by a database rule (${raw}).` };
+      return { status: 400, message: 'The booking details were rejected by a database rule.' };
     case '22P02':
-      return { status: 400, message: `One of the booking values has the wrong type (${raw}).` };
+      return { status: 400, message: 'One of the booking values has the wrong type.' };
     case '42703':
-      return { status: 500, message: `The bookings table is missing a column used by this build (${raw}).` };
+      return { status: 500, message: 'The bookings table is missing a column used by this build.' };
     case 'PGRST204':
       // PostgREST schema cache doesn't know a column we sent (migration not
       // applied yet). The handler retries without it first; reaching here means
       // even the reduced row failed.
       return {
         status: 500,
-        message: `The bookings table is out of date for this build (${raw}). Run the Supabase migrations.`,
+        message: 'The bookings table is out of date for this build. Run the Supabase migrations.',
       };
     case 'PGRST301':
     case '401':
@@ -328,7 +338,7 @@ export function describeDbError(error: any): { status: number; message: string }
         message: 'The server is not allowed to write bookings (Row Level Security). Set SUPABASE_SERVICE_ROLE_KEY.',
       };
     default:
-      return { status: 500, message: raw };
+      return { status: 500, message: 'The booking database rejected the request. Please try again.' };
   }
 }
 
@@ -516,7 +526,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
       // this check before verifying/accepting payment so a misconfigured
       // Vercel function never charges a customer and then discovers it cannot
       // persist the booking.
-      if (!deps.isMock && deps.hasAdminClient === false) {
+      if (!deps.isMock && deps.hasAdminClient !== true) {
         return void fail(
           503,
           'supabase_not_configured',
@@ -564,7 +574,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         normalizeSubdomain(body.subdomain) || normalizeSubdomain(booking?.subdomain) || tenantFromHost.subdomain;
       const customDomainHint = tenantFromHost.customDomain;
 
-      const { ownerId, source } = await resolveBookingOwnerId({
+      const { ownerId, source, unavailable: ownerLookupUnavailable } = await resolveBookingOwnerId({
         db: deps.db,
         isMock: deps.isMock,
         explicitOwnerId: body.owner_id ?? booking?.owner_id,
@@ -573,6 +583,15 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         ownerEmail: ownerEmailHint,
         deadlineAt,
       });
+
+      if (!deps.isMock && !ownerId && ownerLookupUnavailable) {
+        return void fail(
+          503,
+          'database_unavailable',
+          'The booking database is temporarily unavailable. Nothing was charged — please try again shortly.',
+          { retryable: true }
+        );
+      }
 
       if (!deps.isMock && !ownerId) {
         console.error(
@@ -595,6 +614,10 @@ export function createBookingHandler(deps: BookingCreateDeps) {
       const paymentWasVerified = !!verifiedPaymentId;
       const bookingRow = sanitizeBookingRow({
         ...validation.value,
+        // Never accept a client-supplied user_id. This is the verified
+        // Supabase customer identity returned by the auth gate. In local mock
+        // mode it is intentionally non-UUID and is retained in metadata.
+        user_id: authenticatedUser?.id,
         owner_id: ownerId,
         advance_paid_amount: paymentWasVerified ? validation.value.advance_paid_amount : 0,
         payment_id: verifiedPaymentId || validation.value.payment_id,
@@ -728,12 +751,14 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         `[Bookings] (${requestId}) Unhandled error while creating a booking:`,
         err?.stack || err?.message || err
       );
+      const transient = isTransientDbError(err);
       fail(
-        500,
-        'unexpected_error',
-        err?.message
-          ? `The booking could not be saved (${err.message}).`
-          : 'The booking could not be saved due to an unexpected server error.'
+        transient ? 503 : 500,
+        transient ? 'service_unavailable' : 'unexpected_error',
+        transient
+          ? 'The booking service is temporarily unavailable. Nothing was charged — please try again shortly.'
+          : 'The booking could not be saved due to an unexpected server error.',
+        transient ? { retryable: true } : {}
       );
     }
   };

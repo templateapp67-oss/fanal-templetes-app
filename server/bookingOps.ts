@@ -10,7 +10,7 @@
 
 /** Postgres `uuid`-shaped value (any version). */
 const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function isUuidLike(value: unknown): boolean {
   return typeof value === 'string' && UUID_RE.test(value);
@@ -19,6 +19,7 @@ export function isUuidLike(value: unknown): boolean {
 /** Every column the `bookings` table accepts (schema migration 00001). */
 const BOOKING_COLUMNS = new Set([
   'owner_id',
+  'user_id',
   'customer_name',
   'customer_phone',
   'customer_email',
@@ -36,28 +37,77 @@ const BOOKING_COLUMNS = new Set([
   'proposed_date',
   'proposed_time_slot',
   'notes',
+  'metadata',
 ]);
+
+export type BookingMetadata = Record<string, string | number | boolean | null>;
+
+const MAX_METADATA_VALUE_LENGTH = 500;
+
+function safeMetadataString(value: unknown): string {
+  if (typeof value === 'string') return value.slice(0, MAX_METADATA_VALUE_LENGTH);
+  if (value === null) return 'null';
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    const serialized = JSON.stringify(value);
+    return (typeof serialized === 'string' ? serialized : String(value)).slice(0, MAX_METADATA_VALUE_LENGTH);
+  } catch {
+    return String(value).slice(0, MAX_METADATA_VALUE_LENGTH);
+  }
+}
+
+function safeMetadataObject(value: unknown): BookingMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const metadata: BookingMetadata = {};
+  // Metadata is diagnostic context, not a second unbounded request body. Keep
+  // only shallow JSON primitives so a malformed client object cannot make the
+  // Supabase JSONB insert fail or consume excessive memory.
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>).slice(0, 32)) {
+    if (!/^[a-zA-Z0-9_.-]{1,80}$/.test(key)) continue;
+    if (raw === null || typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+      const primitive = raw as string | number | boolean | null;
+      metadata[key] = typeof primitive === 'string' ? primitive.slice(0, MAX_METADATA_VALUE_LENGTH) : primitive;
+    }
+  }
+  return metadata;
+}
 
 /**
  * Keep only columns the schema knows about. Previously an unknown key in the
  * client payload (e.g. a renamed field from a newer build) made the whole
  * insert fail with 'column … does not exist' — a silent, hard-to-trace 500.
- * `service_id`/`stylist-like` foreign keys are dropped (set null) when they are
- * not real UUIDs: the editor preview runs against local template ids such as
- * 'hs-1', which can never reference a DB row; the booking must still persist
- * with its denormalized service_name.
+ * UUID foreign keys are normalized before they reach Postgres. When a local
+ * template id such as `hs-1` is supplied, the FK column is set to null and
+ * the original value is retained under the same key in `metadata` JSONB.
+ * `user_id` is treated the same way, and is never populated from an
+ * unauthenticated client field.
  */
-export function sanitizeBookingRow(input: any): Record<string, any> {
+export function sanitizeBookingRow(input: unknown): Record<string, any> {
   const row: Record<string, any> = {};
-  if (!input || typeof input !== 'object') return row;
-  for (const [key, value] of Object.entries(input)) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return row;
+
+  const metadata = safeMetadataObject((input as Record<string, unknown>).metadata);
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (key === 'metadata') continue;
     if (!BOOKING_COLUMNS.has(key)) continue;
-    if ((key === 'service_id' || key === 'owner_id') && value !== null && value !== undefined) {
-      row[key] = isUuidLike(value) ? value : null;
+
+    if (key === 'service_id' || key === 'owner_id' || key === 'user_id') {
+      if (value === null || value === undefined) {
+        if (value === null) row[key] = null;
+        continue;
+      }
+      if (isUuidLike(value)) {
+        row[key] = value;
+      } else {
+        row[key] = null;
+        metadata[key] = safeMetadataString(value);
+      }
       continue;
     }
     if (value !== undefined) row[key] = value;
   }
+
+  if (Object.keys(metadata).length > 0) row.metadata = metadata;
   return row;
 }
 

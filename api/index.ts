@@ -28,6 +28,7 @@ import {
 } from "../server/dbGuard";
 import { installProcessGuards } from "../server/processGuards";
 import { asyncRoute, normalizeApiRequestUrl } from "../server/expressSafety";
+import { safeDatabaseError, sendSafeError } from "../server/safeError";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
@@ -351,11 +352,14 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
   if (error) {
     // DB failure while resolving the tenant — JSON 500 (never "not found"),
     // so the SPA logs the real status instead of guessing.
-    return res.status(500).json({
+    const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
+    return res.status(safe.status).json({
       success: false,
       found: false,
       isTenant: true,
-      error: error?.message || 'Database read failed while loading this site.',
+      code: safe.code,
+      error: safe.message,
+      ...(safe.retryable ? { retryable: true } : {}),
     });
   }
   if (!tenant) {
@@ -399,10 +403,13 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
 
     if (profileError) {
       console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, profileError);
-      return res.status(500).json({
+      const safe = safeDatabaseError(profileError, 'Database read failed while loading this site.');
+      return res.status(safe.status).json({
         success: false,
         found: false,
-        error: profileError.message || 'Database read failed while loading this site.',
+        code: safe.code,
+        error: safe.message,
+        ...(safe.retryable ? { retryable: true } : {}),
       });
     }
 
@@ -433,10 +440,13 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
     const catalogueError = servicesError || stylistsError;
     if (catalogueError) {
       console.error(`[Site lookup] Failed to read catalogue for subdomain "${sub}":`, catalogueError);
-      return res.status(500).json({
+      const safe = safeDatabaseError(catalogueError, 'Database read failed while loading this site.');
+      return res.status(safe.status).json({
         success: false,
         found: false,
-        error: catalogueError.message || 'Database read failed while loading this site.',
+        code: safe.code,
+        error: safe.message,
+        ...(safe.retryable ? { retryable: true } : {}),
       });
     }
 
@@ -453,10 +463,9 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
     });
   } catch (err: any) {
     console.error(`[Site lookup] Unexpected error for subdomain "${sub}":`, err);
-    return res.status(500).json({
-      success: false,
-      found: false,
-      error: err?.message || 'Internal server error while loading this site.',
+    sendSafeError(res, err, {
+      context: 'database',
+      fallbackMessage: 'The site could not be loaded right now.',
     });
   }
 }));
@@ -468,7 +477,8 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
 // ============================================================================
 const bookingRouteDeps: BookingRoutesDeps = {
   db,
-  isMock: isMockSupabase,
+  isMock: bookingHandlerIsMock,
+  hasAdminClient: !!admin,
   getMockBookings: () => mockBookings,
   getMockNotifications: () => mockNotifications,
   setMockNotifications: (rows) => { mockNotifications = rows; },
@@ -521,6 +531,7 @@ app.post(
   asyncRoute(createRazorpayWebhookHandler({
     db,
     isMock: isMockSupabase,
+    hasAdminClient: !!admin,
     getMockBookings: () => mockBookings,
     addMockNotifications: (rows) => { mockNotifications.push(...rows); },
     resolveOwnerEmail,
@@ -628,7 +639,7 @@ app.post("/api/generate-promo-image", withRequestTimeout(API_REQUEST_TIMEOUT_MS)
     return res.json({
       success: false,
       imageUrl: null,
-      error: err?.message || "Failed to generate promotional image with AI.",
+      error: "Failed to generate promotional image with AI. Please try again.",
     });
   }
 }));
@@ -775,14 +786,16 @@ app.use((err: any, _req: any, res: any, next: any) => {
   const isBodyError = err?.type === 'entity.parse.failed' || err?.type === 'entity.too.large';
   if (isBodyError) {
     // Malformed JSON body (e.g. a truncated fetch payload) → 400, never 500.
-    return res.status(err?.status || 400).json({ success: false, error: 'Malformed JSON request body.' });
+    return res.status(err?.type === 'entity.too.large' ? 413 : 400).json({
+      success: false,
+      code: 'malformed_json',
+      error: 'Malformed JSON request body.',
+    });
   }
-  const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
-  console.error('[API] Unhandled server error:', err);
-  res.status(status).json({
-    success: false,
-    error: err?.message || 'Internal Server Error',
-    ...(status >= 500 ? { details: err?.message || undefined } : {}),
+  console.error('[API] Unhandled server error:', err?.stack || err);
+  sendSafeError(res, err, {
+    requestId: res.locals?.requestId,
+    context: 'request',
   });
 });
 

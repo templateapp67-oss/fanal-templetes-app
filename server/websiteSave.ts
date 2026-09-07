@@ -21,6 +21,7 @@
 //   400  { success: false, error }               — subdomain / owner_id missing
 //   401  { success: false, error: "Unauthorized" } — live mode: no/invalid access
 //          token, or the token belongs to a different user than owner_id
+//   503  { success: false, code: "supabase_not_configured" } — missing server config
 //   500  { error: "Failed to persist site state" } — any persistence failure
 //
 // AUTH MODEL: the service role bypasses RLS, so RLS is NOT the authorization
@@ -219,7 +220,12 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         syncError(
           "POST /api/website/save cannot persist — SUPABASE_SERVICE_ROLE_KEY is not configured server-side. Refusing to write through the anon client (RLS would reject it). Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
         );
-        return res.status(500).json({ error: "Failed to persist site state" });
+        return res.status(503).json({
+          success: false,
+          code: 'supabase_not_configured',
+          retryable: true,
+          error: 'The site database is not configured on this server. Please try again later.',
+        });
       }
 
       const profileRow = toProfileRow(profile, ownerId);

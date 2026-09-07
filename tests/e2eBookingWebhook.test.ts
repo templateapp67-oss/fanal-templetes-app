@@ -169,6 +169,7 @@ test('POST /api/bookings/create stores an authenticated booking (no owner id sen
   // Template (non-uuid) service ids must never reach Postgres as invalid FK.
   assert.equal(r.body.data.service_id, null);
   assert.equal(r.body.data.service_name, VALID_BOOKING.service_name);
+  assert.equal(r.body.data.metadata.service_id, VALID_BOOKING.service_id);
 });
 
 test('POST /api/bookings/create accepts a booking missing every optional field', async (t) => {

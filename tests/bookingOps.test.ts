@@ -28,13 +28,23 @@ test('sanitizeBookingRow drops non-UUID service/owner ids but keeps service_name
   assert.equal(row.service_id, null);
   assert.equal(row.service_name, 'Hair Spa');
   assert.equal(row.booking_date, '2026-09-20');
+  assert.deepEqual(row.metadata, { owner_id: 'owner@salon.com', service_id: 'hs-1' });
   assert.ok(!('unknown_column_from_newer_build' in row));
 });
 
 test('sanitizeBookingRow keeps valid uuid foreign keys untouched', () => {
-  const row = sanitizeBookingRow({ service_id: UUID, owner_id: UUID, service_name: 'Cut' });
+  const row = sanitizeBookingRow({ service_id: UUID, owner_id: UUID, user_id: UUID, service_name: 'Cut' });
   assert.equal(row.service_id, UUID);
   assert.equal(row.owner_id, UUID);
+  assert.equal(row.user_id, UUID);
+  assert.equal(row.metadata, undefined);
+});
+
+test('sanitizeBookingRow nulls a non-UUID user id and retains the raw value in metadata', () => {
+  const row = sanitizeBookingRow({ user_id: 'mock-user-123', service_id: 'hs-1' });
+  assert.equal(row.user_id, null);
+  assert.equal(row.service_id, null);
+  assert.deepEqual(row.metadata, { user_id: 'mock-user-123', service_id: 'hs-1' });
 });
 
 test('sanitizeBookingRow tolerates null/undefined/garbage input', () => {

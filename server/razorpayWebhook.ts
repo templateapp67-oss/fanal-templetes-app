@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto';
 import { runDb, DEFAULT_DB_TIMEOUT_MS, LOOKUP_DB_TIMEOUT_MS, responseAlreadyEnded } from './dbGuard';
+import { sendSafeError } from './safeError';
 
 /** Events we act on. Anything else is acknowledged and ignored. */
 export const HANDLED_EVENTS = new Set([
@@ -119,6 +120,7 @@ export function extractWebhookFacts(body: any): WebhookFacts {
 export interface WebhookDeps {
   db: any;
   isMock: boolean;
+  hasAdminClient?: boolean;
   /** Live in-memory bookings array (mock mode). */
   getMockBookings: () => any[];
   addMockNotifications: (rows: any[]) => void;
@@ -153,6 +155,14 @@ export function createRazorpayWebhookHandler(deps: WebhookDeps) {
   return async function handleRazorpayWebhook(req: any, res: any): Promise<void> {
     const deadlineAt = res.locals?.requestDeadlineAt;
     try {
+      if (!deps.isMock && deps.hasAdminClient === false) {
+        return void res.status(503).json({
+          success: false,
+          code: 'supabase_not_configured',
+          error: 'The booking service is not connected to its database yet. Please try again later.',
+          retryable: true,
+        });
+      }
       const secret = readWebhookSecret();
       if (!secret) {
         console.error(
@@ -209,10 +219,15 @@ export function createRazorpayWebhookHandler(deps: WebhookDeps) {
       res.json({ success: true, received: true, event: facts.event, handled: true, ...result });
     } catch (err: any) {
       if (responseAlreadyEnded(res)) return;
-      // 500 → Razorpay retries with backoff, which is what we want for a
-      // transient database/runtime fault.
+      // A database/runtime fault must remain a non-2xx response so Razorpay
+      // retries it, but the browser-facing body must never contain the raw
+      // exception or an HTML platform error page.
       console.error('[Razorpay webhook] Unhandled error:', err?.stack || err?.message || err);
-      res.status(500).json({ success: false, error: err?.message || 'Webhook processing failed.' });
+      sendSafeError(res, err, {
+        context: 'database',
+        fallbackCode: 'webhook_processing_failed',
+        fallbackMessage: 'Webhook update failed. Razorpay may retry automatically.',
+      });
     }
   };
 }
