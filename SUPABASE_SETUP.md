@@ -156,10 +156,12 @@ You can find your user id in **Authentication → Users**.
 | `bookings` | owner | owner (trusted server uses `service_role`) |
 | `in_app_notifications` | owner or matching `user_email` | trusted server |
 
-Guest bookings flow through the **Express server** (`/api/bookings/create`) or
-the **Edge Function** (`/functions/v1/bookings`), which run with the
-`service_role` key and therefore bypass RLS. That is why the public booking
-form works without the customer logging in.
+Authenticated customer bookings flow through the **Express server**
+(`/api/bookings/create`) or the **Edge Function** (`/functions/v1/bookings`).
+Those server-side writes use the `service_role` key and therefore bypass RLS,
+but both surfaces verify the customer's bearer token before accepting a
+booking. The public salon page is readable without an account; the booking
+flow is not.
 
 ---
 
@@ -302,11 +304,11 @@ schema/RLS change). Items 1–3 are hard gates; 4–6 are hygiene.
      route) with an explicit admin-identity check, using the service role —
      do NOT extend `/api/website/save` for it (it is single-owner upsert
      semantics by design: five tables, no deletes). Precedent in this repo:
-     `server/bookingOps.ts` — guest booking writes already run server-side
+     `server/bookingOps.ts` — authenticated booking writes already run server-side
      only.
 4. **`bookings` is never RLS-disabled.** The test-disable helper script
-   deliberately excludes it; guest traffic on that table must stay
-   service-role-only in every environment.
+   deliberately excludes it; authenticated booking traffic on that table must
+   stay service-role-only in every environment.
 5. **Secrets hygiene.** `SUPABASE_SERVICE_ROLE_KEY` must never appear in
    client code, `.env` files that ship to the browser, or commit history
    (rotate via the dashboard if it ever does).
@@ -317,7 +319,7 @@ schema/RLS change). Items 1–3 are hard gates; 4–6 are hygiene.
 
 ---
 
-## 11. Troubleshooting a failed guest booking ("Server error (HTTP 500)")
+## 11. Troubleshooting a failed authenticated booking ("Server error (HTTP 500)")
 
 **Step 1 — ask the API what is wrong:**
 
@@ -331,9 +333,9 @@ and a `problems[]` list. Secrets are never echoed — only whether they exist.
 | `problems[]` entry | What it means | Fix |
 |---|---|---|
 | `SUPABASE_ANON_KEY … is missing` | Only the URL (± service-role key) is configured. Before the fix this **crashed the API at import time**, so every `/api/*` route answered an un-parseable HTML 500 — the exact "Server error (HTTP 500)" the checkout reported. | Set `SUPABASE_ANON_KEY` (or `VITE_SUPABASE_ANON_KEY`) in the hosting environment and redeploy. |
-| `SUPABASE_SERVICE_ROLE_KEY is missing` | The API writes with the anon key, so RLS rejects guest bookings (`42501`). | Set `SUPABASE_SERVICE_ROLE_KEY` server-side (never in the browser bundle). |
+| `SUPABASE_SERVICE_ROLE_KEY is missing` | The API writes with the anon key, so RLS rejects authenticated booking writes (`42501`). | Set `SUPABASE_SERVICE_ROLE_KEY` server-side (never in the browser bundle). |
 | `Cannot read the bookings table: …` | Migrations not applied, or the project is paused. | Run `supabase/migrations/00001_init.sql`, then `20260907_owner_save_grants.sql`. |
-| `No salon profile exists …` | A guest booking cannot resolve the NOT NULL `owner_id`. | Publish the salon (so `profiles.subdomain` matches the site host) or set `DEFAULT_OWNER_ID`. |
+| `No salon profile exists …` | An authenticated booking cannot resolve the NOT NULL `owner_id`. | Publish the salon (so `profiles.subdomain` matches the site host) or set `DEFAULT_OWNER_ID`. |
 
 **Step 2 — read the answer the customer got.** Every booking response now
 includes a `requestId` (e.g. `bk_mtr1lwx3ijor83`) and a `code`:

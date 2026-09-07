@@ -181,11 +181,12 @@ create trigger trg_stylists_updated_at
   for each row execute procedure public.set_updated_at();
 
 -- ============================================================================
--- BOOKINGS (guest bookings; written via trusted server/service-role)
+-- BOOKINGS (authenticated customer bookings; written via trusted server/service-role)
 -- ============================================================================
 create table if not exists public.bookings (
   id                  uuid primary key default gen_random_uuid(),
   owner_id            uuid not null references auth.users(id) on delete cascade,
+  user_id             uuid references auth.users(id) on delete set null,
   customer_name       text not null,
   customer_phone      text,
   customer_email      text,
@@ -203,6 +204,7 @@ create table if not exists public.bookings (
   proposed_date       date,
   proposed_time_slot  text,
   notes               text,
+  metadata            jsonb not null default '{}'::jsonb,
   created_at          timestamptz default now(),
   updated_at          timestamptz default now()
 );

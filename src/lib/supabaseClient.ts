@@ -96,7 +96,7 @@ if (hasUrl && !hasAnonKey && hasServiceKey && !isBrowser) {
 }
 if (hasUrl && hasAnonKey && !hasServiceKey && !isBrowser) {
   configIssues.push(
-    'SUPABASE_SERVICE_ROLE_KEY is missing — server writes (guest bookings) will be blocked by Row Level Security.'
+    'SUPABASE_SERVICE_ROLE_KEY is missing — server booking writes will be blocked by Row Level Security.'
   );
 }
 

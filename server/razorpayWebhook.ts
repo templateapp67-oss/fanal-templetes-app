@@ -24,6 +24,8 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
+import { runDb, DEFAULT_DB_TIMEOUT_MS, LOOKUP_DB_TIMEOUT_MS, responseAlreadyEnded } from './dbGuard';
+import { sendSafeError } from './safeError';
 
 /** Events we act on. Anything else is acknowledged and ignored. */
 export const HANDLED_EVENTS = new Set([
@@ -118,10 +120,11 @@ export function extractWebhookFacts(body: any): WebhookFacts {
 export interface WebhookDeps {
   db: any;
   isMock: boolean;
+  hasAdminClient?: boolean;
   /** Live in-memory bookings array (mock mode). */
   getMockBookings: () => any[];
   addMockNotifications: (rows: any[]) => void;
-  resolveOwnerEmail: (ownerId: string | null | undefined) => Promise<string>;
+  resolveOwnerEmail: (ownerId: string | null | undefined, deadlineAt?: number) => Promise<string>;
 }
 
 /** Human message for the salon owner's notification bell. */
@@ -150,7 +153,16 @@ function notificationFor(facts: WebhookFacts, booking: any): { title: string; me
 
 export function createRazorpayWebhookHandler(deps: WebhookDeps) {
   return async function handleRazorpayWebhook(req: any, res: any): Promise<void> {
+    const deadlineAt = res.locals?.requestDeadlineAt;
     try {
+      if (!deps.isMock && deps.hasAdminClient === false) {
+        return void res.status(503).json({
+          success: false,
+          code: 'supabase_not_configured',
+          error: 'The booking service is not connected to its database yet. Please try again later.',
+          retryable: true,
+        });
+      }
       const secret = readWebhookSecret();
       if (!secret) {
         console.error(
@@ -180,9 +192,16 @@ export function createRazorpayWebhookHandler(deps: WebhookDeps) {
         return void res.status(400).json({ success: false, error: 'Invalid webhook signature.' });
       }
 
-      const body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)
-        ? req.body
-        : JSON.parse(String(rawBody));
+      let body: any;
+      try {
+        body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)
+          ? req.body
+          : JSON.parse(String(rawBody));
+      } catch {
+        // A valid HMAC over malformed JSON is still a bad webhook payload, not
+        // an internal error worth retrying forever.
+        return void res.status(400).json({ success: false, error: 'Malformed webhook JSON.' });
+      }
 
       const facts = extractWebhookFacts(body);
       console.log(
@@ -195,13 +214,20 @@ export function createRazorpayWebhookHandler(deps: WebhookDeps) {
         return void res.json({ success: true, received: true, event: facts.event, handled: false });
       }
 
-      const result = await applyWebhookToBooking(deps, facts);
+      const result = await applyWebhookToBooking(deps, facts, deadlineAt);
+      if (responseAlreadyEnded(res)) return;
       res.json({ success: true, received: true, event: facts.event, handled: true, ...result });
     } catch (err: any) {
-      // 500 → Razorpay retries with backoff, which is what we want for a
-      // transient database/runtime fault.
+      if (responseAlreadyEnded(res)) return;
+      // A database/runtime fault must remain a non-2xx response so Razorpay
+      // retries it, but the browser-facing body must never contain the raw
+      // exception or an HTML platform error page.
       console.error('[Razorpay webhook] Unhandled error:', err?.stack || err?.message || err);
-      res.status(500).json({ success: false, error: err?.message || 'Webhook processing failed.' });
+      sendSafeError(res, err, {
+        context: 'database',
+        fallbackCode: 'webhook_processing_failed',
+        fallbackMessage: 'Webhook update failed. Razorpay may retry automatically.',
+      });
     }
   };
 }
@@ -213,7 +239,8 @@ export function createRazorpayWebhookHandler(deps: WebhookDeps) {
  */
 async function applyWebhookToBooking(
   deps: WebhookDeps,
-  facts: WebhookFacts
+  facts: WebhookFacts,
+  deadlineAt?: number
 ): Promise<{ bookingId?: string; updated: boolean; reason?: string }> {
   // The booking row stores either the Razorpay payment id (browser flow
   // completed) or the NX-… reference (customer left before we heard back).
@@ -243,12 +270,16 @@ async function applyWebhookToBooking(
     return { bookingId: booking.id, updated: true };
   }
 
-  const { data, error } = await deps.db.from('bookings').select('*').in('payment_id', ids).limit(1);
-  if (error) {
-    // Throw so the outer catch answers 500 and Razorpay retries.
-    throw new Error(`Booking lookup failed: ${error.message || error}`);
+  const lookup = await runDb(
+    () => deps.db.from('bookings').select('*').in('payment_id', ids).limit(1),
+    { label: 'Razorpay webhook booking lookup', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
+  );
+  if (lookup.error) {
+    // Throw so the outer catch answers 500 and Razorpay retries. The timeout
+    // guard still prevents a dead Supabase project from becoming an HTML 500.
+    throw new Error(`Booking lookup failed: ${lookup.error.message || lookup.error}`);
   }
-  const booking = Array.isArray(data) ? data[0] : data;
+  const booking = Array.isArray(lookup.data) ? lookup.data[0] : lookup.data;
   if (!booking) {
     console.warn(`[Razorpay webhook] No booking matches ${ids.join(' / ')} — acknowledged without changes.`);
     return { updated: false, reason: 'booking not found' };
@@ -265,19 +296,25 @@ async function applyWebhookToBooking(
   }
   if (facts.nextPaymentStatus === 'refunded') changes.advance_paid_amount = 0;
 
-  const { error: updateError } = await deps.db.from('bookings').update(changes).eq('id', booking.id);
-  if (updateError) throw new Error(`Booking update failed: ${updateError.message || updateError}`);
+  const updateResult = await runDb(
+    () => deps.db.from('bookings').update(changes).eq('id', booking.id),
+    { label: 'Razorpay webhook booking update', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+  );
+  if (updateResult.error) throw new Error(`Booking update failed: ${updateResult.error.message || updateResult.error}`);
   console.log(`[Razorpay webhook] Booking ${booking.id} → ${facts.nextPaymentStatus}`);
 
   const note = notificationFor(facts, booking);
   if (note) {
     try {
-      const ownerEmail = await deps.resolveOwnerEmail(booking.owner_id);
+      const ownerEmail = await deps.resolveOwnerEmail(booking.owner_id, deadlineAt);
       const rows: any[] = [{ user_email: ownerEmail, ...note }];
       if (booking.customer_email) rows.push({ user_email: booking.customer_email, ...note });
-      const { error: notifError } = await deps.db.from('in_app_notifications').insert(rows);
+      const notifResult = await runDb(
+        () => deps.db.from('in_app_notifications').insert(rows),
+        { label: 'Razorpay webhook notification', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
+      );
       // A notification failure must never make Razorpay retry a processed event.
-      if (notifError) console.warn('[Razorpay webhook] Notification insert failed:', notifError.message || notifError);
+      if (notifResult.error) console.warn('[Razorpay webhook] Notification insert failed:', notifResult.error.message || notifResult.error);
     } catch (notifErr: any) {
       console.warn('[Razorpay webhook] Notification insert threw:', notifErr?.message || notifErr);
     }

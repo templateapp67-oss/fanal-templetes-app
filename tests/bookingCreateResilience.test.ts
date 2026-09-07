@@ -88,6 +88,7 @@ function makeDb(handlers: {
 const deps = (db: any, overrides: any = {}) => ({
   db,
   isMock: false,
+  hasAdminClient: true,
   addMockBooking: () => {},
   addMockNotifications: () => {},
   resolveOwnerEmail: async () => 'owner@real.com',

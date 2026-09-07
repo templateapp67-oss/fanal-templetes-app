@@ -21,6 +21,7 @@ import {
 } from '../server/bookingRoutes';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
+const BOOKING_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER = '3f0d9a2e-5c4b-4a1d-8b7e-11223344aabb';
 
 function makeRes() {
@@ -65,7 +66,7 @@ function makeDb(script: Record<string, any>) {
       update(values: any) {
         state.op = 'update';
         state.values = values;
-        const result = script[table]?.update ?? { data: { id: 'b1', ...values }, error: null };
+        const result = script[table]?.update ?? { data: { id: BOOKING_ID, ...values }, error: null };
         const thenable: any = Promise.resolve(result);
         thenable.eq = (column: string, value: any) => {
           state.filters[column] = value;
@@ -117,7 +118,7 @@ test('GET /api/bookings refuses to list every salon when no scope is given', asy
 
 test('GET /api/bookings filters by the requested owner id', async () => {
   const { db, seen } = makeDb({
-    bookings: { select: { data: [{ id: 'b1', owner_id: OWNER }], error: null } },
+    bookings: { select: { data: [{ id: BOOKING_ID, owner_id: OWNER }], error: null } },
   });
   const handler = createBookingsListHandler(baseDeps({ db }));
   const res = makeRes();
@@ -156,9 +157,9 @@ test('a database failure is reported, not masked as an empty booking list', asyn
   const res = makeRes();
   await handler({ query: { owner_id: OWNER } }, res);
 
-  assert.equal(res.statusCode, 500);
+  assert.equal(res.statusCode, 503);
   assert.equal(res.body.success, false);
-  assert.match(res.body.error, /permission denied/);
+  assert.doesNotMatch(res.body.error, /permission denied/i);
 });
 
 test('a hung bookings query answers 503 rather than hanging the dashboard', async () => {
@@ -178,7 +179,7 @@ test('GET /api/bookings/:id answers 404 (not 500) for an unknown booking', async
   const { db } = makeDb({ bookings: { maybeSingle: { data: null, error: null } } });
   const handler = createBookingGetHandler(baseDeps({ db }));
   const res = makeRes();
-  await handler({ params: { id: 'missing' } }, res);
+  await handler({ params: { id: BOOKING_ID } }, res);
   assert.equal(res.statusCode, 404);
   assert.equal(res.body.code, 'not_found');
 });
@@ -190,14 +191,25 @@ test('GET /api/bookings/:id answers 404 (not 500) for an unknown booking', async
 test('proposing a reschedule without a slot is rejected before touching the DB', async () => {
   const handler = createBookingUpdateHandler(baseDeps());
   const res = makeRes();
-  await handler({ body: { id: 'b1', status: 'reschedule_proposed' } }, res);
+  await handler({ body: { id: BOOKING_ID, status: 'reschedule_proposed' } }, res);
   assert.equal(res.statusCode, 400);
   assert.match(res.body.error, /proposed date and time/i);
 });
 
+test('rescheduling rejects an impossible ISO date before touching the database', async () => {
+  const handler = createBookingUpdateHandler(baseDeps());
+  const res = makeRes();
+  await handler(
+    { body: { id: BOOKING_ID, status: 'reschedule_proposed', proposed_date: '2026-02-29', proposed_time_slot: '10:00' } },
+    res
+  );
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'invalid_date');
+});
+
 test('confirming a proposed booking promotes the slot and clears the proposal', async () => {
   const existing = {
-    id: 'b1',
+    id: BOOKING_ID,
     owner_id: OWNER,
     booking_date: '2026-10-02',
     time_slot: '11:30',
@@ -213,7 +225,7 @@ test('confirming a proposed booking promotes the slot and clears the proposal', 
   });
   const handler = createBookingUpdateHandler(baseDeps({ db }));
   const res = makeRes();
-  await handler({ body: { id: 'b1', status: 'confirmed' } }, res);
+  await handler({ body: { id: BOOKING_ID, status: 'confirmed' } }, res);
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.data.booking_date, '2026-10-05');
@@ -226,14 +238,14 @@ test('confirming a proposed booking promotes the slot and clears the proposal', 
 test('a failed update surfaces as an error instead of a fake success', async () => {
   const { db } = makeDb({
     bookings: {
-      maybeSingle: { data: { id: 'b1', owner_id: OWNER }, error: null },
+      maybeSingle: { data: { id: BOOKING_ID, owner_id: OWNER }, error: null },
       update: { data: null, error: { code: '42501', message: 'permission denied' } },
     },
   });
   const handler = createBookingUpdateHandler(baseDeps({ db }));
   const res = makeRes();
-  await handler({ body: { id: 'b1', status: 'confirmed' } }, res);
-  assert.equal(res.statusCode, 500);
+  await handler({ body: { id: BOOKING_ID, status: 'confirmed' } }, res);
+  assert.equal(res.statusCode, 503);
   assert.equal(res.body.success, false);
 });
 
@@ -255,9 +267,9 @@ test('POST /api/notifications/read reports a failed update instead of claiming s
   const handler = createNotificationsReadHandler(baseDeps({ db }));
   const res = makeRes();
   await handler({ body: { email: 'owner@real.com' } }, res);
-  assert.equal(res.statusCode, 500);
+  assert.equal(res.statusCode, 503);
   assert.equal(res.body.success, false);
-  assert.match(res.body.error, /marked as read/i);
+  assert.match(res.body.error, /database is not configured|notifications could not be marked/i);
 });
 
 test('POST /api/notifications/read succeeds in mock mode and flips the rows', async () => {

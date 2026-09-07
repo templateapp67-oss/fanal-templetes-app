@@ -29,6 +29,7 @@ import {
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS } from '../mockData';
 import { payAdvanceWithRazorpay } from '../lib/razorpayCheckout';
+import { isMockSupabase, supabase } from '../lib/supabaseClient';
 
 export interface BookingModalProps {
   isOpen: boolean;
@@ -58,6 +59,10 @@ export interface BookingModalProps {
   salonName?: string;
   currency?: string;
   onConfirmBooking?: (bookingData: any) => void;
+  /** The signed-in customer. Booking creation is unavailable without it. */
+  user?: { id?: string; email?: string } | null;
+  /** Opens the existing login/signup flow without discarding this form. */
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
 type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
@@ -102,7 +107,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   stylistsList: aliasStylistsList,
   salonName: aliasSalonName,
   currency: aliasCurrency,
-  onConfirmBooking: aliasOnConfirmBooking
+  onConfirmBooking: aliasOnConfirmBooking,
+  user,
+  onRequireAuth,
 }) => {
   // Safe resolved values
   const profile = inputProfile || {
@@ -409,6 +416,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const handleFinalSubmitBooking = async () => {
     if (isSubmitting) return; // guard against double clicks / double charges
 
+    // Keep a second client-side gate in addition to the public-site trigger.
+    // This protects against a session expiring while the modal is open and
+    // leaves all entered service/date/contact details in place for after login.
+    if (!user?.id) {
+      setSubmitError('Please log in or create an account before confirming this appointment.');
+      onRequireAuth?.('login');
+      return;
+    }
+
     const cleanPhone = sanitizeIndianPhone(guestPhone);
 
     // ---- 1. Client-side validation ------------------------------------------
@@ -422,6 +438,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setSubmitError(`Please add ${problems.join(', ')} before confirming.`);
       setCurrentStep('guest');
       return;
+    }
+
+    // Mock auth is deliberately represented by a namespaced token understood
+    // only by the local/mock server. Live bookings use the short-lived
+    // Supabase access token; the service-role key is never present in client
+    // code or request headers.
+    let bookingAccessToken: string | undefined;
+    if (isMockSupabase) {
+      bookingAccessToken = `mock:${user.id}`;
+    } else {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        bookingAccessToken = session?.access_token;
+      } catch {
+        bookingAccessToken = undefined;
+      }
+      if (!bookingAccessToken) {
+        setSubmitError('Your session has expired. Please sign in again before confirming this appointment.');
+        onRequireAuth?.('login');
+        return;
+      }
     }
 
     const cityCode = profile.city?.toUpperCase().includes('BENGALURU') ? 'BLR'
@@ -457,7 +494,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           description: `25% advance for ${selectedService.name} on ${bookingDate} at ${bookingTime}`,
           customer: {
             name: guestName.trim() || 'Guest Client',
-            email: guestEmail.trim() || undefined,
+            email: guestEmail.trim() || user?.email || undefined,
             contact: cleanPhone,
           },
           salonName: profile.businessName,
@@ -501,7 +538,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               owner_id: profile.ownerId || undefined,
               customer_name: guestName.trim() || 'Guest Client',
               customer_phone: cleanPhone,
-              customer_email: guestEmail.trim() || `${cleanPhone}@guest.in`,
+              customer_email: guestEmail.trim() || user?.email || undefined,
               service_id: selectedService.id,
               service_name: selectedService.name,
               booking_date: bookingDate,
@@ -529,7 +566,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         // mobile connection) used to surface as a dead-end "Server error
         // (HTTP 500)". Retry those automatically before bothering the customer;
         // 4xx answers are the customer's own input and are never retried.
-        const outcome = await postBookingWithRetry(requestBody);
+        const outcome = await postBookingWithRetry(requestBody, { accessToken: bookingAccessToken });
 
         if (outcome.ok) {
           savedRemotely = true;
@@ -540,6 +577,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           console.warn('Booking API unreachable — keeping a local copy only.', outcome.detail);
         } else {
           console.error('Failed to create booking:', outcome.detail, outcome);
+          if (outcome.code === 'auth_required') {
+            setSubmitError('Your session has expired. Please sign in again. Your booking details are still here.');
+            onRequireAuth?.('login');
+            return;
+          }
           const support = outcome.requestId ? ` (ref ${outcome.requestId})` : '';
           const retryHint = outcome.retryable
             ? ' This is usually temporary — please try again in a minute.'
@@ -562,7 +604,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         id: `apt-${Date.now()}`,
         clientName: guestName.trim() || 'Guest Client',
         clientPhone: `+91 ${cleanPhone}`,
-        clientEmail: guestEmail.trim() || `${cleanPhone}@guest.in`,
+        clientEmail: guestEmail.trim() || user?.email || `${cleanPhone}@guest.in`,
         serviceId: selectedService.id,
         serviceName: selectedService.name,
         servicePrice: totalAmount,
@@ -615,7 +657,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Open WhatsApp prefilled confirmation
   const handleSendWhatsAppConfirmation = () => {
     const cleanPhone = sanitizeIndianPhone(guestPhone);
-    const msg = `Namaste ${guestName}! Your booking with ${profile.businessName} is confirmed!\n\n` +
+    const msg = `Namaste ${guestName}! ${savedToCloud ? `Your booking with ${profile.businessName} is confirmed.` : `Please confirm this booking request with ${profile.businessName}. The request is saved on this device only.`}\n\n` +
       `📅 Date: ${bookingDate}\n` +
       `⏰ Time: ${bookingTime} IST\n` +
       `💇 Service: ${selectedService.name}${selectedUpgrades.length > 0 ? ` + Add-ons (${selectedUpgrades.map(u => u.name).join(', ')})` : ''} (Total: ₹${totalAmount})\n` +
@@ -626,7 +668,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       `🔖 Reference: ${bookingRef}\n` +
       `💰 Total Price: ₹${totalAmount}\n` +
       `💳 Payment: ${paymentMethod === 'pay_advance_token' ? `25% Advance Paid: ₹${advanceTokenAmount} (Balance: ₹${remainingAmount})` : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount})`}\n\n` +
-      `Thank you for booking with us!`;
+      `${savedToCloud ? 'Thank you for booking with us!' : 'Please reply to confirm the slot with the salon.'}`;
 
     const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(msg)}`;
     window.open(whatsappUrl, '_blank');
@@ -1555,9 +1597,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               <div>
-                <h4 className="font-bold text-2xl text-slate-900">You're All Set!</h4>
+                <h4 className="font-bold text-2xl text-slate-900">
+                  {savedToCloud ? "You're All Set!" : 'Request Saved on This Device'}
+                </h4>
                 <p className="text-xs text-slate-600 max-w-sm mt-1">
-                  Appointment confirmed for <strong className="text-slate-900">{guestName}</strong> at <strong className="text-slate-900">{profile.businessName}</strong>.
+                  {savedToCloud ? (
+                    <>Appointment confirmed for <strong className="text-slate-900">{guestName}</strong> at <strong className="text-slate-900">{profile.businessName}</strong>.</>
+                  ) : (
+                    <>Your details are ready, but <strong className="text-slate-900">{profile.businessName}</strong> has not received this request yet.</>
+                  )}
                 </p>
               </div>
 

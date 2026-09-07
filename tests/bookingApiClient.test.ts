@@ -31,6 +31,23 @@ function textResponse(status: number, body: string, statusText = ''): any {
   };
 }
 
+test('booking saves send only the customer access token as a bearer header', async () => {
+  let receivedInit: any;
+  const fetchImpl = async (_url: string, init: any) => {
+    receivedInit = init;
+    return jsonResponse(200, { success: true, data: { id: 'b-auth' } });
+  };
+  const outcome = await postBookingWithRetry(BODY, {
+    fetchImpl: fetchImpl as any,
+    sleepImpl: noSleep,
+    accessToken: 'customer-access-token',
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(receivedInit.headers.Authorization, 'Bearer customer-access-token');
+  assert.equal(receivedInit.headers['Content-Type'], 'application/json');
+  assert.equal(receivedInit.headers.SUPABASE_SERVICE_ROLE_KEY, undefined);
+});
+
 test('a successful save returns the stored row and the server request id', async () => {
   const fetchImpl = async () => jsonResponse(200, { success: true, data: { id: 'b1' }, requestId: 'bk_1' });
   const outcome = await postBookingWithRetry(BODY, { fetchImpl: fetchImpl as any, sleepImpl: noSleep });
@@ -114,6 +131,27 @@ test('HTTP 200 with success:false is treated as a failure, not a saved booking',
   const outcome = await postBookingWithRetry(BODY, { fetchImpl: fetchImpl as any, sleepImpl: noSleep });
   assert.equal(outcome.ok, false);
   assert.equal(outcome.detail, 'owner unresolved');
+});
+
+test('a response whose JSON body stalls is time-boxed and not treated as offline success', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: () => new Promise<string>(() => {}),
+  });
+  const started = Date.now();
+  const outcome = await postBookingWithRetry(BODY, {
+    fetchImpl: fetchImpl as any,
+    sleepImpl: noSleep,
+    timeoutMs: 20,
+    maxAttempts: 1,
+  });
+  assert.ok(Date.now() - started < 500, 'a stalled response body must not hang checkout');
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.kind, 'server');
+  assert.equal(outcome.status, 200);
+  assert.match(outcome.detail, /did not answer within/i);
 });
 
 test('summarizeBody strips markup and truncates long error pages', () => {

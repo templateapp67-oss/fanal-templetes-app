@@ -7,6 +7,7 @@ import {
   describeDbError,
   createBookingHandler,
 } from '../server/bookingCreate';
+import { authenticateBookingRequest } from '../server/bookingAuth';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const OTHER_OWNER = '3f0d9a2e-5c4b-4a1d-8b7e-11223344aabb';
@@ -95,6 +96,7 @@ function makeDb(tables: Record<string, any>) {
 const baseDeps = (overrides: any = {}) => ({
   db: makeDb({}).db,
   isMock: false,
+  hasAdminClient: true,
   addMockBooking: () => {},
   addMockNotifications: () => {},
   resolveOwnerEmail: async () => 'owner@salon.com',
@@ -134,6 +136,14 @@ test('validateBookingPayload catches malformed dates, emails and amounts', () =>
   assert.ok(bad.fieldErrors.booking_date);
   assert.ok(bad.fieldErrors.customer_email);
   assert.ok(bad.fieldErrors.total_amount);
+});
+
+test('validateBookingPayload rejects impossible calendar dates, not just bad formatting', () => {
+  for (const booking_date of ['2026-02-29', '2026-04-31', '2026-13-01']) {
+    const bad = validateBookingPayload({ ...VALID_BOOKING, booking_date });
+    assert.equal(bad.valid, false, booking_date);
+    assert.ok(bad.fieldErrors.booking_date, booking_date);
+  }
 });
 
 test('validateBookingPayload rejects an advance larger than the total', () => {
@@ -230,8 +240,82 @@ test('describeDbError maps a duplicate key to 409 instead of a 500', () => {
 });
 
 // ============================================================================
-// The handler
+// Authentication gate + handler
 // ============================================================================
+
+test('booking auth rejects a missing bearer token with a JSON-safe 401 result', async () => {
+  const result = await authenticateBookingRequest({ headers: {} }, Date.now() + 1000, true);
+  assert.deepEqual(result, {
+    ok: false,
+    status: 401,
+    code: 'auth_required',
+    error: 'Please sign in or create an account before booking an appointment.',
+  });
+});
+
+test('local/mock booking auth accepts only the explicit namespaced mock token', async () => {
+  const rejected = await authenticateBookingRequest(
+    { headers: { authorization: 'Bearer forged-user-id' } },
+    Date.now() + 1000,
+    true
+  );
+  assert.equal(rejected.ok, false);
+  const accepted = await authenticateBookingRequest(
+    { headers: { authorization: 'Bearer mock:customer-1' } },
+    Date.now() + 1000,
+    true
+  );
+  assert.deepEqual(accepted, { ok: true, user: { id: 'customer-1' } });
+});
+
+test('the handler authenticates before payment verification or database work', async () => {
+  const { db, calls } = makeDb({});
+  const handler = createBookingHandler(
+    baseDeps({
+      db,
+      isMock: true,
+      authenticateUser: async () => ({
+        ok: false,
+        status: 401,
+        code: 'auth_required',
+        error: 'Please sign in or create an account before booking an appointment.',
+      }),
+    })
+  );
+  const res = makeRes();
+  await handler(
+    {
+      body: {
+        booking: VALID_BOOKING,
+        payment: { razorpay_payment_id: 'pay_should_not_be_verified', razorpay_signature: 'forged' },
+      },
+      headers: {},
+    },
+    res
+  );
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'auth_required');
+  assert.equal(calls.length, 0, 'unauthenticated requests must not touch the database');
+});
+
+test('an authenticated customer can complete the normal mock booking path', async () => {
+  const stored: any[] = [];
+  const handler = createBookingHandler(
+    baseDeps({
+      isMock: true,
+      addMockBooking: (row: any) => stored.push(row),
+      authenticateUser: async () => ({ ok: true, user: { id: 'customer-1', email: 'customer@example.com' } }),
+    })
+  );
+  const res = makeRes();
+  await handler({ body: { booking: { ...VALID_BOOKING, customer_email: '' } }, headers: {} }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].customer_email, 'customer@example.com');
+  assert.equal(stored[0].user_id, null);
+  assert.equal(stored[0].metadata.user_id, 'customer-1');
+});
 
 test('handler answers 400 with field errors for an incomplete booking', async () => {
   const handler = createBookingHandler(baseDeps());
@@ -247,6 +331,16 @@ test('handler answers 400 when no booking object is sent at all', async () => {
   const res = makeRes();
   await handler({ body: {}, headers: {} }, res);
   assert.equal(res.statusCode, 400);
+});
+
+test('a live entrypoint without a service-role client answers JSON 503 before payment/database work', async () => {
+  const handler = createBookingHandler(baseDeps({ isMock: false, hasAdminClient: false }));
+  const res = makeRes();
+  await handler({ body: { booking: VALID_BOOKING }, headers: {} }, res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.code, 'supabase_not_configured');
+  assert.equal(res.body.retryable, true);
+  assert.equal(res.body.success, false);
 });
 
 test('handler answers 422 (not 500) when the salon has no owner account', async () => {
@@ -381,6 +475,39 @@ test('an unverifiable Razorpay payment is rejected before anything is stored', a
   } finally {
     delete process.env.RAZORPAY_KEY_ID;
     delete process.env.RAZORPAY_KEY_SECRET;
+  }
+});
+
+test('an unverified payment claim cannot mark a booking paid when the gateway is unavailable', async () => {
+  const previous = {
+    id: process.env.RAZORPAY_KEY_ID,
+    secret: process.env.RAZORPAY_KEY_SECRET,
+  };
+  delete process.env.RAZORPAY_KEY_ID;
+  delete process.env.RAZORPAY_KEY_SECRET;
+  try {
+    const stored: any[] = [];
+    const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
+    const res = makeRes();
+    await handler(
+      {
+        body: {
+          booking: { ...VALID_BOOKING, payment_status: 'paid_deposit', advance_paid_amount: 188 },
+          payment: { razorpay_order_id: 'order_unverified', razorpay_payment_id: 'pay_unverified', razorpay_signature: 'missing' },
+        },
+        headers: {},
+      },
+      res
+    );
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.paymentVerified, false);
+    assert.equal(stored[0].payment_status, 'pending');
+    assert.equal(stored[0].advance_paid_amount, 0);
+  } finally {
+    if (previous.id === undefined) delete process.env.RAZORPAY_KEY_ID;
+    else process.env.RAZORPAY_KEY_ID = previous.id;
+    if (previous.secret === undefined) delete process.env.RAZORPAY_KEY_SECRET;
+    else process.env.RAZORPAY_KEY_SECRET = previous.secret;
   }
 });
 

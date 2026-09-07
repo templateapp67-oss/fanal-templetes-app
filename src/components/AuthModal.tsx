@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 
@@ -6,6 +6,8 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: 'login' | 'signup';
+  /** Customer auth uses the same flow without asking for salon-owner fields. */
+  purpose?: 'owner' | 'customer';
   onSuccess: (user: any) => void;
 }
 
@@ -13,11 +15,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   initialMode = 'login',
+  purpose = 'owner',
   onSuccess,
 }) => {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isCustomer = purpose === 'customer';
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setError(null);
+    }
+  }, [isOpen, initialMode]);
 
   // Form Fields
   const [email, setEmail] = useState('');
@@ -39,8 +50,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           id: 'mock-user-123',
           email: email,
           user_metadata: {
-            full_name: fullName || 'Mock Owner',
-            salon_name: salonName || 'Mock Salon',
+            full_name: fullName || (isCustomer ? 'Mock Customer' : 'Mock Owner'),
+            ...(isCustomer ? {} : { salon_name: salonName || 'Mock Salon' }),
           }
         };
         onSuccess(mockUser);
@@ -61,6 +72,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               salon_name: salonName,
               phone_number: phoneNumber,
               city: city,
+              account_type: purpose,
             },
           },
         });
@@ -68,21 +80,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (signUpError) throw signUpError;
         
         if (data.user) {
-          // Create initial profile in the database
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .upsert({
-              id: data.user.id,
-              full_name: fullName,
-              salon_name: salonName,
-              phone_number: phoneNumber,
-              email: email,
-              city: city,
-              updated_at: new Date().toISOString(),
-            });
+          // `profiles` is the salon-owner/tenant table. Do not create a fake
+          // owner profile for a customer account: owner resolution on the
+          // server must remain independent from the authenticated booker.
+          if (!isCustomer) {
+            const { error: profileError } = await supabase
+              .from('profiles')
+              .upsert({
+                id: data.user.id,
+                full_name: fullName,
+                salon_name: salonName,
+                phone_number: phoneNumber,
+                email: email,
+                city: city,
+                updated_at: new Date().toISOString(),
+              });
 
-          if (profileError) console.error('Profile creation error:', profileError);
-          
+            if (profileError) console.error('Profile creation error:', profileError);
+          }
+
+          // Supabase may require email confirmation. A user object without a
+          // session is not enough to authorize a booking, so keep the dialog
+          // open and ask the customer to verify before trying again.
+          if (!data.session) {
+            setError('Account created. Please verify your email, then log in to continue booking.');
+            return;
+          }
+
           onSuccess(data.user);
           onClose();
         }
@@ -129,12 +153,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>spa</span>
                 </div>
                 <h2 className="text-3xl font-display font-bold text-gray-900 tracking-tight">
-                  {mode === 'login' ? 'Welcome Back' : 'Join Nexora'}
+                  {mode === 'login' ? 'Welcome Back' : isCustomer ? 'Create your booking account' : 'Join Nexora'}
                 </h2>
                 <p className="text-gray-500 mt-2 text-sm">
-                  {mode === 'login' 
-                    ? 'Manage your salon with luxury and ease' 
-                    : 'The ultimate platform for luxury salon owners'}
+                  {mode === 'login'
+                    ? (isCustomer ? 'Sign in to continue your appointment booking' : 'Manage your salon with luxury and ease')
+                    : (isCustomer ? 'Sign up once to book appointments with this salon' : 'The ultimate platform for luxury salon owners')}
                 </p>
               </div>
 
@@ -152,7 +176,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <form onSubmit={handleAuth} className="space-y-5">
                 {mode === 'signup' && (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className={isCustomer ? '' : 'grid grid-cols-2 gap-4'}>
                       <div>
                         <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Full Name</label>
                         <input
@@ -164,42 +188,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           placeholder="John Doe"
                         />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Salon Name</label>
-                        <input
-                          type="text"
-                          required
-                          value={salonName}
-                          onChange={(e) => setSalonName(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
-                          placeholder="Glow Studio"
-                        />
-                      </div>
+                      {!isCustomer && (
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Salon Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={salonName}
+                            onChange={(e) => setSalonName(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
+                            placeholder="Glow Studio"
+                          />
+                        </div>
+                      )}
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Phone</label>
-                        <input
-                          type="tel"
-                          required
-                          value={phoneNumber}
-                          onChange={(e) => setPhoneNumber(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
-                          placeholder="+91..."
-                        />
+                    {!isCustomer && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Phone</label>
+                          <input
+                            type="tel"
+                            required
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
+                            placeholder="+91..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">City</label>
+                          <input
+                            type="text"
+                            required
+                            value={city}
+                            onChange={(e) => setCity(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
+                            placeholder="Mumbai"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">City</label>
-                        <input
-                          type="text"
-                          required
-                          value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
-                          placeholder="Mumbai"
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -236,7 +264,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>
                   ) : (
                     <>
-                      <span>{mode === 'login' ? 'Enter Dashboard' : 'Create My Salon'}</span>
+                      <span>{mode === 'login' ? (isCustomer ? 'Continue to booking' : 'Enter Dashboard') : (isCustomer ? 'Create booking account' : 'Create My Salon')}</span>
                       <span className="material-symbols-outlined text-xl">arrow_forward</span>
                     </>
                   )}

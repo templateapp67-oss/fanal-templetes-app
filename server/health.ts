@@ -8,12 +8,13 @@
 //   • the database never answered, so the platform killed the invocation.
 //
 // `GET /api/health` reports the configuration; `GET /api/health?deep=1` also
-// round-trips the database and reports whether a guest booking could actually
+// round-trips the database and reports whether an authenticated booking could actually
 // be written right now (owner resolvable + bookings table reachable).
 // Nothing secret is returned — keys are reported as booleans only.
 // ============================================================================
 
 import { runDb, LOOKUP_DB_TIMEOUT_MS } from './dbGuard';
+import { safeDatabaseError } from './safeError';
 import { getRazorpayConfigIssues, readRazorpayCredentials } from './razorpay';
 import { isWebhookConfigured } from './razorpayWebhook';
 
@@ -70,10 +71,10 @@ export function createHealthHandler(deps: HealthDeps) {
       name: 'service_role_key',
       ok: deps.isMock ? true : deps.hasAdminClient,
       detail: deps.hasAdminClient
-        ? 'Service-role client active — guest bookings bypass RLS.'
+        ? 'Service-role client active — authenticated booking inserts bypass RLS.'
         : deps.isMock
           ? 'Not required in mock mode.'
-          : 'SUPABASE_SERVICE_ROLE_KEY is missing: guest booking inserts will be rejected by Row Level Security.',
+          : 'SUPABASE_SERVICE_ROLE_KEY is missing: authenticated booking inserts will be rejected by Row Level Security.',
     });
 
     checks.push({
@@ -97,34 +98,48 @@ export function createHealthHandler(deps: HealthDeps) {
     if (deep && !deps.isMock) {
       const bookingsProbe = await runDb(
         () => deps.db.from('bookings').select('id').limit(1),
-        { label: 'health: bookings table', timeoutMs: LOOKUP_DB_TIMEOUT_MS, retry: false }
+        {
+          label: 'health: bookings table',
+          timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+          deadlineAt: res.locals?.requestDeadlineAt,
+          retry: false,
+        }
       );
+      const bookingsSafeError = bookingsProbe.error
+        ? safeDatabaseError(bookingsProbe.error, 'The bookings table could not be checked.')
+        : null;
       checks.push({
         name: 'bookings_table',
         ok: !bookingsProbe.error,
-        detail: bookingsProbe.error
-          ? `Cannot read the bookings table: ${bookingsProbe.error.message}`
+        detail: bookingsSafeError
+          ? bookingsSafeError.message
           : `Reachable in ${bookingsProbe.durationMs}ms.`,
       });
-      if (bookingsProbe.error) problems.push(`bookings table: ${bookingsProbe.error.message}`);
+      if (bookingsSafeError) problems.push(`bookings table: ${bookingsSafeError.message}`);
 
       const ownerProbe = await runDb(() => deps.db.from('profiles').select('id').limit(1), {
         label: 'health: profiles table',
         timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+        deadlineAt: res.locals?.requestDeadlineAt,
         retry: false,
       });
       const ownerCount = Array.isArray(ownerProbe.data) ? ownerProbe.data.length : 0;
+      const ownerSafeError = ownerProbe.error
+        ? safeDatabaseError(ownerProbe.error, 'The salon owner table could not be checked.')
+        : null;
       checks.push({
         name: 'owner_resolvable',
         ok: !ownerProbe.error && ownerCount > 0,
-        detail: ownerProbe.error
-          ? `Cannot read profiles: ${ownerProbe.error.message}`
+        detail: ownerSafeError
+          ? ownerSafeError.message
           : ownerCount > 0
-            ? 'At least one salon profile exists, so guest bookings can be attached to an owner.'
-            : 'No salon profiles exist yet — guest bookings will be rejected with owner_unresolved until a salon is published (or DEFAULT_OWNER_ID is set).',
+            ? 'At least one salon profile exists, so authenticated bookings can be attached to an owner.'
+            : 'No salon profiles exist yet — authenticated bookings will be rejected with owner_unresolved until a salon is published (or DEFAULT_OWNER_ID is set).',
       });
-      if (!ownerProbe.error && ownerCount === 0) {
-        problems.push('No salon profile exists — guest bookings cannot resolve an owner_id.');
+      if (ownerSafeError) {
+        problems.push(`owner table: ${ownerSafeError.message}`);
+      } else if (!ownerProbe.error && ownerCount === 0) {
+        problems.push('No salon profile exists — authenticated bookings cannot resolve an owner_id.');
       }
     }
 

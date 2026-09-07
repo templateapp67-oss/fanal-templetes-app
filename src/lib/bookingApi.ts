@@ -52,6 +52,8 @@ export interface PostBookingOptions {
   retryDelayMs?: number;
   /** Per-attempt network timeout. */
   timeoutMs?: number;
+  /** Supabase session access token; never send the service-role key here. */
+  accessToken?: string;
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
 }
@@ -84,6 +86,7 @@ export async function postBookingWithRetry(
     maxAttempts = 3,
     retryDelayMs = 600,
     timeoutMs = 20000,
+    accessToken,
     fetchImpl = typeof fetch !== 'undefined' ? fetch : undefined,
     sleepImpl = defaultSleep,
   } = options;
@@ -109,21 +112,44 @@ export async function postBookingWithRetry(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let controller: AbortController | null = null;
     let timer: any = null;
+    let responseStarted = false;
+    let responseStatus: number | undefined;
     try {
-      if (typeof AbortController !== 'undefined') {
-        controller = new AbortController();
-        timer = setTimeout(() => controller?.abort(), timeoutMs);
-      }
+      if (typeof AbortController !== 'undefined') controller = new AbortController();
 
-      const response = await fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        signal: controller?.signal,
+      // Race both the headers and the body against the same deadline. Calling
+      // abort() is normally enough for fetch(), but a proxy/test double can
+      // leave Response.text() pending even after the signal fires; the explicit
+      // Promise race prevents that body stall from freezing checkout forever.
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller?.abort();
+          const error = new Error(`The booking service did not answer within ${Math.round(timeoutMs / 1000)}s.`);
+          error.name = 'AbortError';
+          reject(error);
+        }, timeoutMs);
       });
-      if (timer) clearTimeout(timer);
+      const response = await Promise.race([
+        fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body,
+          signal: controller?.signal,
+        }),
+        deadline,
+      ]);
+      responseStarted = true;
+      responseStatus = response.status;
 
-      const text = await response.text().catch(() => '');
+      // Keep the same deadline alive until the body is consumed too. A proxy
+      // can send headers and then stall while streaming the JSON.
+      const text = await Promise.race([response.text().catch(() => ''), deadline]);
+      if (timer) clearTimeout(timer);
+      // The deadline promise has a rejection handler through Promise.race, so
+      // a cleared timer cannot leave a late unhandled rejection.
       let json: any = null;
       try {
         json = text ? JSON.parse(text) : null;
@@ -131,15 +157,18 @@ export async function postBookingWithRetry(
         json = null; // HTML error page / truncated body
       }
 
-      if (response.ok && (!json || json.success !== false)) {
+      // A booking is successful only when the API returns a JSON success
+      // envelope. HTTP 200 with an empty body/HTML SPA fallback is a protocol
+      // failure, not proof that the salon stored anything.
+      if (response.ok && json && typeof json === 'object' && json.success === true) {
         return {
           ok: true,
           kind: 'success',
           detail: '',
           retryable: false,
           status: response.status,
-          data: json?.data ?? null,
-          requestId: json?.requestId,
+          data: json.data ?? null,
+          requestId: json.requestId,
           attempts: attempt,
         };
       }
@@ -147,14 +176,17 @@ export async function postBookingWithRetry(
       const serverDetail: string =
         json?.error ||
         json?.notice ||
-        (text && !json ? `HTTP ${response.status} ${response.statusText || ''} — ${summarizeBody(text)}`.trim() : '') ||
-        `Server error (HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''})`;
+        (text
+          ? `HTTP ${response.status} ${response.statusText || ''} — ${summarizeBody(text)}`.trim()
+          : `Server error (HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''})`);
 
-      const retryable = json?.retryable === true || isRetryableStatus(response.status);
+      const malformedSuccessEnvelope =
+        response.ok && (!json || typeof json !== 'object' || (!('success' in json) && !json.error));
+      const retryable = json?.retryable === true || isRetryableStatus(response.status) || malformedSuccessEnvelope;
 
       lastFailure = {
         ok: false,
-        kind: response.status >= 500 || !json ? 'server' : 'rejected',
+        kind: response.status >= 500 || malformedSuccessEnvelope ? 'server' : 'rejected',
         detail: serverDetail,
         code: json?.code,
         requestId: json?.requestId,
@@ -170,11 +202,15 @@ export async function postBookingWithRetry(
       const aborted = err?.name === 'AbortError';
       lastFailure = {
         ok: false,
-        kind: 'offline',
+        // Headers prove the API/proxy was reached, even if its body stalled;
+        // keep that distinct from a device/network failure so the UI does not
+        // claim a server-rejected booking was merely saved locally.
+        kind: responseStarted ? 'server' : 'offline',
         detail: aborted
           ? `The booking service did not answer within ${Math.round(timeoutMs / 1000)}s.`
           : err?.message || 'Network request failed.',
         retryable: true,
+        status: responseStatus,
         attempts: attempt,
       };
     }

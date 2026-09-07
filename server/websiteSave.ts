@@ -21,6 +21,7 @@
 //   400  { success: false, error }               — subdomain / owner_id missing
 //   401  { success: false, error: "Unauthorized" } — live mode: no/invalid access
 //          token, or the token belongs to a different user than owner_id
+//   503  { success: false, code: "supabase_not_configured" } — missing server config
 //   500  { error: "Failed to persist site state" } — any persistence failure
 //
 // AUTH MODEL: the service role bypasses RLS, so RLS is NOT the authorization
@@ -45,6 +46,11 @@ import {
 } from "../src/lib/salonSync";
 import { isUuid } from "../src/lib/autoSave";
 import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from "../src/types";
+import {
+  runDb,
+  DEFAULT_DB_TIMEOUT_MS,
+  responseAlreadyEnded,
+} from './dbGuard';
 
 export interface WebsiteSaveDeps {
   /** In-memory salon registry used when Supabase is not configured (mock mode). */
@@ -71,12 +77,16 @@ function syncError(message: string, extra?: unknown): void {
  */
 async function verifyCallerIsOwner(
   ownerId: string,
-  authorizationHeader: string | undefined
+  authorizationHeader: string | undefined,
+  deadlineAt?: number
 ): Promise<string | null> {
   const token = (authorizationHeader || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) {
     return "missing access token (Authorization: Bearer <token>)";
   }
+
+  const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : 4000;
+  if (remaining <= 0) return 'auth server lookup exceeded the request deadline';
 
   let res: Response;
   try {
@@ -87,6 +97,7 @@ async function verifyCallerIsOwner(
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
       },
+      signal: AbortSignal.timeout(Math.max(1, Math.min(4000, remaining))),
     });
   } catch (err) {
     return `auth server unreachable (${(err as Error)?.message ?? "network error"})`;
@@ -113,6 +124,7 @@ async function verifyCallerIsOwner(
  */
 export function handleWebsiteSave(deps: WebsiteSaveDeps) {
   return async (req: any, res: any): Promise<void> => {
+    const deadlineAt = res.locals?.requestDeadlineAt;
     try {
       // ------------------------------------------------------------------
       // Parse the incoming salonData (accept { salonData: {...} } or bare).
@@ -171,7 +183,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       // Mock mode skips this (local dev/demo has no auth server).
       // ------------------------------------------------------------------
       if (!isMockSupabase) {
-        const authError = await verifyCallerIsOwner(ownerId, req.headers?.authorization);
+        const authError = await verifyCallerIsOwner(ownerId, req.headers?.authorization, deadlineAt);
         if (authError !== null) {
           syncError(`POST /api/website/save rejected (AUTH): ${authError}.`, {
             owner_id: ownerId,
@@ -208,7 +220,12 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         syncError(
           "POST /api/website/save cannot persist — SUPABASE_SERVICE_ROLE_KEY is not configured server-side. Refusing to write through the anon client (RLS would reject it). Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
         );
-        return res.status(500).json({ error: "Failed to persist site state" });
+        return res.status(503).json({
+          success: false,
+          code: 'supabase_not_configured',
+          retryable: true,
+          error: 'The site database is not configured on this server. Please try again later.',
+        });
       }
 
       const profileRow = toProfileRow(profile, ownerId);
@@ -222,7 +239,10 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         // Upsert order: the profiles row first (identity + subdomain), then
         // the tenant catalogue. Safe (non-destructive) on purpose: the
         // fallback path must never delete rows it cannot verify.
-        const profileRes = await admin.from("profiles").upsert(profileRow, { onConflict: "id" });
+        const profileRes = await runDb(
+          () => admin.from("profiles").upsert(profileRow, { onConflict: "id" }),
+          { label: `website save profiles (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+        );
         if (profileRes.error) {
           throw Object.assign(new Error(`profiles upsert failed: ${profileRes.error.message}`), {
             table: "profiles",
@@ -233,7 +253,10 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
 
         if (serviceRows.length) {
-          const r = await admin.from("services").upsert(serviceRows, { onConflict: "id" });
+          const r = await runDb(
+            () => admin.from("services").upsert(serviceRows, { onConflict: "id" }),
+            { label: `website save services (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+          );
           if (r.error) {
             throw Object.assign(new Error(`services upsert failed: ${r.error.message}`), {
               table: "services",
@@ -245,7 +268,10 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
 
         if (stylistRows.length) {
-          const r = await admin.from("stylists").upsert(stylistRows, { onConflict: "id" });
+          const r = await runDb(
+            () => admin.from("stylists").upsert(stylistRows, { onConflict: "id" }),
+            { label: `website save stylists (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+          );
           if (r.error) {
             throw Object.assign(new Error(`stylists upsert failed: ${r.error.message}`), {
               table: "stylists",
@@ -257,9 +283,12 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
 
         if (loyaltyConfig) {
-          const r = await admin
-            .from("loyalty_config")
-            .upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: "owner_id" });
+          const r = await runDb(
+            () => admin
+              .from("loyalty_config")
+              .upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: "owner_id" }),
+            { label: `website save loyalty config (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+          );
           if (r.error) {
             throw Object.assign(new Error(`loyalty_config upsert failed: ${r.error.message}`), {
               table: "loyalty_config",
@@ -271,9 +300,12 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
 
         if (rewardRows.length) {
-          const r = await admin
-            .from("loyalty_rewards")
-            .upsert(rewardRows, { onConflict: "id" });
+          const r = await runDb(
+            () => admin
+              .from("loyalty_rewards")
+              .upsert(rewardRows, { onConflict: "id" }),
+            { label: `website save loyalty rewards (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+          );
           if (r.error) {
             throw Object.assign(new Error(`loyalty_rewards upsert failed: ${r.error.message}`), {
               table: "loyalty_rewards",
@@ -296,6 +328,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
             owner_id: ownerId,
           }
         );
+        if (responseAlreadyEnded(res)) return;
         return res.status(500).json({ error: "Failed to persist site state" });
       }
 
@@ -310,9 +343,8 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       syncError("POST /api/website/save handler crashed:", {
         message: err?.message ?? String(err),
       });
-      if (!res.headersSent) {
-        return res.status(500).json({ error: "Failed to persist site state" });
-      }
+      if (responseAlreadyEnded(res)) return;
+      return res.status(500).json({ error: "Failed to persist site state" });
     }
   };
 }

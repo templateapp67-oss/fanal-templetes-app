@@ -1295,6 +1295,10 @@ export default function App() {
   const publicProfile = (siteTenant?.profile || profile) as SalonProfile;
   const publicServices = (siteTenant?.services || services) as SalonService[];
   const publicStylists = (siteTenant?.stylists || stylists) as Stylist[];
+  const openBookingAuth = (mode: 'login' | 'signup' = 'login') => {
+    setAuthMode(mode);
+    setIsAuthModalOpen(true);
+  };
 
   // -------------------------------------------------------------------------
   // PUBLIC LIVE SITE RENDER
@@ -1307,10 +1311,19 @@ export default function App() {
           services={publicServices}
           stylists={publicStylists}
           onAddAppointment={handleAddAppointment}
+          user={user}
+          onRequireAuth={openBookingAuth}
           selectedTemplateId={selectedTemplateId}
           setSelectedTemplateId={setSelectedTemplateId}
           siteUrl={getSiteUrl(publicProfile)}
           publicView
+        />
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          initialMode={authMode}
+          purpose="customer"
+          onSuccess={(u) => setUser(u)}
         />
       </div>
     );
@@ -1373,6 +1386,8 @@ export default function App() {
           stylists={stylists}
           setStylists={setStylists}
           onAddAppointment={handleAddAppointment}
+          user={user}
+          onRequireAuth={openBookingAuth}
           onSelectTemplate={handleSelectTemplate}
           selectedTemplateId={selectedTemplateId}
           setSelectedTemplateId={setSelectedTemplateId}

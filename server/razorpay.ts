@@ -133,7 +133,7 @@ export function verifyRazorpaySignature(input: {
 
 export interface RazorpayClient {
   keyId: string;
-  createOrder(input: CreateOrderInput): Promise<RazorpayOrder>;
+  createOrder(input: CreateOrderInput, deadlineAt?: number): Promise<RazorpayOrder>;
   verifyPaymentSignature(input: { orderId: string; paymentId: string; signature: string }): boolean;
 }
 
@@ -154,7 +154,10 @@ export function createRazorpayClient(
   return {
     keyId,
 
-    async createOrder({ amount, currency = 'INR', receipt, notes }: CreateOrderInput): Promise<RazorpayOrder> {
+    async createOrder(
+      { amount, currency = 'INR', receipt, notes }: CreateOrderInput,
+      deadlineAt?: number
+    ): Promise<RazorpayOrder> {
       const paise = toPaise(amount);
       if (!Number.isFinite(paise) || paise < 100) {
         // Razorpay rejects anything below ₹1.00 — catch it here with a clear
@@ -176,15 +179,28 @@ export function createRazorpayClient(
           : undefined,
       };
 
+      const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : REQUEST_TIMEOUT_MS;
+      if (remaining <= 0) {
+        const timeout: any = new Error('The payment gateway request exceeded the server response deadline.');
+        timeout.code = 'razorpay_timeout';
+        throw timeout;
+      }
+
       let response: Response;
       try {
         response = await fetch(`${RAZORPAY_API_BASE}/orders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(Math.max(1, Math.min(REQUEST_TIMEOUT_MS, remaining))),
         });
       } catch (networkError: any) {
+        const timedOut = networkError?.name === 'TimeoutError' || networkError?.name === 'AbortError';
+        if (timedOut) {
+          const timeout: any = new Error('Razorpay did not answer before the server response deadline.');
+          timeout.code = 'razorpay_timeout';
+          throw timeout;
+        }
         // The gateway itself is unreachable (DNS/firewall/outage). Tag it so
         // the route can answer 503 and the checkout can degrade to
         // "pay at salon" instead of dead-ending the customer.
@@ -241,7 +257,7 @@ export function handleRazorpayConfig(_req: any, res: any): void {
     res.json({ success: true, configured: true, keyId, mode: keyId.startsWith('rzp_live_') ? 'live' : 'test' });
   } catch (err: any) {
     console.error('[Razorpay] config endpoint error:', err?.stack || err?.message || err);
-    res.status(500).json({ success: false, configured: false, error: err?.message || 'Razorpay config unavailable.' });
+    res.status(500).json({ success: false, configured: false, code: 'razorpay_config_error', error: 'Razorpay configuration is unavailable.' });
   }
 }
 
@@ -277,7 +293,10 @@ export async function handleCreateRazorpayOrder(req: any, res: any): Promise<voi
       });
     }
 
-    const order = await client.createOrder({ amount: numericAmount, currency, receipt, notes });
+    const order = await client.createOrder(
+      { amount: numericAmount, currency, receipt, notes },
+      res.locals?.requestDeadlineAt
+    );
     console.log(
       `[Razorpay] Order created ${order.id} for ${order.currency} ${(order.amount / 100).toFixed(2)}` +
         (receipt ? ` (receipt ${receipt})` : '')
@@ -292,14 +311,17 @@ export async function handleCreateRazorpayOrder(req: any, res: any): Promise<voi
     // Log the FULL error server-side (stdout) — the client only gets the
     // message so the checkout can show something actionable.
     console.error('[Razorpay] Order creation failed:', err?.stack || err?.message || err);
+    const timeout = err?.code === 'razorpay_timeout';
     const unreachable = err?.code === 'razorpay_unreachable';
-    res.status(unreachable ? 503 : 502).json({
+    res.status(timeout ? 504 : unreachable ? 503 : 502).json({
       success: false,
-      code: unreachable ? 'razorpay_unreachable' : 'razorpay_order_failed',
-      error: unreachable
-        ? 'Online payment is temporarily unreachable from the server. You can still confirm your booking and pay at the salon.'
-        : err?.message || 'Could not start the payment. Please try again.',
-      details: err?.message,
+      code: timeout ? 'request_timeout' : unreachable ? 'razorpay_unreachable' : 'razorpay_order_failed',
+      retryable: true,
+      error: timeout
+        ? 'The payment gateway took too long to respond. No payment was charged — please try again.'
+        : unreachable
+          ? 'Online payment is temporarily unreachable from the server. You can still confirm your booking and pay at the salon.'
+          : 'The payment gateway could not start the order. No payment was charged — please try again.',
     });
   }
 }
@@ -355,6 +377,11 @@ export function handleVerifyRazorpayPayment(req: any, res: any): void {
     res.json({ success: true, verified: true, paymentId, orderId });
   } catch (err: any) {
     console.error('[Razorpay] Verification error:', err?.stack || err?.message || err);
-    res.status(500).json({ success: false, verified: false, error: err?.message || 'Payment verification failed.' });
+    res.status(500).json({
+      success: false,
+      verified: false,
+      code: 'payment_verification_error',
+      error: 'Payment verification could not be completed. Please try again.',
+    });
   }
 }

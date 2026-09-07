@@ -29,13 +29,25 @@ export class DbTimeoutError extends Error {
 
 // Budgets are tuned so the API always answers with JSON *before* a serverless
 // platform hits its own invocation limit (10s on several hosting free tiers)
-// and replies with an un-parseable HTML error page.
+// and replies with an un-parseable HTML error page. Environment variables are
+// operator-controlled, so do not let an empty, NaN, negative, or accidentally
+// enormous value turn the guard into an immediate timeout (or disable it).
+function durationFromEnv(name: string, fallback: number, min = 50, max = 120_000): number {
+  const raw = process.env[name];
+  const parsed = typeof raw === 'string' && raw.trim() ? Number(raw) : fallback;
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.max(Math.round(parsed), min), max);
+}
+
 /** Default budget for a single database round-trip. */
-export const DEFAULT_DB_TIMEOUT_MS = Number(process.env.DB_TIMEOUT_MS || 6000);
+export const DEFAULT_DB_TIMEOUT_MS = durationFromEnv('DB_TIMEOUT_MS', 6000);
 /** Shorter budget for "nice to have" lookups (owner resolution, notifications). */
-export const LOOKUP_DB_TIMEOUT_MS = Number(process.env.DB_LOOKUP_TIMEOUT_MS || 4000);
+export const LOOKUP_DB_TIMEOUT_MS = durationFromEnv('DB_LOOKUP_TIMEOUT_MS', 4000);
 /** Hard ceiling for a whole API request before we answer 504 ourselves. */
-export const API_REQUEST_TIMEOUT_MS = Number(process.env.API_REQUEST_TIMEOUT_MS || 9000);
+// Keep the self-imposed response deadline below the common 10s serverless
+// invocation ceiling, even when an operator accidentally configures a larger
+// value. A platform-generated HTML 500 must never win the race.
+export const API_REQUEST_TIMEOUT_MS = durationFromEnv('API_REQUEST_TIMEOUT_MS', 9000, 50, 9500);
 
 export interface DbResult<T = any> {
   data: T | null;
@@ -106,6 +118,8 @@ export function isTransientDbError(error: any): boolean {
 export interface RunDbOptions {
   label: string;
   timeoutMs?: number;
+  /** Absolute request deadline, when the caller has one. */
+  deadlineAt?: number;
   /** Retry a transient failure once (default true). */
   retry?: boolean;
   /** Delay before the retry (ms, default 250). */
@@ -126,20 +140,36 @@ export async function runDb<T = any>(
   build: () => PromiseLike<{ data: T | null; error: any }>,
   options: RunDbOptions
 ): Promise<DbResult<T>> {
-  const { label, timeoutMs = DEFAULT_DB_TIMEOUT_MS, retry = true, retryDelayMs = 250 } = options;
+  const { label, timeoutMs = DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry = true, retryDelayMs = 250 } = options;
   const startedAt = Date.now();
   const maxAttempts = retry ? 2 : 1;
   let lastError: any = null;
   let timedOut = false;
+  let attemptsMade = 0;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    // A request-level timer may already have answered the customer. Do not
+    // start another Supabase attempt after that deadline: a late write/query
+    // can otherwise race the response and trigger ERR_HTTP_HEADERS_SENT (or,
+    // worse, keep a serverless invocation alive until the platform kills it).
+    const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : timeoutMs;
+    if (remaining <= 0) {
+      lastError = new DbTimeoutError(label, timeoutMs);
+      timedOut = true;
+      break;
+    }
+
+    const attemptTimeout = Math.max(1, Math.min(timeoutMs, remaining));
+    attemptsMade = attempt;
     try {
-      const result = await withDbTimeout(build(), label, timeoutMs);
+      const result = await withDbTimeout(build(), label, attemptTimeout);
       const error = (result as any)?.error ?? null;
       if (error && isTransientDbError(error) && attempt < maxAttempts) {
         lastError = error;
+        const retryRemaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : retryDelayMs;
+        if (retryRemaining <= 0) break;
         console.warn(`[DB] ${label} attempt ${attempt} failed transiently (${error.message || error}); retrying…`);
-        await sleep(retryDelayMs);
+        await sleep(Math.min(retryDelayMs, Math.max(0, retryRemaining)));
         continue;
       }
       return {
@@ -153,8 +183,10 @@ export async function runDb<T = any>(
       lastError = err;
       timedOut = err instanceof DbTimeoutError;
       if (isTransientDbError(err) && attempt < maxAttempts) {
+        const retryRemaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : retryDelayMs;
+        if (retryRemaining <= 0) break;
         console.warn(`[DB] ${label} attempt ${attempt} threw (${err?.message || err}); retrying…`);
-        await sleep(retryDelayMs);
+        await sleep(Math.min(retryDelayMs, Math.max(0, retryRemaining)));
         continue;
       }
       break;
@@ -180,7 +212,7 @@ export async function runDb<T = any>(
     data: null,
     error: normalized,
     timedOut,
-    attempts: maxAttempts,
+    attempts: attemptsMade || 1,
     durationMs: Date.now() - startedAt,
   };
 }
@@ -192,18 +224,39 @@ export function newRequestId(prefix = 'req'): string {
   return `${prefix}_${stamp}${rand}`;
 }
 
+/** True when another middleware already answered (or the client went away). */
+export function responseAlreadyEnded(res: any): boolean {
+  return !!(
+    res?.headersSent ||
+    res?.writableEnded ||
+    res?.destroyed ||
+    res?.locals?.requestTimedOut
+  );
+}
+
 /**
  * Express middleware: guarantee that a route answers within `ms`, with JSON.
  * Without it, a stuck handler is killed by the hosting platform, which replies
  * with an HTML error page the SPA cannot parse ("Server error (HTTP 500)").
+ *
+ * The middleware also records the deadline on `res.locals`. Handlers that are
+ * still unwinding after the 504 can therefore stop before attempting a second
+ * response. This matters in Express 4: a promise that resolves after the
+ * timeout otherwise raises `ERR_HTTP_HEADERS_SENT` and can turn a clean JSON
+ * timeout back into FUNCTION_INVOCATION_FAILED.
  */
 export function withRequestTimeout(ms: number, message?: string) {
+  const budget = Number.isFinite(ms) && ms > 0 ? ms : API_REQUEST_TIMEOUT_MS;
   return function requestTimeoutMiddleware(req: any, res: any, next: any) {
-    if (res.headersSent) return next();
+    if (responseAlreadyEnded(res)) return next();
+    res.locals = res.locals || {};
+    res.locals.requestDeadlineAt = Date.now() + budget;
     const timer = setTimeout(() => {
-      if (res.headersSent) return;
-      const requestId = res.locals?.requestId || newRequestId();
-      console.error(`[API] ${req.method} ${req.originalUrl || req.url} exceeded ${ms}ms — answering 504 (${requestId}).`);
+      if (responseAlreadyEnded(res)) return;
+      res.locals.requestTimedOut = true;
+      const requestId = res.locals?.requestId || newRequestId('api');
+      res.locals.requestId = requestId;
+      console.error(`[API] ${req.method} ${req.originalUrl || req.url} exceeded ${budget}ms — answering 504 (${requestId}).`);
       res.status(504).json({
         success: false,
         code: 'request_timeout',
@@ -212,7 +265,7 @@ export function withRequestTimeout(ms: number, message?: string) {
           message ||
           'The server took too long to respond. Nothing was charged. Please try again in a moment.',
       });
-    }, ms);
+    }, budget);
     const clear = () => clearTimeout(timer);
     res.on('finish', clear);
     res.on('close', clear);
