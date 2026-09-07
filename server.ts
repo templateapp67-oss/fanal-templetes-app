@@ -121,7 +121,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
   // CORS for cross-origin API callers (split dev on different ports, preview
   // hosts, custom domains). Same-origin traffic (no Origin header) is
   // untouched. Mounted before the routes so OPTIONS preflights for

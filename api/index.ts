@@ -13,7 +13,7 @@ import {
 } from "../server/bookingOps";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 // CORS for cross-origin API callers (different preview/custom/subdomain
 // host). Same-origin traffic (no Origin header) passes through untouched.
 // Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
