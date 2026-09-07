@@ -1,41 +1,92 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Check, X } from 'lucide-react';
+import { Calendar, Clock, Check, X, AlertCircle } from 'lucide-react';
 
+/**
+ * Customer-facing view of a single booking (the "manage my booking" link).
+ *
+ * Every failure used to be swallowed: a missing/failed fetch rendered *nothing*
+ * (`return null`), and accepting a proposed time optimistically flipped the
+ * local state even when the API rejected the change — so the customer believed
+ * a slot was confirmed that the salon never saw.
+ */
 export const CustomerBookingPortal = ({ bookingId }: { bookingId: string }) => {
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>('');
+  const [actionError, setActionError] = useState<string>('');
+  const [pendingAction, setPendingAction] = useState<string>('');
 
   useEffect(() => {
+    let cancelled = false;
     const fetchBooking = async () => {
+      setLoading(true);
+      setLoadError('');
       try {
-        const res = await fetch(`/api/bookings/${bookingId}`);
-        const json = await res.json();
-        if (json.success) {
-          setBooking(json.data);
+        const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`);
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !json || json.success === false) {
+          setLoadError(
+            json?.error ||
+              (res.status === 404
+                ? 'We could not find this booking. Please check the link from your confirmation message.'
+                : `This booking could not be loaded (HTTP ${res.status}).`)
+          );
+          return;
         }
-      } catch (e) {
-        console.error(e);
+        setBooking(json.data);
+      } catch (e: any) {
+        if (!cancelled) setLoadError(e?.message ? `Network error: ${e.message}` : 'Network error while loading your booking.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    if (bookingId) fetchBooking();
+    if (bookingId) {
+      fetchBooking();
+    } else {
+      setLoading(false);
+      setLoadError('No booking reference was provided.');
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [bookingId]);
 
   const handleAction = async (status: string) => {
+    setActionError('');
+    setPendingAction(status);
     try {
-      await fetch('/api/bookings/update', {
+      const res = await fetch('/api/bookings/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: bookingId, status })
       });
-      setBooking((prev: any) => ({ ...prev, status }));
-    } catch (e) {
-      console.error(e);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json || json.success === false) {
+        setActionError(
+          json?.error || `We couldn't update your booking (HTTP ${res.status}). Please contact the salon directly.`
+        );
+        return;
+      }
+      // Use the row the server actually stored (it also promotes a proposed
+      // slot into booking_date/time_slot when the customer accepts).
+      setBooking(json.data || ((prev: any) => ({ ...prev, status })));
+    } catch (e: any) {
+      setActionError(e?.message ? `Network error: ${e.message}` : 'Network error — please contact the salon directly.');
+    } finally {
+      setPendingAction('');
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <div className="p-4 text-xs text-slate-500">Loading your booking…</div>;
+  if (loadError) {
+    return (
+      <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl max-w-md mx-auto mt-4 text-xs text-rose-800 flex items-start gap-2">
+        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+        <span>{loadError}</span>
+      </div>
+    );
+  }
   if (!booking) return null;
 
   return (
@@ -67,13 +118,28 @@ export const CustomerBookingPortal = ({ bookingId }: { bookingId: string }) => {
         )}
       </div>
 
+      {actionError && (
+        <div className="mb-3 flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
       {booking.status === 'reschedule_proposed' && (
         <div className="flex gap-2">
-          <button onClick={() => handleAction('cancelled')} className="flex-1 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-700 flex items-center justify-center gap-1 hover:bg-slate-50">
-            <X className="w-4 h-4" /> Reject
+          <button
+            disabled={!!pendingAction}
+            onClick={() => handleAction('cancelled')}
+            className="flex-1 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-700 flex items-center justify-center gap-1 hover:bg-slate-50 disabled:opacity-40"
+          >
+            <X className="w-4 h-4" /> {pendingAction === 'cancelled' ? 'Sending…' : 'Reject'}
           </button>
-          <button onClick={() => handleAction('confirmed')} className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-700">
-            <Check className="w-4 h-4" /> Accept New Time
+          <button
+            disabled={!!pendingAction}
+            onClick={() => handleAction('confirmed')}
+            className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
+          >
+            <Check className="w-4 h-4" /> {pendingAction === 'confirmed' ? 'Confirming…' : 'Accept New Time'}
           </button>
         </div>
       )}

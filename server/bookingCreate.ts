@@ -28,6 +28,13 @@
 import { isUuidLike, sanitizeBookingRow } from './bookingOps';
 import { isRazorpayConfigured, verifyRazorpaySignature } from './razorpay';
 import { resolveTenantFromHost } from '../src/lib/tenant';
+import {
+  runDb,
+  newRequestId,
+  isTransientDbError,
+  DEFAULT_DB_TIMEOUT_MS,
+  LOOKUP_DB_TIMEOUT_MS,
+} from './dbGuard';
 
 const ALLOWED_STATUS = new Set(['pending', 'confirmed', 'cancelled', 'completed', 'reschedule_proposed']);
 const ALLOWED_PAYMENT_STATUS = new Set(['pending', 'paid_deposit', 'paid_full', 'pay_at_salon', 'refunded', 'failed']);
@@ -181,40 +188,42 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
     return envOwner ? { ownerId: envOwner, source: 'env' } : { ownerId: null, source: 'mock' };
   }
 
+  // Every lookup below is time-boxed: a hanging profiles query must not eat the
+  // whole serverless invocation budget (that is what turned a slow database
+  // into an un-parseable platform 500 at checkout).
   for (const [column, value] of [
     ['subdomain', subdomain],
     ['custom_domain', customDomain],
   ] as const) {
     if (!value) continue;
-    try {
-      const { data, error } = await db.from('profiles').select('id').eq(column, value).maybeSingle();
-      if (error) console.warn(`[Bookings] Owner lookup by ${column} failed:`, error.message || error);
-      if (isUuidLike(data?.id)) return { ownerId: data.id, source: 'subdomain' };
-    } catch (err: any) {
-      console.warn(`[Bookings] Owner lookup by ${column} threw:`, err?.message || err);
-    }
+    const { data, error } = await runDb(
+      () => db.from('profiles').select('id').eq(column, value).maybeSingle(),
+      { label: `owner lookup by ${column}`, timeoutMs: LOOKUP_DB_TIMEOUT_MS }
+    );
+    if (error) console.warn(`[Bookings] Owner lookup by ${column} failed:`, error.message || error);
+    if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id, source: 'subdomain' };
   }
 
   if (ownerEmail && EMAIL_RE.test(ownerEmail)) {
-    try {
-      const { data, error } = await db.from('profiles').select('id').eq('email', ownerEmail).maybeSingle();
-      if (error) console.warn('[Bookings] Owner lookup by email failed:', error.message || error);
-      if (isUuidLike(data?.id)) return { ownerId: data.id, source: 'owner-email' };
-    } catch (err: any) {
-      console.warn('[Bookings] Owner lookup by email threw:', err?.message || err);
-    }
+    const { data, error } = await runDb(
+      () => db.from('profiles').select('id').eq('email', ownerEmail).maybeSingle(),
+      { label: 'owner lookup by email', timeoutMs: LOOKUP_DB_TIMEOUT_MS }
+    );
+    if (error) console.warn('[Bookings] Owner lookup by email failed:', error.message || error);
+    if (isUuidLike((data as any)?.id)) return { ownerId: (data as any).id, source: 'owner-email' };
   }
 
   if (envOwner) return { ownerId: envOwner, source: 'env' };
 
-  try {
-    const { data, error } = await db.from('profiles').select('id').limit(2);
+  {
+    const { data, error } = await runDb(() => db.from('profiles').select('id').limit(2), {
+      label: 'sole-owner lookup',
+      timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+    });
     if (error) console.warn('[Bookings] Sole-owner lookup failed:', error.message || error);
-    if (Array.isArray(data) && data.length === 1 && isUuidLike(data[0]?.id)) {
-      return { ownerId: data[0].id, source: 'sole-profile' };
+    if (Array.isArray(data) && data.length === 1 && isUuidLike((data as any)[0]?.id)) {
+      return { ownerId: (data as any)[0].id, source: 'sole-profile' };
     }
-  } catch (err: any) {
-    console.warn('[Bookings] Sole-owner lookup threw:', err?.message || err);
   }
 
   return { ownerId: null, source: 'unresolved' };
@@ -227,7 +236,35 @@ export async function resolveBookingOwnerId(opts: ResolveOwnerOptions): Promise<
 export function describeDbError(error: any): { status: number; message: string } {
   const code = error?.code ? String(error.code) : '';
   const raw = error?.message || 'Unknown database error';
+  // A transport-level fault (connection reset, DNS, gateway 502/503) arrives
+  // without a Postgres code — e.g. `TypeError: fetch failed`. It is temporary
+  // and retryable, so answer 503 with a human sentence rather than a raw 500.
+  if (!code || code === 'db_unreachable' || code === 'db_timeout') {
+    if (isTransientDbError(error) || code === 'db_unreachable') {
+      return {
+        status: 503,
+        message:
+          code === 'db_timeout'
+            ? 'The booking database is not responding right now. Nothing was charged — please try again in a minute.'
+            : `The booking database could not be reached (${raw}). Nothing was charged — please try again in a minute.`,
+      };
+    }
+  }
   switch (code) {
+    case 'db_timeout':
+      // The database never answered inside our budget. 503 + Retry-After is the
+      // honest answer; previously the request simply hung until the hosting
+      // platform killed it and returned an un-parseable HTML 500.
+      return {
+        status: 503,
+        message:
+          'The booking database is not responding right now. Nothing was charged — please try again in a minute.',
+      };
+    case 'db_unreachable':
+      return {
+        status: 503,
+        message: `The booking database could not be reached (${raw}). Nothing was charged — please try again in a minute.`,
+      };
     case '23502':
       return { status: 422, message: `A required booking field was empty (${raw}).` };
     case '23503':
@@ -249,6 +286,20 @@ export function describeDbError(error: any): { status: number; message: string }
       return { status: 400, message: `One of the booking values has the wrong type (${raw}).` };
     case '42703':
       return { status: 500, message: `The bookings table is missing a column used by this build (${raw}).` };
+    case 'PGRST204':
+      // PostgREST schema cache doesn't know a column we sent (migration not
+      // applied yet). The handler retries without it first; reaching here means
+      // even the reduced row failed.
+      return {
+        status: 500,
+        message: `The bookings table is out of date for this build (${raw}). Run the Supabase migrations.`,
+      };
+    case 'PGRST301':
+    case '401':
+      return {
+        status: 500,
+        message: 'The server could not authenticate with the database. Check SUPABASE_SERVICE_ROLE_KEY.',
+      };
     case '42P01':
       return { status: 500, message: 'The bookings table does not exist — run the Supabase migrations.' };
     case '42501':
@@ -262,6 +313,102 @@ export function describeDbError(error: any): { status: number; message: string }
 }
 
 // ---------------------------------------------------------------------------
+// Insert with schema-drift recovery
+// ---------------------------------------------------------------------------
+
+/** `Could not find the 'foo' column of 'bookings' in the schema cache` → `foo` */
+export function missingColumnFromError(error: any): string | null {
+  const message = String(error?.message || '');
+  const code = String(error?.code || '');
+  if (code !== 'PGRST204' && code !== '42703' && !/column/i.test(message)) return null;
+  const quoted = message.match(/'([^']+)' column/) || message.match(/column "([^"]+)"/) || message.match(/column ([a-z_]+)/i);
+  const column = quoted?.[1];
+  if (!column) return null;
+  // Never drop a column the booking cannot exist without.
+  if (['customer_name', 'owner_id', 'booking_date', 'time_slot', 'service_name'].includes(column)) return null;
+  return column;
+}
+
+/**
+ * Insert the booking, and if the deployed database is a migration behind (it
+ * does not know `booking_type` / `home_address` / `notes` yet), drop the
+ * offending column and retry instead of failing the customer's checkout.
+ * A booking without its optional metadata is infinitely better than a lost one.
+ */
+export async function insertBookingRow(
+  db: any,
+  row: Record<string, any>,
+  requestId: string
+): Promise<{ data: any; error: any; droppedColumns: string[] }> {
+  const droppedColumns: string[] = [];
+  let attemptRow = { ...row };
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { data, error } = await runDb(() => db.from('bookings').insert([attemptRow]).select().single(), {
+      label: `booking insert (${requestId})`,
+      timeoutMs: DEFAULT_DB_TIMEOUT_MS,
+    });
+    if (!error) return { data, error: null, droppedColumns };
+
+    const missing = missingColumnFromError(error);
+    if (missing && missing in attemptRow) {
+      console.warn(
+        `[Bookings] (${requestId}) Database does not know the "${missing}" column — retrying without it. ` +
+          'Run the pending Supabase migrations to keep this data.'
+      );
+      const { [missing]: _dropped, ...rest } = attemptRow;
+      attemptRow = rest;
+      droppedColumns.push(missing);
+      continue;
+    }
+    return { data: null, error, droppedColumns };
+  }
+
+  return {
+    data: null,
+    error: { code: 'schema_mismatch', message: 'The bookings table schema is too far out of date for this build.' },
+    droppedColumns,
+  };
+}
+
+
+/**
+ * Look for a booking already stored under this idempotency key
+ * (owner + payment_id). Any lookup failure is ignored: it is better to risk a
+ * duplicate than to reject a real booking because a read timed out.
+ */
+async function findExistingBooking(
+  deps: BookingCreateDeps,
+  row: Record<string, any>,
+  requestId: string
+): Promise<any | null> {
+  if (!row.payment_id) return null;
+  if (deps.isMock) {
+    const existing = deps.getMockBookings?.().find(
+      (b: any) => b && b.payment_id === row.payment_id && (!row.owner_id || b.owner_id === row.owner_id)
+    );
+    return existing || null;
+  }
+  try {
+    let query = deps.db.from('bookings').select('*').eq('payment_id', row.payment_id);
+    if (row.owner_id) query = query.eq('owner_id', row.owner_id);
+    const { data, error } = await runDb(() => query.maybeSingle(), {
+      label: `duplicate check (${requestId})`,
+      timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+      retry: false,
+    });
+    if (error) {
+      console.warn(`[Bookings] (${requestId}) Duplicate check failed (continuing):`, error.message || error);
+      return null;
+    }
+    return data || null;
+  } catch (err: any) {
+    console.warn(`[Bookings] (${requestId}) Duplicate check threw (continuing):`, err?.message || err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The handler
 // ---------------------------------------------------------------------------
 
@@ -270,6 +417,8 @@ export interface BookingCreateDeps {
   db: any;
   isMock: boolean;
   addMockBooking: (row: any) => void;
+  /** Mock-mode duplicate detection (optional; live mode queries the DB). */
+  getMockBookings?: () => any[];
   addMockNotifications: (rows: any[]) => void;
   resolveOwnerEmail: (ownerId: string | null | undefined) => Promise<string>;
 }
@@ -277,8 +426,16 @@ export interface BookingCreateDeps {
 export function createBookingHandler(deps: BookingCreateDeps) {
   return async function handleBookingCreate(req: any, res: any): Promise<void> {
     const startedAt = Date.now();
+    // Correlates the customer-visible error with the exact server log line.
+    const requestId = newRequestId('bk');
+    if (res.locals) res.locals.requestId = requestId;
+    /** Every answer carries the id + a machine-readable code. */
+    const fail = (status: number, code: string, error: string, extra: Record<string, any> = {}) => {
+      if (res.headersSent) return;
+      res.status(status).json({ success: false, code, requestId, error, ...extra });
+    };
     try {
-      const body = req.body ?? {};
+      const body = readJsonBody(req);
       const { booking, notifications, payment } = body;
 
       // ---- 1. Validate BEFORE touching the DB or the payment gateway -------
@@ -287,10 +444,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         console.warn('[Bookings] Rejected invalid booking payload:', validation.errors.join(' | '), {
           received: safeSummary(booking),
         });
-        return void res.status(400).json({
-          success: false,
-          code: 'invalid_booking',
-          error: validation.errors.join(' '),
+        return void fail(400, 'invalid_booking', validation.errors.join(' '), {
           fieldErrors: validation.fieldErrors,
         });
       }
@@ -313,11 +467,11 @@ export function createBookingHandler(deps: BookingCreateDeps) {
               order: payment.razorpay_order_id,
               payment: payment.razorpay_payment_id,
             });
-            return void res.status(400).json({
-              success: false,
-              code: 'payment_unverified',
-              error: 'We could not verify your payment with Razorpay. The booking was not saved — no amount was captured.',
-            });
+            return void fail(
+              400,
+              'payment_unverified',
+              'We could not verify your payment with Razorpay. The booking was not saved — no amount was captured.'
+            );
           }
           verifiedPaymentId = String(payment.razorpay_payment_id);
           console.log(`[Bookings] Verified Razorpay payment ${verifiedPaymentId} (order ${payment.razorpay_order_id})`);
@@ -350,12 +504,11 @@ export function createBookingHandler(deps: BookingCreateDeps) {
             'Set DEFAULT_OWNER_ID in the environment, or publish the salon so its subdomain maps to a profile.',
           { subdomain: subdomainHint, customDomain: customDomainHint, ownerEmail: ownerEmailHint }
         );
-        return void res.status(422).json({
-          success: false,
-          code: 'owner_unresolved',
-          error:
-            'This salon is not linked to an owner account yet, so bookings cannot be stored. Please contact the salon directly (or set DEFAULT_OWNER_ID on the server).',
-        });
+        return void fail(
+          422,
+          'owner_unresolved',
+          'This salon is not linked to an owner account yet, so bookings cannot be stored. Please contact the salon directly (or set DEFAULT_OWNER_ID on the server).'
+        );
       }
 
       const bookingRow = sanitizeBookingRow({
@@ -377,7 +530,31 @@ export function createBookingHandler(deps: BookingCreateDeps) {
 
       let bookingData: any;
 
-      // ---- 4. Persist ------------------------------------------------------
+      // ---- 4. Idempotency --------------------------------------------------
+      // The browser retries a failed save and `runDb` retries a transient
+      // fault, so the same booking can legitimately be POSTed twice (classic
+      // case: the row WAS written but the answer was lost to a timeout).
+      // `payment_id` carries the booking reference (NX-…) or the Razorpay
+      // payment id, both unique per attempt, so it is a natural idempotency
+      // key. If a row already exists, return it instead of double-booking.
+      if (bookingRow.payment_id) {
+        const existing = await findExistingBooking(deps, bookingRow, requestId);
+        if (existing) {
+          console.log(
+            `[Bookings] (${requestId}) Duplicate submission for payment_id ${bookingRow.payment_id} — returning the existing booking ${existing.id}.`
+          );
+          if (res.headersSent) return;
+          return void res.json({
+            success: true,
+            requestId,
+            duplicate: true,
+            data: existing,
+            paymentVerified: !!verifiedPaymentId,
+          });
+        }
+      }
+
+      // ---- 5. Persist ------------------------------------------------------
       if (deps.isMock) {
         bookingData = {
           ...bookingRow,
@@ -394,17 +571,21 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         );
         console.log(`[Bookings] (mock mode) stored booking ${bookingData.id} for ${bookingRow.customer_name}`);
       } else {
-        const { data: dbData, error: bookingError } = await deps.db
-          .from('bookings')
-          .insert([bookingRow])
-          .select()
-          .single();
+        // Time-boxed insert with schema-drift recovery. `runDb` inside
+        // `insertBookingRow` retries transient network faults once and turns a
+        // hung database into a catchable `db_timeout` instead of letting the
+        // hosting platform kill the invocation with an un-parseable HTML 500.
+        const { data: dbData, error: bookingError, droppedColumns } = await insertBookingRow(
+          deps.db,
+          bookingRow,
+          requestId
+        );
 
         if (bookingError) {
           // Log EVERYTHING server-side: code, details, hint and the row we
           // tried to insert. This is what was missing when the checkout began
           // answering an opaque 500.
-          console.error('[Bookings] Insert failed', {
+          console.error(`[Bookings] (${requestId}) Insert failed`, {
             code: bookingError.code,
             message: bookingError.message,
             details: bookingError.details,
@@ -413,27 +594,30 @@ export function createBookingHandler(deps: BookingCreateDeps) {
             row: safeSummary(bookingRow),
           });
           const { status, message } = describeDbError(bookingError);
-          return void res.status(status).json({
-            success: false,
-            code: bookingError.code || 'db_error',
-            error: message,
+          return void fail(status, bookingError.code || 'db_error', message, {
+            ...(status === 503 ? { retryable: true } : {}),
           });
         }
 
         bookingData = dbData;
         console.log(
-          `[Bookings] Stored booking ${bookingData?.id} (owner ${bookingRow.owner_id} via ${source}) in ${Date.now() - startedAt}ms`
+          `[Bookings] (${requestId}) Stored booking ${bookingData?.id} (owner ${bookingRow.owner_id} via ${source}) in ${Date.now() - startedAt}ms` +
+            (droppedColumns.length ? ` — dropped unknown columns: ${droppedColumns.join(', ')}` : '')
         );
 
         if (notifRows.length > 0) {
+          // Notifications are best-effort: never fail (or delay) a paid booking
+          // because the owner's bell could not be updated.
           try {
-            const fallbackOwnerEmail = await deps.resolveOwnerEmail(bookingData.owner_id);
+            const fallbackOwnerEmail = await deps.resolveOwnerEmail(bookingData?.owner_id);
             const withOwnerEmail = notifRows.map((n: any) => ({
               ...n,
               user_email: n.user_email || fallbackOwnerEmail,
             }));
-            const { error: notifError } = await deps.db.from('in_app_notifications').insert(withOwnerEmail);
-            // A failed notification must never fail a paid booking.
+            const { error: notifError } = await runDb(
+              () => deps.db.from('in_app_notifications').insert(withOwnerEmail),
+              { label: `booking notification (${requestId})`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, retry: false }
+            );
             if (notifError) console.warn('[Bookings] Notification insert error:', notifError.message || notifError);
           } catch (notifErr: any) {
             console.warn('[Bookings] Notification insert threw:', notifErr?.message || notifErr);
@@ -441,16 +625,32 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         }
       }
 
-      res.json({ success: true, data: bookingData, paymentVerified: !!verifiedPaymentId });
+      if (res.headersSent) {
+        // The request-timeout guard already answered; don't double-send, but do
+        // record that the booking actually landed.
+        console.warn(`[Bookings] (${requestId}) Booking ${bookingData?.id} saved after the response was already sent.`);
+        return;
+      }
+      res.json({
+        success: true,
+        requestId,
+        data: bookingData,
+        paymentVerified: !!verifiedPaymentId,
+      });
     } catch (err: any) {
       // Absolute last resort — an unexpected fault. Log the stack so the real
       // cause is visible in the server logs instead of just "HTTP 500".
-      console.error('[Bookings] Unhandled error while creating a booking:', err?.stack || err?.message || err);
-      res.status(500).json({
-        success: false,
-        code: 'unexpected_error',
-        error: err?.message || 'The booking could not be saved due to an unexpected server error.',
-      });
+      console.error(
+        `[Bookings] (${requestId}) Unhandled error while creating a booking:`,
+        err?.stack || err?.message || err
+      );
+      fail(
+        500,
+        'unexpected_error',
+        err?.message
+          ? `The booking could not be saved (${err.message}).`
+          : 'The booking could not be saved due to an unexpected server error.'
+      );
     }
   };
 }
@@ -490,4 +690,34 @@ function tenantFromRequest(req: any): { subdomain: string | null; customDomain: 
     }
   }
   return out;
+}
+
+/**
+ * Read the JSON body regardless of who parsed it.
+ *
+ * `express.json()` gives us an object, but some serverless runtimes hand the
+ * handler a raw string/Buffer (or pre-parse the stream themselves so
+ * body-parser sees nothing). Treating that as "no body" produced a confusing
+ * "Customer name is required" 400 on a payload that was actually complete.
+ */
+export function readJsonBody(req: any): Record<string, any> {
+  const body = req?.body;
+  if (!body) return {};
+  if (typeof body === 'string') {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(body)) {
+    try {
+      const parsed = JSON.parse(body.toString('utf8'));
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof body === 'object' ? body : {};
 }

@@ -441,7 +441,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
         {/* TAB CONTENT: APPOINTMENTS */}
         {activeTab === 'calendar' && (
-          <BookingManager primaryAccentColor={currentPrimaryColor} />
+          <BookingManager
+            primaryAccentColor={currentPrimaryColor}
+            ownerId={profile.ownerId}
+            subdomain={profile.subdomain}
+          />
         )}
 
         {/* TAB CONTENT: SERVICES */}

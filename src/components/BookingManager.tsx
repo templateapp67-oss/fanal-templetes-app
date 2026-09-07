@@ -1,50 +1,126 @@
-import React, { useState, useEffect } from 'react';
-import { Check, X, Calendar as CalendarIcon, Clock, Edit2, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Check, X, Calendar as CalendarIcon, Clock, Edit2, ExternalLink, AlertCircle, RefreshCw } from 'lucide-react';
 import { CustomerBookingPortal } from './CustomerBookingPortal';
 
-export const BookingManager = ({ primaryAccentColor }: { primaryAccentColor: string }) => {
+interface BookingManagerProps {
+  primaryAccentColor: string;
+  /** Owner (auth user) id — the live booking list is scoped to this salon. */
+  ownerId?: string | null;
+  /** Fallback scope when the owner id isn't known yet. */
+  subdomain?: string | null;
+}
+
+/**
+ * Live booking requests.
+ *
+ * Previously this component ignored `res.ok` and `json.success === false`
+ * entirely: a database outage, an RLS rejection or an HTML error page all
+ * rendered as a cheerful "No bookings found in Supabase." while the salon
+ * silently missed real customers. It also polled every 3 s forever, hammering
+ * a failing endpoint. Now failures are shown, polling backs off while the API
+ * is unhealthy, and status updates report whether they actually persisted.
+ */
+export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: BookingManagerProps) => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>('');
+  const [actionError, setActionError] = useState<string>('');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [demoCustomerId, setDemoCustomerId] = useState<string | null>(null);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
+  const mountedRef = useRef(true);
+  const failureCountRef = useRef(0);
 
-  const fetchBookings = async () => {
+  const scopeQuery = ownerId
+    ? `?owner_id=${encodeURIComponent(ownerId)}`
+    : subdomain
+      ? `?subdomain=${encodeURIComponent(subdomain)}`
+      : '';
+
+  const fetchBookings = useCallback(async () => {
     try {
-      const res = await fetch('/api/bookings');
-      const json = await res.json();
-      if (json.success) {
-        setBookings(json.data);
+      const res = await fetch(`/api/bookings${scopeQuery}`);
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
       }
-    } catch (e) {
-      console.error(e);
+
+      if (!res.ok || !json || json.success === false) {
+        const detail =
+          json?.error ||
+          (text ? `HTTP ${res.status} — ${text.slice(0, 120)}` : `HTTP ${res.status} ${res.statusText}`);
+        failureCountRef.current += 1;
+        if (mountedRef.current) setLoadError(detail);
+        return;
+      }
+
+      failureCountRef.current = 0;
+      if (!mountedRef.current) return;
+      setLoadError('');
+      setBookings(Array.isArray(json.data) ? json.data : []);
+      setLastSyncedAt(Date.now());
+    } catch (e: any) {
+      failureCountRef.current += 1;
+      if (mountedRef.current) {
+        setLoadError(e?.message ? `Could not reach the booking service (${e.message}).` : 'Could not reach the booking service.');
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
-  };
+  }, [scopeQuery]);
 
   useEffect(() => {
+    mountedRef.current = true;
     fetchBookings();
-    
-    const interval = setInterval(() => {
-      fetchBookings();
-    }, 3000);
 
-    return () => clearInterval(interval);
-  }, []);
+    // Poll every 3s while healthy; back off (up to 60s) while the API is
+    // failing so a broken endpoint isn't hammered 20x a minute.
+    let timer: any;
+    const schedule = () => {
+      const backoff = Math.min(3000 * Math.pow(2, Math.min(failureCountRef.current, 5)), 60000);
+      timer = setTimeout(async () => {
+        await fetchBookings();
+        if (mountedRef.current) schedule();
+      }, failureCountRef.current > 0 ? backoff : 3000);
+    };
+    schedule();
+
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timer);
+    };
+  }, [fetchBookings]);
 
   const handleUpdateStatus = async (id: string, status: string, proposedDate?: string, proposedTime?: string) => {
+    setActionError('');
+    setUpdatingId(id);
     try {
-      await fetch('/api/bookings/update', {
+      const res = await fetch('/api/bookings/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status, proposed_date: proposedDate, proposed_time_slot: proposedTime })
       });
-      fetchBookings();
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json || json.success === false) {
+        // The old code assumed success and refreshed, so a rejected update just
+        // looked like "nothing happened".
+        setActionError(
+          json?.error || `The booking could not be updated (HTTP ${res.status}). Please try again.`
+        );
+        return;
+      }
       setSelectedBooking(null);
-    } catch (e) {
-      console.error(e);
+      await fetchBookings();
+    } catch (e: any) {
+      setActionError(e?.message ? `Update failed: ${e.message}` : 'Update failed — the booking service is unreachable.');
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -53,7 +129,37 @@ export const BookingManager = ({ primaryAccentColor }: { primaryAccentColor: str
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-        <h2 className="font-display font-bold text-lg mb-4">Live Booking Requests (Supabase)</h2>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="font-display font-bold text-lg">Live Booking Requests (Supabase)</h2>
+          <div className="flex items-center gap-2 text-[10px] text-slate-500">
+            {lastSyncedAt && !loadError && <span>Synced {new Date(lastSyncedAt).toLocaleTimeString()}</span>}
+            <button
+              type="button"
+              onClick={() => { failureCountRef.current = 0; fetchBookings(); }}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 font-bold"
+              title="Refresh now"
+            >
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
+        </div>
+
+        {loadError && (
+          <div className="mb-4 flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              <strong>Live bookings could not be loaded.</strong> {loadError}
+              {' '}The list below may be out of date — it is not proof that no one booked.
+            </span>
+          </div>
+        )}
+
+        {actionError && (
+          <div className="mb-4 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{actionError}</span>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -68,7 +174,11 @@ export const BookingManager = ({ primaryAccentColor }: { primaryAccentColor: str
             </thead>
             <tbody>
               {bookings.length === 0 && (
-                <tr><td colSpan={6} className="py-4 text-center text-slate-500">No bookings found in Supabase.</td></tr>
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-slate-500">
+                    {loadError ? 'Bookings are unavailable right now — see the error above.' : 'No bookings found in Supabase.'}
+                  </td>
+                </tr>
               )}
               {bookings.map((b) => (
                 <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50">
@@ -102,10 +212,10 @@ export const BookingManager = ({ primaryAccentColor }: { primaryAccentColor: str
                   <td className="py-3 px-2 text-right">
                     {b.status === 'pending' && (
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => handleUpdateStatus(b.id, 'confirmed')} className="p-1.5 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200" title="Confirm">
+                        <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'confirmed')} className="p-1.5 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 disabled:opacity-40" title="Confirm">
                           <Check className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleUpdateStatus(b.id, 'cancelled')} className="p-1.5 bg-rose-100 text-rose-700 rounded hover:bg-rose-200" title="Reject">
+                        <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'cancelled')} className="p-1.5 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 disabled:opacity-40" title="Reject">
                           <X className="w-4 h-4" />
                         </button>
                         <button onClick={() => setSelectedBooking(b)} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Suggest New Time">
@@ -148,7 +258,13 @@ export const BookingManager = ({ primaryAccentColor }: { primaryAccentColor: str
 
             <div className="flex gap-2">
               <button onClick={() => setSelectedBooking(null)} className="flex-1 py-2 border rounded-xl text-xs font-bold">Cancel</button>
-              <button onClick={() => handleUpdateStatus(selectedBooking.id, 'reschedule_proposed', newDate, newTime)} className="flex-1 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Send Proposal</button>
+              <button
+                disabled={!newDate || !newTime || updatingId === selectedBooking.id}
+                onClick={() => handleUpdateStatus(selectedBooking.id, 'reschedule_proposed', newDate, newTime)}
+                className="flex-1 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold disabled:opacity-40"
+              >
+                {updatingId === selectedBooking.id ? 'Sending…' : 'Send Proposal'}
+              </button>
             </div>
           </div>
         </div>

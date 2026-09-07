@@ -314,3 +314,49 @@ schema/RLS change). Items 1–3 are hard gates; 4–6 are hygiene.
    a caller can only touch their own rows — but an owner account can still
    hammer the serverless endpoint. Add a per-owner/per-IP rate limit if
    quota abuse ever becomes a concern.
+
+---
+
+## 11. Troubleshooting a failed guest booking ("Server error (HTTP 500)")
+
+**Step 1 — ask the API what is wrong:**
+
+```bash
+curl -s https://<your-domain>/api/health?deep=1 | jq
+```
+
+The answer carries `mode` (`live`/`mock`), `bookingReady`, per-item `checks[]`
+and a `problems[]` list. Secrets are never echoed — only whether they exist.
+
+| `problems[]` entry | What it means | Fix |
+|---|---|---|
+| `SUPABASE_ANON_KEY … is missing` | Only the URL (± service-role key) is configured. Before the fix this **crashed the API at import time**, so every `/api/*` route answered an un-parseable HTML 500 — the exact "Server error (HTTP 500)" the checkout reported. | Set `SUPABASE_ANON_KEY` (or `VITE_SUPABASE_ANON_KEY`) in the hosting environment and redeploy. |
+| `SUPABASE_SERVICE_ROLE_KEY is missing` | The API writes with the anon key, so RLS rejects guest bookings (`42501`). | Set `SUPABASE_SERVICE_ROLE_KEY` server-side (never in the browser bundle). |
+| `Cannot read the bookings table: …` | Migrations not applied, or the project is paused. | Run `supabase/migrations/00001_init.sql`, then `20260907_owner_save_grants.sql`. |
+| `No salon profile exists …` | A guest booking cannot resolve the NOT NULL `owner_id`. | Publish the salon (so `profiles.subdomain` matches the site host) or set `DEFAULT_OWNER_ID`. |
+
+**Step 2 — read the answer the customer got.** Every booking response now
+includes a `requestId` (e.g. `bk_mtr1lwx3ijor83`) and a `code`:
+
+| `code` | HTTP | Meaning |
+|---|---|---|
+| `invalid_booking` | 400 | Missing/invalid customer fields (`fieldErrors` names each one). |
+| `payment_unverified` | 400 | The Razorpay signature did not verify — nothing was captured. |
+| `owner_unresolved` | 422 | The salon is not linked to an owner account. |
+| `23505` | 409 | Duplicate — the booking already exists. |
+| `db_timeout` / `db_error` | 503 | The database did not answer; retryable, nothing was charged. |
+| `request_timeout` | 504 | The whole request exceeded `API_REQUEST_TIMEOUT_MS` (9s). |
+| `42501` | 500 | Row Level Security blocked the insert (missing service-role key). |
+| `PGRST204` / `42703` | 500 | Table schema older than the build — run the migrations. (The API first retries without the unknown column, so this only appears when a *required* column is missing.) |
+
+**Step 3 — grep the server logs for that `requestId`.** Every step logs it:
+owner resolution source, the sanitized row, the exact Postgres `code`,
+`details` and `hint`, dropped columns, and the total duration.
+
+Notes:
+- The booking table is written **only** by the trusted server with the
+  service-role key; guests never talk to Supabase directly.
+- Repeated submissions are de-duplicated by `owner_id` + `payment_id`
+  (the `NX-…` booking reference or the Razorpay payment id), so a retry after a
+  timeout returns the original booking (`duplicate: true`) instead of creating
+  a second one.

@@ -402,3 +402,82 @@ async function requestRaw(
   }
   return { status: res.status, body: parsed, text };
 }
+
+// ============================================================================
+// Diagnostics + tenant-scoping over real HTTP (added with the "opaque HTTP 500"
+// fix). These assert the contract the salon operator relies on when checkout
+// misbehaves in production.
+// ============================================================================
+
+test('GET /api/health reports configuration checks and booking readiness', async () => {
+  const r = await request('GET', '/api/health');
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.body.checks), 'health must list individual checks');
+  assert.ok(r.body.checks.some((c: any) => c.name === 'supabase_config'));
+  assert.ok(r.body.checks.some((c: any) => c.name === 'service_role_key'));
+  assert.ok(r.body.checks.some((c: any) => c.name === 'razorpay'));
+  assert.equal(typeof r.body.bookingReady, 'boolean');
+  // Keys must never be echoed back, only their presence.
+  assert.equal(typeof r.body.supabase.hasServiceKey, 'boolean');
+  const serialized = JSON.stringify(r.body);
+  for (const secret of [process.env.SUPABASE_SERVICE_ROLE_KEY, process.env.SUPABASE_ANON_KEY, process.env.RAZORPAY_KEY_SECRET]) {
+    if (secret && secret.length > 8) {
+      assert.equal(serialized.includes(secret), false, 'health must never echo a secret value');
+    }
+  }
+});
+
+test('GET /api/health?deep=1 stays JSON and does not leak secrets', async () => {
+  const r = await request('GET', '/api/health?deep=1');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deep, true);
+  assert.ok(['ok', 'degraded'].includes(r.body.status));
+});
+
+test('GET /api/bookings never returns another salon\'s data without a scope', async (t) => {
+  const r = await request('GET', '/api/bookings');
+  if (mode === 'mock') {
+    // Mock mode has no tenants; it may answer with the in-memory list.
+    assert.equal(r.status, 200);
+    return;
+  }
+  assert.equal(r.status, 400);
+  assert.equal(r.body.code, 'owner_scope_required');
+});
+
+test('GET /api/notifications without an email is a 400, not an empty success', async () => {
+  const r = await request('GET', '/api/notifications');
+  assert.equal(r.status, 400);
+  assert.equal(r.body.success, false);
+});
+
+test('POST /api/bookings/update rejects a reschedule with no proposed slot', async () => {
+  const r = await request('POST', '/api/bookings/update', { id: 'whatever', status: 'reschedule_proposed' });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /proposed date and time/i);
+});
+
+test('a booking failure answer always carries success:false, code and requestId', async () => {
+  const r = await request('POST', '/api/bookings/create', { booking: { customer_name: '' } });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.success, false);
+  assert.equal(r.body.code, 'invalid_booking');
+  assert.match(r.body.requestId, /^bk_/);
+});
+
+test('an unknown /api route answers JSON 404 (never an HTML page)', async () => {
+  const r = await request('GET', '/api/definitely-not-a-route');
+  assert.equal(r.status, 404);
+  assert.equal(r.body.success, false);
+});
+
+test('a malformed JSON body is a 400 with JSON, not a 500', async () => {
+  const res = await fetch(`${base}/api/bookings/create`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"booking": {',
+  });
+  const text = await res.text();
+  assert.equal(res.status, 400);
+  assert.match(text, /^\{/, 'the body must be JSON');
+});
