@@ -235,6 +235,14 @@ export function describeDbError(error: any): { status: number; message: string }
         status: 422,
         message: 'This salon is not linked to a valid owner account yet, so the booking could not be stored.',
       };
+    case '23505':
+      // unique_violation — e.g. a guest double-submitted a booking that shares a
+      // unique token, or retried a paid booking. The existing booking stands, so
+      // tell the client it is a duplicate (409) rather than a server fault (500).
+      return {
+        status: 409,
+        message: 'A booking with these details already exists — it may have been created just now. Please refresh to see it, or retry once.',
+      };
     case '23514':
       return { status: 400, message: `The booking details were rejected by a database rule (${raw}).` };
     case '22P02':
