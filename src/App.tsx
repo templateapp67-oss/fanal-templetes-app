@@ -26,6 +26,8 @@ import {
   SaveStatus,
   describeError,
   summarizeSaveError,
+  isAuthLikeFailure,
+  isSchemaLikeFailure,
   withRetry,
 } from './lib/autoSave';
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
@@ -228,6 +230,64 @@ export default function App() {
       initialSaved?.profile?.businessType ||
       INITIAL_SALON_PROFILE.businessType
   );
+
+  // -------------------------------------------------------------------------
+  // SHARED PERSISTENCE REFS
+  // Always-fresh snapshot of the salon state so a debounced (or flushed) save
+  // can never persist a stale closure, plus the "what did we last persist"
+  // snapshot used to (a) skip no-op saves and (b) detect unsaved edits so a
+  // late-arriving cloud read (profile fetch / hydration) can never clobber
+  // what the owner is typing right now.
+  const salonStateRef = useRef({ profile, services, stylists, loyaltyConfig, selectedTemplateId, user });
+  salonStateRef.current = { profile, services, stylists, loyaltyConfig, selectedTemplateId, user };
+
+  const lastPersistedSnapshotRef = useRef<string | null>(null);
+  if (lastPersistedSnapshotRef.current === null) {
+    lastPersistedSnapshotRef.current = JSON.stringify({
+      profile,
+      services,
+      stylists,
+      loyaltyConfig,
+      selectedTemplateId,
+    });
+  }
+
+  /**
+   * True when the in-memory salon state differs from what was last persisted
+   * (debounced auto-save pending or a save in flight). Cloud reads must not
+   * overwrite the editor state in this window — otherwise a slow profile/hydrate
+   * response could erase edits the owner made right after sign-in, and the
+   * subsequent auto-save would persist the erased state (data loss).
+   * `ownerId` is excluded: it is injected by the auth effect, not a user edit.
+   */
+  const hasUnsavedEdits = (): boolean => {
+    const persistedRaw = lastPersistedSnapshotRef.current;
+    if (persistedRaw === null) return false;
+    try {
+      const persisted = JSON.parse(persistedRaw);
+      const cur = salonStateRef.current;
+      const stripOwner = (p: any) => {
+        if (!p) return p;
+        const copy = { ...p };
+        delete copy.ownerId;
+        return copy;
+      };
+      const draftOf = (p: any, svc: any, stf: any, loy: any, tmpl: any) =>
+        JSON.stringify({
+          profile: stripOwner(p),
+          services: svc ?? [],
+          stylists: stf ?? [],
+          loyaltyConfig: loy ?? DEFAULT_LOYALTY_CONFIG,
+          selectedTemplateId: tmpl,
+        });
+      return (
+        draftOf(cur.profile, cur.services, cur.stylists, cur.loyaltyConfig, cur.selectedTemplateId) !==
+        draftOf(persisted.profile, persisted.services, persisted.stylists, persisted.loyaltyConfig, persisted.selectedTemplateId)
+      );
+    } catch {
+      return false;
+    }
+  };
 
   // -------------------------------------------------------------------------
   // WHITE-LABEL TENANT BOOTSTRAP
@@ -451,41 +511,41 @@ export default function App() {
       const meta = user.user_metadata || {};
 
       try {
-        const { data } = await supabase
+        // maybeSingle (not single): a brand-new owner may legitimately have no
+        // profile row yet (e.g. the signup trigger ran before the migration
+        // existed). `.single()` used to throw PGRST116 here, so the meta-data
+        // fallback below never ran and the console logged a scary error on
+        // every load for new accounts.
+        const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (data) {
-          setProfile((prev) =>
-            applyWorkingHoursFromRow(
-              {
-                ...prev,
-                businessName: data.salon_name || meta.salon_name || prev.businessName,
-                ownerName: data.full_name || meta.full_name || prev.ownerName,
-                ownerRole: data.owner_role || prev.ownerRole,
-                phone: data.phone_number || meta.phone_number || prev.phone,
-                whatsapp: data.whatsapp || prev.whatsapp,
-                email: data.email || user.email || prev.email,
-                ownerPhotoUrl: data.owner_photo_url || prev.ownerPhotoUrl,
-                coverImageUrl: data.cover_image_url || prev.coverImageUrl,
-                tagline: data.tagline || prev.tagline,
-                about: data.about || prev.about,
-                address: data.full_address || prev.address,
-                city: data.city || meta.city || prev.city,
-                postalCode: data.postal_code || prev.postalCode,
-                landmark: data.landmark || prev.landmark,
-                subdomain: data.subdomain || prev.subdomain,
-                instagramHandle: data.instagram_handle || prev.instagramHandle,
-                themePreset: data.theme_preset || prev.themePreset,
-                themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
-                customAccentColor: data.custom_accent_color || prev.customAccentColor,
-              },
-              data
-            )
+        if (error) {
+          // Permission/RLS/grants problem — NOT a missing record. The user
+          // must fix the schema before saving can ever work.
+          console.error(
+            '[Profile] Could not read the owner profile row (auth/RLS/grants issue — apply supabase/migrations):',
+            error
           );
-        } else {
+          return;
+        }
+
+        if (!data) {
+          // No row yet: hydrate from the sign-up metadata; the first cloud
+          // save creates the profile row (upsert keyed on auth.uid()).
+          if (hasUnsavedEdits()) {
+            // The owner already typed before this slow response landed — do
+            // not overwrite their draft with sign-up metadata.
+            console.warn(
+              '[Profile] No profile row exists yet, but local edits are pending — keeping the draft; the first save creates the row.'
+            );
+            return;
+          }
+          console.warn(
+            '[Profile] No profile row exists yet for this user — using sign-up metadata until the first save creates it.'
+          );
           setProfile((prev) => ({
             ...prev,
             businessName: meta.salon_name || prev.businessName,
@@ -494,7 +554,47 @@ export default function App() {
             email: user.email || prev.email,
             city: meta.city || prev.city,
           }));
+          return;
         }
+
+        if (hasUnsavedEdits()) {
+          // Race-condition guard: a slow profile read must never clobber edits
+          // the owner made since the last persist. The debounced save will
+          // push the draft to the cloud anyway; the server profile is applied
+          // on the next page load (or once the draft settles).
+          console.warn(
+            '[Profile] Server profile arrived while local edits are pending — deferring the merge so your unsaved changes are not overwritten.'
+          );
+          return;
+        }
+
+        setProfile((prev) =>
+          applyWorkingHoursFromRow(
+            {
+              ...prev,
+              businessName: data.salon_name || meta.salon_name || prev.businessName,
+              ownerName: data.full_name || meta.full_name || prev.ownerName,
+              ownerRole: data.owner_role || prev.ownerRole,
+              phone: data.phone_number || meta.phone_number || prev.phone,
+              whatsapp: data.whatsapp || prev.whatsapp,
+              email: data.email || user.email || prev.email,
+              ownerPhotoUrl: data.owner_photo_url || prev.ownerPhotoUrl,
+              coverImageUrl: data.cover_image_url || prev.coverImageUrl,
+              tagline: data.tagline || prev.tagline,
+              about: data.about || prev.about,
+              address: data.full_address || prev.address,
+              city: data.city || meta.city || prev.city,
+              postalCode: data.postal_code || prev.postalCode,
+              landmark: data.landmark || prev.landmark,
+              subdomain: data.subdomain || prev.subdomain,
+              instagramHandle: data.instagram_handle || prev.instagramHandle,
+              themePreset: data.theme_preset || prev.themePreset,
+              themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
+              customAccentColor: data.custom_accent_color || prev.customAccentColor,
+            },
+            data
+          )
+        );
       } catch (err) {
         console.error('Error fetching profile:', err);
       }
@@ -538,8 +638,23 @@ export default function App() {
   // snapshot after a fast account switch.
   const hydrationUserRef = useRef<string | null>(null);
 
+  /**
+   * Apply a hydrated cloud snapshot into editor state. Returns true only when
+   * the snapshot was actually applied. If the owner has unsaved edits (typing
+   * right after sign-in, save still in flight) the snapshot is DEFERRED —
+   * overwriting the draft here would silently erase their latest changes, and
+   * the very next auto-save would persist that erased state. The save path
+   * re-runs hydration after the draft settles, at which point the snapshot
+   * applies and destructive cleanup becomes safe again.
+   */
   const applyHydrationSnapshot = useCallback(
-    (snapshot: { svc: any; stf: any; lc: any; rw: any }) => {
+    (snapshot: { svc: any; stf: any; lc: any; rw: any }): boolean => {
+      if (hasUnsavedEdits()) {
+        console.warn(
+          '[AutoSave] Cloud data finished loading while local edits are pending — snapshot deferred so unsaved changes are not overwritten.'
+        );
+        return false;
+      }
       const { svc, stf, lc, rw } = snapshot;
       if (svc.data && svc.data.length) setServices(svc.data.map(fromServiceRow));
       if (stf.data && stf.data.length) setStylists(stf.data.map(fromStylistRow));
@@ -552,6 +667,7 @@ export default function App() {
               : prev.rewards,
         }));
       }
+      return true;
     },
     []
   );
@@ -563,6 +679,27 @@ export default function App() {
       if (inFlight && inFlight.userId === userId) return inFlight.promise;
       const run = (async (): Promise<boolean> => {
         try {
+          // Pre-check: the Supabase client must actually hold a live session
+          // for this user. If the stored session expired or was revoked while
+          // the tab sat in the background, every query below would fail with
+          // the same auth error — detect it once instead of retrying five
+          // queries three times, and surface an actionable message.
+          const { data: sessionData, error: sessionLookupError } =
+            await supabase.auth.getSession();
+          if (sessionLookupError) {
+            console.warn('[AutoSave] Session lookup warning during hydration:', sessionLookupError);
+          }
+          if (!sessionData.session?.user) {
+            const message = 'no active Supabase session — please sign in again';
+            if (hydrationUserRef.current === userId) {
+              hydratedForUserRef.current = false;
+              hydrationErrorRef.current = message;
+              console.error('[AutoSave] Cloud hydration failed:', message);
+              setUser(null); // flip the header/auth UI back to signed-out
+            }
+            return false;
+          }
+
           const snapshot = await withRetry(
             async () => {
               const [svc, stf, lc, rw] = await Promise.all([
@@ -579,11 +716,14 @@ export default function App() {
           );
           // Only the CURRENTLY signed-in owner may have their snapshot applied
           // or unlock destructive cleanup (a stale run for a previous owner
-          // must never satisfy the next owner's save guard).
+          // must never satisfy the next owner's save guard). applyHydrationSnapshot
+          // defers (returns false) when the owner has unsaved edits, so the
+          // "hydrated" flag tracks "snapshot APPLIED", not just "fetch OK" —
+          // destructive cleanup stays off until the local draft has caught up.
           if (hydrationUserRef.current === userId) {
-            applyHydrationSnapshot(snapshot);
-            hydratedForUserRef.current = true;
-            hydrationErrorRef.current = null;
+            const applied = applyHydrationSnapshot(snapshot);
+            hydratedForUserRef.current = applied;
+            hydrationErrorRef.current = applied ? null : 'deferred until pending edits are saved';
           }
           return true;
         } catch (err) {
@@ -593,7 +733,13 @@ export default function App() {
           if (hydrationUserRef.current === userId) {
             hydratedForUserRef.current = false;
             hydrationErrorRef.current = describeError(err);
-            console.error('[AutoSave] Cloud hydration failed:', hydrationErrorRef.current);
+            // Classify the root cause so the console shows the exact remedy.
+            const hint = isAuthLikeFailure(hydrationErrorRef.current)
+              ? 'AUTH/RLS: the authenticated role is missing table grants or RLS policies — re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.'
+              : isSchemaLikeFailure(hydrationErrorRef.current)
+              ? 'SCHEMA: tables are missing — apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).'
+              : 'TRANSIENT: network/server — retried automatically; saves continue locally.';
+            console.error(`[AutoSave] Cloud hydration failed (${hint}):`, hydrationErrorRef.current);
           }
           return false;
         }
@@ -632,28 +778,15 @@ export default function App() {
   // error; the status pill in the editor shows Saving… / All changes saved /
   // Save failed.
   // -------------------------------------------------------------------------
-  // Always-fresh snapshot of the salon state so a debounced (or flushed) save
-  // can never persist a stale closure.
-  const salonStateRef = useRef({ profile, services, stylists, loyaltyConfig, selectedTemplateId, user });
-  salonStateRef.current = { profile, services, stylists, loyaltyConfig, selectedTemplateId, user };
-
+  // salonStateRef / lastPersistedSnapshotRef / hasUnsavedEdits() are declared
+  // near the top of the component so both the auto-save engine AND the
+  // profile-fetch / hydration effects share the same snapshots.
   const debounceTimerRef = useRef<number | undefined>(undefined);
   const statusResetTimerRef = useRef<number | undefined>(undefined);
   const saveInFlightRef = useRef(false);
   const resaveAfterFlightRef = useRef(false);
   const hasPendingSaveRef = useRef(false);
   const lastErrorToastRef = useRef<string>('');
-  // Skip no-op saves (mount effects, reverted edits) by comparing snapshots.
-  const lastPersistedSnapshotRef = useRef<string | null>(null);
-  if (lastPersistedSnapshotRef.current === null) {
-    lastPersistedSnapshotRef.current = JSON.stringify({
-      profile,
-      services,
-      stylists,
-      loyaltyConfig,
-      selectedTemplateId,
-    });
-  }
 
   const snapshotOf = (state: typeof salonStateRef.current) =>
     JSON.stringify({
@@ -722,40 +855,101 @@ export default function App() {
 
         // -- 2) Cloud persistence (signed-in owners with a real project) ---
         if (state.user && !isMockSupabase) {
-          // Destructive cleanup (deleting rows removed in the editor) is only
-          // safe after a successful hydrate, so a half-loaded client can never
-          // wipe rows it hasn't seen. Previously a single flaky hydration
-          // (e.g. a network blip right after sign-in) hard-failed EVERY later
-          // auto-save with "cloud sync skipped" until a full page reload — even
-          // though the localStorage write had succeeded. Self-heal first: await
-          // an in-flight hydrate or launch one retry right now.
-          if (!hydratedForUserRef.current) {
-            await startHydration(state.user.id);
+          // 2a) Pre-flight: the Supabase client must hold a LIVE session for
+          // the same owner we are saving for. Without this check, an expired
+          // or backgrounded session makes every table write fail with the same
+          // JWT/auth error and the owner sees a wall of identical failures.
+          let liveOwnerId = state.user.id;
+          let sessionOk = true;
+          try {
+            const { data: sessionData, error: sessionLookupError } =
+              await supabase.auth.getSession();
+            if (sessionLookupError) {
+              console.warn('[AutoSave] Session lookup warning:', sessionLookupError);
+            }
+            const sessionUser = sessionData?.session?.user ?? null;
+            if (!sessionUser) {
+              sessionOk = false;
+              failures.push('cloud sync skipped (no active session — sign in again to save to the cloud)');
+              console.error(
+                '[AutoSave] Cloud save skipped: no active Supabase session. Sign in again to persist changes to the cloud (local edits are already saved on this device).'
+              );
+              setUser(null); // flip the header/auth UI back to signed-out
+            } else if (sessionUser.id !== liveOwnerId) {
+              // Stale React state after an account switch — adopt the live
+              // session identity and save as that owner (safe mode below
+              // unless hydration for the new owner already succeeded).
+              console.warn(
+                `[AutoSave] Session user changed (${liveOwnerId} → ${sessionUser.id}); adopting the live account.`
+              );
+              liveOwnerId = sessionUser.id;
+              setUser(sessionUser);
+              hydratedForUserRef.current = false;
+              hydrationUserRef.current = sessionUser.id;
+            }
+          } catch (err) {
+            // Session check itself failed (e.g. offline) — proceed optimistically
+            // with the known user; per-table errors below are still handled.
+            console.warn('[AutoSave] Session pre-flight check failed (continuing):', err);
           }
-          const canCleanUpCloudRows = hydratedForUserRef.current;
-          if (!canCleanUpCloudRows) {
-            const reason = hydrationErrorRef.current || 'hydration still pending';
-            console.warn(
-              `[AutoSave] Cloud hydration unavailable (${reason}) — saving owner rows in safe (non-destructive) mode; deleted-row cleanup stays disabled.`
+
+          // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
+          // in the editor) is only safe after a successful hydrate, so a
+          // half-loaded client can never wipe rows it hasn't seen. Previously
+          // a single flaky hydration (e.g. a network blip right after
+          // sign-in) hard-failed EVERY later auto-save until a full page
+          // reload — even though localStorage had succeeded. Await an in-flight
+          // hydrate or launch one retry right now, then fall back to safe
+          // (non-destructive) sync if the cloud is genuinely unreachable.
+          if (sessionOk) {
+            if (hydratedForUserRef.current && hydrationUserRef.current !== liveOwnerId) {
+              hydratedForUserRef.current = false;
+              hydrationUserRef.current = liveOwnerId;
+            }
+            if (!hydratedForUserRef.current) {
+              await startHydration(liveOwnerId);
+            }
+            const canCleanUpCloudRows =
+              hydratedForUserRef.current && hydrationUserRef.current === liveOwnerId;
+            if (!canCleanUpCloudRows) {
+              const reason = hydrationErrorRef.current || 'hydration still pending';
+              console.warn(
+                `[AutoSave] Cloud hydration unavailable (${reason}) — saving owner rows in safe (non-destructive) mode; deleted-row cleanup stays disabled.`
+              );
+            }
+            const cloud = await syncSalonToSupabase(
+              supabase,
+              {
+                ownerId: liveOwnerId,
+                profile: state.profile,
+                services: state.services,
+                stylists: state.stylists,
+                loyaltyConfig: state.loyaltyConfig,
+              },
+              { deleteRemoved: canCleanUpCloudRows }
             );
-          }
-          const cloud = await syncSalonToSupabase(
-            supabase,
-            {
-              ownerId: state.user.id,
-              profile: state.profile,
-              services: state.services,
-              stylists: state.stylists,
-              loyaltyConfig: state.loyaltyConfig,
-            },
-            { deleteRemoved: canCleanUpCloudRows }
-          );
-          if (!cloud.ok) {
-            failures.push(...cloud.errors);
-          } else if (!canCleanUpCloudRows) {
-            console.warn(
-              '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
-            );
+            if (!cloud.ok) {
+              failures.push(...cloud.errors);
+              // Classify the exact root cause for the console: auth/RLS problems
+              // need schema + re-login; schema problems need migrations; anything
+              // else is transient. The exact per-table errors are preserved above.
+              const joined = cloud.errors.join(' · ');
+              if (isAuthLikeFailure(joined)) {
+                console.error(
+                  '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.',
+                  cloud.errors
+                );
+              } else if (isSchemaLikeFailure(joined)) {
+                console.error(
+                  '[AutoSave] Cloud save rejected (SCHEMA): tables are missing. Apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).',
+                  cloud.errors
+                );
+              }
+            } else if (!canCleanUpCloudRows) {
+              console.warn(
+                '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
+              );
+            }
           }
         }
 

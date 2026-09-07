@@ -173,3 +173,45 @@ npm run dev        # starts Express + Vite at http://0.0.0.0:3000
 If `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are set, the app runs in
 **live** mode. If they're missing/placeholder, it runs in **mock** mode with
 in-memory bookings/notifications for easy preview.
+
+---
+
+## 9. Troubleshooting "Save failed" in the Website Editor
+
+The editor saves to **localStorage first** (instant, always works) and then
+mirrors the same payload to Supabase when an owner is signed in. A red
+"Save failed" means the **cloud mirror** failed while the local copy
+succeeded. The browser console always prints the exact per-table reason
+under `[AutoSave] …` / `[Profile] …`. Map it as follows:
+
+| Console / toast symptom | Root cause | Permanent fix |
+|---|---|---|
+| `permission denied for table …` (401/`42501`), "new row violates row-level security policy" | The `authenticated` role has no GRANTs on the tables, or RLS policies are missing | Apply **all** migrations: `00001_init.sql` + `20260907_owner_save_grants.sql`. The grants file is idempotent and fixes projects whose default privileges were altered. Then sign out/in. |
+| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, password changed elsewhere) | Sign in again. The app now pre-flights the session before every cloud save and self-recovers. |
+| `relation "public.…" does not exist` (`42P01`) | Migrations never applied to this project | Run `supabase db push` (or paste `supabase/migrations/*.sql` into the SQL Editor). |
+| Network / `fetch failed` / 5xx | Transient outage | Automatic retry with backoff (3 attempts); edits stay saved on the device. |
+| "Could not load your existing data…" (legacy) | Pre-fix deployments where a one-time hydration blip blocked all later saves | Redeploy from `main` — hydration now self-heals on the next save. |
+
+Verification queries (SQL Editor):
+
+```sql
+-- Privileges for the authenticated role (must list select/insert/update/delete
+-- for every tenant table after applying 20260907_owner_save_grants.sql):
+select tablename, privilege_type
+from information_schema.role_table_grants
+where grantee = 'authenticated' and schemaname = 'public'
+order by tablename, privilege_type;
+
+-- RLS policies per table (00001_init.sql creates owner-scoped policies):
+select tablename, policyname, cmd
+from pg_policies
+where schemaname = 'public'
+order by tablename, cmd;
+```
+
+Vercel environment variables (Project → Settings → Environment Variables,
+server-side runtime): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+`GEMINI_API_KEY`, plus browser-visible `VITE_SUPABASE_URL` /
+`VITE_SUPABASE_ANON_KEY`. Without the **service-role** key the public-site API
+falls back to the anon client, which RLS blocks from reading other owners'
+rows.
