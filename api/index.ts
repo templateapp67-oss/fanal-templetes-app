@@ -9,9 +9,22 @@ import {
   applyBookingUpdate,
   buildStatusNotifications,
 } from "../server/bookingOps";
+import { isUuid } from "../src/lib/autoSave";
+import {
+  toProfileRow,
+  toServiceDbRow,
+  toStylistDbRow,
+  toLoyaltyConfigDbRow,
+  toRewardDbRow,
+  toTeamMemberDbRow,
+  toPhotoGalleryDbRow,
+  toBranchDbRow,
+} from "../src/lib/salonSync";
 
 const app = express();
-app.use(express.json());
+// Salon payloads embed data-URL images (up to ~2MB each); the default 100kb
+// JSON limit would reject every image-heavy save with a 413.
+app.use(express.json({ limit: "10mb" }));
 
 /** Owner email for booking notifications, resolved from the profiles row. */
 async function resolveOwnerEmail(ownerId: string | null | undefined): Promise<string> {
@@ -793,6 +806,182 @@ app.post("/api/youtube/fetch-videos", async (req, res) => {
 });
 
 app.post("/api/fetch-youtube-meta", handleFetchYouTubeMetadata);
+
+// ============================================================================
+// POST /api/website/save — Editor auto-save fallback (service-role bypass).
+// ----------------------------------------------------------------------------
+// The browser's anon client is subject to Row Level Security; when the direct
+// Supabase sync fails with an RLS/auth/network error the client falls back to
+// this endpoint, which persists via the SUPABASE_SERVICE_ROLE_KEY admin client
+// (RLS cannot block service_role). Validates subdomain + owner_id, upserts
+// inside try...catch, and answers:
+//   • { success: true, timestamp: Date.now() } on success
+//   • 400 for validation failures, 409 for a taken subdomain,
+//     500 with { error: "Failed to persist site state" } otherwise.
+// ============================================================================
+app.post("/api/website/save", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as any;
+    const salonData =
+      body.salonData && typeof body.salonData === "object" ? body.salonData : body;
+    const profile = salonData.profile && typeof salonData.profile === "object" ? salonData.profile : {};
+    const services = Array.isArray(salonData.services) ? salonData.services : [];
+    const stylists = Array.isArray(salonData.stylists) ? salonData.stylists : [];
+    const loyaltyConfig =
+      salonData.loyaltyConfig && typeof salonData.loyaltyConfig === "object"
+        ? salonData.loyaltyConfig
+        : null;
+    const teamMembers = Array.isArray(salonData.teamMembers)
+      ? salonData.teamMembers
+      : Array.isArray(salonData.team_members)
+        ? salonData.team_members
+        : [];
+    const photoGallery = Array.isArray(salonData.photoGallery)
+      ? salonData.photoGallery
+      : Array.isArray(salonData.photo_gallery)
+        ? salonData.photo_gallery
+        : [];
+    const branches = Array.isArray(salonData.branches)
+      ? salonData.branches
+      : Array.isArray(salonData.salon_branches)
+        ? salonData.salon_branches
+        : [];
+
+    const subdomain = String(salonData.subdomain ?? profile.subdomain ?? "")
+      .trim()
+      .toLowerCase();
+    const ownerIdRaw =
+      salonData.owner_id ?? salonData.ownerId ?? profile.ownerId ?? profile.owner_id ?? profile.id ?? null;
+    const ownerId = typeof ownerIdRaw === "string" ? ownerIdRaw.trim() : ownerIdRaw;
+
+    if (!subdomain) {
+      return res.status(400).json({ success: false, error: "subdomain is required" });
+    }
+    if (!ownerId || typeof ownerId !== "string") {
+      return res.status(400).json({ success: false, error: "owner_id is required" });
+    }
+    if (!isUuid(ownerId)) {
+      return res.status(400).json({ success: false, error: "owner_id must be a valid UUID" });
+    }
+
+    // Mock mode (no Supabase configured): persist in-memory so editor previews
+    // keep working without a database.
+    if (isMockSupabase) {
+      mockSalons[subdomain] = {
+        profile: { ...profile, subdomain, ownerId },
+        services,
+        stylists,
+        ...(loyaltyConfig ? { loyaltyConfig } : {}),
+      };
+      return res.json({ success: true, timestamp: Date.now() });
+    }
+
+    const adminClient = getSupabaseAdmin() ?? admin;
+    if (!adminClient) {
+      console.error('[Nexora Sync Error]:', 'table=profiles operation=POST /api/website/save status=500 code=MISSING_SERVICE_KEY message=SUPABASE_SERVICE_ROLE_KEY is not configured — cannot bypass RLS');
+      return res.status(500).json({ error: "Failed to persist site state" });
+    }
+
+    try {
+      const profileRow = toProfileRow({ ...profile, subdomain } as any, ownerId);
+      const { error: profileError } = await adminClient.from("profiles").upsert(profileRow);
+      if (profileError) {
+        const code = (profileError as any)?.code;
+        const message = (profileError as any)?.message || "profiles upsert failed";
+        const status = (profileError as any)?.status ?? 500;
+        console.error('[Nexora Sync Error]:', `table=profiles operation=POST /api/website/save status=${status} code=${code ?? "unknown"} message=${message}`, profileError);
+        if (code === "23505" && /subdomain/i.test(message)) {
+          return res.status(409).json({
+            success: false,
+            error: "This subdomain is already taken — please choose a different one.",
+          });
+        }
+        return res.status(500).json({ error: "Failed to persist site state" });
+      }
+
+      if (services.length > 0) {
+        const rows = services.map((s: any, i: number) => toServiceDbRow(s, ownerId, i));
+        const { error } = await adminClient.from("services").upsert(rows);
+        if (error) {
+          console.error('[Nexora Sync Error]:', `table=services operation=POST /api/website/save status=${(error as any)?.status ?? 500} code=${(error as any)?.code ?? "unknown"} message=${(error as any)?.message || error}`, error);
+          return res.status(500).json({ error: "Failed to persist site state" });
+        }
+      }
+
+      if (stylists.length > 0) {
+        const rows = stylists.map((st: any, i: number) => toStylistDbRow(st, ownerId, i));
+        const { error } = await adminClient.from("stylists").upsert(rows);
+        if (error) {
+          console.error('[Nexora Sync Error]:', `table=stylists operation=POST /api/website/save status=${(error as any)?.status ?? 500} code=${(error as any)?.code ?? "unknown"} message=${(error as any)?.message || error}`, error);
+          return res.status(500).json({ error: "Failed to persist site state" });
+        }
+      }
+
+      if (loyaltyConfig) {
+        const { error } = await adminClient
+          .from("loyalty_config")
+          .upsert(toLoyaltyConfigDbRow(loyaltyConfig as any, ownerId));
+        if (error) {
+          console.error('[Nexora Sync Error]:', `table=loyalty_config operation=POST /api/website/save status=${(error as any)?.status ?? 500} code=${(error as any)?.code ?? "unknown"} message=${(error as any)?.message || error}`, error);
+          return res.status(500).json({ error: "Failed to persist site state" });
+        }
+        const rewards = Array.isArray((loyaltyConfig as any).rewards)
+          ? (loyaltyConfig as any).rewards
+          : [];
+        if (rewards.length > 0) {
+          const rows = rewards.map((r: any, i: number) => toRewardDbRow(r, ownerId, i));
+          const { error: rewardsError } = await adminClient.from("loyalty_rewards").upsert(rows);
+          if (rewardsError) {
+            console.error('[Nexora Sync Error]:', `table=loyalty_rewards operation=POST /api/website/save status=${(rewardsError as any)?.status ?? 500} code=${(rewardsError as any)?.code ?? "unknown"} message=${(rewardsError as any)?.message || rewardsError}`, rewardsError);
+            return res.status(500).json({ error: "Failed to persist site state" });
+          }
+        }
+      }
+
+      // Optional extended collections — projects migrated before these tables
+      // existed answer 42P01 ("relation does not exist"); that is a skip,
+      // never a save failure. Any other error fails the request.
+      const upsertOptional = async (table: string, rows: any[]): Promise<boolean> => {
+        if (!rows.length) return true;
+        const { error } = await adminClient.from(table).upsert(rows);
+        if (!error) return true;
+        const code = (error as any)?.code;
+        const message = String((error as any)?.message || "");
+        if (code === "42P01" || /does not exist/i.test(message)) {
+          console.warn(`[Website Save] Optional table "${table}" does not exist — skipping.`);
+          return true;
+        }
+        console.error('[Nexora Sync Error]:', `table=${table} operation=POST /api/website/save status=${(error as any)?.status ?? 500} code=${code ?? "unknown"} message=${message || error}`, error);
+        return false;
+      };
+
+      const optionalOk =
+        (await upsertOptional(
+          "team_members",
+          teamMembers.map((m: any, i: number) => toTeamMemberDbRow(m, ownerId, i))
+        )) &&
+        (await upsertOptional(
+          "photo_gallery",
+          photoGallery.map((p: any, i: number) => toPhotoGalleryDbRow(p, ownerId, i))
+        )) &&
+        (await upsertOptional(
+          "salon_branches",
+          branches.map((b: any, i: number) => toBranchDbRow(b, ownerId, i))
+        ));
+      if (!optionalOk) {
+        return res.status(500).json({ error: "Failed to persist site state" });
+      }
+
+      return res.json({ success: true, timestamp: Date.now() });
+    } catch (err: any) {
+      console.error('[Nexora Sync Error]:', `table=website-save operation=POST /api/website/save status=500 code=UPSERT_THROWN message=${err?.message || err}`, err);
+      return res.status(500).json({ error: "Failed to persist site state" });
+    }
+  } catch (err: any) {
+    console.error('[Nexora Sync Error]:', `table=website-save operation=POST /api/website/save status=500 code=HANDLER_THROWN message=${err?.message || err}`, err);
+    return res.status(500).json({ error: "Failed to persist site state" });
+  }
+});
 
 // ============================================================================
 // JSON error handling for the serverless deployment.

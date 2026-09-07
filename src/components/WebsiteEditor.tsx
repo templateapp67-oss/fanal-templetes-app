@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Sparkles,
   RotateCcw,
+  CloudOff,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
@@ -71,10 +72,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
   // 'pending' = edits are debounced and will save in ~1.2s; 'saving' = the
-  // save request is in flight. Both show as "Saving…".
+  // save request is in flight. Both show as "Saving…". 'saved-local' means the
+  // cloud was unreachable so the draft was cached on-device (SUCCESS Local
+  // Draft) — no blocking error, sync resumes automatically on the next edit.
   const saveUi = getSaveUiState(saveStatus, { busyOverride: isSaving, lastSavedAt });
   const isSavePending = saveUi.busy;
   const isSaveFailed = saveUi.failed;
+  const isLocalDraft = saveStatus === 'saved-local' && !isSavePending && !isSaveFailed;
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -175,6 +179,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   ? 'bg-blue-50 border-blue-200 text-blue-700'
                   : isSaveFailed
                   ? 'bg-rose-50 border-rose-200 text-rose-700'
+                  : isLocalDraft
+                  ? 'bg-amber-50 border-amber-200 text-amber-700'
                   : saveStatus === 'saved'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                   : 'bg-gray-50 border-gray-200 text-gray-600'
@@ -184,6 +190,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : isSaveFailed ? (
                 <AlertCircle className="w-3.5 h-3.5" />
+              ) : isLocalDraft ? (
+                <CloudOff className="w-3.5 h-3.5" />
               ) : (
                 <CheckCircle2 className="w-3.5 h-3.5" />
               )}
@@ -653,6 +661,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <div className="flex items-center gap-2 text-xs text-gray-600">
             {isSaveFailed ? (
               <AlertCircle className="w-4 h-4 text-rose-500" />
+            ) : isLocalDraft ? (
+              <CloudOff className="w-4 h-4 text-amber-500" />
             ) : (
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             )}
@@ -661,6 +671,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 ? 'Auto-saving your changes…'
                 : isSaveFailed
                 ? 'We couldn’t save your changes. Check your connection and retry — the exact error is in the browser console.'
+                : isLocalDraft
+                ? 'Saved locally (offline draft) — your progress is safe and will sync to the cloud automatically.'
                 : 'Every edit auto-saves within seconds. Save to publish & update your website, share its link, or return to your dashboard.'}
             </span>
           </div>

@@ -28,9 +28,13 @@ import {
   summarizeSaveError,
   isAuthLikeFailure,
   isSchemaLikeFailure,
+  isSilentLocalDraftFailure,
   isUuid,
   toDbId,
   withRetry,
+  postWebsiteSave,
+  saveLocalDraftState,
+  shouldShowSaveError,
 } from './lib/autoSave';
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
 
@@ -868,7 +872,13 @@ export default function App() {
           console.warn('[AutoSave] localStorage quota exceeded — saved without inline images:', local.error);
         }
 
-        // -- 2) Cloud persistence (signed-in owners with a real project) ---
+        // -- 2) Cloud persistence with automatic fallbacks -----------------------
+        // Chain: direct Supabase sync → POST /api/website/save (service-role,
+        // bypasses RLS) → local draft (nexora_draft_salon_data). Auth/network
+        // failures resolve to SUCCESS (Local Draft) with no blocking error;
+        // deterministic failures (duplicate subdomain, uuid, schema) still
+        // surface the exact remedy while the draft keeps progress safe.
+        let localDraftSaved = false;
         if (state.user && !isMockSupabase) {
           // 2a) Pre-flight: the Supabase client must hold a LIVE session for
           // the same owner we are saving for. Without this check, an expired
@@ -885,7 +895,6 @@ export default function App() {
             const sessionUser = sessionData?.session?.user ?? null;
             if (!sessionUser) {
               sessionOk = false;
-              failures.push('cloud sync skipped (no active session — sign in again to save to the cloud)');
               console.error(
                 '[AutoSave] Cloud save skipped: no active Supabase session. Sign in again to persist changes to the cloud (local edits are already saved on this device).'
               );
@@ -908,15 +917,19 @@ export default function App() {
             console.warn('[AutoSave] Session pre-flight check failed (continuing):', err);
           }
 
-          // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
-          // in the editor) is only safe after a successful hydrate, so a
-          // half-loaded client can never wipe rows it hasn't seen. Previously
-          // a single flaky hydration (e.g. a network blip right after
-          // sign-in) hard-failed EVERY later auto-save until a full page
-          // reload — even though localStorage had succeeded. Await an in-flight
-          // hydrate or launch one retry right now, then fall back to safe
-          // (non-destructive) sync if the cloud is genuinely unreachable.
-          if (sessionOk) {
+          let cloudOk = false;
+          let cloudErrors: string[] = [];
+          if (!sessionOk) {
+            cloudErrors = ['cloud sync skipped (no active session — sign in again to save to the cloud)'];
+          } else {
+            // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
+            // in the editor) is only safe after a successful hydrate, so a
+            // half-loaded client can never wipe rows it hasn't seen. Previously
+            // a single flaky hydration (e.g. a network blip right after
+            // sign-in) hard-failed EVERY later auto-save until a full page
+            // reload — even though localStorage had succeeded. Await an in-flight
+            // hydrate or launch one retry right now, then fall back to safe
+            // (non-destructive) sync if the cloud is genuinely unreachable.
             if (hydratedForUserRef.current && hydrationUserRef.current !== liveOwnerId) {
               hydratedForUserRef.current = false;
               hydrationUserRef.current = liveOwnerId;
@@ -932,6 +945,7 @@ export default function App() {
                 `[AutoSave] Cloud hydration unavailable (${reason}) — saving owner rows in safe (non-destructive) mode; deleted-row cleanup stays disabled.`
               );
             }
+            // 2c) Direct Supabase client sync (first attempt).
             const cloud = await syncSalonToSupabase(
               supabase,
               {
@@ -943,12 +957,23 @@ export default function App() {
               },
               { deleteRemoved: canCleanUpCloudRows }
             );
-            if (!cloud.ok) {
-              failures.push(...cloud.errors);
-              // Classify the exact root cause for the console: auth/RLS problems
-              // need schema + re-login; schema problems need migrations; anything
-              // else is transient. The exact per-table errors are preserved above.
-              const joined = cloud.errors.join(' · ');
+            if (cloud.ok && !cloud.localDraft) {
+              cloudOk = true;
+              if (!canCleanUpCloudRows) {
+                console.warn(
+                  '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
+                );
+              }
+            } else if (cloud.ok && cloud.localDraft) {
+              // Direct layer fell back to a draft (auth/network) — still try the
+              // service-role website API to upgrade this save to the cloud.
+              cloudErrors = [];
+              console.warn(
+                '[AutoSave] Direct sync fell back to a local draft — attempting POST /api/website/save fallback.'
+              );
+            } else {
+              cloudErrors = [...cloud.errors];
+              const joined = cloudErrors.join(' · ');
               if (isAuthLikeFailure(joined)) {
                 console.error(
                   '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.',
@@ -960,21 +985,91 @@ export default function App() {
                   cloud.errors
                 );
               }
-            } else if (!canCleanUpCloudRows) {
-              console.warn(
-                '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
-              );
             }
           }
+
+          // 2d) Fallback: POST /api/website/save (service-role bypasses RLS).
+          if (!cloudOk) {
+            try {
+              const api = await postWebsiteSave({
+                owner_id: liveOwnerId,
+                subdomain: state.profile.subdomain,
+                profile: { ...state.profile, ownerId: liveOwnerId },
+                services: state.services,
+                stylists: state.stylists,
+                loyaltyConfig: state.loyaltyConfig,
+                selectedTemplateId: state.selectedTemplateId,
+              });
+              if (api.ok) {
+                cloudOk = true;
+                cloudErrors = [];
+                console.log('[AutoSave] Cloud save recovered via POST /api/website/save fallback.');
+              } else {
+                cloudErrors.push(`website save API: ${api.error || 'request failed'}`);
+              }
+            } catch (err) {
+              const message = describeError(err);
+              cloudErrors.push(`website save API: ${message}`);
+              console.error('[Nexora Sync Error]:', `table=website-save-api operation=POST /api/website/save message=${message}`, err);
+            }
+          }
+
+          // 2e) Final fallback: local draft (progress is never lost).
+          if (!cloudOk) {
+            const draft = saveLocalDraftState({
+              ownerId: liveOwnerId,
+              subdomain: state.profile.subdomain,
+              profile: state.profile,
+              services: state.services,
+              stylists: state.stylists,
+              loyaltyConfig: state.loyaltyConfig,
+              selectedTemplateId: state.selectedTemplateId,
+              source: source === 'manual' ? 'manual' : 'auto',
+            });
+            if (!draft.ok) {
+              failures.push(...cloudErrors, `local draft: ${draft.error || 'write failed'}`);
+            } else {
+              const joined = cloudErrors.join(' · ');
+              if (isSilentLocalDraftFailure(joined)) {
+                // SUCCESS (Local Draft) — not an error. The pill shows the
+                // offline-draft state; the next edit retries the cloud.
+                localDraftSaved = true;
+                console.warn(
+                  '[AutoSave] Cloud unreachable — SUCCESS (Local Draft) cached; will sync automatically later.'
+                );
+              } else {
+                // Deterministic (duplicate subdomain, uuid, schema…): the draft
+                // keeps progress safe, but the exact remedy must stay visible.
+                failures.push(...cloudErrors);
+              }
+            }
+          }
+        } else {
+          // Signed out or mock mode: no cloud is attempted. Mirror the state
+          // into the crash-safe draft key and report SUCCESS (Local Draft).
+          const draft = saveLocalDraftState({
+            ownerId: (state.user?.id ?? (state.profile as any)?.ownerId ?? null) as string | null,
+            subdomain: state.profile.subdomain,
+            profile: state.profile,
+            services: state.services,
+            stylists: state.stylists,
+            loyaltyConfig: state.loyaltyConfig,
+            selectedTemplateId: state.selectedTemplateId,
+            source: 'offline-draft',
+          });
+          if (!draft.ok) {
+            console.warn('[AutoSave] Offline draft backup failed:', draft.error);
+          }
+          localDraftSaved = failures.length === 0;
         }
 
         if (failures.length) {
           const detail = failures.join(' · ');
           console.error('[AutoSave] Save failed:', detail);
           setSaveStatus('error');
-          // Show the root cause in the toast (throttled so a burst of edits
-          // doesn't spam identical errors), keep the full detail in console.
-          if (source === 'manual' || lastErrorToastRef.current !== detail) {
+          // Duplicate suppression: background typing never spams identical
+          // toasts/modals; manual saves always show the exact remedy.
+          if (shouldShowSaveError(detail, { source })) {
             showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
           }
           lastErrorToastRef.current = detail;
@@ -983,6 +1078,15 @@ export default function App() {
 
         lastPersistedSnapshotRef.current = snapshot;
         lastErrorToastRef.current = '';
+        if (localDraftSaved) {
+          setSaveStatus('saved-local');
+          setLastSavedAt(Date.now());
+          if (source === 'manual') {
+            showToast('Saved locally (offline draft) — will sync to the cloud automatically.');
+          }
+          scheduleStatusReset();
+          return true;
+        }
         setSaveStatus('saved');
         setLastSavedAt(Date.now());
         // Auto-saves update quietly via the status pill; only explicit saves
