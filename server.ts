@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "./src/lib/supabaseClient";
 import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "./src/types";
+import { nexoraCors } from "./server/cors";
 import { handleWebsiteSave } from "./server/websiteSave";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
 import {
@@ -121,6 +122,11 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+  // CORS for cross-origin API callers (split dev on different ports, preview
+  // hosts, custom domains). Same-origin traffic (no Origin header) is
+  // untouched. Mounted before the routes so OPTIONS preflights for
+  // /api/* (incl. /api/website/save) get a 204 instead of a 404.
+  app.use(nexoraCors);
 
   // API Routes
   app.get("/api/health", (_req, res) => {

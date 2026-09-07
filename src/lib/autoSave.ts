@@ -157,6 +157,7 @@ export function describeError(err: unknown): string {
 const RETRYABLE_PATTERNS: RegExp[] = [
   /network/i,
   /fetch failed|failed to fetch/i,
+  /blocked by cors|cors policy/i,
   /timeout|timed out/i,
   /econn|socket|connection (refused|reset|closed|terminated)/i,
   /aborted|interrupted/i,
@@ -332,10 +333,24 @@ export function summarizeSaveError(detail: string): string {
     return 'Database schema missing — apply supabase/migrations to your Supabase project (see SUPABASE_SETUP.md).';
   }
 
+  // 3b) The server-side save fallback itself is absent on the deployed host
+  // (older build without the /api/website/save route, or the API function
+  // not deployed) — the platform answers 404, not Supabase.
+  if (
+    d.includes('404') &&
+    (d.includes('api route not found') || d.includes('/api/website/save') || d.includes('not found'))
+  ) {
+    return 'The save API is not deployed on this host yet (HTTP 404) — redeploy the API (api/index.ts / server.ts). Your edits are kept on this device and retry automatically.';
+  }
+
   // 4) Transient network/server problems — auto-retried with backoff; local
-  // (device) persistence already succeeded, so no data is lost.
+  // (device) persistence already succeeded, so no data is lost. Also covers
+  // CORS aborts ("blocked by CORS policy") of cross-origin API calls.
   if (
     d.includes('fetch failed') ||
+    d.includes('failed to fetch') ||
+    d.includes('blocked by cors') ||
+    d.includes('cors policy') ||
     d.includes('network') ||
     d.includes('timeout') ||
     d.includes('econn') ||
@@ -344,7 +359,7 @@ export function summarizeSaveError(detail: string): string {
     d.includes('gateway timeout') ||
     /\b(408|429|500|502|503|504)\b/.test(d)
   ) {
-    return 'Network error — could not reach the database. Retrying automatically; your edits are kept on this device.';
+    return 'Network error — could not reach the database or the save API (connection dropped, host not deployed, or CORS blocked the cross-origin call). Retrying automatically; your edits are kept on this device.';
   }
 
   // 5) Initial cloud hydration/load could not complete even after retries.

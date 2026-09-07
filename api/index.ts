@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "../src/types";
+import { nexoraCors } from "../server/cors";
 import { handleWebsiteSave } from "../server/websiteSave";
 import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
 import {
@@ -13,6 +14,11 @@ import {
 
 const app = express();
 app.use(express.json());
+// CORS for cross-origin API callers (different preview/custom/subdomain
+// host). Same-origin traffic (no Origin header) passes through untouched.
+// Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
+// catch-all — that is exactly the "404 / blocked by CORS" failure mode.
+app.use(nexoraCors);
 
 /** Owner email for booking notifications, resolved from the profiles row. */
 async function resolveOwnerEmail(ownerId: string | null | undefined): Promise<string> {
