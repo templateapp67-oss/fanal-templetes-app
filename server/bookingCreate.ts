@@ -28,6 +28,7 @@
 import { isUuidLike, sanitizeBookingRow } from './bookingOps';
 import { isRazorpayConfigured, verifyRazorpaySignature } from './razorpay';
 import { resolveTenantFromHost } from '../src/lib/tenant';
+import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus';
 import {
   runDb,
   newRequestId,
@@ -38,7 +39,13 @@ import {
 } from './dbGuard';
 import type { BookingAuthResult, BookingAuthUser } from './bookingAuth';
 
-const ALLOWED_STATUS = new Set(['pending', 'confirmed', 'cancelled', 'completed', 'reschedule_proposed']);
+// Shared with the client UI via src/lib/bookingStatus.ts, so the API and the
+// screens can never disagree about which statuses exist. This list used to be
+// hand-copied into bookingRoutes.ts and omitted `no_show`, which meant a salon
+// marking a customer as a no-show was rejected as an "unsupported booking
+// status" — and no_show is the one outcome where the advance is NOT refundable,
+// so it has to be storable.
+const ALLOWED_STATUS = PERSISTABLE_BOOKING_STATUS_SET;
 const ALLOWED_PAYMENT_STATUS = new Set(['pending', 'paid_deposit', 'paid_full', 'pay_at_salon', 'refunded', 'failed']);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -158,7 +165,37 @@ export function validateBookingPayload(input: any): BookingValidationResult {
   };
   if (bookingType) value.booking_type = bookingType;
   if (str(input.home_address)) value.home_address = str(input.home_address);
-  if (str(input.notes)) value.notes = str(input.notes);
+  // Display-only details with no column of their own. `sanitizeBookingRow`
+  // deliberately DROPS unknown top-level keys (that is what stops a renamed
+  // field from a newer build breaking the insert), so these go in through the
+  // `metadata` jsonb instead. Only the known keys below are accepted — a
+  // caller-supplied metadata blob is not passed through wholesale, or a client
+  // could write `review_rating` for a visit that never happened.
+  const displayMetadata: Record<string, any> = {};
+  if (str(input.stylist_name)) displayMetadata.stylist_name = str(input.stylist_name);
+  if (str(input.salon_name)) displayMetadata.salon_name = str(input.salon_name);
+  // Add-ons have no column of their own: checkout folds their price into
+  // `total_amount` without itemising. Recording them is what lets the booking
+  // detail page list every service the customer actually picked.
+  //
+  // Stored as ONE comma-separated string, not as an array: `safeMetadataObject`
+  // in bookingOps.ts keeps only shallow JSON primitives and drops anything
+  // nested, so an array of add-on objects would vanish silently. Prices are not
+  // kept because the checkout total already includes them.
+  if (Array.isArray(input.service_addons) && input.service_addons.length > 0) {
+    const names = input.service_addons
+      .map((addon: any) => (typeof addon === 'string' ? addon : String(addon?.name ?? '')))
+      // A comma inside a name would be read back as a separator.
+      .map((name: string) => name.replace(/,/g, ' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    const joined = names.join(', ').slice(0, 400);
+    if (joined) displayMetadata.service_addons = joined;
+  }
+  if (Object.keys(displayMetadata).length > 0) value.metadata = displayMetadata;
+  // Optional free text for the salon (allergies, hair type, "ring the bell").
+  // Capped so an accidental paste cannot be stored verbatim.
+  if (str(input.notes)) value.notes = str(input.notes).slice(0, 500);
 
   return { valid: true, errors: [], fieldErrors: {}, value };
 }

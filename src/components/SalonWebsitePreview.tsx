@@ -79,6 +79,13 @@ interface SalonWebsitePreviewProps {
   user?: { id?: string; email?: string } | null;
   /** Reuses App's existing login/signup modal. */
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  /**
+   * Set when the customer tapped Rebook on "My Bookings". Opens the booking
+   * flow with that service pre-selected and flags it as coming from history,
+   * which is what makes the confirmation page offer "Book this service again".
+   * `at` de-duplicates repeat taps on the same booking.
+   */
+  rebookRequest?: { serviceName: string; at: number } | null;
 }
 
 type DeviceMode = 'desktop' | 'tablet' | 'mobile';
@@ -99,6 +106,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   publicView = false,
   user,
   onRequireAuth,
+  rebookRequest,
 }) => {
   // Fallback internal state if setters not passed
   const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
@@ -215,6 +223,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
   const pendingBookingRef = useRef<{ service?: SalonService; stylist?: Stylist } | null>(null);
+  // True only for a booking started from "My Bookings" → Rebook, so the
+  // confirmation page can offer "Book this service again" instead of the
+  // generic CTA. Cleared when the modal closes.
+  const [bookingFromHistory, setBookingFromHistory] = useState<boolean>(false);
+  const handledRebookAtRef = useRef<number>(0);
 
   // Dynamic client testimonials state
   const [activeReviews, setActiveReviews] = useState<Testimonial[]>(() => {
@@ -391,6 +404,19 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     setSelectedStylist(pending.stylist || activeStylists[0] || activeTemplate.stylists[0]);
     setIsBookingOpen(true);
   }, [user?.id, activeServices, activeStylists, activeTemplate.services]);
+
+  // Rebook from "My Bookings": pre-select the service the customer last had and
+  // open the flow. `activeServices` may still be loading when the page mounts,
+  // so the request is matched by name once the list arrives and then marked
+  // handled — matching the guard the pending-booking effect above uses.
+  useEffect(() => {
+    if (!rebookRequest?.at || handledRebookAtRef.current === rebookRequest.at) return;
+    handledRebookAtRef.current = rebookRequest.at;
+    const match = activeServices.find((service) => service.name === rebookRequest.serviceName);
+    if (match) setSelectedService(match);
+    setBookingFromHistory(true);
+    setIsBookingOpen(true);
+  }, [rebookRequest, activeServices]);
 
   // Inline Service Actions
   const handleUpdateServicePrice = (serviceId: string, newPrice: number) => {
@@ -2291,7 +2317,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* Booking Modal Flow */}
       <BookingModal
         isOpen={isBookingOpen}
-        onClose={() => setIsBookingOpen(false)}
+        onClose={() => {
+          setIsBookingOpen(false);
+          setBookingFromHistory(false);
+        }}
+        fromHistory={bookingFromHistory}
         profile={activeProfile}
         services={activeServices}
         stylists={activeStylists}

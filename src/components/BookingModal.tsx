@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { postBookingWithRetry } from '../lib/bookingApi';
+import { postBookingWithRetry, getBookingAccessToken } from '../lib/bookingApi';
 import {
   X,
   CalendarCheck,
@@ -12,7 +12,6 @@ import {
   MessageSquare,
   ShieldCheck,
   CheckCircle2,
-  Copy,
   Check,
   ArrowRight,
   ArrowLeft,
@@ -22,14 +21,20 @@ import {
   CreditCard,
   Wallet,
   AlertCircle,
-  ExternalLink,
   ChevronRight,
   Lock
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS } from '../mockData';
 import { payAdvanceWithRazorpay } from '../lib/razorpayCheckout';
-import { isMockSupabase, supabase } from '../lib/supabaseClient';
+import { BookingConfirmation } from './BookingConfirmation';
+import {
+  buildConfirmationSummary,
+  describeWhatsappConfirmation,
+  buildWhatsappConfirmationMessage,
+  formatSalonAddress,
+  resolveConfirmationStatus,
+} from '../lib/bookingConfirmation';
 
 export interface BookingModalProps {
   isOpen: boolean;
@@ -63,6 +68,13 @@ export interface BookingModalProps {
   user?: { id?: string; email?: string } | null;
   /** Opens the existing login/signup flow without discarding this form. */
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  /**
+   * True when the customer opened this modal from their booking history rather
+   * than from the service menu. It is the only case where the confirmation
+   * page offers a rebook CTA; offering it after a fresh checkout would just
+   * duplicate "Book Another Service".
+   */
+  fromHistory?: boolean;
 }
 
 type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
@@ -110,6 +122,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   onConfirmBooking: aliasOnConfirmBooking,
   user,
   onRequireAuth,
+  fromHistory = false,
 }) => {
   // Safe resolved values
   const profile = inputProfile || {
@@ -167,6 +180,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [guestPhone, setGuestPhone] = useState<string>('');
   const [guestEmail, setGuestEmail] = useState<string>('');
   const [guestPhoneError, setGuestPhoneError] = useState<string>('');
+  // Optional message the customer leaves for the salon (allergies, hair type,
+  // "ring the bell"). Optional, so never validated.
+  const [guestNotes, setGuestNotes] = useState<string>('');
   const [rememberGuest, setRememberGuest] = useState<boolean>(true);
   const [isPrefilled, setIsPrefilled] = useState<boolean>(false);
   
@@ -199,7 +215,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   // Step 6: Confirmation State
   const [bookingRef, setBookingRef] = useState<string>('');
-  const [copiedRef, setCopiedRef] = useState<boolean>(false);
+  // The status the salon's database actually stored, read back from the create
+  // response. The confirmation page headlines itself from THIS rather than from
+  // what the client sent, so a booking written as `pending` reads "submitted"
+  // and only one the salon has accepted reads "confirmed".
+  const [storedStatus, setStoredStatus] = useState<string>('pending');
+  // Did the customer actually open the WhatsApp confirmation? The old screen
+  // printed "WhatsApp verification sent" unconditionally, even for bookings
+  // where nothing was ever sent.
+  const [whatsappConfirmationSent, setWhatsappConfirmationSent] = useState<boolean>(false);
 
   // Checkout state — the confirm button must never fire twice (a double click
   // used to create two bookings / two Razorpay orders) and the customer needs
@@ -402,6 +426,43 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
 
   // ==========================================================================
+  // CONFIRMATION PAGE DATA
+  // --------------------------------------------------------------------------
+  // Derived here rather than inside the JSX because the WhatsApp handler needs
+  // the same summary, and because the address resolves differently for a home
+  // visit: that is where the stylist is going, not the salon's own address.
+  // ==========================================================================
+  const confirmationAddress =
+    bookingType === 'home'
+      ? `${homeServiceAddress}${homeServicePinCode ? ` (PIN: ${homeServicePinCode})` : ''}`.trim()
+      : formatSalonAddress(profile);
+
+  const confirmationStatus = resolveConfirmationStatus({ savedToCloud, storedStatus });
+
+  const confirmationSummary = buildConfirmationSummary({
+    bookingId: bookingRef,
+    salonName: profile.businessName,
+    serviceName: selectedService.name,
+    staffName: selectedStylist.name,
+    date: bookingDate,
+    time: bookingTime,
+    address: confirmationAddress,
+    addressKind: bookingType === 'home' ? 'home' : 'salon',
+    totalAmount,
+    currency: profile.currency || '₹',
+    durationMinutes: selectedService.durationMinutes,
+    // A home visit has no salon pin to route to; fall back to the typed address.
+    latitude: bookingType === 'home' ? null : profile.latitude ?? null,
+    longitude: bookingType === 'home' ? null : profile.longitude ?? null,
+  });
+
+  const whatsappStatus = describeWhatsappConfirmation({
+    phone: guestPhone,
+    otpVerified: isWhatsappVerified,
+    confirmationSent: whatsappConfirmationSent,
+  });
+
+  // ==========================================================================
   // CONFIRM BOOKING  (payment → persist → pass)
   // --------------------------------------------------------------------------
   // Order of operations, and why:
@@ -440,25 +501,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
-    // Mock auth is deliberately represented by a namespaced token understood
-    // only by the local/mock server. Live bookings use the short-lived
-    // Supabase access token; the service-role key is never present in client
-    // code or request headers.
-    let bookingAccessToken: string | undefined;
-    if (isMockSupabase) {
-      bookingAccessToken = `mock:${user.id}`;
-    } else {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        bookingAccessToken = session?.access_token;
-      } catch {
-        bookingAccessToken = undefined;
-      }
-      if (!bookingAccessToken) {
-        setSubmitError('Your session has expired. Please sign in again before confirming this appointment.');
-        onRequireAuth?.('login');
-        return;
-      }
+    // Shared with "My Bookings" (src/lib/bookingApi.ts). Mock auth is a
+    // namespaced token understood only by the local/mock server; live bookings
+    // use the short-lived Supabase access token. The service-role key is never
+    // present in client code or request headers.
+    const bookingAccessToken = await getBookingAccessToken(user);
+    if (!bookingAccessToken) {
+      setSubmitError('Your session has expired. Please sign in again before confirming this appointment.');
+      onRequireAuth?.('login');
+      return;
     }
 
     const cityCode = profile.city?.toUpperCase().includes('BENGALURU') ? 'BLR'
@@ -475,6 +526,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setSubmitError('');
     setPaymentNotice('');
     setSavedToCloud(true);
+    setStoredStatus('pending');
+    setWhatsappConfirmationSent(false);
     setIsSubmitting(true);
 
     try {
@@ -528,6 +581,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       // ---- 3. Persist the booking -------------------------------------------
       setSubmitStage('saving');
       let savedRemotely = false;
+      // Whatever the salon's database wrote back is the status the confirmation
+      // page will show. Never assume: a duplicate submission returns the row
+      // that already existed, which the owner may have confirmed or cancelled.
+      let remoteStatus: unknown = 'pending';
       try {
         const requestBody = JSON.stringify({
             owner_id: profile.ownerId || undefined,
@@ -541,6 +598,23 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               customer_email: guestEmail.trim() || user?.email || undefined,
               service_id: selectedService.id,
               service_name: selectedService.name,
+              // Persisted into the booking's metadata by the API. The customer's
+              // "My Bookings" cards need these: `bookings` has no salon or
+              // stylist column, so without them the card cannot say who or where.
+              stylist_name: selectedStylist.name,
+              salon_name: profile.businessName,
+              // `bookings` stores one service plus a total; checkout folds the
+              // add-on prices in without itemising them. Sending them here is
+              // what lets the booking detail page list everything the customer
+              // actually picked.
+              service_addons: selectedUpgrades.map((addon) => ({
+                name: addon.name,
+                price: addon.price,
+                duration: addon.duration,
+              })),
+              // Optional message for the salon. `bookings.notes` is the column
+              // for it — distinct from the Razorpay *order* note further down.
+              notes: guestNotes.trim() || undefined,
               booking_date: bookingDate,
               time_slot: bookingTime,
               total_amount: totalAmount,
@@ -570,6 +644,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
         if (outcome.ok) {
           savedRemotely = true;
+          if (outcome.data && typeof outcome.data === 'object' && 'status' in outcome.data) {
+            remoteStatus = (outcome.data as any).status;
+          }
         } else if (outcome.kind === 'offline') {
           // Truly unreachable (offline / preview sandbox with no API): keep a
           // local copy so the salon dashboard on this device still shows it,
@@ -599,6 +676,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         console.warn('Booking save threw unexpectedly — keeping a local copy only.', e);
       }
       setSavedToCloud(savedRemotely);
+      setStoredStatus(String(remoteStatus ?? 'pending'));
 
       const newApt: Appointment = {
         id: `apt-${Date.now()}`,
@@ -647,31 +725,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  // Copy booking reference
-  const handleCopyCode = (code: string) => {
-    navigator.clipboard?.writeText(code);
-    setCopiedRef(true);
-    setTimeout(() => setCopiedRef(false), 2000);
-  };
-
-  // Open WhatsApp prefilled confirmation
+  // Open WhatsApp prefilled confirmation.
+  // The message is built by src/lib/bookingConfirmation.ts so it always carries
+  // the booking id and the address, and so its exact wording is covered by
+  // tests rather than only ever being seen by a customer.
   const handleSendWhatsAppConfirmation = () => {
-    const cleanPhone = sanitizeIndianPhone(guestPhone);
-    const msg = `Namaste ${guestName}! ${savedToCloud ? `Your booking with ${profile.businessName} is confirmed.` : `Please confirm this booking request with ${profile.businessName}. The request is saved on this device only.`}\n\n` +
-      `📅 Date: ${bookingDate}\n` +
-      `⏰ Time: ${bookingTime} IST\n` +
-      `💇 Service: ${selectedService.name}${selectedUpgrades.length > 0 ? ` + Add-ons (${selectedUpgrades.map(u => u.name).join(', ')})` : ''} (Total: ₹${totalAmount})\n` +
-      `🏠 Appointment Type: ${bookingType === 'home' ? 'Home Service' : 'In-Salon'}\n` +
-      (bookingType === 'home' ? `📍 Address: ${homeServiceAddress} (PIN: ${homeServicePinCode})\n` : '') +
-      `👤 Specialist: ${selectedStylist.name}\n` +
-      `📍 Branch: ${profile.businessName}, ${profile.address}, ${profile.city}\n` +
-      `🔖 Reference: ${bookingRef}\n` +
-      `💰 Total Price: ₹${totalAmount}\n` +
-      `💳 Payment: ${paymentMethod === 'pay_advance_token' ? `25% Advance Paid: ₹${advanceTokenAmount} (Balance: ₹${remainingAmount})` : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount})`}\n\n` +
-      `${savedToCloud ? 'Thank you for booking with us!' : 'Please reply to confirm the slot with the salon.'}`;
+    const msg = buildWhatsappConfirmationMessage({
+      summary: confirmationSummary,
+      customerName: guestName,
+      status: confirmationStatus,
+      advancePaid,
+      advanceAmount: advanceTokenAmount,
+      balanceAmount: remainingAmount,
+      upgrades: selectedUpgrades.map((u) => u.name),
+      bookingTypeLabel: bookingType === 'home' ? 'Home Service' : 'In-Salon',
+    });
 
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(msg)}`;
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=91${whatsappStatus.phone}&text=${encodeURIComponent(msg)}`;
     window.open(whatsappUrl, '_blank');
+    // The link opened in a new tab; that is all the page can honestly claim.
+    setWhatsappConfirmationSent(true);
   };
 
   // Open WhatsApp with pre-filled service, date, time shortcut
@@ -705,6 +778,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setIsSubmitting(false);
     setSubmitStage('idle');
     setSavedToCloud(true);
+    setStoredStatus('pending');
+    setWhatsappConfirmationSent(false);
+    // Deliberate: name/phone/email are remembered for 1-click rebooking, but a
+    // note is specific to this visit — carrying "ring the bell" into the next
+    // appointment would be wrong.
+    setGuestNotes('');
   };
 
   return (
@@ -1262,6 +1341,22 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
               </div>
 
+              {/* Note for the salon */}
+              <div>
+                <label htmlFor="guestNotesInput" className="text-xs font-bold font-mono-caps text-slate-700 block mb-1">
+                  Note for the salon <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  id="guestNotesInput"
+                  value={guestNotes}
+                  onChange={(e) => setGuestNotes(e.target.value.slice(0, 500))}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Allergies, hair type, how to reach you at the door…"
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-slate-900 outline-none resize-none"
+                />
+              </div>
+
               {/* Persistent Guest Remember Checkbox */}
               <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
                 <input
@@ -1562,159 +1657,34 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
           {/* ========================================================= */}
           {/* STEP 6 / POST-SUBMIT CONFIRMATION SCREEN */}
+          {/* Extracted into <BookingConfirmation> so every row, the .ics file,
+              the Google Calendar link and the map link are derived from the
+              booking in one tested place, and so the headline comes from the
+              status the salon actually stored rather than a hardcoded
+              "confirmed". */}
           {/* ========================================================= */}
           {currentStep === 'confirmed' && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col items-center text-center gap-4 py-3"
-            >
-              {/* Animated Celebratory Checkmark */}
-              <div className="relative flex items-center justify-center">
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0.8 }}
-                  animate={{ scale: [0.8, 1.35, 1.2], opacity: [0.6, 0.2, 0] }}
-                  transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
-                  className="absolute w-20 h-20 rounded-full bg-emerald-400 -z-10"
-                />
-                <motion.div
-                  initial={{ scale: 0, rotate: -20 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-                  className="w-16 h-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30 relative"
-                >
-                  <CheckCircle2 className="w-9 h-9" />
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: [0, 1.25, 1] }}
-                    transition={{ delay: 0.25 }}
-                    className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 p-1 rounded-full shadow-xs"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
-                  </motion.span>
-                </motion.div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-2xl text-slate-900">
-                  {savedToCloud ? "You're All Set!" : 'Request Saved on This Device'}
-                </h4>
-                <p className="text-xs text-slate-600 max-w-sm mt-1">
-                  {savedToCloud ? (
-                    <>Appointment confirmed for <strong className="text-slate-900">{guestName}</strong> at <strong className="text-slate-900">{profile.businessName}</strong>.</>
-                  ) : (
-                    <>Your details are ready, but <strong className="text-slate-900">{profile.businessName}</strong> has not received this request yet.</>
-                  )}
-                </p>
-              </div>
-
-              {/* The booking could not be sent to the salon (offline / preview).
-                  Saying so is the honest alternative to a pass that looks
-                  confirmed while the salon never received anything. */}
-              {!savedToCloud && (
-                <div className="w-full flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] text-left">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>
-                    We couldn't reach the salon's booking service, so this request is saved on this device only.
-                    Please send the details on WhatsApp (button below) or call{' '}
-                    <strong>{profile.phone || profile.whatsapp || 'the salon'}</strong> to confirm your slot.
-                  </span>
-                </div>
-              )}
-
-              {/* Reference Card with Copy Action */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs w-full text-left font-mono flex flex-col gap-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-sans">Booking Reference:</span>
-                  <div className="flex items-center gap-1.5">
-                    <strong className="text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-300 font-bold text-sm tracking-wider">
-                      {bookingRef}
-                    </strong>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCode(bookingRef)}
-                      className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
-                      title="Copy Reference Code"
-                    >
-                      {copiedRef ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center text-slate-700 font-sans">
-                  <span>Treatment:</span>
-                  <strong>{selectedService.name} ({selectedStylist.name})</strong>
-                </div>
-
-                <div className="flex justify-between items-center text-slate-700 font-sans">
-                  <span>Schedule:</span>
-                  <strong>{bookingDate} at {bookingTime} IST</strong>
-                </div>
-
-                <div className="flex justify-between items-center text-slate-700 font-sans">
-                  <span>Price Breakdown:</span>
-                  <div className="text-right">
-                    <strong>Service: ₹{selectedService.price.toLocaleString('en-IN')}</strong><br/>
-                    {bookingType === 'home' && <span>Home Service: ₹{homeServiceCharge.toLocaleString('en-IN')}<br/></span>}
-                    {selectedUpgrades.length > 0 && <span>Upgrades ({selectedUpgrades.map(u => u.name).join(', ')}): ₹{upgradesPrice.toLocaleString('en-IN')}<br/></span>}
-                    <span className="font-bold text-slate-900">Total: ₹{totalAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center text-slate-700 font-sans">
-                  <span>Payment Status:</span>
-                  <strong className={advancePaid ? 'text-emerald-700' : 'text-amber-700'}>
-                    {advancePaid
-                      ? `25% Advance Paid: ₹${advanceTokenAmount.toLocaleString('en-IN')} (Balance: ₹${remainingAmount.toLocaleString('en-IN')})`
-                      : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount.toLocaleString('en-IN')})`}
-                  </strong>
-                </div>
-
-                {advancePaid && paymentReceiptId && (
-                  <div className="flex justify-between items-center text-slate-700 font-sans">
-                    <span>Razorpay Payment ID:</span>
-                    <strong className="text-slate-900">{paymentReceiptId}</strong>
-                  </div>
-                )}
-
-                <div className="pt-2 border-t border-slate-200 text-[11px] text-emerald-700 flex items-center gap-1.5 font-sans font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>WhatsApp verification sent to +91 {sanitizeIndianPhone(guestPhone)}</span>
-                </div>
-              </div>
-
-              {/* WhatsApp Trigger Button */}
-              <button
-                type="button"
-                onClick={handleSendWhatsAppConfirmation}
-                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>Send Confirmation on WhatsApp</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Bottom Actions */}
-              <div className="flex gap-2 w-full pt-1">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Done / Close
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="flex-1 py-2.5 rounded-xl text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:opacity-90"
-                  style={{ backgroundColor: themeAccentHex }}
-                >
-                  Book Another Service
-                </button>
-              </div>
-            </motion.div>
+            <BookingConfirmation
+              summary={confirmationSummary}
+              status={confirmationStatus}
+              customerName={guestName}
+              salonPhone={profile.phone || profile.whatsapp}
+              payment={{
+                advancePaid,
+                advanceAmount: advanceTokenAmount,
+                balanceAmount: remainingAmount,
+                receiptId: paymentReceiptId,
+              }}
+              upgrades={selectedUpgrades.map((u) => u.name)}
+              bookingTypeLabel={bookingType === 'home' ? 'Home Service' : 'In-Salon'}
+              whatsapp={whatsappStatus}
+              onSendWhatsapp={handleSendWhatsAppConfirmation}
+              fromHistory={fromHistory}
+              onRebook={handleReset}
+              onBookAnother={handleReset}
+              onClose={onClose}
+              accentHex={themeAccentHex}
+            />
           )}
 
         </div>

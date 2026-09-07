@@ -16,12 +16,13 @@
 //     "we could not reach the server at all" (keep the local copy, warn).
 // ============================================================================
 
+import { isMockSupabase, supabase } from './supabaseClient';
+
 /**
  * A single, non-discriminated shape: this project compiles without
  * `strictNullChecks`, where TypeScript cannot narrow a discriminated union, so
  * a flat result keeps every consumer type-safe.
- */
-export interface BookingSaveOutcome {
+ */export interface BookingSaveOutcome {
   /** True only when the salon's database accepted the booking. */
   ok: boolean;
   /**
@@ -221,4 +222,32 @@ export async function postBookingWithRetry(
   }
 
   return lastFailure;
+}
+
+// ============================================================================
+// Access token for authenticated booking calls
+// ----------------------------------------------------------------------------
+// Extracted from the checkout so "My Bookings" and the booking form obtain the
+// credential the same way. Mock auth is a namespaced token understood only by
+// the local/mock server; live calls use the short-lived Supabase access token.
+// The service-role key is never read here and never leaves the server.
+// ============================================================================
+
+/**
+ * Resolve the bearer token for an authenticated booking request.
+ * Returns undefined when there is no usable session — callers should then ask
+ * the customer to sign in rather than sending an unauthenticated request that
+ * the API would reject with a 401.
+ */
+export async function getBookingAccessToken(
+  user?: { id?: string } | null
+): Promise<string | undefined> {
+  if (!user?.id) return undefined;
+  if (isMockSupabase) return `mock:${user.id}`;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || undefined;
+  } catch {
+    return undefined;
+  }
 }

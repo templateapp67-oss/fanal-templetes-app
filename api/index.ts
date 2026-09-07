@@ -18,6 +18,13 @@ import {
   createNotificationsReadHandler,
   type BookingRoutesDeps,
 } from "../server/bookingRoutes";
+import {
+  createMyBookingsListHandler,
+  createMyBookingDetailHandler,
+  createCancelMyBookingHandler,
+  createReviewMyBookingHandler,
+  type BookingMineDeps,
+} from "../server/bookingMine";
 import { createHealthHandler } from "../server/health";
 import {
   withRequestTimeout,
@@ -485,6 +492,25 @@ const bookingRouteDeps: BookingRoutesDeps = {
   addMockNotifications: (rows) => { mockNotifications.push(...rows); },
   resolveOwnerEmail,
 };
+
+// ==========================================================================
+// MY BOOKINGS — customer-scoped, mirrored from server.ts. Registered before
+// "/api/bookings/:id" so Express does not read "mine" as a booking id.
+// ==========================================================================
+const bookingMineDeps: BookingMineDeps = {
+  db,
+  isMock: bookingHandlerIsMock,
+  hasAdminClient: !!admin,
+  getMockBookings: () => mockBookings,
+  addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+  resolveOwnerEmail,
+  authenticateUser: (req, deadlineAt) => authenticateBookingRequest(req, deadlineAt, allowMockBookingAuth),
+};
+
+app.get("/api/bookings/mine", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createMyBookingsListHandler(bookingMineDeps)));
+app.get("/api/bookings/mine/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createMyBookingDetailHandler(bookingMineDeps)));
+app.post("/api/bookings/mine/cancel", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createCancelMyBookingHandler(bookingMineDeps)));
+app.post("/api/bookings/mine/review", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createReviewMyBookingHandler(bookingMineDeps)));
 
 app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
 app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingGetHandler(bookingRouteDeps)));

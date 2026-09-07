@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SalonProfile, SalonService, Stylist, Appointment, ClientRecord, LoyaltyConfig } from '../types';
+import { SalonProfile, SalonService, Stylist, Appointment, AppointmentStatus, ClientRecord, LoyaltyConfig } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { validateAndReadImageFile, compressAndResizeImage } from '../utils/imageUploadHelper';
 import { ImageCompressorWidget } from './ImageCompressorWidget';
@@ -12,6 +12,7 @@ import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateR
 import { getSiteUrl } from '../lib/salonStore';
 
 import { BookingManager } from './BookingManager';
+import { BookingStatusBadge } from './BookingStatusBadge';
 
 interface SaaSDashboardProps {
   profile: SalonProfile;
@@ -161,7 +162,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     }, 1000);
   };
 
-  const updateAppointmentStatus = (id: string, status: 'completed' | 'cancelled') => {
+  // Loyalty points are awarded inside the `completed` branch only, so widening
+  // the accepted statuses to the full lifecycle cannot grant points for a
+  // no-show or a cancellation.
+  const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
     setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
     if (status === 'completed') {
       const apt = appointments.find((a) => a.id === id);
@@ -420,14 +424,27 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                         </td>
                         <td className="py-3 px-2 text-right">
                           {apt.status === 'confirmed' ? (
-                            <button
-                              onClick={() => updateAppointmentStatus(apt.id, 'completed')}
-                              className="text-xs bg-emerald-600 text-white font-bold px-2.5 py-1 rounded hover:bg-emerald-700 cursor-pointer"
-                            >
-                              Complete
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => updateAppointmentStatus(apt.id, 'completed')}
+                                className="text-xs bg-emerald-600 text-white font-bold px-2.5 py-1 rounded hover:bg-emerald-700 cursor-pointer"
+                              >
+                                Complete
+                              </button>
+                              {/* No-show is not a cancellation: the advance is
+                                  forfeited rather than refunded, and no loyalty
+                                  points are earned. It needs its own action. */}
+                              <button
+                                onClick={() => updateAppointmentStatus(apt.id, 'no_show')}
+                                className="text-xs bg-orange-100 text-orange-700 font-bold px-2.5 py-1 rounded hover:bg-orange-200 cursor-pointer"
+                              >
+                                No-show
+                              </button>
+                            </div>
                           ) : (
-                            <span className="text-slate-400 font-bold">Done</span>
+                            // Was a bare "Done" for every non-confirmed row, so
+                            // a cancelled booking and a no-show both read Done.
+                            <BookingStatusBadge status={apt.status} compact />
                           )}
                         </td>
                       </tr>

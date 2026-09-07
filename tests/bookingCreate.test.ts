@@ -8,6 +8,8 @@ import {
   createBookingHandler,
 } from '../server/bookingCreate';
 import { authenticateBookingRequest } from '../server/bookingAuth';
+import { sanitizeBookingRow } from '../server/bookingOps';
+import { toBookingDetailView } from '../src/lib/bookingDetail';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const OTHER_OWNER = '3f0d9a2e-5c4b-4a1d-8b7e-11223344aabb';
@@ -558,4 +560,132 @@ test('the tenant host is used to resolve the owner when the client sends none', 
   await handler({ body: { booking: VALID_BOOKING }, headers: { host: 'glamour-lounge.nexora.in' } }, res);
   assert.equal(res.body.success, true);
   assert.ok(seen.some((f) => f.subdomain === 'glamour-lounge'));
+});
+
+// ============================================================================
+// Display details for the customer's "My Bookings" cards.
+//
+// `bookings` has no salon or specialist column, so the cards read them from
+// `metadata`. `sanitizeBookingRow` deliberately DROPS unknown top-level keys
+// (that is what stops a renamed field from a newer build breaking the insert),
+// so these two must travel inside `metadata` — routing them as top-level keys
+// silently blanks the salon name and specialist on every card.
+// ============================================================================
+
+test('stylist_name and salon_name reach metadata instead of being dropped', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    stylist_name: 'Ananya',
+    salon_name: 'Luxe Salon',
+  });
+  assert.equal(result.valid, true);
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  assert.equal(row.metadata.stylist_name, 'Ananya');
+  assert.equal(row.metadata.salon_name, 'Luxe Salon');
+  // The customer id fallback lives in the same object and must survive.
+  assert.equal(row.metadata.user_id, 'mock-user-1');
+});
+
+test('omitting them leaves no metadata rather than an empty object', () => {
+  const result = validateBookingPayload({ ...VALID_BOOKING });
+  assert.equal(result.valid, true);
+  assert.equal(result.value.metadata, undefined);
+});
+
+test('a caller-supplied metadata blob is not passed through wholesale', () => {
+  // Otherwise a client could award itself a review for a visit that never
+  // happened, or overwrite the verified customer id.
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    metadata: { review_rating: 5, user_id: 'someone-else', stylist_name: 'Injected' },
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.value.metadata?.review_rating, undefined);
+  assert.equal(result.value.metadata?.user_id, undefined);
+  assert.equal(result.value.metadata?.stylist_name, undefined);
+});
+
+test('an unknown top-level key is still dropped after the metadata change', () => {
+  const result = validateBookingPayload({ ...VALID_BOOKING });
+  const row = sanitizeBookingRow({ ...result.value, some_column_from_a_newer_build: 'x' });
+  assert.ok(!('some_column_from_a_newer_build' in row));
+});
+
+// ---------------------------------------------------------------------------
+// Customer note and add-ons — the two detail-page fields with no column each
+// ---------------------------------------------------------------------------
+
+test('the customer note reaches the row that is inserted', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    notes: 'Sensitive scalp, please use the mild shampoo',
+  });
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  assert.equal(row.notes, 'Sensitive scalp, please use the mild shampoo');
+});
+
+test('a long note is capped rather than stored verbatim', () => {
+  const result = validateBookingPayload({ ...VALID_BOOKING, notes: 'x'.repeat(5000) });
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  assert.equal(row.notes.length, 500);
+});
+
+test('an empty or whitespace note is not stored', () => {
+  for (const notes of ['', '   ']) {
+    const result = validateBookingPayload({ ...VALID_BOOKING, notes });
+    const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+    assert.ok(!('notes' in row), JSON.stringify(notes));
+  }
+});
+
+test('add-ons survive sanitizeBookingRow, which keeps only shallow primitives', () => {
+  // safeMetadataObject drops nested objects and arrays outright, so an array of
+  // {name, price} objects would vanish here and the detail page would show only
+  // the primary service. Pinning the round trip is what stops that regressing.
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_addons: [
+      { name: 'Head Massage', price: 300, duration: 15 },
+      { name: 'Deep Conditioning', price: 500, duration: 20 },
+    ],
+  });
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  assert.equal(row.metadata.service_addons, 'Head Massage, Deep Conditioning');
+});
+
+test('a comma inside an add-on name cannot be read back as a separator', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_addons: [{ name: 'Cut, Blow and Style' }, { name: 'Head Massage' }],
+  });
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  assert.equal(row.metadata.service_addons, 'Cut Blow and Style, Head Massage');
+});
+
+test('add-ons that are not usable produce no metadata key', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_addons: [{ price: 300 }, { name: '  ' }, null],
+  });
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  assert.equal(row.metadata?.service_addons, undefined);
+});
+
+test('a persisted booking reads back as every service the customer picked', () => {
+  // The full path: client payload -> validated value -> sanitized row -> the
+  // view model the detail page renders.
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_name: 'Master Stylist Precision Cut',
+    stylist_name: 'Ananya',
+    salon_name: 'Luxe Salon',
+    notes: 'Ring the bell',
+    service_addons: [{ name: 'Head Massage', price: 300 }],
+  });
+  const stored = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  const view = toBookingDetailView({ row: stored });
+  assert.deepEqual(view.services, ['Master Stylist Precision Cut', 'Head Massage']);
+  assert.equal(view.staffName, 'Ananya');
+  assert.equal(view.salonName, 'Luxe Salon');
+  assert.equal(view.customerNote, 'Ring the bell');
 });

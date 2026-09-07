@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Check, X, AlertCircle } from 'lucide-react';
+import { BookingStatusBadge } from './BookingStatusBadge';
 
 /**
  * Customer-facing view of a single booking (the "manage my booking" link).
@@ -112,8 +113,12 @@ export const CustomerBookingPortal = ({ bookingId }: { bookingId: string }) => {
             </div>
           </>
         ) : (
-          <div className="font-medium text-slate-700">
-            Status: <span className="uppercase font-bold">{booking.status}</span>
+          <div className="flex items-start justify-between gap-2">
+            <span className="font-medium text-slate-700 pt-1">Status:</span>
+            {/* Shared badge: this used to print the raw column value, so a
+                no-show or a completed visit showed as "NO_SHOW" / "COMPLETED"
+                with no explanation of what the customer should do next. */}
+            <BookingStatusBadge status={booking.status} withDescription />
           </div>
         )}
       </div>

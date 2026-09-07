@@ -155,3 +155,40 @@ test('buildStatusNotifications returns null for statuses with no notification', 
   assert.equal(buildStatusNotifications({}, 'pending'), null);
   assert.equal(buildStatusNotifications(null, 'confirmed'), null);
 });
+
+// ============================================================================
+// Status transitions that previously produced NO notification at all. `no_show`
+// did not exist as a status, and `completed` fell through to `return null`, so
+// neither the owner nor the customer heard anything.
+// ============================================================================
+
+const NOTIF_BOOKING = {
+  customer_name: 'Riya Sharma',
+  customer_email: 'riya@example.com',
+  booking_date: '2026-09-20',
+  time_slot: '11:30',
+};
+
+test('a no-show tells the customer which slot was missed', () => {
+  const notifs = buildStatusNotifications(NOTIF_BOOKING, 'no_show', null, null, 'uma@blushsalon.com');
+  assert.ok(notifs);
+  assert.equal(notifs!.customer!.title, 'Marked as No-show');
+  assert.match(notifs!.customer!.message, /no-show/);
+  assert.match(notifs!.customer!.message, /2026-09-20 at 11:30/);
+  assert.equal(notifs!.owner.title, 'Booking No-show');
+});
+
+test('a completed visit sends a thank-you instead of nothing', () => {
+  const notifs = buildStatusNotifications(NOTIF_BOOKING, 'completed');
+  assert.ok(notifs);
+  assert.equal(notifs!.customer!.title, 'Appointment Completed');
+  assert.equal(notifs!.owner.title, 'Booking Completed');
+});
+
+test('the owner notification uses the human label, not the raw column value', () => {
+  // "Booking no_show" / "was no_show." reads like a bug in the owner's inbox.
+  const notifs = buildStatusNotifications(NOTIF_BOOKING, 'no_show');
+  assert.ok(!notifs!.owner.title.includes('_'), notifs!.owner.title);
+  assert.ok(!notifs!.owner.message.includes('_'), notifs!.owner.message);
+  assert.equal(notifs!.owner.message, "Riya Sharma's booking was marked no-show.");
+});

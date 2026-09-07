@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Check, X, Calendar as CalendarIcon, Clock, Edit2, ExternalLink, AlertCircle, RefreshCw } from 'lucide-react';
+import {
+  Check,
+  X,
+  Calendar as CalendarIcon,
+  Clock,
+  Edit2,
+  ExternalLink,
+  AlertCircle,
+  RefreshCw,
+  CircleCheckBig,
+  UserX,
+} from 'lucide-react';
 import { CustomerBookingPortal } from './CustomerBookingPortal';
+import { BookingStatusBadge } from './BookingStatusBadge';
 
 interface BookingManagerProps {
   primaryAccentColor: string;
@@ -188,14 +200,11 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
                   </td>
                   <td className="py-3 px-2">{b.service_name} (₹{b.total_amount})</td>
                   <td className="py-3 px-2">
-                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase
-                      ${b.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
-                        b.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                        b.status === 'reschedule_proposed' ? 'bg-blue-100 text-blue-700' :
-                        'bg-rose-100 text-rose-700'
-                      }`}>
-                      {b.status}
-                    </span>
+                    {/* Shared badge. The inline ternary this replaced had a
+                        catch-all `else` that painted BOTH `completed` and
+                        `cancelled` red, so a finished job looked identical to
+                        a cancellation, and `no_show` had no branch at all. */}
+                    <BookingStatusBadge status={b.status} compact />
                   </td>
                   <td className="py-3 px-2 font-mono">
                     {b.booking_date} at {b.time_slot}
@@ -220,6 +229,22 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
                         </button>
                         <button onClick={() => setSelectedBooking(b)} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Suggest New Time">
                           <Edit2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    {b.status === 'confirmed' && (
+                      <div className="flex items-center justify-end gap-2">
+                        <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'completed')} className="p-1.5 bg-sky-100 text-sky-700 rounded hover:bg-sky-200 disabled:opacity-40" title="Mark Completed">
+                          <CircleCheckBig className="w-4 h-4" />
+                        </button>
+                        {/* No-show is NOT a cancellation: the customer never
+                            arrived, so the advance is forfeited rather than
+                            refunded. It needs its own action. */}
+                        <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'no_show')} className="p-1.5 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 disabled:opacity-40" title="Mark No-show">
+                          <UserX className="w-4 h-4" />
+                        </button>
+                        <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'cancelled')} className="p-1.5 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 disabled:opacity-40" title="Cancel">
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     )}

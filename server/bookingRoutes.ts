@@ -24,6 +24,7 @@
 // ============================================================================
 
 import { applyBookingUpdate, buildStatusNotifications, isUuidLike } from './bookingOps';
+import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus';
 import { isValidIsoDate } from './bookingCreate';
 import {
   runDb,
@@ -49,7 +50,9 @@ export interface BookingRoutesDeps {
 
 const byNewestFirst = (a: any, b: any) =>
   new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime();
-const ALLOWED_BOOKING_STATUSES = new Set(['pending', 'confirmed', 'cancelled', 'completed', 'reschedule_proposed']);
+// Shared registry — see src/lib/bookingStatus.ts. Kept in one place because the
+// duplicate copy here had already drifted from bookingCreate.ts's list.
+const ALLOWED_BOOKING_STATUSES = PERSISTABLE_BOOKING_STATUS_SET;
 
 function rejectMissingAdminClient(deps: BookingRoutesDeps, res: any, requestId: string): boolean {
   // Production entrypoints pass an explicit false when only the anon client is
