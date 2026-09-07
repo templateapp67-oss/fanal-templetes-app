@@ -11,6 +11,7 @@ import { nexoraCors } from "./server/cors";
 import { handleWebsiteSave } from "./server/websiteSave";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
 import { createBookingHandler } from "./server/bookingCreate";
+import { authenticateBookingRequest } from "./server/bookingAuth";
 import {
   createBookingsListHandler,
   createBookingGetHandler,
@@ -52,6 +53,12 @@ const mockSalons: Record<string, any> = {};
 // service_role key. Falls back to the anon client if no service key is set.
 const admin = getSupabaseAdmin();
 const db = admin ?? supabase;
+// The local preview may use an explicit mock auth token. Do not enable that
+// shortcut if this process is running inside Vercel.
+const isVercelRuntime =
+  process.env.VERCEL === '1' || process.env.VERCEL === 'true' || Boolean(process.env.VERCEL_ENV);
+const allowMockBookingAuth = isMockSupabase && !isVercelRuntime;
+const bookingHandlerIsMock = allowMockBookingAuth;
 
 if (!isMockSupabase && !admin) {
   console.warn(
@@ -188,13 +195,13 @@ async function startServer() {
 
   // API Routes
   // Configuration + connectivity diagnostics. `?deep=1` also round-trips the
-  // database and reports whether a guest booking could be written right now.
+  // database and reports whether an authenticated booking could be written right now.
   app.get(
     "/api/health",
     withRequestTimeout(API_REQUEST_TIMEOUT_MS),
     asyncRoute(createHealthHandler({
       db,
-      isMock: isMockSupabase,
+      isMock: bookingHandlerIsMock,
       hasAdminClient: !!admin,
       supabaseConfig,
       entrypoint: 'express (server.ts)',
@@ -517,8 +524,9 @@ async function startServer() {
     withRequestTimeout(API_REQUEST_TIMEOUT_MS, 'Saving your booking took too long. Nothing was charged — please try again.'),
     asyncRoute(createBookingHandler({
       db,
-      isMock: isMockSupabase,
+      isMock: bookingHandlerIsMock,
       hasAdminClient: !!admin,
+      authenticateUser: (req, deadlineAt) => authenticateBookingRequest(req, deadlineAt, allowMockBookingAuth),
       addMockBooking: (row) => { mockBookings.push(row); },
       getMockBookings: () => mockBookings,
       addMockNotifications: (rows) => { mockNotifications.push(...rows); },

@@ -8,7 +8,7 @@
 //   1. that `express.json({ verify })` actually stashes the RAW body bytes the
 //      Razorpay webhook signature must be computed over, and
 //   2. that the real HTTP endpoints answer the documented JSON / status codes
-//      (guest bookings, missing optional fields, malformed payloads, forged vs
+//      (authenticated bookings, unauthenticated rejection, missing optional fields, forged vs
 //      genuine webhook signatures).
 //
 // This file boots the real serverless app (api/index.ts) on an ephemeral port
@@ -69,7 +69,11 @@ async function request(
 ): Promise<HttpResponse> {
   const res = await fetch(base + path, {
     method,
-    headers: { 'content-type': 'application/json', ...headers },
+    headers: {
+      'content-type': 'application/json',
+      ...(mode === 'mock' ? { authorization: 'Bearer mock:e2e-customer' } : {}),
+      ...headers,
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
@@ -130,7 +134,30 @@ test('the serverless entrypoint also handles a rewrite that strips the /api pref
   assert.equal(r.body.status, 'ok');
 });
 
-test('POST /api/bookings/create stores a guest booking (no owner id sent)', async (t) => {
+test('POST /api/bookings/create rejects an unauthenticated caller before payment or persistence', async (t) => {
+  skipUnlessMock(t);
+  const before = await request('GET', '/api/bookings');
+  const r = await request(
+    'POST',
+    '/api/bookings/create',
+    {
+      booking: VALID_BOOKING,
+      payment: {
+        razorpay_order_id: 'order_guest_should_not_verify',
+        razorpay_payment_id: 'pay_guest_should_not_verify',
+        razorpay_signature: 'forged',
+      },
+    },
+    { authorization: '' }
+  );
+  assert.equal(r.status, 401, r.text);
+  assert.equal(r.body.success, false);
+  assert.equal(r.body.code, 'auth_required');
+  const after = await request('GET', '/api/bookings');
+  assert.equal((after.body.data || []).length, (before.body.data || []).length, 'guest rejection must not write a booking');
+});
+
+test('POST /api/bookings/create stores an authenticated booking (no owner id sent)', async (t) => {
   skipUnlessMock(t);
   const r = await request('POST', '/api/bookings/create', {
     booking: VALID_BOOKING,

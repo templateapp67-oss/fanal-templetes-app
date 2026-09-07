@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   CheckCircle2, 
@@ -75,6 +75,10 @@ interface SalonWebsitePreviewProps {
   /** When true, renders as a read-only public (customer) site — hides all owner
    *  controls (inline edit mode, customizer, AI studio, test booking, etc.). */
   publicView?: boolean;
+  /** Authenticated customer account, if one exists. */
+  user?: { id?: string; email?: string } | null;
+  /** Reuses App's existing login/signup modal. */
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
 type DeviceMode = 'desktop' | 'tablet' | 'mobile';
@@ -93,6 +97,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   setSelectedTemplateId,
   siteUrl,
   publicView = false,
+  user,
+  onRequireAuth,
 }) => {
   // Fallback internal state if setters not passed
   const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
@@ -208,6 +214,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [selectedService, setSelectedService] = useState<SalonService>(activeServices[0] || activeTemplate.services[0]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
+  const pendingBookingRef = useRef<{ service?: SalonService; stylist?: Stylist } | null>(null);
 
   // Dynamic client testimonials state
   const [activeReviews, setActiveReviews] = useState<Testimonial[]>(() => {
@@ -354,15 +361,36 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     showNotification(`Switched to \"${tmpl.title}\" template — your salon details & services were kept.`);
   };
 
-  const handleOpenBooking = (srv?: SalonService) => {
-    if (srv) {
-      setSelectedService(srv);
-    } else {
-      setSelectedService(activeServices[0] || activeTemplate.services[0]);
+  const handleOpenBooking = (srv?: SalonService, stylist?: Stylist) => {
+    const serviceToBook = srv || activeServices[0] || activeTemplate.services[0];
+    const stylistToBook = stylist || activeStylists[0] || activeTemplate.stylists[0];
+
+    if (!user?.id) {
+      // Keep the exact service/specialist the visitor chose while the existing
+      // AuthModal is open. The effect below reopens this flow automatically
+      // after a successful login/signup instead of making the visitor start
+      // over.
+      pendingBookingRef.current = { service: serviceToBook, stylist: stylistToBook };
+      onRequireAuth?.('login');
+      showNotification('Please log in or create an account to book an appointment.');
+      return;
     }
-    setSelectedStylist(activeStylists[0] || activeTemplate.stylists[0]);
+
+    setSelectedService(serviceToBook);
+    setSelectedStylist(stylistToBook);
     setIsBookingOpen(true);
   };
+
+  // Complete the booking action that opened the auth dialog. This is keyed by
+  // the authenticated user id, not by a client-supplied owner id.
+  useEffect(() => {
+    if (!user?.id || !pendingBookingRef.current) return;
+    const pending = pendingBookingRef.current;
+    pendingBookingRef.current = null;
+    setSelectedService(pending.service || activeServices[0] || activeTemplate.services[0]);
+    setSelectedStylist(pending.stylist || activeStylists[0] || activeTemplate.stylists[0]);
+    setIsBookingOpen(true);
+  }, [user?.id, activeServices, activeStylists, activeTemplate.services]);
 
   // Inline Service Actions
   const handleUpdateServicePrice = (serviceId: string, newPrice: number) => {
@@ -1674,10 +1702,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedStylist(st);
-                        setIsBookingOpen(true);
-                      }}
+                      onClick={() => handleOpenBooking(undefined, st)}
                       className="w-full text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
                       style={{
                         backgroundColor: isDarkCanvas ? '#ffffff' : activeAccent.primaryHex,
@@ -2277,6 +2302,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           setIsBookingOpen(false);
         }}
         themeAccentHex={activeAccent.primaryHex}
+        user={user}
+        onRequireAuth={onRequireAuth}
         onShowToast={(toastData) => {
           setToastMessage({
             id: toastData.id,

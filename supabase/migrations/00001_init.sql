@@ -181,7 +181,7 @@ create trigger trg_stylists_updated_at
   for each row execute procedure public.set_updated_at();
 
 -- ============================================================================
--- BOOKINGS (guest bookings; written via trusted server/service-role)
+-- BOOKINGS (authenticated customer bookings; written via trusted server/service-role)
 -- ============================================================================
 create table if not exists public.bookings (
   id                  uuid primary key default gen_random_uuid(),

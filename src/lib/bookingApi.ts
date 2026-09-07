@@ -52,6 +52,8 @@ export interface PostBookingOptions {
   retryDelayMs?: number;
   /** Per-attempt network timeout. */
   timeoutMs?: number;
+  /** Supabase session access token; never send the service-role key here. */
+  accessToken?: string;
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
 }
@@ -84,6 +86,7 @@ export async function postBookingWithRetry(
     maxAttempts = 3,
     retryDelayMs = 600,
     timeoutMs = 20000,
+    accessToken,
     fetchImpl = typeof fetch !== 'undefined' ? fetch : undefined,
     sleepImpl = defaultSleep,
   } = options;
@@ -129,7 +132,10 @@ export async function postBookingWithRetry(
       const response = await Promise.race([
         fetchImpl(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
           body,
           signal: controller?.signal,
         }),

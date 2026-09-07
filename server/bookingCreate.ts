@@ -8,7 +8,7 @@
 // surfaced to the customer as a bare HTTP 500:
 //
 //   1. `bookings.owner_id` is `uuid NOT NULL references auth.users(id)`, but a
-//      guest booking made from a template/preview site has no owner id (the
+//      unauthenticated booking made from a template/preview site has no owner id (the
 //      public profile carries `ownerId: null`). `sanitizeBookingRow` then
 //      nulls it and Postgres rejects the row with
 //      `23502 null value in column "owner_id" violates not-null constraint`.
@@ -36,6 +36,7 @@ import {
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
 } from './dbGuard';
+import type { BookingAuthResult, BookingAuthUser } from './bookingAuth';
 
 const ALLOWED_STATUS = new Set(['pending', 'confirmed', 'cancelled', 'completed', 'reschedule_proposed']);
 const ALLOWED_PAYMENT_STATUS = new Set(['pending', 'paid_deposit', 'paid_full', 'pay_at_salon', 'refunded', 'failed']);
@@ -185,8 +186,8 @@ export interface ResolveOwnerOptions {
 }
 
 /**
- * `bookings.owner_id` is NOT NULL, so a guest booking MUST be attached to a
- * salon owner. Tries, in order:
+ * `bookings.owner_id` is NOT NULL, so every authenticated customer booking
+ * must be attached to a salon owner. Tries, in order:
  *   1. a uuid supplied by the client,
  *   2. the profile that owns the salon subdomain the booking came from,
  *   3. the profile matching the owner email in the notification payload,
@@ -452,6 +453,12 @@ export interface BookingCreateDeps {
   getMockBookings?: () => any[];
   addMockNotifications: (rows: any[]) => void;
   resolveOwnerEmail: (ownerId: string | null | undefined, deadlineAt?: number) => Promise<string>;
+  /**
+   * Verifies the caller's bearer token. Entry points always provide this for
+   * the public API; it is optional only so focused unit tests can exercise the
+   * booking mechanics without constructing an HTTP auth server.
+   */
+  authenticateUser?: (req: any, deadlineAt?: number) => Promise<BookingAuthResult>;
 }
 
 export function createBookingHandler(deps: BookingCreateDeps) {
@@ -470,7 +477,25 @@ export function createBookingHandler(deps: BookingCreateDeps) {
       const body = readJsonBody(req);
       const { booking, notifications, payment } = body;
 
-      // ---- 1. Validate BEFORE touching the DB or the payment gateway -------
+      // ---- 1. Authenticate BEFORE validation, payment, or database work ----
+      // Public salon pages are intentionally readable without an account, but
+      // a POST that creates a booking is not a guest action. The entrypoints
+      // verify the Supabase bearer token here, before even looking at a claimed
+      // Razorpay payment or resolving a tenant owner.
+      let authenticatedUser: BookingAuthUser | undefined;
+      if (deps.authenticateUser) {
+        const authentication = await deps.authenticateUser(req, deadlineAt);
+        if (authentication.ok === false) {
+          return void fail(authentication.status, authentication.code, authentication.error, { retryable: authentication.status === 503 });
+        }
+        authenticatedUser = authentication.user;
+      } else {
+        // Focused unit tests may omit the HTTP adapter. External entrypoints
+        // never omit it, so this fallback does not make the public API open.
+        authenticatedUser = undefined as any;
+      }
+
+      // ---- 2. Validate BEFORE touching the DB or the payment gateway -------
       const validation = validateBookingPayload(booking);
       if (!validation.valid) {
         console.warn('[Bookings] Rejected invalid booking payload:', validation.errors.join(' | '), {
@@ -480,8 +505,14 @@ export function createBookingHandler(deps: BookingCreateDeps) {
           fieldErrors: validation.fieldErrors,
         });
       }
+      // Keep the customer-supplied contact details intact, but use the verified
+      // account email when the form left email blank. The authenticated user is
+      // never used as `owner_id`; owner resolution below remains tenant-scoped.
+      if (!validation.value.customer_email && authenticatedUser?.email) {
+        validation.value.customer_email = authenticatedUser.email;
+      }
 
-      // A live guest booking must be written with the service-role client. Do
+      // A live booking must be written with the service-role client. Do
       // this check before verifying/accepting payment so a misconfigured
       // Vercel function never charges a customer and then discovers it cannot
       // persist the booking.
@@ -545,7 +576,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
 
       if (!deps.isMock && !ownerId) {
         console.error(
-          '[Bookings] Could not resolve owner_id for a guest booking. ' +
+          '[Bookings] Could not resolve owner_id for an authenticated booking. ' +
             'bookings.owner_id is NOT NULL, so the insert would fail. ' +
             'Set DEFAULT_OWNER_ID in the environment, or publish the salon so its subdomain maps to a profile.',
           { subdomain: subdomainHint, customDomain: customDomainHint, ownerEmail: ownerEmailHint }

@@ -9,6 +9,7 @@ import { nexoraCors } from "../server/cors";
 import { handleWebsiteSave } from "../server/websiteSave";
 import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
 import { createBookingHandler } from "../server/bookingCreate";
+import { authenticateBookingRequest } from "../server/bookingAuth";
 import {
   createBookingsListHandler,
   createBookingGetHandler,
@@ -78,6 +79,13 @@ const mockSalons: Record<string, any> = {};
 
 const admin = getSupabaseAdmin();
 const db = admin ?? supabase;
+// Local/template mode may use the explicit mock auth token. A Vercel function
+// must never fall back to that path when production Supabase configuration is
+// missing; it should answer with a clear 503 instead.
+const isVercelRuntime =
+  process.env.VERCEL === '1' || process.env.VERCEL === 'true' || Boolean(process.env.VERCEL_ENV);
+const allowMockBookingAuth = isMockSupabase && !isVercelRuntime;
+const bookingHandlerIsMock = allowMockBookingAuth;
 
 if (!isMockSupabase && !admin) {
   console.warn(
@@ -331,7 +339,7 @@ app.get(
   withRequestTimeout(API_REQUEST_TIMEOUT_MS),
   asyncRoute(createHealthHandler({
     db,
-    isMock: isMockSupabase,
+    isMock: bookingHandlerIsMock,
     hasAdminClient: !!admin,
     supabaseConfig,
     entrypoint: 'serverless (api/index.ts)',
@@ -488,8 +496,9 @@ app.post(
   withRequestTimeout(API_REQUEST_TIMEOUT_MS, 'Saving your booking took too long. Nothing was charged — please try again.'),
   asyncRoute(createBookingHandler({
     db,
-    isMock: isMockSupabase,
+    isMock: bookingHandlerIsMock,
     hasAdminClient: !!admin,
+    authenticateUser: (req, deadlineAt) => authenticateBookingRequest(req, deadlineAt, allowMockBookingAuth),
     addMockBooking: (row) => { mockBookings.push(row); },
     getMockBookings: () => mockBookings,
     addMockNotifications: (rows) => { mockNotifications.push(...rows); },

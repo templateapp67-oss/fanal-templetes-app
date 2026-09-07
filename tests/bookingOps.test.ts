@@ -10,7 +10,7 @@ import {
 const UUID = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 
 // ============================================================================
-// sanitizeBookingRow — guest bookings must never send non-UUID preview ids to
+// sanitizeBookingRow — template bookings must never send non-UUID preview ids to
 // uuid FK columns, and unknown payload keys must not crash the insert.
 // ============================================================================
 

@@ -85,8 +85,8 @@ For **live** Supabase deployments also set, server-side:
 
 ```dotenv
 SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...       # bypasses RLS for guest bookings
-DEFAULT_OWNER_ID=<auth user uuid>   # fallback owner for guest bookings
+SUPABASE_SERVICE_ROLE_KEY=...       # server-only key for authenticated bookings
+DEFAULT_OWNER_ID=<auth user uuid>   # fallback owner for authenticated bookings
 ```
 
 ---
@@ -214,7 +214,7 @@ curl -X POST localhost:3000/api/payments/razorpay/webhook \
 
 ## 6. Owner resolution (`bookings.owner_id`)
 
-Because the column is `NOT NULL`, a guest booking must be attached to a salon
+Because the column is `NOT NULL`, every authenticated booking must be attached to a salon
 owner. The server now tries, in order:
 
 1. a uuid sent by the client (`owner_id`),

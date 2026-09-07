@@ -7,6 +7,7 @@ import {
   describeDbError,
   createBookingHandler,
 } from '../server/bookingCreate';
+import { authenticateBookingRequest } from '../server/bookingAuth';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const OTHER_OWNER = '3f0d9a2e-5c4b-4a1d-8b7e-11223344aabb';
@@ -238,8 +239,80 @@ test('describeDbError maps a duplicate key to 409 instead of a 500', () => {
 });
 
 // ============================================================================
-// The handler
+// Authentication gate + handler
 // ============================================================================
+
+test('booking auth rejects a missing bearer token with a JSON-safe 401 result', async () => {
+  const result = await authenticateBookingRequest({ headers: {} }, Date.now() + 1000, true);
+  assert.deepEqual(result, {
+    ok: false,
+    status: 401,
+    code: 'auth_required',
+    error: 'Please sign in or create an account before booking an appointment.',
+  });
+});
+
+test('local/mock booking auth accepts only the explicit namespaced mock token', async () => {
+  const rejected = await authenticateBookingRequest(
+    { headers: { authorization: 'Bearer forged-user-id' } },
+    Date.now() + 1000,
+    true
+  );
+  assert.equal(rejected.ok, false);
+  const accepted = await authenticateBookingRequest(
+    { headers: { authorization: 'Bearer mock:customer-1' } },
+    Date.now() + 1000,
+    true
+  );
+  assert.deepEqual(accepted, { ok: true, user: { id: 'customer-1' } });
+});
+
+test('the handler authenticates before payment verification or database work', async () => {
+  const { db, calls } = makeDb({});
+  const handler = createBookingHandler(
+    baseDeps({
+      db,
+      isMock: true,
+      authenticateUser: async () => ({
+        ok: false,
+        status: 401,
+        code: 'auth_required',
+        error: 'Please sign in or create an account before booking an appointment.',
+      }),
+    })
+  );
+  const res = makeRes();
+  await handler(
+    {
+      body: {
+        booking: VALID_BOOKING,
+        payment: { razorpay_payment_id: 'pay_should_not_be_verified', razorpay_signature: 'forged' },
+      },
+      headers: {},
+    },
+    res
+  );
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'auth_required');
+  assert.equal(calls.length, 0, 'unauthenticated requests must not touch the database');
+});
+
+test('an authenticated customer can complete the normal mock booking path', async () => {
+  const stored: any[] = [];
+  const handler = createBookingHandler(
+    baseDeps({
+      isMock: true,
+      addMockBooking: (row: any) => stored.push(row),
+      authenticateUser: async () => ({ ok: true, user: { id: 'customer-1', email: 'customer@example.com' } }),
+    })
+  );
+  const res = makeRes();
+  await handler({ body: { booking: { ...VALID_BOOKING, customer_email: '' } }, headers: {} }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].customer_email, 'customer@example.com');
+});
 
 test('handler answers 400 with field errors for an incomplete booking', async () => {
   const handler = createBookingHandler(baseDeps());

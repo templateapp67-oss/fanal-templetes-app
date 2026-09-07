@@ -8,7 +8,7 @@
 //   • the database never answered, so the platform killed the invocation.
 //
 // `GET /api/health` reports the configuration; `GET /api/health?deep=1` also
-// round-trips the database and reports whether a guest booking could actually
+// round-trips the database and reports whether an authenticated booking could actually
 // be written right now (owner resolvable + bookings table reachable).
 // Nothing secret is returned — keys are reported as booleans only.
 // ============================================================================
@@ -70,10 +70,10 @@ export function createHealthHandler(deps: HealthDeps) {
       name: 'service_role_key',
       ok: deps.isMock ? true : deps.hasAdminClient,
       detail: deps.hasAdminClient
-        ? 'Service-role client active — guest bookings bypass RLS.'
+        ? 'Service-role client active — authenticated booking inserts bypass RLS.'
         : deps.isMock
           ? 'Not required in mock mode.'
-          : 'SUPABASE_SERVICE_ROLE_KEY is missing: guest booking inserts will be rejected by Row Level Security.',
+          : 'SUPABASE_SERVICE_ROLE_KEY is missing: authenticated booking inserts will be rejected by Row Level Security.',
     });
 
     checks.push({
@@ -126,11 +126,11 @@ export function createHealthHandler(deps: HealthDeps) {
         detail: ownerProbe.error
           ? `Cannot read profiles: ${ownerProbe.error.message}`
           : ownerCount > 0
-            ? 'At least one salon profile exists, so guest bookings can be attached to an owner.'
-            : 'No salon profiles exist yet — guest bookings will be rejected with owner_unresolved until a salon is published (or DEFAULT_OWNER_ID is set).',
+            ? 'At least one salon profile exists, so authenticated bookings can be attached to an owner.'
+            : 'No salon profiles exist yet — authenticated bookings will be rejected with owner_unresolved until a salon is published (or DEFAULT_OWNER_ID is set).',
       });
       if (!ownerProbe.error && ownerCount === 0) {
-        problems.push('No salon profile exists — guest bookings cannot resolve an owner_id.');
+        problems.push('No salon profile exists — authenticated bookings cannot resolve an owner_id.');
       }
     }
 

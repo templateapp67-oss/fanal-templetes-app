@@ -31,6 +31,23 @@ function textResponse(status: number, body: string, statusText = ''): any {
   };
 }
 
+test('booking saves send only the customer access token as a bearer header', async () => {
+  let receivedInit: any;
+  const fetchImpl = async (_url: string, init: any) => {
+    receivedInit = init;
+    return jsonResponse(200, { success: true, data: { id: 'b-auth' } });
+  };
+  const outcome = await postBookingWithRetry(BODY, {
+    fetchImpl: fetchImpl as any,
+    sleepImpl: noSleep,
+    accessToken: 'customer-access-token',
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(receivedInit.headers.Authorization, 'Bearer customer-access-token');
+  assert.equal(receivedInit.headers['Content-Type'], 'application/json');
+  assert.equal(receivedInit.headers.SUPABASE_SERVICE_ROLE_KEY, undefined);
+});
+
 test('a successful save returns the stored row and the server request id', async () => {
   const fetchImpl = async () => jsonResponse(200, { success: true, data: { id: 'b1' }, requestId: 'bk_1' });
   const outcome = await postBookingWithRetry(BODY, { fetchImpl: fetchImpl as any, sleepImpl: noSleep });

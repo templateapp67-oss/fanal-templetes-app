@@ -2,7 +2,7 @@
 // Handles the booking lifecycle for Nexora Salon OS.
 //   GET  /bookings                     -> list (owner) or public list
 //   GET  /bookings?id=<uuid>           -> single booking (customer portal)
-//   POST /bookings                     -> create (guest booking, service-role insert)
+//   POST /bookings                     -> create (authenticated customer, service-role insert)
 //   POST /bookings  {action:"update"}  -> update status / reschedule proposal
 import {
   handleOptions,
@@ -21,8 +21,14 @@ async function handler(req: Request): Promise<Response> {
   const path = url.pathname.replace(/^\/bookings\/?/, "");
   const id = url.searchParams.get("id") || (path && path !== "" ? path : null);
 
-  // ---- CREATE (guest booking via trusted service role) ----
+  // ---- CREATE / UPDATE (authenticated caller only) -----------------------
+  // This function is a separately deployable serverless surface. Keep the
+  // same no-guest rule as api/index.ts: verify the Supabase bearer token before
+  // any service-role write (and before a claimed payment can be acted on).
   if (req.method === "POST") {
+    const authFailure = await requireAuthenticatedCaller(req);
+    if (authFailure) return authFailure;
+
     let payload: any = {};
     try {
       payload = await req.json();
@@ -61,8 +67,26 @@ async function handler(req: Request): Promise<Response> {
   return fail("Method not allowed", 405);
 }
 
-// Create a booking. Runs with the service role so public (guest) bookings
-// bypass RLS. Anomaly: the booking must be attributed to an owner.
+async function requireAuthenticatedCaller(req: Request): Promise<Response | null> {
+  const authorization = req.headers.get("Authorization") || "";
+  if (!/^Bearer\s+\S+/i.test(authorization)) {
+    return fail("Please sign in or create an account before booking an appointment.", 401);
+  }
+
+  try {
+    const { data, error } = await callerClient(req).auth.getUser();
+    if (error || !data.user) {
+      return fail("Your session is invalid or has expired. Please sign in again before booking.", 401);
+    }
+  } catch (error) {
+    console.error("[Bookings] Supabase Auth verification failed:", error);
+    return fail("The sign-in service is temporarily unavailable. Please try again.", 503);
+  }
+  return null;
+}
+
+// Create a booking. Runs with the service role after caller authentication so
+// the authenticated customer is never confused with the salon owner.
 async function handleCreate(body: any): Promise<Response> {
   const booking = body.booking || body;
   if (!booking.customer_name) {
