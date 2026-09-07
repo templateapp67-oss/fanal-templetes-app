@@ -1,3 +1,5 @@
+// Loads process env > .env > .env.development (see server/env.ts).
+import "../server/env";
 import express from "express";
 import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient";

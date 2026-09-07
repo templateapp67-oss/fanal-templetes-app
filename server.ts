@@ -1,4 +1,5 @@
-import "dotenv/config";
+// Loads process env > .env > .env.development (see server/env.ts).
+import "./server/env";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";

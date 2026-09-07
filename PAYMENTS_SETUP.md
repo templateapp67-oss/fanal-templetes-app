@@ -46,6 +46,40 @@ RAZORPAY_KEY_SECRET="9SehLfvRW6eVtHXtFXzL2Ovm"
 * On Vercel/Cloud Run set the same two variables in the project's environment
   settings (`.env` is not deployed).
 
+### Where the keys are loaded from
+
+`server/env.ts` loads them in this precedence order (first match wins, missing
+files are ignored):
+
+| Priority | Source | Committed? | Use for |
+|---|---|---|---|
+| 1 | real environment variables (Vercel / Cloud Run / shell) | – | production |
+| 2 | `.env` | no (git-ignored) | your machine's real secrets |
+| 3 | `.env.development` | **yes** | shared Razorpay **TEST** keys, so previews/CI always work |
+
+`.env.development` is committed on purpose and holds test-mode keys only
+(test mode cannot move real money). Anything you set in `.env` or in the
+hosting dashboard automatically overrides it — never put `rzp_live_*` keys or
+the Supabase service-role key there.
+
+### Verify the setup
+
+```bash
+npm run check:razorpay
+```
+
+Prints which file the keys came from, whether they are well-formed, and then
+creates a real ₹1 test order to prove Razorpay accepts them:
+
+```
+  loaded from      : .env
+  RAZORPAY_KEY_ID  : rzp_test_TIzKly1Z2NMnum
+  RAZORPAY_KEY_SECRET: 9SehLf**************2Ovm
+  mode             : TEST
+✔ Order created: order_Rk2… (INR 1.00, status created)
+✔ Payments are ACTIVE — the checkout button will open Razorpay.
+```
+
 For **live** Supabase deployments also set, server-side:
 
 ```dotenv
