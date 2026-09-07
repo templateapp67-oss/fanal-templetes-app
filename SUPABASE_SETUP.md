@@ -260,3 +260,57 @@ server-side runtime): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
 `VITE_SUPABASE_ANON_KEY`. Without the **service-role** key the public-site API
 falls back to the anon client, which RLS blocks from reading other owners'
 rows.
+
+---
+
+## 10. Pre-launch / Production Safety Checklist
+
+Run through this **before publishing the live project** (and after any
+schema/RLS change). Items 1–3 are hard gates; 4–6 are hygiene.
+
+1. **RLS: owner-scoped, never permissive (hard gate).**
+   All five editor tables (`profiles, services, stylists, loyalty_config,
+   loyalty_rewards`) must have RLS **enabled** with the four owner-scoped
+   policies each (`owner_id = auth.uid()`; profiles: `id = auth.uid()`), and
+   **no** `USING (true)` / `FOR ALL` policy without a `TO <role>` clause —
+   a permissive "enable full access for all" policy is a cross-tenant hole
+   in a multi-tenant app (see §9a).
+   - Idempotent repair: run **`supabase/rls-restore-production.sql`**.
+   - Verify: the `pg_policies` query in §9a (expect `policy_count = 4` per
+     editor table, `rls_enabled = t`), **plus the cross-tenant negative
+     test**: sign in as a second account and
+     `SELECT count(*) FROM profiles WHERE id IS DISTINCT FROM auth.uid();`
+     must return **0**. A positive "my data saved" test alone cannot catch
+     cross-tenant leakage.
+2. **Grants (hard gate).** `role_table_grants` must show
+   `authenticated → select, insert, update, delete` on the tenant tables
+   and `anon → select` only (apply `20260907_owner_save_grants.sql` if not).
+3. **Service-role writes: server-side only (hard gate).**
+   - `SUPABASE_SERVICE_ROLE_KEY` exists **only** in the server runtime
+     (Vercel server-side env; never `VITE_*`), and the production bundle
+     ships only the anon key (verify once in a built artifact).
+   - **Owner self-service saves:** the direct Supabase client sync is the
+     PRIMARY path (RLS protects every row per write, no extra hop);
+     `POST /api/website/save` is the identity-bound FALLBACK (live mode
+     requires the caller's access token and enforces
+     `token.user.id === owner_id`). Do not flip this around and route
+     every auto-save through the serverless endpoint — the editor saves on
+     every debounce tick, so that burns function quota, adds a hop, and
+     makes the server the single point of failure for the editor.
+   - **Cross-owner / admin / moderation operations (if ever needed):**
+     build a *separate* admin path (Supabase Edge Function or an admin API
+     route) with an explicit admin-identity check, using the service role —
+     do NOT extend `/api/website/save` for it (it is single-owner upsert
+     semantics by design: five tables, no deletes). Precedent in this repo:
+     `server/bookingOps.ts` — guest booking writes already run server-side
+     only.
+4. **`bookings` is never RLS-disabled.** The test-disable helper script
+   deliberately excludes it; guest traffic on that table must stay
+   service-role-only in every environment.
+5. **Secrets hygiene.** `SUPABASE_SERVICE_ROLE_KEY` must never appear in
+   client code, `.env` files that ship to the browser, or commit history
+   (rotate via the dashboard if it ever does).
+6. **Optional: rate limiting.** The save endpoint is now identity-bound, so
+   a caller can only touch their own rows — but an owner account can still
+   hammer the serverless endpoint. Add a per-owner/per-IP rate limit if
+   quota abuse ever becomes a concern.
