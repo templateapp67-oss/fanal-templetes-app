@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS } from '../mockData';
+import { payAdvanceWithRazorpay } from '../lib/razorpayCheckout';
 
 export interface BookingModalProps {
   isOpen: boolean;
@@ -181,12 +182,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   ];
 
   // Step 5: Payment Method
-  const [paymentMethod, setPaymentMethod] = useState<'pay_at_salon' | 'pay_advance_token'>('pay_at_salon');
+  // The payment step renders the "Pay Advance Token (25%)" card as already
+  // selected, so the state must start there too. It used to default to
+  // 'pay_at_salon', which silently sent advance_paid_amount: 0 (and skipped
+  // the gateway) even though the customer saw the advance card ticked.
+  const [paymentMethod, setPaymentMethod] = useState<'pay_at_salon' | 'pay_advance_token'>('pay_advance_token');
   const [isWhatsappVerified, setIsWhatsappVerified] = useState<boolean>(false);
 
   // Step 6: Confirmation State
   const [bookingRef, setBookingRef] = useState<string>('');
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
+
+  // Checkout state — the confirm button must never fire twice (a double click
+  // used to create two bookings / two Razorpay orders) and the customer needs
+  // to see what is happening while the payment window is open.
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitStage, setSubmitStage] = useState<'idle' | 'paying' | 'saving'>('idle');
+  const [paymentNotice, setPaymentNotice] = useState<string>('');
+  const [advancePaid, setAdvancePaid] = useState<boolean>(false);
+  const [paymentReceiptId, setPaymentReceiptId] = useState<string>('');
 
   // Load persistent guest details from localStorage
   useEffect(() => {
@@ -375,9 +389,36 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const advanceTokenAmount = Math.round((totalAmount * 25) / 100);
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
 
-  // Confirm booking & generate reference
+  // ==========================================================================
+  // CONFIRM BOOKING  (payment → persist → pass)
+  // --------------------------------------------------------------------------
+  // Order of operations, and why:
+  //   1. Validate locally so obviously incomplete details never hit the API.
+  //   2. Take the 25% advance through Razorpay (server creates the order and
+  //      verifies the signature — the key secret never touches the browser).
+  //      If the gateway isn't configured the flow degrades to "pay at salon"
+  //      instead of failing the booking.
+  //   3. POST the booking. The API answers a readable error for validation /
+  //      owner / database problems; only then do we show the pass.
+  // ==========================================================================
   const handleFinalSubmitBooking = async () => {
+    if (isSubmitting) return; // guard against double clicks / double charges
+
     const cleanPhone = sanitizeIndianPhone(guestPhone);
+
+    // ---- 1. Client-side validation ------------------------------------------
+    const problems: string[] = [];
+    if (!guestName.trim()) problems.push('your name');
+    if (cleanPhone.length !== 10) problems.push('a valid 10-digit mobile number');
+    if (!bookingDate) problems.push('a booking date');
+    if (!bookingTime) problems.push('a time slot');
+    if (!selectedService?.name) problems.push('a service');
+    if (problems.length > 0) {
+      setSubmitError(`Please add ${problems.join(', ')} before confirming.`);
+      setCurrentStep('guest');
+      return;
+    }
+
     const cityCode = profile.city?.toUpperCase().includes('BENGALURU') ? 'BLR'
       : profile.city?.toUpperCase().includes('MUMBAI') ? 'BOM'
       : profile.city?.toUpperCase().includes('DELHI') ? 'DEL'
@@ -387,94 +428,166 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       : profile.city?.toUpperCase().includes('PUNE') ? 'PNQ'
       : 'IND';
 
-    const refNum = `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const refNum = bookingRef || `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
     setBookingRef(refNum);
-
-    // Call Supabase API Endpoint. The server now answers real failures with a
-    // JSON error — show them instead of pretending the booking was stored.
     setSubmitError('');
+    setPaymentNotice('');
+    setIsSubmitting(true);
+
     try {
-      const response = await fetch('/api/bookings/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          booking: {
-            owner_id: profile.ownerId || undefined,
-            customer_name: guestName.trim() || 'Guest Client',
-            customer_phone: cleanPhone,
-            customer_email: guestEmail.trim() || `${cleanPhone}@guest.in`,
-            service_id: selectedService.id,
-            service_name: selectedService.name,
-            booking_date: bookingDate,
-            time_slot: bookingTime,
-            total_amount: totalAmount,
-            advance_paid_amount: paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0,
-            status: 'pending',
-            payment_status: paymentMethod === 'pay_advance_token' ? 'paid_deposit' : 'pending',
-            payment_id: refNum,
+      // ---- 2. Advance payment via Razorpay ----------------------------------
+      let paymentPayload: {
+        razorpay_order_id?: string;
+        razorpay_payment_id?: string;
+        razorpay_signature?: string;
+      } | undefined;
+      let paidAdvance = false;
+
+      if (paymentMethod === 'pay_advance_token' && advanceTokenAmount > 0) {
+        setSubmitStage('paying');
+        const outcome = await payAdvanceWithRazorpay({
+          amount: advanceTokenAmount,
+          receipt: refNum,
+          description: `25% advance for ${selectedService.name} on ${bookingDate} at ${bookingTime}`,
+          customer: {
+            name: guestName.trim() || 'Guest Client',
+            email: guestEmail.trim() || undefined,
+            contact: cleanPhone,
           },
-          notifications: [
-            {
-              user_email: profile.email || 'owner@salon.com',
-              title: 'New Booking Request',
-              message: `New booking from ${guestName} for ${selectedService.name} on ${bookingDate}. 25% Advance Paid: ₹${advanceTokenAmount}`,
-            }
-          ]
-        })
-      });
-      let json: { success?: boolean; error?: string; notice?: string } | null = null;
+          salonName: profile.businessName,
+          themeColor: themeAccentHex,
+          notes: { booking_ref: refNum, service: selectedService.name, slot: `${bookingDate} ${bookingTime}` },
+        });
+
+        if (outcome.status === 'paid') {
+          paidAdvance = true;
+          paymentPayload = {
+            razorpay_order_id: outcome.orderId,
+            razorpay_payment_id: outcome.paymentId,
+            razorpay_signature: outcome.signature,
+          };
+          setPaymentReceiptId(outcome.paymentId);
+        } else if (outcome.status === 'dismissed') {
+          setSubmitError('Payment window closed before the advance was paid. Your details are still here — tap confirm to try again.');
+          return;
+        } else if (outcome.status === 'failed') {
+          setSubmitError(`Payment could not be completed (${outcome.reason}). No amount was charged — please try again.`);
+          return;
+        } else {
+          // 'unavailable' — the salon hasn't switched online payments on yet.
+          console.warn('[Booking] Razorpay unavailable, continuing as pay-at-salon:', outcome.reason);
+          setPaymentNotice('Online payment is not enabled for this salon yet — your slot is held and you can pay at the salon.');
+        }
+      }
+
+      setAdvancePaid(paidAdvance);
+
+      // ---- 3. Persist the booking -------------------------------------------
+      setSubmitStage('saving');
       try {
-        json = await response.json();
-      } catch {
-        // Non-JSON body — handled below through response.ok.
+        const response = await fetch('/api/bookings/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            owner_id: profile.ownerId || undefined,
+            subdomain: profile.subdomain || undefined,
+            owner_email: profile.email || undefined,
+            payment: paymentPayload,
+            booking: {
+              owner_id: profile.ownerId || undefined,
+              customer_name: guestName.trim() || 'Guest Client',
+              customer_phone: cleanPhone,
+              customer_email: guestEmail.trim() || `${cleanPhone}@guest.in`,
+              service_id: selectedService.id,
+              service_name: selectedService.name,
+              booking_date: bookingDate,
+              time_slot: bookingTime,
+              total_amount: totalAmount,
+              advance_paid_amount: paidAdvance ? advanceTokenAmount : 0,
+              status: 'pending',
+              payment_status: paidAdvance ? 'paid_deposit' : 'pending',
+              payment_id: paymentPayload?.razorpay_payment_id || refNum,
+              booking_type: bookingType === 'home' ? 'home' : 'salon',
+              home_address: bookingType === 'home'
+                ? `${homeServiceAddress}${homeServicePinCode ? ` (PIN: ${homeServicePinCode})` : ''}`.trim()
+                : undefined,
+            },
+            notifications: [
+              {
+                user_email: profile.email || 'owner@salon.com',
+                title: 'New Booking Request',
+                message: `New booking from ${guestName} for ${selectedService.name} on ${bookingDate}. ${paidAdvance ? `25% Advance Paid: ₹${advanceTokenAmount}` : 'Advance not paid (pay at salon).'}`,
+              }
+            ]
+          })
+        });
+
+        let json: { success?: boolean; error?: string; notice?: string } | null = null;
+        try {
+          json = await response.json();
+        } catch {
+          // Non-JSON body — handled below through response.ok.
+        }
+        if (!response.ok || (json && json.success === false)) {
+          const detail = json?.error || json?.notice || `Server error (HTTP ${response.status})`;
+          console.error('Failed to create booking:', detail);
+          setSubmitError(
+            paidAdvance
+              ? `Your payment went through (ref ${paymentPayload?.razorpay_payment_id}) but we couldn't save the booking (${detail}). Please share this reference with the salon — you will not be charged twice.`
+              : `We couldn't save your booking (${detail}). Please try again — your details are still here.`
+          );
+          return;
+        }
+      } catch (e) {
+        // Network failure (offline, preview sandbox without API): keep the local
+        // demo copy so the owner dashboard still shows the request.
+        console.warn('Booking API unreachable — keeping a local copy only.', e);
       }
-      if (!response.ok || (json && json.success === false)) {
-        const detail = json?.error || json?.notice || `Server error (HTTP ${response.status})`;
-        console.error('Failed to create booking:', detail);
-        setSubmitError(`We couldn't save your booking (${detail}). Please try again — your details are still here.`);
-        return;
+
+      const newApt: Appointment = {
+        id: `apt-${Date.now()}`,
+        clientName: guestName.trim() || 'Guest Client',
+        clientPhone: `+91 ${cleanPhone}`,
+        clientEmail: guestEmail.trim() || `${cleanPhone}@guest.in`,
+        serviceId: selectedService.id,
+        serviceName: selectedService.name,
+        servicePrice: totalAmount,
+        stylistId: selectedStylist.id,
+        stylistName: selectedStylist.name,
+        date: bookingDate,
+        time: bookingTime,
+        status: 'pending', // Set initial status to pending
+        paymentStatus: paidAdvance ? 'paid_deposit' : 'pay_at_salon',
+        amountPaid: paidAdvance ? advanceTokenAmount : 0,
+        createdAt: new Date().toISOString()
+      };
+
+      onAddAppointment(newApt);
+      setCurrentStep('confirmed');
+
+      // MOCK EMAIL TRIGGER
+      console.log(`[MOCK EMAIL] Confirmation sent to ${newApt.clientEmail} for appointment ${refNum}`);
+
+      if (onShowToast) {
+        onShowToast({
+          id: String(Date.now()),
+          title: paidAdvance ? 'Booking Pending Approval. 25% Deposit Paid.' : 'Booking Pending Approval. Pay at salon.',
+          clientName: newApt.clientName,
+          serviceName: newApt.serviceName,
+          stylistName: newApt.stylistName,
+          dateTime: `${bookingDate} at ${bookingTime}`,
+          refCode: refNum,
+          price: totalAmount
+        });
       }
-    } catch (e) {
-      // Network failure (offline, preview sandbox without API): keep the local
-      // demo copy so the owner dashboard still shows the request.
-      console.warn('Booking API unreachable — keeping a local copy only.', e);
-    }
-
-    const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
-      clientName: guestName.trim() || 'Guest Client',
-      clientPhone: `+91 ${cleanPhone}`,
-      clientEmail: guestEmail.trim() || `${cleanPhone}@guest.in`,
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      servicePrice: totalAmount,
-      stylistId: selectedStylist.id,
-      stylistName: selectedStylist.name,
-      date: bookingDate,
-      time: bookingTime,
-      status: 'pending', // Set initial status to pending
-      paymentStatus: paymentMethod === 'pay_advance_token' ? 'paid_deposit' : 'pay_at_salon',
-      amountPaid: paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0,
-      createdAt: new Date().toISOString()
-    };
-
-    onAddAppointment(newApt);
-    setCurrentStep('confirmed');
-
-    // MOCK EMAIL TRIGGER
-    console.log(`[MOCK EMAIL] Confirmation sent to ${newApt.clientEmail} for appointment ${refNum}`);
-
-    if (onShowToast) {
-      onShowToast({
-        id: String(Date.now()),
-        title: 'Booking Pending Approval. 25% Deposit Paid.',
-        clientName: newApt.clientName,
-        serviceName: newApt.serviceName,
-        stylistName: newApt.stylistName,
-        dateTime: `${bookingDate} at ${bookingTime}`,
-        refCode: refNum,
-        price: totalAmount
-      });
+    } catch (err: any) {
+      // Nothing in the flow above should throw, but a stray exception must not
+      // leave the button spinning forever with no explanation.
+      console.error('[Booking] Unexpected checkout error:', err);
+      setSubmitError(`Something went wrong while confirming (${err?.message || 'unknown error'}). Please try again.`);
+    } finally {
+      setIsSubmitting(false);
+      setSubmitStage('idle');
     }
   };
 
@@ -529,6 +642,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setBookingRef('');
     setSlotLockSeconds(300);
     setSlotLocked(true);
+    setSubmitError('');
+    setPaymentNotice('');
+    setAdvancePaid(false);
+    setPaymentReceiptId('');
+    setIsSubmitting(false);
+    setSubmitStage('idle');
   };
 
   return (
@@ -1338,12 +1457,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
               )}
 
+              {/* Gateway-unavailable notice (booking still goes through) */}
+              {paymentNotice && !submitError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <span>{paymentNotice}</span>
+                </div>
+              )}
+
               {/* Final Step Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => { setSubmitError(''); setCurrentStep('guest'); }}
-                  className="px-4 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer flex items-center gap-1.5"
+                  disabled={isSubmitting}
+                  className="px-4 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back</span>
@@ -1351,11 +1479,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <button
                   type="button"
                   onClick={handleFinalSubmitBooking}
-                  className="flex-1 py-3.5 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95"
+                  disabled={isSubmitting}
+                  className="flex-1 py-3.5 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95 disabled:opacity-70 disabled:cursor-wait"
                   style={{ backgroundColor: themeAccentHex }}
                 >
-                  <CalendarCheck className="w-4 h-4" />
-                  <span>Confirm Appointment & Generate Pass (₹)</span>
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                      <span>
+                        {submitStage === 'paying'
+                          ? `Opening secure payment (₹${advanceTokenAmount.toLocaleString('en-IN')})…`
+                          : 'Saving your booking…'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CalendarCheck className="w-4 h-4" />
+                      <span>Confirm Appointment & Generate Pass (₹{advanceTokenAmount.toLocaleString('en-IN')})</span>
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -1445,10 +1587,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                 <div className="flex justify-between items-center text-slate-700 font-sans">
                   <span>Payment Status:</span>
-                  <strong className="text-emerald-700">
-                    {paymentMethod === 'pay_advance_token' ? `25% Advance Paid: ₹${advanceTokenAmount.toLocaleString('en-IN')} (Balance: ₹${remainingAmount.toLocaleString('en-IN')})` : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount.toLocaleString('en-IN')})`}
+                  <strong className={advancePaid ? 'text-emerald-700' : 'text-amber-700'}>
+                    {advancePaid
+                      ? `25% Advance Paid: ₹${advanceTokenAmount.toLocaleString('en-IN')} (Balance: ₹${remainingAmount.toLocaleString('en-IN')})`
+                      : `Pay Full at ${bookingType === 'home' ? 'Home' : 'Salon'} (₹${totalAmount.toLocaleString('en-IN')})`}
                   </strong>
                 </div>
+
+                {advancePaid && paymentReceiptId && (
+                  <div className="flex justify-between items-center text-slate-700 font-sans">
+                    <span>Razorpay Payment ID:</span>
+                    <strong className="text-slate-900">{paymentReceiptId}</strong>
+                  </div>
+                )}
 
                 <div className="pt-2 border-t border-slate-200 text-[11px] text-emerald-700 flex items-center gap-1.5 font-sans font-medium">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
