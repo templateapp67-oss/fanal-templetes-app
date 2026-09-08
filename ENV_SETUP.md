@@ -7,7 +7,7 @@ file is a setup draft, not a working production configuration.
 
 | Screenshot variable | What to enter |
 | --- | --- |
-| `VITE_GOOGLE_MAPS_API_KEY` | Not used by this revision. Maps directions use ordinary Google Maps links. Omit this variable. |
+| `VITE_GOOGLE_MAPS_API_KEY` | Used by the Google Maps and Places integration added on main. Supply your Google Maps Platform browser key with the appropriate APIs enabled and website restrictions. |
 | `SUPABASE_DEMO_OWNER_ID` | Optional fallback: an existing salon owner's Auth user UUID, not an API key or a new random UUID. Prefer resolving the owner through the published salon. |
 | `DEFAULT_OWNER_ID` | Preferred fallback alias; takes precedence over `SUPABASE_DEMO_OWNER_ID`. Leave both blank unless a fallback owner is intended. |
 | `YOUTUBE_API_KEY` | Your Google Cloud API key with YouTube Data API v3 enabled; needed for automatic video/channel fetching. |
