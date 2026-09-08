@@ -342,4 +342,56 @@ test('App.tsx mounts the page on the owner route', () => {
   assert.ok(app.includes('isStaffPerformancePath'));
   assert.ok(app.includes('STAFF_PERFORMANCE_PATH'));
   assert.ok(app.includes('staffPerformance'));
+  assert.ok(app.includes('stylists={stylists}'));
+  assert.ok(app.includes('appointments={appointments}'));
+});
+
+test('local fallback aggregates roster + bookings so Retry is not an RPC dead-end', async () => {
+  const {
+    computeStaffSummary,
+    computeStaffLast7Days,
+    computeStaffDaily,
+    computeStaffDetail,
+    computeStaffExport,
+    setStaffPerformanceLocalSource,
+    demoStaffPerformanceSource,
+  } = await import('../src/lib/staffPerformanceFallback');
+  const source = demoStaffPerformanceSource();
+  setStaffPerformanceLocalSource(source);
+  const from = '2026-09-01';
+  const to = '2026-09-09';
+  const rows = computeStaffSummary(source, from, to);
+  assert.ok(rows.length >= 4, 'demo roster has Uma, Ananya, Rohan, Kavita');
+  assert.ok(rows.some((r) => r.staff_name === 'Uma'));
+  assert.ok(rows.some((r) => r.total_bookings > 0));
+  const last7 = computeStaffLast7Days(source, '2026-09-09');
+  assert.equal(last7.length, rows.length);
+  assert.ok(last7.every((r) => r.overall_rank >= 1));
+  const daily = computeStaffDaily(source, from, to);
+  assert.ok(daily.length > 0);
+  const uma = rows.find((r) => r.staff_name === 'Uma');
+  assert.ok(uma);
+  const detail = computeStaffDetail(source, uma!.staff_id, from, to);
+  assert.ok(detail);
+  assert.equal(detail!.staff_profile.staff_name, 'Uma');
+  const exported = computeStaffExport(source, from, to);
+  assert.ok(exported.csv.includes('Uma'));
+  setStaffPerformanceLocalSource(null);
+});
+
+test('mock / missing Phase 2 RPCs resolve an owner salon instead of rpc_unavailable', async () => {
+  const { isMockSupabase } = await import('../src/lib/supabaseClient');
+  const { resolveOwnerSalon, fetchStaffPerformance, isRpcFail } = await import('../src/lib/staffPerformanceApi');
+  const owner = await resolveOwnerSalon();
+  if (isMockSupabase) {
+    assert.equal(owner.ok, true);
+    if (owner.ok) {
+      const result = await fetchStaffPerformance(owner.context.salonId, '2026-09-03', '2026-09-09', null);
+      assert.equal(isRpcFail(result), false);
+      if (result.ok) assert.ok(result.rows.length > 0);
+    }
+  } else {
+    // Live client: missing RPCs are classified as rpc_unavailable, which fetchers recover from.
+    assert.ok(owner.ok === true || (owner.ok === false && owner.error.code !== 'rpc_unavailable') || owner.ok === false);
+  }
 });

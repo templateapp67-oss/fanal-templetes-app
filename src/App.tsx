@@ -1571,6 +1571,8 @@ export default function App() {
           primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
           currencySymbol={profile.currency || '₹'}
           salonName={profile.businessName}
+          stylists={stylists}
+          appointments={appointments}
         />
       )}
 

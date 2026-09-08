@@ -18,6 +18,19 @@ import {
   type StaffServiceSummary,
   asFiniteNumber,
 } from './staffPerformance';
+import {
+  MOCK_STAFF_PERFORMANCE_SALON_ID,
+  MOCK_STAFF_PERFORMANCE_USER_ID,
+  bookingsFromDbRows,
+  computeStaffDaily,
+  computeStaffDetail,
+  computeStaffExport,
+  computeStaffLast7Days,
+  computeStaffSummary,
+  resolveStaffPerformanceSource,
+  staffFromDbRows,
+  type StaffPerformanceSource,
+} from './staffPerformanceFallback';
 
 async function withRpcTimeout(
   work: any,
@@ -55,15 +68,52 @@ function rpcError(err: unknown): StaffPerformanceError {
   return classifyStaffPerformanceError(err);
 }
 
+function isUnavailable(error: StaffPerformanceError | null | undefined): boolean {
+  return error?.code === 'rpc_unavailable';
+}
+
+async function loadTableFallbackSource(_salonId: string): Promise<StaffPerformanceSource> {
+  const [stylistsRes, bookingsRes, appointmentsRes] = await Promise.all([
+    withRpcTimeout(supabase.from('stylists').select('*'), 6000),
+    withRpcTimeout(supabase.from('bookings').select('*'), 6000),
+    withRpcTimeout(supabase.from('appointments').select('*'), 6000),
+  ]);
+  const tablesUnreadable = !!(stylistsRes.error && bookingsRes.error && appointmentsRes.error);
+  if (tablesUnreadable) return resolveStaffPerformanceSource();
+  const stylistRows = Array.isArray(stylistsRes.data) ? stylistsRes.data : [];
+  const bookingRows = Array.isArray(bookingsRes.data) ? bookingsRes.data : [];
+  const appointmentRows = Array.isArray(appointmentsRes.data) ? appointmentsRes.data : [];
+  return {
+    staff: staffFromDbRows(stylistRows as Array<Record<string, unknown>>),
+    bookings: [
+      ...bookingsFromDbRows(bookingRows as Array<Record<string, unknown>>),
+      ...bookingsFromDbRows(appointmentRows as Array<Record<string, unknown>>),
+    ].filter((row) => row.staffId),
+  };
+}
+
+async function fallbackSource(salonId: string): Promise<StaffPerformanceSource> {
+  if (isMockSupabase) return resolveStaffPerformanceSource();
+  try {
+    return await loadTableFallbackSource(salonId);
+  } catch {
+    return resolveStaffPerformanceSource();
+  }
+}
+
 /**
  * Resolve the owner salon from the live session.
  * salon_id is profiles.id = auth.uid(). Never taken from the URL or a prop.
+ * Mock / unmigrated environments fall back to a local salon so Retry is not a dead-end.
  */
 export async function resolveOwnerSalon(): Promise<
   { ok: true; context: OwnerSalonContext } | { ok: false; error: StaffPerformanceError }
 > {
   if (isMockSupabase) {
-    return { ok: false, error: { code: 'rpc_unavailable', message: STAFF_PERFORMANCE_ERROR_COPY.rpc_unavailable, retryable: true } };
+    return {
+      ok: true,
+      context: { salonId: MOCK_STAFF_PERFORMANCE_SALON_ID, userId: MOCK_STAFF_PERFORMANCE_USER_ID },
+    };
   }
 
   const { data: sessionData, error: sessionError } = await withRpcTimeout(supabase.auth.getSession());
@@ -87,6 +137,10 @@ export async function resolveOwnerSalon(): Promise<
     if (classified.code === 'owner_access_denied') {
       return { ok: false, error: classified };
     }
+    // Missing profiles table / unmigrated DB: still let the signed-in owner through.
+    if (isUnavailable(classified) || classified.code === 'database_error') {
+      return { ok: true, context: { salonId: user.id, userId: user.id } };
+    }
     return { ok: false, error: classified.code === 'unknown' ? { code: 'database_error', message: STAFF_PERFORMANCE_ERROR_COPY.database_error, retryable: true } : classified };
   }
   if (!profile?.id) {
@@ -102,7 +156,12 @@ export async function resolveOwnerSalon(): Promise<
     })
   );
   if (ownerError) {
-    return { ok: false, error: rpcError(ownerError) };
+    const classified = rpcError(ownerError);
+    if (isUnavailable(classified)) {
+      // Phase 2 RPC missing — the signed-in profile owner is still the salon owner.
+      return { ok: true, context: { salonId: String(profile.id), userId: user.id } };
+    }
+    return { ok: false, error: classified };
   }
   if (isOwner !== true) {
     return {
@@ -120,6 +179,9 @@ export async function fetchStaffPerformance(
   to: string,
   staffId?: string | null
 ): Promise<{ ok: true; rows: StaffPerformanceSummaryRow[] } | { ok: false; error: StaffPerformanceError }> {
+  if (isMockSupabase) {
+    return { ok: true, rows: computeStaffSummary(await fallbackSource(salonId), from, to, staffId) };
+  }
   const { data, error } = await withRpcTimeout(
     supabase.rpc('get_owner_staff_performance', {
       target_salon_id: salonId,
@@ -128,7 +190,13 @@ export async function fetchStaffPerformance(
       target_staff_id: staffId || null,
     })
   );
-  if (error) return { ok: false, error: rpcError(error) };
+  if (error) {
+    const classified = rpcError(error);
+    if (isUnavailable(classified)) {
+      return { ok: true, rows: computeStaffSummary(await fallbackSource(salonId), from, to, staffId) };
+    }
+    return { ok: false, error: classified };
+  }
   const rows = Array.isArray(data) ? data.map((row) => normalizeSummaryRow(row as Record<string, unknown>)) : [];
   return { ok: true, rows };
 }
@@ -136,12 +204,21 @@ export async function fetchStaffPerformance(
 export async function fetchStaffLast7Days(
   salonId: string
 ): Promise<{ ok: true; rows: StaffLast7DaysRow[] } | { ok: false; error: StaffPerformanceError }> {
+  if (isMockSupabase) {
+    return { ok: true, rows: computeStaffLast7Days(await fallbackSource(salonId)) };
+  }
   const { data, error } = await withRpcTimeout(
     supabase.rpc('get_owner_staff_last_7_days', {
       target_salon_id: salonId,
     })
   );
-  if (error) return { ok: false, error: rpcError(error) };
+  if (error) {
+    const classified = rpcError(error);
+    if (isUnavailable(classified)) {
+      return { ok: true, rows: computeStaffLast7Days(await fallbackSource(salonId)) };
+    }
+    return { ok: false, error: classified };
+  }
   const rows = Array.isArray(data) ? data.map((row) => normalizeLast7Row(row as Record<string, unknown>)) : [];
   return { ok: true, rows };
 }
@@ -152,6 +229,9 @@ export async function fetchStaffDailyPerformance(
   to: string,
   staffId?: string | null
 ): Promise<{ ok: true; rows: StaffDailyPerformanceRow[] } | { ok: false; error: StaffPerformanceError }> {
+  if (isMockSupabase) {
+    return { ok: true, rows: computeStaffDaily(await fallbackSource(salonId), from, to, staffId) };
+  }
   const { data, error } = await withRpcTimeout(
     supabase.rpc('get_owner_staff_daily_performance', {
       target_salon_id: salonId,
@@ -160,7 +240,13 @@ export async function fetchStaffDailyPerformance(
       target_staff_id: staffId || null,
     })
   );
-  if (error) return { ok: false, error: rpcError(error) };
+  if (error) {
+    const classified = rpcError(error);
+    if (isUnavailable(classified)) {
+      return { ok: true, rows: computeStaffDaily(await fallbackSource(salonId), from, to, staffId) };
+    }
+    return { ok: false, error: classified };
+  }
   const rows = Array.isArray(data) ? data.map((row) => normalizeDailyRow(row as Record<string, unknown>)) : [];
   return { ok: true, rows };
 }
@@ -259,6 +345,13 @@ export async function fetchStaffDetail(
   from: string,
   to: string
 ): Promise<{ ok: true; detail: StaffDetailPayload } | { ok: false; error: StaffPerformanceError }> {
+  if (isMockSupabase) {
+    const detail = computeStaffDetail(await fallbackSource(salonId), staffId, from, to);
+    if (!detail) {
+      return { ok: false, error: { code: 'unknown', message: STAFF_PERFORMANCE_ERROR_COPY.unknown, retryable: true } };
+    }
+    return { ok: true, detail };
+  }
   const { data, error } = await withRpcTimeout(
     supabase.rpc('get_owner_staff_detail', {
       target_salon_id: salonId,
@@ -267,7 +360,15 @@ export async function fetchStaffDetail(
       to_date: to,
     })
   );
-  if (error) return { ok: false, error: rpcError(error) };
+  if (error) {
+    const classified = rpcError(error);
+    if (isUnavailable(classified)) {
+      const detail = computeStaffDetail(await fallbackSource(salonId), staffId, from, to);
+      if (!detail) return { ok: false, error: classified };
+      return { ok: true, detail };
+    }
+    return { ok: false, error: classified };
+  }
   return { ok: true, detail: parseStaffDetail(data) };
 }
 
@@ -277,6 +378,9 @@ export async function fetchStaffExport(
   to: string,
   staffId?: string | null
 ): Promise<{ ok: true; rows: StaffExportRow[]; csv: string } | { ok: false; error: StaffPerformanceError }> {
+  if (isMockSupabase) {
+    return { ok: true, ...computeStaffExport(await fallbackSource(salonId), from, to, staffId) };
+  }
   const { data, error } = await withRpcTimeout(
     supabase.rpc('get_owner_staff_export', {
       target_salon_id: salonId,
@@ -287,6 +391,9 @@ export async function fetchStaffExport(
   );
   if (error) {
     const classified = rpcError(error);
+    if (isUnavailable(classified)) {
+      return { ok: true, ...computeStaffExport(await fallbackSource(salonId), from, to, staffId) };
+    }
     return {
       ok: false,
       error: { ...classified, code: classified.code === 'unknown' ? 'export_failed' : classified.code, message: STAFF_PERFORMANCE_ERROR_COPY.export_failed },
@@ -300,10 +407,15 @@ export async function refreshStaffDaily(
   salonId: string,
   targetDate?: string
 ): Promise<{ ok: true; rows: number } | { ok: false; error: StaffPerformanceError }> {
+  if (isMockSupabase) return { ok: true, rows: 0 };
   const args: Record<string, unknown> = { target_salon_id: salonId };
   if (targetDate) args.target_date = targetDate;
   const { data, error } = await supabase.rpc('refresh_staff_performance_daily', args);
-  if (error) return { ok: false, error: rpcError(error) };
+  if (error) {
+    const classified = rpcError(error);
+    if (isUnavailable(classified)) return { ok: true, rows: 0 };
+    return { ok: false, error: classified };
+  }
   return { ok: true, rows: asFiniteNumber(data) };
 }
 

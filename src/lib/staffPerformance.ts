@@ -7,8 +7,9 @@
 //   payments  → bookings.payment_status + advance_paid_amount (no payments table)
 //   reviews   → bookings.metadata.review_rating
 //
-// Table / card / chart numbers come from the Phase 2 RPCs. This module only
-// formats, filters, sorts, and sums those already-authoritative rows.
+// Table / card / chart numbers come from the Phase 2 RPCs when they exist.
+// Mock / unmigrated environments fall back to local salon roster + bookings
+// (see staffPerformanceFallback.ts) so Retry is never a dead-end.
 // ==============================================================================
 
 export const STAFF_PERFORMANCE_RPCS = [

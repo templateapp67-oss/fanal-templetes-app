@@ -56,6 +56,13 @@ import {
   resolveOwnerSalon,
   triggerCsvDownload,
 } from '../lib/staffPerformanceApi';
+import {
+  MOCK_STAFF_PERFORMANCE_SALON_ID,
+  bookingsFromAppointments,
+  setStaffPerformanceLocalSource,
+  staffFromStylists,
+} from '../lib/staffPerformanceFallback';
+import type { Appointment, Stylist } from '../types';
 import { StaffPerformanceAlerts } from './StaffPerformanceAlerts';
 
 const PAGE_SIZE = 8;
@@ -91,6 +98,8 @@ export interface StaffPerformanceDashboardProps {
   primaryAccentColor?: string;
   currencySymbol?: string;
   salonName?: string;
+  stylists?: Stylist[];
+  appointments?: Appointment[];
 }
 
 interface LoadedBundle {
@@ -170,8 +179,10 @@ function ErrorBlock({ error, onRetry }: { error: StaffPerformanceError; onRetry?
   return (
     <div className="p-5 rounded-2xl border border-rose-200 bg-rose-50 text-rose-900" role="alert" data-error-code={error.code}>
       <div className="font-bold text-sm mb-1">{error.message}</div>
-      <p className="text-xs text-rose-800/80 mb-3">{STAFF_PERFORMANCE_ERROR_COPY.unknown} Use Retry if this looks temporary.</p>
-      {onRetry && (
+      {error.retryable && (
+        <p className="text-xs text-rose-800/80 mb-3">Use Retry if this looks temporary — local salon data will load if the RPCs are still unavailable.</p>
+      )}
+      {onRetry && error.retryable && (
         <button
           type="button"
           onClick={onRetry}
@@ -326,6 +337,8 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   primaryAccentColor = '#C20E5A',
   currencySymbol = '₹',
   salonName,
+  stylists,
+  appointments,
 }) => {
   const [preset, setPreset] = useState<StaffDatePreset>('last_7');
   const [customFrom, setCustomFrom] = useState(toIsoDate(new Date()));
@@ -389,7 +402,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
 
     const owner = await resolveOwnerSalon();
     if (ticket !== inflight.current) return;
-    if (isRpcFail(owner)) {
+    if (isRpcFail(owner) && owner.error.code !== 'rpc_unavailable') {
       clearDashboard();
       if (
         owner.error.code === 'session_expired' ||
@@ -403,23 +416,25 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
       setLoading(false);
       return;
     }
-
-    salonIdRef.current = owner.context.salonId;
+    const salonId = isRpcFail(owner)
+      ? user.id || MOCK_STAFF_PERFORMANCE_SALON_ID
+      : owner.context.salonId;
+    salonIdRef.current = salonId;
     const seven = lastSevenCivilDays();
     const prev7 = previousPeriod(seven.from, seven.to);
     const prevRange = previousPeriod(debouncedRange.from, debouncedRange.to);
 
     const [current, previous, last7, previous7, daily7] = await Promise.all([
-      fetchStaffPerformance(owner.context.salonId, debouncedRange.from, debouncedRange.to, null),
-      fetchStaffPerformance(owner.context.salonId, prevRange.from, prevRange.to, null),
-      fetchStaffLast7Days(owner.context.salonId),
-      fetchStaffPerformance(owner.context.salonId, prev7.from, prev7.to, null),
-      fetchStaffDailyPerformance(owner.context.salonId, seven.from, seven.to, null),
+      fetchStaffPerformance(salonId, debouncedRange.from, debouncedRange.to, null),
+      fetchStaffPerformance(salonId, prevRange.from, prevRange.to, null),
+      fetchStaffLast7Days(salonId),
+      fetchStaffPerformance(salonId, prev7.from, prev7.to, null),
+      fetchStaffDailyPerformance(salonId, seven.from, seven.to, null),
     ]);
     if (ticket !== inflight.current) return;
 
     const firstFail = [current, previous, last7, previous7, daily7].find(isRpcFail);
-    if (firstFail) {
+    if (firstFail && firstFail.error.code !== 'rpc_unavailable') {
       if (firstFail.error.code === 'session_expired' || firstFail.error.code === 'owner_access_denied') {
         clearDashboard();
         setFatal(firstFail.error);
@@ -431,7 +446,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     }
 
     setBundle({
-      salonId: owner.context.salonId,
+      salonId,
       rows: current.ok ? current.rows : [],
       previousRows: previous.ok ? previous.rows : [],
       last7: last7.ok ? last7.rows : [],
@@ -624,7 +639,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 {salonName ? `${salonName} · ` : ''}
-                {range.from} → {range.to} · currency {currencySymbol} INR · figures from secure RPCs
+                {range.from} → {range.to} · currency {currencySymbol} INR · owner-only figures
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -719,6 +734,10 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
           </div>
           {exportError && <div className="text-xs text-rose-700 font-bold">{exportError}</div>}
         </div>
+
+        {bundle?.salonId && (
+          <StaffPerformanceAlerts salonId={bundle.salonId} currencySymbol={currencySymbol} />
+        )}
 
         {loadError && <ErrorBlock error={loadError} onRetry={() => void load()} />}
 
