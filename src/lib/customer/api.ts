@@ -202,7 +202,14 @@ export interface SalonSearchQuery {
   q?: string;
   city?: string;
   businessType?: string;
-  sort?: 'nearby' | 'rating' | 'name';
+  /** `services.category` — a salon matches when it actually offers that category. */
+  category?: string;
+  /** Ceiling on the salon's cheapest published service price. */
+  maxPrice?: number;
+  minRating?: number;
+  openNow?: boolean;
+  offersOnly?: boolean;
+  sort?: 'nearby' | 'rating' | 'name' | 'trending' | 'price';
   latitude?: number;
   longitude?: number;
   limit?: number;
@@ -528,19 +535,32 @@ export async function listFavourites(
  */
 export async function toggleFavourite(
   customerId: string | null | undefined,
-  input: { salonId: string; staffId?: string; kind: 'salon' | 'staff'; salonName?: string; staffName?: string; pinned: boolean }
+  input: {
+    salonId: string;
+    staffId?: string;
+    serviceId?: string;
+    kind: 'salon' | 'staff' | 'service';
+    salonName?: string;
+    staffName?: string;
+    serviceName?: string;
+    pinned: boolean;
+  }
 ): Promise<CustomerResult<CustomerFavourite[]>> {
   const pins = readFavouritePins(customerId);
   const matches = (pin: FavouritePin) =>
-    pin.salonId === input.salonId && pin.kind === input.kind && (input.kind === 'salon' || pin.staffId === input.staffId);
+    pin.salonId === input.salonId &&
+    pin.kind === input.kind &&
+    (input.kind === 'salon' ? true : input.kind === 'staff' ? pin.staffId === input.staffId : pin.serviceId === input.serviceId);
   const nextPins = input.pinned
     ? [
         {
           salonId: input.salonId,
           staffId: input.staffId || '',
+          serviceId: input.serviceId || '',
           kind: input.kind,
           salonName: input.salonName || '',
           staffName: input.staffName || '',
+          serviceName: input.serviceName || '',
           pinnedAt: new Date().toISOString(),
         },
         ...pins.filter((pin) => !matches(pin)),
@@ -602,6 +622,31 @@ export function confirmQrPayment(input: {
   method?: 'qr_scan' | 'upi_id';
 }): Promise<CustomerResult<{ payment: QrPayment | null; wallet: RewardWallet | null; transactions: RewardTransaction[] }>> {
   return customerRequest('/api/customer/me/qr-payments/confirm', {
+    method: 'POST',
+    body: input,
+    requireAuth: true,
+    empty: { payment: null, wallet: null, transactions: [] },
+  });
+}
+
+/**
+ * Ask the SERVER to verify a recorded QR payment against the payment gateway.
+ * The customer never sends an amount: what gets credited is whatever the gateway
+ * says was captured, which is why this route exists at all.
+ */
+export function verifyQrPayment(input: {
+  paymentId: string;
+  razorpayPaymentId: string;
+}): Promise<
+  CustomerResult<{
+    payment: QrPayment | null;
+    wallet: RewardWallet | null;
+    transactions: RewardTransaction[];
+    verifiedAmount?: number;
+    alreadyVerified?: boolean;
+  }>
+> {
+  return customerRequest('/api/customer/me/qr-payments/verify', {
     method: 'POST',
     body: input,
     requireAuth: true,

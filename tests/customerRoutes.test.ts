@@ -25,6 +25,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  createMembershipsHandler,
   createBookingCreateHandler,
   createCancelHandler,
   createConnectionHandler,
@@ -35,8 +36,11 @@ import {
   createSalonListHandler,
   createSlotsHandler,
   createBookingAdvanceHandler,
+  createQrConfirmHandler,
+  createQrVerifyHandler,
 } from '../server/customerRoutes';
 import { pickProfileUpdates } from '../server/customerRoutes';
+import { normalizeGatewayPayment } from '../server/razorpay';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -77,14 +81,31 @@ interface FakeDb {
 function fakeDb(rows: Record<string, any[]>): FakeDb {
   const calls: FakeDb['calls'] = [];
   const unsupportedCalls: string[] = [];
+  /**
+   * Read a filter target the way PostgREST does, including the `jsonb->>key`
+   * paths this app filters on (`metadata->>review_rating`). Without this the fake
+   * would silently drop every jsonb filter and a rating query could never be
+   * tested at all.
+   */
+  const readColumn = (row: any, column: string) => {
+    const jsonPath = /^([a-zA-Z_]+)->>'?([a-zA-Z_]+)'?$/.exec(column);
+    if (jsonPath) {
+      const source = row?.[jsonPath[1]];
+      const parsed = typeof source === 'string' ? (() => { try { return JSON.parse(source); } catch { return null; } })() : source;
+      return parsed?.[jsonPath[2]];
+    }
+    return row?.[column];
+  };
+
   const matches = (row: any, filters: any[]) =>
     filters.every((filter) => {
       const [kind, column, value] = filter;
-      if (kind === 'eq') return String(row[column]) === String(value);
-      if (kind === 'neq') return String(row[column]) !== String(value);
-      if (kind === 'in') return (value as any[]).map(String).includes(String(row[column]));
-      if (kind === 'not') return row[column] !== null && row[column] !== undefined;
-      if (kind === 'ilike') return String(row[column] ?? '').toLowerCase().includes(String(value).replace(/%/g, '').toLowerCase());
+      const actual = readColumn(row, column);
+      if (kind === 'eq') return String(actual) === String(value);
+      if (kind === 'neq') return String(actual) !== String(value);
+      if (kind === 'in') return (value as any[]).map(String).includes(String(actual));
+      if (kind === 'not') return actual !== null && actual !== undefined;
+      if (kind === 'ilike') return String(actual ?? '').toLowerCase().includes(String(value).replace(/%/g, '').toLowerCase());
       return true;
     });
 
@@ -98,63 +119,68 @@ function fakeDb(rows: Record<string, any[]>): FakeDb {
     let limitCount = Infinity;
     let selectColumns = '*';
 
-    const builder: any = {
+    // Every chained method returns the PROXY below, not the raw builder. A method
+    // that returned `builder` would drop the proxy and make the next unmodelled
+    // filter (`gte`, `contains`, …) throw instead of no-opping — which quietly
+    // turned real queries into "error" results in the handlers under test.
+    let self: any;
+    const chained: any = {
       select(columns: string = '*', options?: any) {
         selectColumns = columns;
         if (options?.head) single = 'none';
-        return builder;
+        return self;
       },
       insert(values: any) {
         op = 'insert';
         body = values;
-        return builder;
+        return self;
       },
       update(values: any) {
         op = 'update';
         body = values;
-        return builder;
+        return self;
       },
       delete() {
         op = 'delete';
-        return builder;
+        return self;
       },
       eq(column: string, value: any) {
         filters.push(['eq', column, value]);
-        return builder;
+        return self;
       },
       neq(column: string, value: any) {
         filters.push(['neq', column, value]);
-        return builder;
+        return self;
       },
       in(column: string, value: any[]) {
         filters.push(['in', column, value]);
-        return builder;
+        return self;
       },
       not(column: string, _op: string, _value: any) {
         filters.push(['not', column, _value]);
-        return builder;
+        return self;
       },
       ilike(column: string, value: any) {
         filters.push(['ilike', column, value]);
-        return builder;
+        return self;
       },
       or() {
-        return builder;
+        return self;
       },
       order() {
-        return builder;
+        return self;
       },
       limit(count: number) {
         limitCount = count;
-        return builder;
+        return self;
       },
       maybeSingle() {
         single = 'maybe';
-        return builder;
+        return self;
       },
       single() {
         single = 'exact';
-        return builder;
+        return self;
       },
       // Anything the handler chains that this fake has no opinion about
       // (`gte`, `overlaps`, `filter`, `contains`, …) is recorded and ignored.
@@ -175,15 +201,20 @@ function fakeDb(rows: Record<string, any[]>): FakeDb {
     // method this fake does not model is recorded and no-opped rather than
     // throwing: the fake exists to assert on identity filters and on writes, not
     // to be a PostgREST clone.
-    return new Proxy(builder, {
+    const proxy: any = new Proxy(chained, {
       get(target: any, prop: string | symbol) {
-        if (prop in target || typeof prop === 'symbol') return target[prop];
+        if (prop in target || typeof prop === 'symbol') {
+          const value = target[prop];
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
         return (...args: any[]) => {
           unsupportedCalls.push(`${table}.${String(prop)}(${args.length})`);
-          return target;
+          return proxy;
         };
       },
     });
+    self = proxy;
+    return proxy;
 
     function execute() {
       const table_ = rows[table] || (rows[table] = []);
@@ -362,14 +393,18 @@ test('a customer cannot move a salon’s map pin by saving their own location', 
   });
   const { deps } = makeDeps({ db });
   const res = makeRes();
-  await createProfileWriteHandler(deps)({ body: { city: 'Bengaluru', latitude: 12.97, longitude: 77.59 }, params: {}, query: {} }, res);
+  await createProfileWriteHandler(deps)(
+    { body: { fullName: 'Ananya Iyer', city: 'Bengaluru', latitude: 12.97, longitude: 77.59 }, params: {}, query: {} },
+    res
+  );
   assert.equal(res.body.success, true);
   const write = db.calls.find((call) => call.op === 'update' && call.table === 'profiles');
-  assert.ok(write, 'the city change should still be written');
-  assert.equal(write!.body.city, 'Bengaluru');
+  assert.ok(write, 'a personal column must still be writable');
+  assert.equal(write!.body.full_name, 'Ananya Iyer', 'who the person is belongs to the person');
+  assert.equal(write!.body.city, undefined, 'city is on the salon public page, so the customer app cannot repaint it');
   assert.equal(write!.body.latitude, undefined, 'geo columns belong to the salon, not to whoever signs in on that row');
   assert.equal(write!.body.longitude, undefined);
-  assert.match(res.body.notice || '', /latitude|Not writable/i);
+  assert.match(res.body.notice || '', /public page.*city|Not written from the customer app/i);
   assert.equal(res.body.locationStored, false);
 });
 
@@ -452,6 +487,48 @@ test('a booking is created, its service lines are written, and the answer is the
   assert.equal(inserted!.body.user_id, ME, 'the row is stamped with the token id, never a posted one');
   assert.equal(inserted!.body.advance_paid_amount, 0, 'nothing is paid until the gateway says so');
   assert.equal(JSON.stringify(inserted!.body).includes('salon_name'), false);
+});
+
+test('a stylist who cannot be booked is refused, never quietly swapped for anyone available', async () => {
+  const offDuty = bookingTables({ stylist: { status: 'Inactive' } });
+  const { deps: offDutyDeps } = makeDeps({ db: offDuty });
+  const res = makeRes();
+  await createBookingCreateHandler(offDutyDeps)({
+    params: {},
+    query: {},
+    body: { salonId: OWNER, date: '2026-09-30', time: '11:00', serviceIds: [SALON_SERVICE_ID], staffId: STYLIST_ID },
+    headers: { authorization: 'Bearer mock-token' },
+  }, res);
+  assert.equal(res.statusCode, 400, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'staff_unavailable');
+  assert.ok(/stylist/i.test(res.body.error), 'the message names the stylist, not a generic failure');
+  assert.equal(offDuty.calls.filter((call) => call.table === 'bookings' && call.op === 'insert').length, 0, 'nothing was booked');
+
+  const foreign = bookingTables();
+  const { deps: foreignDeps } = makeDeps({ db: foreign });
+  const foreignRes = makeRes();
+  await createBookingCreateHandler(foreignDeps)({
+    params: {},
+    query: {},
+    body: { salonId: OWNER, date: '2026-09-30', time: '11:00', serviceIds: [SALON_SERVICE_ID], staffId: OTHER },
+    headers: { authorization: 'Bearer mock-token' },
+  }, foreignRes);
+  assert.equal(foreignRes.statusCode, 400, 'a stylist id from another salon resolves to nobody here');
+  assert.equal(foreignRes.body.code, 'staff_unavailable');
+
+  // No stylist requested at all is a different thing entirely: a salon-wide booking.
+  const anyStaff = bookingTables();
+  const { deps: anyStaffDeps } = makeDeps({ db: anyStaff });
+  const anyRes = makeRes();
+  await createBookingCreateHandler(anyStaffDeps)({
+    params: {},
+    query: {},
+    body: { salonId: OWNER, date: '2026-09-30', time: '11:00', serviceIds: [SALON_SERVICE_ID], staffId: '' },
+    headers: { authorization: 'Bearer mock-token' },
+  }, anyRes);
+  assert.equal(anyRes.statusCode, 200, JSON.stringify(anyRes.body));
+  assert.deepEqual(anyRes.body.data.booking.staffNames, [], 'the booking is recorded for the salon, not for a person');
+  assert.equal(anyRes.body.data.serviceLines[0].staffId, '');
 });
 
 test('when the service lines cannot be written the booking is rolled back', async () => {
@@ -588,4 +665,366 @@ test('a deposit cannot be recorded while the database is not configured', async 
   await createBookingAdvanceHandler(deps)({ params: { id: 'b1' }, body: { razorpay_order_id: 'order_x', razorpay_payment_id: 'pay_x', razorpay_signature: 'sig' }, query: {} }, res);
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.code, 'supabase_not_configured');
+});
+
+// ---------------------------------------------------------------------------
+// QR rewards: the customer reports, the gateway decides.
+//
+// This is the money rule the spec is emphatic about — "Do not allow the client to
+// manually approve/credit its own rewards" — and it is the easiest thing in a
+// rewards app to get wrong, because the tempting implementation is exactly the
+// one that writes points from a form field. So these tests assert on the shape of
+// what is WRITTEN: a recorded payment carries zero points and touches no wallet,
+// and points appear only after the server has asked the gateway what was
+// captured.
+// ---------------------------------------------------------------------------
+
+function qrTables(overrides: Record<string, any> = {}) {
+  const pending = {
+    id: 'qr-1',
+    owner_id: OWNER,
+    client_id: 'c1',
+    type: 'qr_payment',
+    date: '2026-09-19',
+    points_change: 0,
+    description: 'QR payment (awaiting verification) ₹750.00 ref:UPI-750',
+  };
+  return {
+    profiles: [{ id: OWNER, salon_name: 'Glow Studio', subdomain: 'glow', business_type: 'Salon', currency: '₹' }],
+    bookings: [{ id: 'bk-1', owner_id: OWNER, user_id: ME, customer_email: 'me@example.com', customer_phone: '+919999999999' }],
+    clients: [{ id: 'c1', owner_id: OWNER, email: 'me@example.com', name: 'Ananya', points: 100, lifetime_points: 100, total_spent: 0, loyalty_tier: 'bronze' }],
+    loyalty_config: [{ owner_id: OWNER, program_enabled: true, points_per_visit: 10, points_per_hundred_spent: 10 }],
+    loyalty_point_transactions: [pending],
+    ...overrides,
+  };
+}
+
+function gatewayPayment(fields: Record<string, any> = {}) {
+  return {
+    id: 'pay_VERIFIED1',
+    order_id: 'order_1',
+    amount: 75000,
+    amount_paid: 75000,
+    status: 'captured',
+    currency: 'INR',
+    method: 'upi',
+    ...fields,
+  };
+}
+
+function gatewayStub(payload: any, options: { throws?: any } = {}) {
+  const seen: string[] = [];
+  const client = {
+    seen,
+    fetchPayment: async (paymentId: string) => {
+      seen.push(paymentId);
+      if (options.throws) throw options.throws;
+      // Normalized exactly the way the real client does it, so a test that
+      // asserts on `captured`/rupees is asserting on the same shape the server
+      // will see in production.
+      return normalizeGatewayPayment(payload);
+    },
+  };
+  return client;
+}
+
+test('a recorded QR payment is a claim: zero points on the ledger and no wallet write', async () => {
+  const db = fakeDb(qrTables({ loyalty_point_transactions: [] }));
+  const { deps } = makeDeps({ db });
+  const res = makeRes();
+  await createQrConfirmHandler(deps)(
+    { body: { salonId: OWNER, amount: 750, reference: 'UPI-NEW' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.data.payment.pointsCredited, 0, 'a form field must never produce points');
+  assert.equal(res.body.data.payment.rewardStatus, 'awaiting_verification');
+  assert.equal(res.body.data.wallet.points, 100, 'the wallet comes back exactly as it was');
+  assert.equal(db.calls.some((call) => call.table === 'clients' && call.op === 'update'), false, 'recording a payment must not touch the balance');
+
+  const inserted = db.calls.find((call) => call.table === 'loyalty_point_transactions' && call.op === 'insert');
+  assert.ok(inserted, 'the ledger row is written');
+  assert.equal(inserted!.body.points_change, 0);
+  assert.match(inserted!.body.description, /awaiting verification/);
+  assert.match(inserted!.body.description, /₹750\.00/);
+  assert.match(res.body.notice, /cannot add points to itself|verified/i);
+});
+
+test('verification credits from the GATEWAY amount, and only once', async () => {
+  const rows = qrTables();
+  const db = fakeDb(rows);
+  const gateway = gatewayStub(gatewayPayment());
+  const { deps } = makeDeps({ db, gateway });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-1', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.payment.rewardStatus, 'credited');
+  // ₹750 at 10 points per ₹100 = 75 points, credited onto the existing 100.
+  assert.equal(res.body.data.payment.pointsCredited, 75);
+  assert.equal(res.body.data.verifiedAmount, 750);
+  assert.equal(res.body.data.wallet.points, 175);
+  assert.equal(gateway.seen[0], 'pay_VERIFIED1', 'the gateway lookup is what decides');
+  const ledgerUpdate = db.calls.find((call) => call.table === 'loyalty_point_transactions' && call.op === 'update');
+  assert.equal(ledgerUpdate!.body.points_change, 75);
+  assert.match(ledgerUpdate!.body.description, /verified pay_VERIFIED1/);
+
+  // The row in the fixture table is mutated by the fake, so a second call finds
+  // points already on it and must not credit again.
+  const again = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-1', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    again
+  );
+  assert.equal(again.body.success, true);
+  assert.equal(again.body.data.alreadyVerified, true);
+  assert.equal(again.body.data.payment.pointsCredited, 75, 'the original credit is reported, not doubled');
+  assert.equal(
+    db.calls.filter((call) => call.table === 'clients' && call.op === 'update').length,
+    1,
+    'a replayed verification must not double-credit the wallet'
+  );
+});
+
+test('a payment the gateway has not captured earns nothing', async () => {
+  const rows = qrTables();
+  const db = fakeDb(rows);
+  const { deps } = makeDeps({ db, gateway: gatewayStub(gatewayPayment({ status: 'created', amount_paid: 0 })) });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-1', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'payment_unverified');
+  assert.equal(db.rows.loyalty_point_transactions[0].points_change, 0, 'the ledger row stays uncredited');
+  assert.equal(db.calls.some((call) => call.table === 'clients' && call.op === 'update'), false);
+});
+
+test('the verified payment is the amount of record, not what was typed', async () => {
+  // The customer logged ₹750 and the gateway agrees. Points come from the
+  // gateway's number, so the only way to earn more is to pay more.
+  const rows = qrTables();
+  const db = fakeDb(rows);
+  const { deps } = makeDeps({ db, gateway: gatewayStub(gatewayPayment({ amount: 150000, amount_paid: 150000 })) });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-1', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.verifiedAmount, 1500, 'the gateway number replaced the claim');
+  assert.equal(res.body.data.payment.pointsCredited, 150, '150 points, not the 75 a smaller claim implied');
+  assert.equal(res.body.data.wallet.points, 250);
+});
+
+test('a claim of MORE than the gateway was paid is refused, not credited', async () => {
+  const rows = qrTables({
+    loyalty_point_transactions: [
+      { id: 'qr-2', owner_id: OWNER, client_id: 'c1', type: 'qr_payment', date: '2026-09-19', points_change: 0, description: 'QR payment (awaiting verification) ₹9000.00 ref:UPI-9000' },
+    ],
+  });
+  const db = fakeDb(rows);
+  const { deps } = makeDeps({ db, gateway: gatewayStub(gatewayPayment({ amount: 75000, amount_paid: 75000 })) });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-2', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'payment_amount_mismatch');
+  assert.equal(rows.loyalty_point_transactions[0].points_change, 0);
+  assert.equal(db.calls.some((call) => call.table === 'clients' && call.op === 'update'), false);
+});
+
+test('without a real gateway nothing is credited, and the entry survives', async () => {
+  const rows = qrTables();
+  const db = fakeDb(rows);
+  const { deps } = makeDeps({ db, gateway: null });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-1', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'payments_disabled');
+  assert.match(res.body.error, /salon must confirm|stays recorded/i);
+  assert.equal(rows.loyalty_point_transactions[0].points_change, 0);
+});
+
+test("another customer's payment row is indistinguishable from a wrong id", async () => {
+  const rows = qrTables({
+    loyalty_point_transactions: [
+      { id: 'qr-x', owner_id: OWNER, client_id: 'c-OTHER', type: 'qr_payment', date: '2026-09-19', points_change: 0, description: 'QR payment (awaiting verification) ₹750.00 ref:UPI-OTHER' },
+    ],
+  });
+  const db = fakeDb(rows);
+  const { deps } = makeDeps({ db, gateway: gatewayStub(gatewayPayment()) });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-x', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.code, 'not_found');
+  assert.equal('data' in res.body, false, 'a foreign row is never described back');
+});
+
+test('a verified payment below the qualifying minimum is recorded and does not earn', async () => {
+  const rows = qrTables({
+    loyalty_point_transactions: [
+      { id: 'qr-40', owner_id: OWNER, client_id: 'c1', type: 'qr_payment', date: '2026-09-19', points_change: 0, description: 'QR payment (below earning minimum) ₹40.00 ref:UPI-40' },
+    ],
+  });
+  const db = fakeDb(rows);
+  const { deps } = makeDeps({ db, gateway: gatewayStub(gatewayPayment({ amount: 4000, amount_paid: 4000 })) });
+  const res = makeRes();
+  await createQrVerifyHandler(deps)(
+    { body: { paymentId: 'qr-40', razorpay_payment_id: 'pay_VERIFIED1' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 422);
+  assert.equal(res.body.code, 'below_minimum');
+  assert.match(res.body.error, /₹40/);
+  assert.equal(db.rows.loyalty_point_transactions[0].points_change, 0, 'below the floor means no points, not a rejected payment');
+  assert.equal(db.rows.loyalty_point_transactions[0].id, 'qr-40', 'the entry stays on the ledger for the salon to see');
+  assert.equal(db.calls.some((call) => call.table === 'clients' && call.op === 'update'), false);
+});
+
+test('a duplicate QR record returns the original instead of writing twice', async () => {
+  const db = fakeDb(qrTables());
+  const { deps } = makeDeps({ db });
+  const res = makeRes();
+  await createQrConfirmHandler(deps)(
+    { body: { salonId: OWNER, amount: 750, reference: 'UPI-750' }, headers: {}, user: { id: ME, email: 'me@example.com' } },
+    res
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.data.payment.id, 'qr-1', 'the existing entry is what comes back');
+  assert.equal(db.calls.some((call) => call.table === 'loyalty_point_transactions' && call.op === 'insert'), false, 'the same payment is not a second ledger row');
+  assert.match(res.body.notice, /already recorded/i);
+});
+
+// ---------------------------------------------------------------------------
+// Discovery: filters that answer with catalogue facts, not guesses.
+// ---------------------------------------------------------------------------
+
+const SALON_A = '55555555-5555-4555-8555-555555555555';
+const SALON_B = '66666666-6666-4666-8666-666666666666';
+
+function discoveryTables() {
+  return {
+    profiles: [
+      {
+        id: SALON_A,
+        salon_name: 'Anchor Salon',
+        subdomain: 'anchor',
+        business_type: 'unisex_salons',
+        city: 'Jaipur',
+        latitude: 26.9,
+        longitude: 75.8,
+        working_hours: { monFri: '9:00 AM - 8:00 PM', saturday: '9:00 AM - 8:00 PM', sunday: 'closed' },
+      },
+      {
+        id: SALON_B,
+        salon_name: 'Border Salon',
+        subdomain: 'border',
+        business_type: 'unisex_salons',
+        city: 'Jaipur',
+        latitude: 26.95,
+        longitude: 75.85,
+        working_hours: null,
+      },
+    ],
+    services: [
+      { id: 's-a1', owner_id: SALON_A, name: 'Balayage', category: 'Hair', price: 300, duration_minutes: 60 },
+      { id: 's-a2', owner_id: SALON_A, name: 'Cut', category: 'Hair', price: 900, duration_minutes: 30 },
+      { id: 's-b1', owner_id: SALON_B, name: 'Manicure', category: 'Nails', price: 200, duration_minutes: 45 },
+    ],
+    loyalty_rewards: [{ id: 'r1', owner_id: SALON_A, title: '15% off hair', discount_value: 15, required_points: 200, is_active: true, reward_type: 'percentage_discount' }],
+    bookings: [
+      { id: 'bk1', owner_id: SALON_A, booking_date: '2026-09-15', status: 'completed', metadata: { review_rating: 5 } },
+      { id: 'bk2', owner_id: SALON_A, booking_date: '2026-09-16', status: 'completed', metadata: { review_rating: 4 } },
+    ],
+  };
+}
+
+test('discovery filters on real prices, categories, offers and ratings', async () => {
+  const db = fakeDb(discoveryTables());
+  const { deps } = makeDeps({ db });
+
+  const all = makeRes();
+  await createSalonListHandler(deps)({ query: {}, params: {}, headers: {} }, all);
+  assert.equal(all.statusCode, 200, JSON.stringify(all.body));
+  const names = all.body.data.map((salon: any) => salon.name);
+  assert.deepEqual(names, ['Anchor Salon', 'Border Salon'], 'both published salons list by default');
+  const anchor = all.body.data[0];
+  // Each fact is computed from a table, and the card is allowed to say it.
+  assert.equal(anchor.serviceCount, 2);
+  assert.equal(anchor.minServicePrice, 300, 'the cheapest published price, not a sample figure');
+  assert.deepEqual(anchor.categories, ['Hair']);
+  assert.equal(anchor.hasActiveOffers, true, 'one active loyalty_rewards row is what "has offers" means');
+  assert.equal(anchor.recentBookings, 2, 'trending is a count of bookings, nothing mystical');
+  assert.equal(anchor.rating.count, 2, 'ratings come from stored review rows');
+  const border = all.body.data[1];
+  assert.equal(border.hasActiveOffers, false);
+  assert.equal(border.recentBookings, 0);
+  assert.equal(border.openNow, null, 'no working hours means unknown, never "closed"');
+
+  const cheap = makeRes();
+  await createSalonListHandler(deps)({ query: { maxPrice: '500', category: 'Hair' }, params: {}, headers: {} }, cheap);
+  assert.deepEqual(cheap.body.data.map((salon: any) => salon.name), ['Anchor Salon'], 'a Hair salon whose cheapest service is ₹300');
+
+  const nailsOnly = makeRes();
+  await createSalonListHandler(deps)({ query: { category: 'Nails' }, params: {}, headers: {} }, nailsOnly);
+  assert.deepEqual(nailsOnly.body.data.map((salon: any) => salon.name), ['Border Salon'], 'the category filter follows the menu, not the salon name');
+
+  const offerHunt = makeRes();
+  await createSalonListHandler(deps)({ query: { offersOnly: 'true' }, params: {}, headers: {} }, offerHunt);
+  assert.deepEqual(offerHunt.body.data.map((salon: any) => salon.name), ['Anchor Salon']);
+
+  // Two stored ratings, 5 and 4: the average is exactly 4.5, so the bar at 4.5
+  // clears and the bar at 5 does not. A rating filter that rounded up would let a
+  // 4.5 salon pose as 5 stars.
+  const at45 = makeRes();
+  await createSalonListHandler(deps)({ query: { minRating: '4.5' }, params: {}, headers: {} }, at45);
+  assert.deepEqual(at45.body.data.map((salon: any) => salon.name), ['Anchor Salon']);
+  assert.equal(at45.body.data[0].rating.average, 4.5);
+  assert.equal(at45.body.data[0].rating.count, 2);
+
+  const at5 = makeRes();
+  await createSalonListHandler(deps)({ query: { minRating: '5' }, params: {}, headers: {} }, at5);
+  assert.equal(at5.body.data.length, 0, 'no salon here averages 5, and none is padded to it');
+
+  const unrated = makeRes();
+  await createSalonListHandler(deps)({ query: { minRating: '1' }, params: {}, headers: {} }, unrated);
+  assert.equal(unrated.body.data.length, 1, 'a salon with no reviews is excluded by a rating bar, not scored 0 and kept');
+
+  // The applied filters come back so a curl can prove what the answer means.
+  const echo = makeRes();
+  await createSalonListHandler(deps)({ query: { openNow: 'true', sort: 'trending', q: 'balayage' }, params: {}, headers: {} }, echo);
+  assert.equal(echo.body.filtersApplied.openNow, true);
+  assert.equal(echo.body.filtersApplied.sort, 'trending');
+  assert.equal(echo.body.filtersApplied.q, 'balayage');
+});
+
+test('membership status is the salon’s program switch, with no invented expiry', async () => {
+  const db = fakeDb({
+    bookings: [{ id: 'bk1', owner_id: OWNER, user_id: ME, customer_email: 'me@example.com' }],
+    clients: [{ id: 'c1', owner_id: OWNER, email: 'me@example.com', name: 'Ananya', points: 120, lifetime_points: 120, loyalty_tier: 'gold', created_at: '2026-01-05T00:00:00Z' }],
+    loyalty_config: [{ owner_id: OWNER, program_enabled: false, tier_thresholds: { silver: 100, gold: 500, platinum: 1500 } }],
+    profiles: [{ id: OWNER, salon_name: 'Glow Studio', subdomain: 'glow', business_type: 'unisex_salons', currency: '₹' }],
+  });
+  const { deps } = makeDeps({ db });
+  const res = makeRes();
+  await createMembershipsHandler(deps)({ query: {}, params: {}, headers: {} }, res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  const [membership] = res.body.data;
+  assert.equal(membership.tier, 'gold');
+  assert.equal(membership.active, false, 'the salon switched the program off; the app must not present it as live');
+  assert.equal(membership.startDate, '2026-01-05', 'the client row is the only start date this schema has');
+  assert.equal(membership.endDate, null, 'no expiry column exists, so none is shown');
 });

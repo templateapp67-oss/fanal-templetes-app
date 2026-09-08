@@ -21,7 +21,18 @@ export interface CustomerProfile {
   phone: string;
   whatsapp: string;
   city: string;
+  /** `profiles.address_line2`: the customer's locality, or the salon's line 2. */
+  area: string;
   address: string;
+  /** `profiles.owner_photo_url`. Only writable on a row that is not a salon. */
+  avatarUrl: string;
+  /**
+   * UI language. There is no column for it anywhere in this schema, so it is
+   * kept on the device and this field is filled by the screen, never by the API.
+   */
+  language: string;
+  /** Where `language` came from, so the UI can say so instead of implying a row. */
+  languageSource?: 'device' | 'none';
   postalCode: string;
   state: string;
   landmark: string;
@@ -72,9 +83,27 @@ export interface CustomerSalon {
   distanceKm: number | null;
   openNow: boolean | null;
   serviceCount: number;
+  /** Cheapest published service price - the real "from Rs" on a card, never a sample figure. */
+  minServicePrice: number | null;
+  /** Categories this salon actually has services in (from `services.category`). */
+  categories: string[];
+  /** True when `loyalty_rewards` has an active row for this salon. */
+  hasActiveOffers: boolean;
+  /** Bookings in the last 30 days. "Trending" here is a count, not a score from nowhere. */
+  recentBookings: number;
   rating: { average: number; count: number };
   favourite: boolean;
+  /** The salon's own published showcase rows (`social_videos`). */
+  gallery: SalonGalleryItem[];
   source: DataSource;
+}
+
+export interface SalonGalleryItem {
+  id: string;
+  title: string;
+  url: string;
+  thumbnailUrl: string;
+  kind: 'video' | 'image';
 }
 
 export interface CustomerService {
@@ -87,6 +116,15 @@ export interface CustomerService {
   price: number;
   durationMinutes: number;
   popular: boolean;
+  /**
+   * A discount the SALON published for this service's category, read from
+   * `loyalty_rewards`. There is no discount column on `services`, so an invented
+   * percentage would be a lie; the label is empty when nothing applies.
+   */
+  discountLabel: string;
+  discountPercent: number;
+  /** Points the salon asks for this discount, when one exists. */
+  discountPoints: number | null;
   showDuration: boolean;
   sortOrder: number;
   source: DataSource;
@@ -196,7 +234,10 @@ export interface CustomerFavourite {
   salonName: string;
   staffId: string;
   staffName: string;
-  kind: 'salon' | 'staff';
+  /** Set on `service` favourites; a salon or staff pin leaves these empty. */
+  serviceId: string;
+  serviceName: string;
+  kind: 'salon' | 'staff' | 'service';
   /** 'booked' = derived from real bookings; 'pinned' = the customer's choice. */
   origin: 'booked' | 'pinned';
   lastVisit: string;
@@ -211,7 +252,13 @@ export interface RewardWallet {
   currency: string;
   points: number;
   lifetimePoints: number;
+  /** Sum of positive ledger rows the salon has recorded for this client. */
+  lifetimeEarned: number;
+  /** Sum of `loyalty_redeemed_rewards.points_spent` - what redemptions cost. */
+  lifetimeRedeemed: number;
   tier: string;
+  /** Every tier the salon configured, lowest first, for the ladder in the UI. */
+  tierLadder: string[];
   totalVisits: number;
   totalSpent: number;
   lastVisit: string;
@@ -244,7 +291,16 @@ export interface QrPayment {
   amount: number;
   pointsCredited: number;
   date: string;
-  status: 'credited' | 'pending';
+  /** 'claimed' = the customer recorded it; 'verified' = the gateway confirmed it. */
+  paymentStatus: 'claimed' | 'verified';
+  /**
+   * What the rewards did with it. Nothing becomes 'credited' from a customer
+   * request — that state only appears once `points_change` on the ledger row is
+   * positive, which requires a gateway lookup (or the salon's own entry).
+   */
+  rewardStatus: 'awaiting_verification' | 'credited' | 'below_minimum';
+  /** The gateway payment id the verification was done against, when there is one. */
+  gatewayPaymentId: string;
   source: DataSource;
 }
 
@@ -259,6 +315,14 @@ export interface Membership {
   benefits: string[];
   /** Same units as `RewardWallet.nextTier`: remaining points, and a 0..1 fraction. */
   nextTier: { tier: string; pointsNeeded: number; progress: number } | null;
+  /**
+   * Membership window. This schema has no expiry column on `clients`, so
+   * `endDate` is null whenever the salon has not configured one - the UI says
+   * "no end date" rather than inventing a year.
+   */
+  startDate: string;
+  endDate: string | null;
+  active: boolean;
   memberSince: string;
   source: DataSource;
 }

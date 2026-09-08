@@ -28,6 +28,7 @@ import { BookingsScreen } from '../src/customer/screens/Bookings';
 import { HomeScreen, SalonScreen } from '../src/customer/screens/Discover';
 import { ActivityScreen } from '../src/customer/screens/Activity';
 import { LocationScreen, ProfileScreen } from '../src/customer/screens/Me';
+import { SettingsScreen } from '../src/customer/screens/Settings';
 import { RewardsScreen } from '../src/customer/screens/Rewards';
 import { matchCustomerRoute, customerPath, isCustomerAppPath, normalizePath } from '../src/lib/router';
 import { CUSTOMER_FLOW_ORDER } from '../src/lib/customer/schema';
@@ -66,6 +67,7 @@ test('every customer screen renders without a session, a database or props', () 
     ['Activity', React.createElement(ActivityScreen, {})],
     ['Profile', React.createElement(ProfileScreen, {})],
     ['Location', React.createElement(LocationScreen, {})],
+    ['Settings', React.createElement(SettingsScreen, {})],
   ];
   for (const [name, element] of screens) {
     const html = render(element);
@@ -94,6 +96,7 @@ test('the shell renders each section of the flow by path', () => {
     '/app/notifications',
     '/app/favourites',
     '/app/data',
+    '/app/settings',
   ];
   for (const path of paths) {
     const html = render(React.createElement(CustomerApp, { path, navigate: noop }));
@@ -124,6 +127,8 @@ test('a customer app path is recognised, and an owner path never is', () => {
   assert.equal(matchCustomerRoute('/app/nonsense').section, 'home', 'an unknown sub-path lands on home, not a blank screen');
   assert.equal(customerPath('salon', 'glow', 'reviews'), '/app/salon/glow/reviews');
   assert.equal(customerPath('home'), '/app');
+  assert.equal(matchCustomerRoute('/app/settings').section, 'settings', 'the settings screen is a route, not a modal');
+  assert.equal(matchCustomerRoute('/app/support').section, 'settings', 'a friendlier alias lands in the same place');
 });
 
 test('the source label never claims a database before the API answers', () => {
@@ -134,6 +139,17 @@ test('the source label never claims a database before the API answers', () => {
   assert.equal(home.includes('reading…'), true, 'home claims a data source before the request answered');
   assert.equal(home.includes('>supabase<'), false, 'home labelled an unread value as supabase');
   assert.equal(/Salons on Nexora|Salons near/.test(home), true, 'home lost its discovery heading');
+});
+
+test('settings offers only what this schema can actually store', () => {
+  const html = render(React.createElement(SettingsScreen, { userId: 'u1', email: 'me@example.com' }));
+  assert.ok(html.includes('On this device'), 'settings must show the device-scoped state it can change');
+  assert.ok(html.includes('Export as JSON'), 'a customer with rows in the database can get a copy of them');
+  // The trap this screen has to avoid: switches that look configurable but have
+  // no column behind them.
+  for (const fake of ['Push notifications', 'Email preferences', 'Dark mode', 'Change password']) {
+    assert.equal(html.includes(fake), false, `settings advertised "${fake}", which this schema cannot store`);
+  }
 });
 
 test('the salon accent falls back to the product default for an unknown palette key', () => {

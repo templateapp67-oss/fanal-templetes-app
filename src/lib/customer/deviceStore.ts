@@ -48,21 +48,72 @@ function writeJson(key: string, value: unknown): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Language preference
+// ---------------------------------------------------------------------------
+
+const SUPPORTED_LANGUAGES = ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'bn', 'mr', 'gu', 'pa'] as const;
+
+export const CUSTOMER_LANGUAGES: Array<{ code: string; label: string }> = [
+  { code: 'en', label: 'English' },
+  { code: 'hi', label: 'हिन्दी' },
+  { code: 'ta', label: 'தமிழ்' },
+  { code: 'te', label: 'తెలుగు' },
+  { code: 'kn', label: 'ಕನ್ನಡ' },
+  { code: 'ml', label: 'മലയാളം' },
+  { code: 'bn', label: 'বাংলা' },
+  { code: 'mr', label: 'मराठी' },
+  { code: 'gu', label: 'ગુજરાતી' },
+  { code: 'pa', label: 'ਪੰਜਾਬੀ' },
+];
+
+export function isSupportedLanguage(code: unknown): code is string {
+  return typeof code === 'string' && (SUPPORTED_LANGUAGES as readonly string[]).includes(code);
+}
+
+/**
+ * The app renders English copy today; this preference is stored so the choice is
+ * not lost when the strings become translatable, and it sets `document.lang`
+ * now. It is deliberately NOT written to Supabase: no column in this schema
+ * means "language", and inventing one is out of bounds.
+ */
+export function readLanguage(customerId: string | null | undefined): string {
+  const stored = readJson<{ language?: string }>(namespace(customerId, 'preferences'), {}).language || '';
+  return isSupportedLanguage(stored) ? stored : 'en';
+}
+
+export function writeLanguage(customerId: string | null | undefined, language: string): boolean {
+  if (!isSupportedLanguage(language)) return false;
+  const current = readJson<{ language?: string }>(namespace(customerId, 'preferences'), {});
+  return writeJson(namespace(customerId, 'preferences'), { ...current, language });
+}
+
+// ---------------------------------------------------------------------------
 // Favourite pins
 // ---------------------------------------------------------------------------
 
 export interface FavouritePin {
   salonId: string;
   staffId?: string;
-  kind: 'salon' | 'staff';
+  serviceId?: string;
+  kind: 'salon' | 'staff' | 'service';
   salonName?: string;
   staffName?: string;
+  serviceName?: string;
   pinnedAt: string;
 }
 
 export function readFavouritePins(customerId: string | null | undefined): FavouritePin[] {
   const rows = readJson<FavouritePin[]>(namespace(customerId, 'favourites'), []);
-  return Array.isArray(rows) ? rows.filter((row) => row && row.salonId && (row.kind === 'salon' || row.kind === 'staff')) : [];
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((row) => {
+    if (!row || !row.salonId) return false;
+    if (row.kind === 'salon') return true;
+    // A staff or service pin without its subject id would collide with every
+    // other pin at that salon, so a malformed row is dropped rather than guessed.
+    if (row.kind === 'staff') return !!row.staffId;
+    if (row.kind === 'service') return !!row.serviceId;
+    return false;
+  });
 }
 
 export function writeFavouritePins(
@@ -72,12 +123,15 @@ export function writeFavouritePins(
   return writeJson(namespace(customerId, 'favourites'), pins.slice(0, MAX_ITEMS));
 }
 
-export function isPinned(pins: FavouritePin[], input: { salonId: string; staffId?: string; kind: 'salon' | 'staff' }): boolean {
+export function isPinned(
+  pins: FavouritePin[],
+  input: { salonId: string; staffId?: string; serviceId?: string; kind: 'salon' | 'staff' | 'service' }
+): boolean {
   return pins.some(
     (pin) =>
       pin.salonId === input.salonId &&
       pin.kind === input.kind &&
-      (input.kind === 'salon' || pin.staffId === input.staffId)
+      (input.kind === 'salon' || (input.kind === 'staff' ? pin.staffId === input.staffId : pin.serviceId === input.serviceId))
   );
 }
 
@@ -85,11 +139,11 @@ export function isPinned(pins: FavouritePin[], input: { salonId: string; staffId
 export function mergeFavourites(derived: CustomerFavourite[], pins: FavouritePin[]): CustomerFavourite[] {
   const byKey = new Map<string, CustomerFavourite>();
   for (const row of derived) {
-    const key = `${row.kind}:${row.salonId}:${row.staffId || ''}`;
+    const key = `${row.kind}:${row.salonId}:${row.staffId || row.serviceId || ''}`;
     byKey.set(key, { ...row, source: row.origin === 'pinned' ? 'device' : 'derived' });
   }
   for (const pin of pins) {
-    const key = `${pin.kind}:${pin.salonId}:${pin.staffId || ''}`;
+    const key = `${pin.kind}:${pin.salonId}:${pin.staffId || pin.serviceId || ''}`;
     if (byKey.has(key)) {
       const existing = byKey.get(key)!;
       byKey.set(key, { ...existing, origin: 'pinned', source: 'device' });
@@ -101,6 +155,8 @@ export function mergeFavourites(derived: CustomerFavourite[], pins: FavouritePin
       salonName: pin.salonName || 'Saved salon',
       staffId: pin.staffId || '',
       staffName: pin.staffName || '',
+      serviceId: pin.serviceId || '',
+      serviceName: pin.serviceName || '',
       kind: pin.kind,
       origin: 'pinned',
       lastVisit: '',

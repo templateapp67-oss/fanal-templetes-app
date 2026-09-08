@@ -32,12 +32,14 @@
 import type { BookingAuthResult } from './bookingAuth';
 import { isUuidLike, sanitizeBookingRow } from './bookingOps';
 import { isValidIsoDate } from './bookingCreate';
-import { isMockOrderId, resolveSignatureSecret, verifyRazorpaySignature } from './razorpay';
+import { createRazorpayClient, isMockOrderId, resolveSignatureSecret, verifyRazorpaySignature } from './razorpay';
+import type { RazorpayPayment } from './razorpay';
 import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit';
 import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs';
 import {
   buildSlotGrid,
   dayWindowFor,
+  QR_MIN_QUALIFYING_RUPEES,
   salonWindowFromHours,
   slotStatusBlocks,
   normalizeReferralCode,
@@ -65,7 +67,11 @@ import {
   toRewardTransaction,
   toRewardWallet,
   toSlotWindow,
+  toSalonGallery,
+  parseQrDescription,
+  qrLedgerDescription,
   QR_PAYMENT_TYPE,
+  QR_STATE_BELOW_MINIMUM,
 } from '../src/lib/customer/mappers';
 import {
   runDb,
@@ -89,12 +95,37 @@ export interface CustomerRoutesDeps {
   now?: () => number;
   /** Discovery scans published salons; cap it so it cannot fan out. */
   discoveryLimit?: number;
+  /**
+   * Gateway client used to verify a payment before a reward is credited.
+   * Injectable so the money rule can be tested without a network, and left
+   * undefined in production where `resolveGateway()` builds it from env.
+   */
+  gateway?: { fetchPayment?: (paymentId: string, deadlineAt?: number) => Promise<any> | null } | null;
 }
 
 const DISCOVERY_COLUMNS =
   'id, salon_name, business_type, tagline, about, logo_url, cover_image_url, city, state, full_address, address_line2, postal_code, latitude, longitude, phone_number, whatsapp, instagram_handle, subdomain, currency, theme_preset, theme_accent_key, working_hours, home_service, require_deposit, deposit_percentage, founding_year';
 
 const SALON_SUMMARY_COLUMNS = 'id, salon_name, logo_url, cover_image_url, city, currency';
+
+/**
+ * `profiles` columns that appear on a salon's PUBLIC page. On a row that
+ * publishes a salon these belong to the owner: a customer editing their own
+ * locality, avatar or map pin must not silently repaint or relocate the business
+ * that shares the row. Identity columns (`full_name`, `phone_number`,
+ * `whatsapp`) stay writable - they are the same person either way.
+ */
+const SALON_PUBLIC_COLUMNS = [
+  'city',
+  'full_address',
+  'address_line2',
+  'postal_code',
+  'state',
+  'landmark',
+  'owner_photo_url',
+  'latitude',
+  'longitude',
+] as const;
 
 /** Columns a customer may write. Salon identity/theme/config are never here. */
 const CUSTOMER_PROFILE_COLUMNS = [
@@ -445,14 +476,26 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
     const requestId = newRequestId('custlist');
     const deadlineAt = res.locals?.requestDeadlineAt;
     try {
-      if (deps.isMock) return void ok(res, deps, requestId, [], notConnectedNotice(deps));
+      if (deps.isMock) {
+        // Echo the filters even with no database: "did my filter reach the API at
+        // all?" is the first question worth answering on a deployment without keys.
+        return void ok(res, deps, requestId, [], { ...notConnectedNotice(deps), filtersApplied: { ...req.query } });
+      }
 
       const query = req.query || {};
       const limit = Math.min(60, Math.max(1, Number(query.limit || deps.discoveryLimit || 24)));
       const city = String(query.city || '').trim();
       const term = String(query.q || '').trim().toLowerCase();
       const businessType = String(query.businessType || query.business_type || '').trim();
+      const category = String(query.category || '').trim();
       const sort = String(query.sort || 'nearby');
+      // Price is a ceiling, not a range: "under Rs600" is the question a
+      // customer actually asks, and `services.price` on a minimum is what
+      // answers it. A floor would filter out the cheap options they want.
+      const maxPrice = Number.isFinite(Number(query.maxPrice)) && Number(query.maxPrice) > 0 ? Number(query.maxPrice) : null;
+      const minRating = Number.isFinite(Number(query.minRating)) && Number(query.minRating) > 0 ? Number(query.minRating) : null;
+      const openOnly = query.openNow === 'true' || query.openNow === '1';
+      const offersOnly = query.offersOnly === 'true' || query.offersOnly === '1';
 
       // Published salons only: a customer's `profiles` row has no salon_name,
       // so without this filter every customer in the app would list as a salon.
@@ -464,7 +507,7 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
       if (city) builder = builder.ilike('city', `%${city}%`);
       if (businessType) builder = builder.eq('business_type', businessType);
       if (term && term.length <= 40) {
-        builder = builder.or(`salon_name.ilike.%${term}%,tagline.ilike.%${term}%,city.ilike.%${term}%`);
+        builder = builder.or(`salon_name.ilike.%${term}%,tagline.ilike.%${term}%,city.ilike.%${term}%,business_type.ilike.%${term}%`);
       }
       builder = builder.order('salon_name', { ascending: true }).limit(Math.min(300, limit * 6));
 
@@ -479,29 +522,70 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
       }
 
       const rows = (Array.isArray(data) ? data : []).filter(isSalonProfile);
-      const salons = rows.map((row: any) =>
-        toCustomerSalon(row, { from: { latitude: numberOr(query.latitude), longitude: numberOr(query.longitude) } })
-      );
-      const withRatings = await attachRatings(deps, salons, deadlineAt);
-      const withCounts = await attachServiceCounts(deps, withRatings, deadlineAt);
+      // One pass over services/rewards/bookings for the whole candidate set: the
+      // filters below and the "from Rs" a card quotes both need it, and per-salon
+      // queries would turn a 24-card list into ~72 round-trips.
+      const catalogue = await attachCatalogueFacts(deps, rows, deadlineAt);
 
-      const ordered = withCounts
-        .filter((salon: any) => (term ? matchesTerm(salon, term) : true))
+      const salons = rows.map((row: any) => {
+        const offered = catalogue.services.get(String(row.id)) || [];
+        const prices = offered.map((service: any) => Number(service.price)).filter((value: number) => Number.isFinite(value) && value > 0);
+        const categories = [...new Set(offered.map((service: any) => String(service.category || 'General').trim()).filter(Boolean))];
+        return toCustomerSalon(row, {
+          from: { latitude: numberOr(query.latitude), longitude: numberOr(query.longitude) },
+          serviceCount: offered.length,
+          minServicePrice: prices.length ? Math.min(...prices) : null,
+          categories,
+          hasActiveOffers: catalogue.offerOwnerIds.has(String(row.id)),
+          recentBookings: catalogue.recentBookings.get(String(row.id)) || 0,
+        });
+      });
+      const withRatings = await attachRatings(deps, salons, deadlineAt);
+
+      const ordered = withRatings
+        .filter((salon: any) => (term ? matchesTerm(salon, term) || serviceMatchesTerm(catalogue.services.get(String(salon.id)), term) : true))
+        .filter((salon: any) => (category ? salon.categories.some((entry: string) => entry.toLowerCase() === category.toLowerCase()) : true))
+        .filter((salon: any) => (maxPrice === null ? true : salon.minServicePrice !== null && salon.minServicePrice <= maxPrice))
+        .filter((salon: any) => (minRating === null ? true : salon.rating.count > 0 && salon.rating.average >= minRating))
+        .filter((salon: any) => (openOnly ? salon.openNow === true : true))
+        .filter((salon: any) => (offersOnly ? salon.hasActiveOffers : true))
         .sort((a: any, b: any) => {
           if (sort === 'rating') return b.rating.average - a.rating.average || a.name.localeCompare(b.name);
           if (sort === 'name') return a.name.localeCompare(b.name);
+          if (sort === 'trending') return b.recentBookings - a.recentBookings || b.rating.average - a.rating.average || a.name.localeCompare(b.name);
+          if (sort === 'price') return (a.minServicePrice ?? Number.MAX_SAFE_INTEGER) - (b.minServicePrice ?? Number.MAX_SAFE_INTEGER) || a.name.localeCompare(b.name);
           const da = a.distanceKm === null ? Number.MAX_SAFE_INTEGER : a.distanceKm;
           const db = b.distanceKm === null ? Number.MAX_SAFE_INTEGER : b.distanceKm;
           return da - db || a.name.localeCompare(b.name);
         })
         .slice(0, limit);
 
-      ok(res, deps, requestId, ordered);
+      ok(res, deps, requestId, ordered, {
+        filtersApplied: {
+          city: city || '',
+          q: term || '',
+          category: category || '',
+          maxPrice,
+          minRating,
+          openNow: openOnly,
+          offersOnly,
+          sort,
+        },
+      });
     } catch (err: any) {
       console.error(`[Customer] (${requestId}) Discovery threw:`, err?.stack || err);
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Salons could not be loaded right now.' });
     }
   };
+}
+
+/** A service menu entry is a legitimate reason to surface a salon for a search. */
+function serviceMatchesTerm(services: any[] | undefined, term: string): boolean {
+  if (!services || !term) return false;
+  return services.some(
+    (service: any) =>
+      String(service.name || '').toLowerCase().includes(term) || String(service.category || '').toLowerCase().includes(term)
+  );
 }
 
 export function createSalonDetailHandler(deps: CustomerRoutesDeps) {
@@ -533,9 +617,28 @@ export function createSalonDetailHandler(deps: CustomerRoutesDeps) {
         return void ok(res, deps, requestId, null, { notice: 'This salon is not published yet.' });
       }
 
+      const galleryRows = await runDb(
+        () =>
+          deps.db
+            .from('social_videos')
+            .select('id, title, youtube_url, thumbnail_url, category_tag')
+            .eq('owner_id', profileRow.id)
+            .order('sort_order', { ascending: true })
+            .limit(12),
+        { label: 'salon gallery', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+      );
+      if (galleryRows.error) {
+        // A missing showcase is decoration, not a broken page: log and continue.
+        console.warn(`[Customer] (${requestId}) Gallery lookup failed (salon page shows none):`, galleryRows.error.message || galleryRows.error);
+      }
       const [withRating] = await attachRatings(
         deps,
-        [toCustomerSalon(profileRow, { from: { latitude: numberOr(req.query?.lat), longitude: numberOr(req.query?.lng) } })],
+        [
+          toCustomerSalon(profileRow, {
+            from: { latitude: numberOr(req.query?.lat), longitude: numberOr(req.query?.lng) },
+            gallery: toSalonGallery(galleryRows.data || []),
+          }),
+        ],
         deadlineAt
       );
       const [withCounts] = await attachServiceCounts(deps, [withRating], deadlineAt);
@@ -578,6 +681,108 @@ function salonLookupFailed(res: any, requestId: string, resolved: { error?: stri
 // ---------------------------------------------------------------------------
 // Catalogue reads (read-only by construction: no write route exists for these)
 // ---------------------------------------------------------------------------
+/** What each client row has spent on redemptions, from `loyalty_redeemed_rewards`. */
+async function loadRedeemedTotals(deps: CustomerRoutesDeps, wallets: any[], deadlineAt: number | undefined): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  if (deps.isMock || !wallets.length) return totals;
+  const ids = wallets.map((row: any) => String(row.id)).filter(Boolean);
+  const { data, error } = await runDb(
+    () => deps.db.from('loyalty_redeemed_rewards').select('client_id, points_spent').in('client_id', ids).limit(2000),
+    { label: 'redeemed totals', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+  );
+  if (error) {
+    console.warn('[Customer] Redeemed total lookup failed (wallet shows 0 redeemed):', error.message || error);
+    return totals;
+  }
+  for (const row of Array.isArray(data) ? data : []) {
+    const key = String(row.client_id);
+    totals.set(key, (totals.get(key) || 0) + Math.max(0, Number(row.points_spent) || 0));
+  }
+  return totals;
+}
+
+/** Active rewards for one salon, used to label real discounts on service cards. */
+async function loadSalonRewards(deps: CustomerRoutesDeps, ownerId: string, deadlineAt: number | undefined): Promise<any[]> {
+  if (deps.isMock || !ownerId) return [];
+  const { data, error } = await runDb(
+    () => deps.db.from('loyalty_rewards').select('*').eq('owner_id', ownerId).eq('is_active', true).limit(60),
+    { label: 'salon rewards for service cards', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+  );
+  if (error) {
+    // A discount label is decoration; a failed menu read is not. Degrade quietly.
+    console.warn('[Customer] Reward lookup failed (service cards show no discount):', error.message || error);
+    return [];
+  }
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Everything discovery can only learn by looking at the catalogue: the price a
+ * card quotes as "from", the categories that filter works on, whether the salon
+ * has live offers, and how much it was booked recently.
+ *
+ * One query per table for the whole candidate set - discovery would otherwise fan
+ * out to four round-trips per salon and turn a list of 24 into 96.
+ */
+async function attachCatalogueFacts(
+  deps: CustomerRoutesDeps,
+  salons: any[],
+  deadlineAt: number | undefined
+): Promise<{ services: Map<string, any[]>; offerOwnerIds: Set<string>; recentBookings: Map<string, number> }> {
+  const services = new Map<string, any[]>();
+  const offerOwnerIds = new Set<string>();
+  const recentBookings = new Map<string, number>();
+  if (deps.isMock || !salons.length) return { services, offerOwnerIds, recentBookings };
+  const ownerIds = salons.map((salon) => String(salon.id)).filter(isUuidLike);
+  if (!ownerIds.length) return { services, offerOwnerIds, recentBookings };
+
+  const sinceIso = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const [serviceResult, offerResult, bookingResult] = await Promise.all([
+    runDb(
+      () =>
+        deps.db
+          .from('services')
+          .select('id, owner_id, name, category, price, duration_minutes')
+          .in('owner_id', ownerIds)
+          .limit(4000),
+      { label: 'discovery service index', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+    ),
+    runDb(
+      () => deps.db.from('loyalty_rewards').select('owner_id, is_active').in('owner_id', ownerIds).eq('is_active', true).limit(1200),
+      { label: 'discovery offers', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+    ),
+    runDb(
+      () =>
+        deps.db
+          .from('bookings')
+          .select('owner_id, booking_date')
+          .in('owner_id', ownerIds)
+          .gte('booking_date', sinceIso)
+          .limit(4000),
+      { label: 'discovery recent bookings', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+    ),
+  ]);
+
+  if (serviceResult.error) console.warn('[Customer] Discovery service index failed (cards show no price/categories):', serviceResult.error.message || serviceResult.error);
+  for (const row of Array.isArray(serviceResult.data) ? serviceResult.data : []) {
+    const key = String(row.owner_id);
+    const list = services.get(key) || [];
+    list.push(row);
+    services.set(key, list);
+  }
+  if (offerResult.error) console.warn('[Customer] Discovery offer lookup failed:', offerResult.error.message || offerResult.error);
+  for (const row of Array.isArray(offerResult.data) ? offerResult.data : []) offerOwnerIds.add(String(row.owner_id));
+  if (bookingResult.error) {
+    // "Trending" degrades to "no recent signal" rather than to a made-up number.
+    console.warn('[Customer] Discovery booking-trend lookup failed:', bookingResult.error.message || bookingResult.error);
+  }
+  for (const row of Array.isArray(bookingResult.data) ? bookingResult.data : []) {
+    const key = String(row.owner_id);
+    recentBookings.set(key, (recentBookings.get(key) || 0) + 1);
+  }
+  return { services, offerOwnerIds, recentBookings };
+}
+
 export function createSalonServicesHandler(deps: CustomerRoutesDeps) {
   return async function salonServices(req: any, res: any): Promise<void> {
     const requestId = newRequestId('custsvc');
@@ -595,7 +800,9 @@ export function createSalonServicesHandler(deps: CustomerRoutesDeps) {
         console.error(`[Customer] (${requestId}) Services failed:`, error.message || error);
         return void fail(res, requestId, error, "This salon's service menu could not be loaded.");
       }
-      ok(res, deps, requestId, (Array.isArray(data) ? data : []).map(toCustomerService));
+      const rewards = await loadSalonRewards(deps, resolved.id!, deadlineAt);
+      const services = (Array.isArray(data) ? data : []).map((row: any) => toCustomerService(row, { rewards }));
+      ok(res, deps, requestId, services);
     } catch (err: any) {
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: "This salon's service menu could not be loaded." });
     }
@@ -880,6 +1087,11 @@ export function pickProfileUpdates(body: any): { updates: Record<string, any>; d
   const dropped: string[] = [];
   const map: Record<string, string> = {
     fullName: 'full_name',
+    // `owner_photo_url` is the person's photo on any row that is not a published
+    // salon; on a salon row it is part of their public page, so the guard below
+    // refuses it there rather than letting a customer repaint an owner's site.
+    avatarUrl: 'owner_photo_url',
+    area: 'address_line2',
     phone: 'phone_number',
     whatsapp: 'whatsapp',
     city: 'city',
@@ -893,6 +1105,10 @@ export function pickProfileUpdates(body: any): { updates: Record<string, any>; d
     const value = body[key];
     if (value === null || value === undefined) continue;
     const text = String(value).trim();
+    if (column === 'owner_photo_url' && !/^(https?:\/\/|data:image\/)/i.test(text)) {
+      dropped.push(key);
+      continue;
+    }
     if (text.length > 240) {
       dropped.push(key);
       continue;
@@ -905,6 +1121,12 @@ export function pickProfileUpdates(body: any): { updates: Record<string, any>; d
     if (!allowed.has(column)) dropped.push(key);
   }
   return { updates, dropped };
+}
+
+/** Says exactly which columns were refused, and where they do belong. */
+function salonWriteNotice(skipped: string[]): string {
+  const unique = [...new Set(skipped)];
+  return `Not written from the customer app, because these columns are on your salon's public page: ${unique.join(', ')}. The owner dashboard edits them.`;
 }
 
 export function createProfileWriteHandler(deps: CustomerRoutesDeps) {
@@ -947,11 +1169,25 @@ export function createProfileWriteHandler(deps: CustomerRoutesDeps) {
           }
         }
       }
+      // The wider rule, stated once: on a row that publishes a salon, anything
+      // that shows up on the salon's public page is the owner's to write. A
+      // customer sharing that row may edit who they are, not who the salon is.
+      if (isSalonRow) {
+        for (const column of SALON_PUBLIC_COLUMNS) {
+          if (column in finalUpdates) {
+            delete finalUpdates[column];
+            skipped.push(column);
+          }
+        }
+      }
       delete finalUpdates.id;
 
       if (!Object.keys(finalUpdates).length) {
+        // Still report the geo verdict: the screen decides whether to keep the
+        // pin on the device based on this, and silence would read as success.
         return void ok(res, deps, requestId, existing ? toCustomerProfile(existing) : null, {
-          notice: skipped.length ? `Not writable by a customer: ${skipped.join(', ')}.` : 'Nothing to update.',
+          locationStored: geoRequested ? !isSalonRow : undefined,
+          notice: skipped.length ? salonWriteNotice(skipped) : 'Nothing to update.',
         });
       }
       finalUpdates.updated_at = new Date((deps.now ?? Date.now)()).toISOString();
@@ -973,7 +1209,7 @@ export function createProfileWriteHandler(deps: CustomerRoutesDeps) {
       ok(res, deps, requestId, toCustomerProfile(data), {
         storedColumns: Object.keys(finalUpdates).filter((key) => key !== 'updated_at'),
         locationStored: geoRequested ? !isSalonRow : undefined,
-        ...(skipped.length ? { notice: `Not writable by a customer: ${skipped.join(', ')}.` } : {}),
+        ...(skipped.length ? { notice: salonWriteNotice(skipped) } : {}),
       });
     } catch (err: any) {
       console.error(`[Customer] (${requestId}) Profile write threw:`, err?.stack || err);
@@ -1249,14 +1485,32 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
       // --- 3. stylist + a live collision check before writing --------------
       const staffId = String(body.staffId || '').trim();
       let staffRow: any = null;
-      if (staffId && isUuidLike(staffId)) {
+      if (staffId) {
+        if (!isUuidLike(staffId)) {
+          return void answer(res, 400, {
+            success: false,
+            code: 'staff_unavailable',
+            requestId,
+            error: 'That stylist could not be recognised at this salon. Pick another, or choose "any available".',
+          });
+        }
         const staffResult = await runDb(
           () => deps.db.from('stylists').select('id, name, status, schedule').eq('id', staffId).eq('owner_id', ownerUid).maybeSingle(),
           { label: 'booking: stylist', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
         );
         if (staffResult.error) return void fail(res, requestId, staffResult.error, 'The stylist could not be verified.');
         staffRow = staffResult.data;
-        if (staffRow && String(staffRow.status) === 'Inactive') staffRow = null;
+        // An id that resolves to nobody, or to a stylist the salon has switched
+        // off, is NOT quietly turned into "anyone available": the customer chose a
+        // person, so the refusal has to say that person cannot be booked.
+        if (!staffRow || String(staffRow.status) === 'Inactive') {
+          return void answer(res, 400, {
+            success: false,
+            code: 'staff_unavailable',
+            requestId,
+            error: 'That stylist is not bookable at this salon any more. Pick another, or choose "any available".',
+          });
+        }
       }
 
       const clash = await slotIsTaken(deps, ownerUid, String(body.date), String(body.time), staffRow ? String(staffRow.id) : '', deadlineAt);
@@ -2049,10 +2303,11 @@ export function createRewardsHandler(deps: CustomerRoutesDeps) {
       const wallets = await loadCustomerWallets(deps, user, deadlineAt);
       if (!wallets.rows.length) return void ok(res, deps, requestId, { wallets: [], transactions: [] });
       const ownerIds = [...new Set(wallets.rows.map((row: any) => String(row.owner_id)))];
-      const [salons, configs, transactions] = await Promise.all([
+      const [salons, configs, transactions, redeemed] = await Promise.all([
         loadSalonRowsByIds(deps, ownerIds, deadlineAt),
         loadLoyaltyConfigs(deps, ownerIds, deadlineAt),
         loadTransactionsForWallets(deps, wallets.rows, undefined, deadlineAt),
+        loadRedeemedTotals(deps, wallets.rows, deadlineAt),
       ]);
       ok(res, deps, requestId, {
         wallets: wallets.rows.map((row: any) => {
@@ -2063,6 +2318,13 @@ export function createRewardsHandler(deps: CustomerRoutesDeps) {
             currency: salon?.currency,
             config,
             programEnabled: config?.program_enabled !== false,
+            // Earned and redeemed are sums of this customer's own rows, not the
+            // lifetime counter: a client's `lifetime_points` never goes down when
+            // they redeem, so the two numbers answer different questions.
+            lifetimeEarned: transactions
+              .filter((entry: any) => String(entry.client_id) === String(row.id))
+              .reduce((sum: number, entry: any) => sum + Math.max(0, Number(entry.points_change) || 0), 0),
+            lifetimeRedeemed: redeemed.get(String(row.id)) || 0,
           });
         }),
         transactions: transactions.map((row: any) => toRewardTransaction(row, salons.get(String(row.owner_id))?.salon_name || '')),
@@ -2071,6 +2333,28 @@ export function createRewardsHandler(deps: CustomerRoutesDeps) {
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your rewards could not be loaded.' });
     }
   };
+}
+
+/** A reward may only be credited from evidence the customer cannot produce. */
+function resolveGateway(deps: CustomerRoutesDeps): { client: any | null; reason: string } {
+  if (deps.gateway !== undefined) return { client: deps.gateway, reason: '' };
+  const client = createRazorpayClient();
+  if (!client) {
+    return { client: null, reason: 'This deployment has no payment gateway configured, so the salon must confirm the credit at the desk.' };
+  }
+  if (client.mode === 'mock') {
+    return { client: null, reason: 'This deployment runs a simulated gateway, which has no real payment to verify — the salon confirms the credit.' };
+  }
+  if (typeof client.fetchPayment !== 'function') {
+    return { client: null, reason: 'This deployment cannot look up a payment, so the salon must confirm the credit.' };
+  }
+  return { client, reason: '' };
+}
+
+/** Points a VERIFIED rupee amount earns under the salon's own configuration. */
+function qrPointsForAmount(amountRupees: number, perHundred: number): number {
+  if (amountRupees < QR_MIN_QUALIFYING_RUPEES) return 0;
+  return Math.max(0, Math.floor((amountRupees / 100) * Math.max(0, perHundred)));
 }
 
 export function createQrPaymentsHandler(deps: CustomerRoutesDeps) {
@@ -2093,11 +2377,16 @@ export function createQrPaymentsHandler(deps: CustomerRoutesDeps) {
 /**
  * POST /api/customer/me/qr-payments/confirm
  *
- * A scanned QR payment becomes a ledger entry, not a parallel receipt store: one
- * `loyalty_point_transactions` row of type `qr_payment` plus the matching
- * `clients.points` credit. If the credit fails the ledger row is deleted, so
- * points can never appear without a transaction — or a transaction without the
- * points behind it.
+ * A customer recording a QR payment creates a LEDGER ENTRY, not a reward. The
+ * row goes in with `points_change = 0` and an "awaiting verification"
+ * description, and `clients.points` is never touched here.
+ *
+ * That asymmetry is the point: the amount and reference in this request are
+ * claims. Crediting points from them would let anyone type ₹50,000 into the
+ * customer app and buy a haircut. The credit happens in
+ * `POST /api/customer/me/qr-payments/verify`, which asks the payment gateway
+ * what it actually received — a call only a server holding the secret key can
+ * make — or when the salon records the entry themselves.
  */
 export function createQrConfirmHandler(deps: CustomerRoutesDeps) {
   return async function qrConfirm(req: any, res: any): Promise<void> {
@@ -2122,11 +2411,11 @@ export function createQrConfirmHandler(deps: CustomerRoutesDeps) {
           code: 'supabase_not_configured',
           requestId,
           retryable: true,
-          error: 'QR rewards need the connected Supabase database. Nothing was credited.',
+          error: 'QR payments need the connected Supabase database. Nothing was recorded.',
         });
       }
 
-      // Only a wallet the customer already owns at this salon may be credited.
+      // Only a wallet the customer already owns at this salon may be linked.
       const wallets = await loadCustomerWallets(deps, user, deadlineAt);
       const wallet = wallets.rows.find((row: any) => String(row.owner_id) === salonId);
       if (!wallet) {
@@ -2138,30 +2427,37 @@ export function createQrConfirmHandler(deps: CustomerRoutesDeps) {
         });
       }
 
+      // A payment that was never logged twice: the same salon + amount +
+      // reference is the same event, so a double tap returns the existing entry.
+      const existing = await runDb(
+        () =>
+          deps.db
+            .from('loyalty_point_transactions')
+            .select('*')
+            .eq('client_id', wallet.id)
+            .eq('type', QR_PAYMENT_TYPE)
+            .ilike('description', `%ref:${reference}%`)
+            .limit(1),
+        { label: 'qr: duplicate check', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+      );
+      const existingRow = Array.isArray(existing.data) ? existing.data[0] : null;
+      if (existingRow) {
+        const salons = await loadSalonRowsByIds(deps, [salonId], deadlineAt);
+        ok(res, deps, requestId, { payment: toQrPayment(existingRow, salons.get(salonId)?.salon_name || ''), wallet: null, transactions: [] }, {
+          notice: 'This payment was already recorded — nothing was added twice.',
+        });
+        return;
+      }
+
       const configResult = await runDb(() => deps.db.from('loyalty_config').select('*').eq('owner_id', salonId).maybeSingle(), {
         label: 'qr: loyalty config',
         timeoutMs: LOOKUP_DB_TIMEOUT_MS,
         deadlineAt,
       });
       const config = configResult.data || {};
-      if (config.program_enabled === false) {
-        return void answer(res, 422, {
-          success: false,
-          code: 'program_disabled',
-          requestId,
-          error: "This salon's rewards program is paused, so QR payments are not earning points right now.",
-        });
-      }
       const perHundred = Math.max(0, Number(config.points_per_hundred_spent ?? 10));
-      const pointsCredited = Math.floor((amount / 100) * perHundred);
-      if (pointsCredited <= 0) {
-        return void answer(res, 422, {
-          success: false,
-          code: 'below_minimum',
-          requestId,
-          error: `This payment is below the ${perHundred > 0 ? Math.ceil(100 / perHundred) : 100}-rupee minimum for earning points.`,
-        });
-      }
+      const programOff = config.program_enabled === false;
+      const estimated = programOff ? 0 : qrPointsForAmount(amount, perHundred);
 
       const today = new Date((deps.now ?? Date.now)()).toISOString().slice(0, 10);
       const txInsert = await runDb(
@@ -2172,8 +2468,13 @@ export function createQrConfirmHandler(deps: CustomerRoutesDeps) {
               owner_id: salonId,
               client_id: wallet.id,
               date: today,
-              description: `QR payment ₹${amount.toFixed(2)} ref:${reference}`.slice(0, 200),
-              points_change: pointsCredited,
+              // Zero points: this row is a record of a claim, not a reward.
+              points_change: 0,
+              description: qrLedgerDescription({
+                amount,
+                reference,
+                state: estimated > 0 ? undefined : QR_STATE_BELOW_MINIMUM,
+              }),
               type: QR_PAYMENT_TYPE,
             })
             .select()
@@ -2182,57 +2483,275 @@ export function createQrConfirmHandler(deps: CustomerRoutesDeps) {
       );
       if (txInsert.error || !txInsert.data) {
         console.error(`[Customer] (${requestId}) QR transaction failed:`, txInsert.error);
-        return void fail(res, requestId, txInsert.error, 'Your payment could not be recorded. Nothing was credited — please try again at the desk.');
+        return void fail(res, requestId, txInsert.error, 'Your payment could not be recorded. Please try again at the desk.');
       }
 
+      const salons = await loadSalonRowsByIds(deps, [salonId], deadlineAt);
+      const salonName = salons.get(salonId)?.salon_name || '';
+      ok(res, deps, requestId, {
+        payment: toQrPayment(txInsert.data, salonName),
+        // The wallet is returned unread on purpose: nothing about it changed.
+        wallet: toRewardWallet(wallet, { salonName, currency: salons.get(salonId)?.currency, config, programEnabled: !programOff }),
+        transactions: [],
+        estimatedPoints: estimated,
+        gatewayVerifiable: resolveGateway(deps).client !== null,
+      }, {
+        notice: programOff
+          ? 'Recorded. This salon has paused its rewards program, so this payment will not earn points.'
+          : estimated > 0
+            ? `Recorded. ${estimated} point${estimated === 1 ? '' : 's'} will be added when the payment is verified — this app cannot add them itself.`
+            : `Recorded. Payments below ₹${QR_MIN_QUALIFYING_RUPEES} do not earn points at this salon.`,
+      });
+    } catch (err: any) {
+      console.error(`[Customer] (${requestId}) QR confirm threw:`, err?.stack || err);
+      sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your payment could not be recorded.' });
+    }
+  };
+}
+
+/**
+ * POST /api/customer/me/qr-payments/verify
+ *
+ * The only path in this app that turns a QR payment into points. The customer
+ * supplies nothing but the id of their own entry and the gateway payment id; the
+ * SERVER decides the amount by asking Razorpay what was captured, and only then
+ * writes the ledger row and the wallet balance.
+ *
+ * Rules that make this safe:
+ *  • the entry must belong to a wallet that resolves to the caller's own
+ *    email/phone — ids alone never grant access;
+ *  • the gateway must report the payment as captured;
+ *  • points come from the GATEWAY amount, not the claimed amount, so an inflated
+ *    claim simply earns less;
+ *  • if the wallet credit fails, the ledger row goes back to zero so points
+ *    never exist without the transaction behind them;
+ *  • a second call on a credited row is a no-op.
+ */
+export function createQrVerifyHandler(deps: CustomerRoutesDeps) {
+  return async function qrVerify(req: any, res: any): Promise<void> {
+    const requestId = newRequestId('custqrv');
+    const deadlineAt = res.locals?.requestDeadlineAt;
+    try {
+      const user = await requireAuth(deps, res, requestId, deadlineAt);
+      if (!user) return;
+      if (deps.isMock) {
+        return void answer(res, 503, {
+          success: false,
+          code: 'supabase_not_configured',
+          requestId,
+          retryable: true,
+          error: 'Nothing can be verified while the database is not configured.',
+        });
+      }
+      const paymentRowId = String(req.body?.paymentId ?? req.body?.id ?? '').trim();
+      const gatewayPaymentId = String(req.body?.razorpay_payment_id ?? req.body?.gatewayPaymentId ?? '').trim();
+      if (!paymentRowId || !gatewayPaymentId) {
+        return void answer(res, 400, {
+          success: false,
+          code: 'payment_reference_required',
+          requestId,
+          error: 'Verification needs the payment id from the gateway receipt.',
+        });
+      }
+
+      const wallets = await loadCustomerWallets(deps, user, deadlineAt);
+      if (!wallets.rows.length) {
+        return void answer(res, 422, { success: false, code: 'no_wallet_at_salon', requestId, error: 'You have no rewards wallet to credit yet.' });
+      }
+      const walletIds = new Set(wallets.rows.map((row: any) => String(row.id)));
+
+      const found = await runDb(
+        () => deps.db.from('loyalty_point_transactions').select('*').eq('id', paymentRowId).maybeSingle(),
+        { label: 'qr: load entry', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+      );
+      const row = found.data;
+      if (!row || found.error || !walletIds.has(String(row.client_id))) {
+        // Same shape as "not there": an id that belongs to someone else must not
+        // be distinguishable from a wrong id.
+        return void answer(res, 404, { success: false, code: 'not_found', requestId, error: 'That payment entry could not be found.' });
+      }
+      if (Number(row.points_change ?? 0) > 0) {
+        const salons = await loadSalonRowsByIds(deps, [String(row.owner_id)], deadlineAt);
+        ok(res, deps, requestId, { payment: toQrPayment(row, salons.get(String(row.owner_id))?.salon_name || ''), alreadyVerified: true }, {
+          notice: 'This payment was already verified and credited once — nothing was added twice.',
+        });
+        return;
+      }
+
+      const claimed = parseQrDescription(String(row.description || ''));
+      const { client: gateway, reason: gatewayReason } = resolveGateway(deps);
+      if (!gateway) {
+        return void answer(res, 409, {
+          success: false,
+          code: 'payments_disabled',
+          requestId,
+          retryable: false,
+          error: `${gatewayReason} Your payment stays recorded, and its points stay pending until then.`,
+        });
+      }
+
+      let payment: RazorpayPayment | null = null;
+      try {
+        payment = await gateway.fetchPayment(gatewayPaymentId, deadlineAt);
+      } catch (err: any) {
+        const code = err?.code === 'razorpay_timeout' ? 'db_timeout' : 'razorpay_unreachable';
+        return void answer(res, 503, {
+          success: false,
+          code,
+          requestId,
+          retryable: true,
+          error: 'The payment gateway could not be reached, so nothing was credited. Try again in a moment.',
+        });
+      }
+      if (!payment) {
+        return void answer(res, 409, {
+          success: false,
+          code: 'payment_unverified',
+          requestId,
+          error: 'The gateway has no such payment. Nothing was credited — check the payment id on your receipt.',
+        });
+      }
+      if (!payment.captured) {
+        return void answer(res, 409, {
+          success: false,
+          code: 'payment_unverified',
+          requestId,
+          error: `That payment is "${payment.status || 'not captured'}" at the gateway, so no reward can be issued for it yet.`,
+        });
+      }
+      // The gateway's amount is the truth. A claim of ₹5,000 against a ₹750
+      // payment earns ₹750's worth of points, and a claim BELOW what was paid
+      // is refused rather than silently enlarged.
+      const verifiedAmount = payment.amountPaidRupees || payment.amountRupees;
+      if (claimed.amount > 0 && verifiedAmount + 1 < claimed.amount) {
+        return void answer(res, 409, {
+          success: false,
+          code: 'payment_amount_mismatch',
+          requestId,
+          error: `You recorded ₹${claimed.amount} but the gateway shows ₹${verifiedAmount}. Nothing was credited — record the payment again with the real amount.`,
+        });
+      }
+
+      const configResult = await runDb(() => deps.db.from('loyalty_config').select('*').eq('owner_id', row.owner_id).maybeSingle(), {
+        label: 'qr: loyalty config (verify)',
+        timeoutMs: LOOKUP_DB_TIMEOUT_MS,
+        deadlineAt,
+      });
+      const config = configResult.data || {};
+      if (config.program_enabled === false) {
+        return void answer(res, 422, {
+          success: false,
+          code: 'program_disabled',
+          requestId,
+          error: "This salon's rewards program is paused, so this payment cannot earn points right now. It stays recorded.",
+        });
+      }
+      const perHundred = Math.max(0, Number(config.points_per_hundred_spent ?? 10));
+      const points = qrPointsForAmount(verifiedAmount, perHundred);
+      if (points <= 0) {
+        // Below the qualifying floor: the payment is real and stays on the
+        // ledger, marked, with no points. Crediting ₹40 worth of points would be
+        // the salon's rule being silently ignored by its own app.
+        const marked = await runDb(
+          () =>
+            deps.db
+              .from('loyalty_point_transactions')
+              .update({
+                description: qrLedgerDescription({
+                  amount: verifiedAmount,
+                  reference: claimed.reference,
+                  gatewayPaymentId: payment.id,
+                  state: QR_STATE_BELOW_MINIMUM,
+                }),
+              })
+              .eq('id', row.id),
+          { label: 'qr: mark below minimum', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+        );
+        if (marked.error) console.error(`[Customer] (${requestId}) could not mark the entry below-minimum:`, marked.error);
+        return void answer(res, 422, {
+          success: false,
+          code: 'below_minimum',
+          requestId,
+          error: `A verified payment of ₹${verifiedAmount} is below the ₹${QR_MIN_QUALIFYING_RUPEES} minimum for earning points. It is recorded; it does not earn.`,
+        });
+      }
+
+      const today = new Date((deps.now ?? Date.now)()).toISOString().slice(0, 10);
+      const credited = await runDb(
+        () =>
+          deps.db
+            .from('loyalty_point_transactions')
+            .update({
+              points_change: points,
+              description: qrLedgerDescription({ amount: verifiedAmount, reference: claimed.reference, gatewayPaymentId: payment.id }),
+            })
+            .eq('id', row.id)
+            .eq('points_change', 0)
+            .select()
+            .maybeSingle(),
+        { label: 'qr: credit ledger row', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      );
+      if (credited.error || !credited.data) {
+        if (credited.error) console.error(`[Customer] (${requestId}) QR ledger update failed:`, credited.error);
+        return void fail(
+          res,
+          requestId,
+          credited.error || { message: 'The entry changed under us.' },
+          'The payment was verified but the points could not be written. Nothing was credited — please try again.'
+        );
+      }
+
+      const wallet = wallets.rows.find((entry: any) => String(entry.id) === String(row.client_id));
       const balanceUpdate = await runDb(
         () =>
           deps.db
             .from('clients')
             .update({
-              points: Number(wallet.points ?? 0) + pointsCredited,
-              lifetime_points: Number(wallet.lifetime_points ?? wallet.points ?? 0) + pointsCredited,
-              total_spent: Number(wallet.total_spent ?? 0) + amount,
+              points: Number(wallet?.points ?? 0) + points,
+              lifetime_points: Number(wallet?.lifetime_points ?? wallet?.points ?? 0) + points,
+              total_spent: Number(wallet?.total_spent ?? 0) + verifiedAmount,
               last_visit: today,
               updated_at: new Date((deps.now ?? Date.now)()).toISOString(),
             })
-            .eq('id', wallet.id)
+            .eq('id', row.client_id)
             .select()
             .single(),
         { label: 'qr: wallet credit', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
       );
       if (balanceUpdate.error || !balanceUpdate.data) {
-        console.error(`[Customer] (${requestId}) QR balance failed — removing transaction:`, balanceUpdate.error);
-        const rollback = await runDb(() => deps.db.from('loyalty_point_transactions').delete().eq('id', txInsert.data.id), {
-          label: 'qr: transaction rollback',
-          timeoutMs: DEFAULT_DB_TIMEOUT_MS,
-          deadlineAt,
-          retry: false,
-        });
-        if (rollback.error) console.error(`[Customer] (${requestId}) QR ROLLBACK FAILED — transaction ${txInsert.data.id} left orphaned:`, rollback.error);
-        return void fail(res, requestId, balanceUpdate.error, 'Your points could not be credited. Nothing was recorded — please try again.');
+        // Roll the ledger row back to its uncredited state: a pending payment is
+        // a truth, a credited payment with no points behind it is not.
+        console.error(`[Customer] (${requestId}) QR balance failed — reverting ledger row:`, balanceUpdate.error);
+        const rollback = await runDb(
+          () =>
+            deps.db
+              .from('loyalty_point_transactions')
+              .update({
+                points_change: 0,
+                description: qrLedgerDescription({ amount: verifiedAmount, reference: claimed.reference }),
+              })
+              .eq('id', row.id),
+          { label: 'qr: ledger rollback', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+        );
+        if (rollback.error) {
+          console.error(`[Customer] (${requestId}) QR ROLLBACK FAILED — entry ${row.id} shows points with no balance:`, rollback.error);
+        }
+        return void fail(res, requestId, balanceUpdate.error, 'Your points could not be credited. The payment stays recorded as awaiting confirmation.');
       }
 
-      const salons = await loadSalonRowsByIds(deps, [salonId], deadlineAt);
-      const refreshed = await runDb(
-        () =>
-          deps.db
-            .from('loyalty_point_transactions')
-            .select('*')
-            .eq('client_id', wallet.id)
-            .order('created_at', { ascending: false })
-            .limit(30),
-        { label: 'qr: refresh transactions', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-      );
-      const salonName = salons.get(salonId)?.salon_name || '';
+      const salons = await loadSalonRowsByIds(deps, [String(row.owner_id)], deadlineAt);
+      const salonName = salons.get(String(row.owner_id))?.salon_name || '';
+      const transactions = await loadTransactionsForWallets(deps, wallets.rows, [QR_PAYMENT_TYPE], deadlineAt);
       ok(res, deps, requestId, {
-        payment: toQrPayment(txInsert.data, salonName),
-        wallet: toRewardWallet(balanceUpdate.data, { salonName, currency: salons.get(salonId)?.currency, config }),
-        transactions: (Array.isArray(refreshed.data) ? refreshed.data : []).map((row: any) => toRewardTransaction(row, salonName)),
-      });
+        payment: toQrPayment(credited.data, salonName),
+        wallet: toRewardWallet(balanceUpdate.data, { salonName, currency: salons.get(String(row.owner_id))?.currency, config }),
+        transactions: transactions.map((entry: any) => toRewardTransaction(entry, salonName)),
+        verifiedAmount,
+        gatewayPaymentId: payment.id,
+      }, { notice: `Verified against the gateway: ${points} point${points === 1 ? '' : 's'} credited for ₹${verifiedAmount}.` });
     } catch (err: any) {
-      console.error(`[Customer] (${requestId}) QR confirm threw:`, err?.stack || err);
-      sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your payment could not be recorded.' });
+      console.error(`[Customer] (${requestId}) QR verify threw:`, err?.stack || err);
+      sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'This payment could not be verified.' });
     }
   };
 }
@@ -2252,9 +2771,16 @@ export function createMembershipsHandler(deps: CustomerRoutesDeps) {
         res,
         deps,
         requestId,
-        wallets.rows.map((row: any) =>
-          toMembership(row, { salonName: salons.get(String(row.owner_id))?.salon_name, config: configs.get(String(row.owner_id)) })
-        )
+        wallets.rows.map((row: any) => {
+          const config = configs.get(String(row.owner_id));
+          return toMembership(row, {
+            salonName: salons.get(String(row.owner_id))?.salon_name,
+            config,
+            // `active` is the salon's switch, not a status this app tracks:
+            // there is no membership state column, only the program being on.
+            programEnabled: config?.program_enabled !== false,
+          });
+        })
       );
     } catch (err: any) {
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your membership could not be loaded.' });
@@ -2678,6 +3204,7 @@ export function registerCustomerRoutes(
     ['/api/customer/me/rewards', 'get', createRewardsHandler(deps)],
     ['/api/customer/me/qr-payments', 'get', createQrPaymentsHandler(deps)],
     ['/api/customer/me/qr-payments/confirm', 'post', createQrConfirmHandler(deps)],
+    ['/api/customer/me/qr-payments/verify', 'post', createQrVerifyHandler(deps)],
     ['/api/customer/me/memberships', 'get', createMembershipsHandler(deps)],
     ['/api/customer/me/referrals', 'get', createReferralsHandler(deps)],
     ['/api/customer/me/notifications', 'get', createMyNotificationsHandler(deps)],

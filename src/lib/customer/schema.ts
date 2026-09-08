@@ -538,6 +538,11 @@ export const CUSTOMER_SCHEMA_GAPS = [
     why: 'delivered by email address, the only customer-scoped RLS policy in the schema',
     needs: 'a user_id column on in_app_notifications to make notification identity independent of an email string',
   },
+  {
+    logical: 'profile_settings',
+    why: 'language (and any other display preference) has no column on profiles, clients or bookings',
+    needs: 'a preferences jsonb column on profiles, or a customer_preferences table, for language/notification settings to follow the account instead of the browser',
+  },
 ];
 
 /**
@@ -599,6 +604,15 @@ export function normalizeReferralCode(code: unknown): string {
  * that a 45-minute service cannot fit into.
  */
 export const DEFAULT_SERVICE_MINUTES = 30;
+
+/**
+ * A QR payment earns rewards only at or above this amount. The rule lives here
+ * (not in the form, not in the ledger writer) because both the record step and
+ * the verification step must agree on it — a payment the customer logs below the
+ * minimum is a real payment, it just does not earn, and that distinction is what
+ * the `below_minimum` reward state is for.
+ */
+export const QR_MIN_QUALIFYING_RUPEES = 100;
 
 export const SLOT_HOLDING_STATUSES = ['pending', 'confirmed', 'in_progress', 'reschedule_requested', 'reschedule_proposed'];
 

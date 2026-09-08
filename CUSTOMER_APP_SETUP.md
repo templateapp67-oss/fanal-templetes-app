@@ -34,9 +34,10 @@ Nothing else restates this list, and `npm run verify` fails if the two drift.
 | `salon_services` | table | `services` | `GET /api/customer/salons/:id/services` |
 | `salon_staff` | table | `stylists` | `GET /api/customer/salons/:id/staff` |
 | `staff_slots` | **derived** | `stylists.schedule` minus `bookings` | `GET /api/customer/salons/:id/slots` |
+| `salon gallery` (part of `salons`) | table | `social_videos` for that owner | attached by `GET /api/customer/salons/:id` |
 | `bookings` | table | `bookings` | `GET /api/customer/me/bookings` |
 | `booking_services` | **jsonb** | `bookings.metadata.services[]` | written by `POST /api/customer/bookings/create` |
-| `favourites` | **derived** | your `bookings` (+ device pins) | `GET /api/customer/me/favourites` |
+| `favourites` | **derived** | your `bookings` and their service lines (+ device pins) | `GET /api/customer/me/favourites` |
 | `reviews` | **jsonb** | `bookings.metadata.review_*` | `GET/POST /api/customer/me/reviews` |
 | `reward_wallets` | table | `clients` + `loyalty_config` | `GET /api/customer/me/rewards` |
 | `reward_transactions` | table | `loyalty_point_transactions` | `GET /api/customer/me/rewards` |
@@ -48,15 +49,19 @@ Nothing else restates this list, and `npm run verify` fails if the two drift.
 | `offers` | table | `loyalty_rewards` (`is_active`) | `GET /api/customer/offers` |
 | `offer_redemptions` | table | `loyalty_redeemed_rewards` | `POST /api/customer/offers/redeem` |
 
-Salon-owned tables (`services`, `stylists`, `loyalty_*`) are **read-only for
-customers**. There is no route in this app that lets a customer edit a price, a
+`services` has no discount column, so a service card's "15% off with 200 pts"
+label is the salon's own `loyalty_rewards` row matched on `applicable_category` —
+no reward, no badge, never an invented percentage.
+
+Salon-owned tables (`services`, `stylists`, `loyalty_*`, `social_videos`) are
+**read-only for customers**. There is no route in this app that lets a customer edit a price, a
 stylist or a rewards rule.
 
 ---
 
 ## 2. What the schema cannot store — and what the app does instead
 
-`CUSTOMER_SCHEMA_GAPS` lists these ten; the Activity → *Data sources* screen
+`CUSTOMER_SCHEMA_GAPS` lists these eleven; the Activity → *Data sources* screen
 renders them, so the limitation is visible in the product and not only in this
 file.
 
@@ -72,14 +77,22 @@ file.
 | `referrals` | Code derived from your auth uid (`NX-<first 8>`), stored on `bookings.metadata.referral_code` | a `referrals` table with click/booking/credit states |
 | `salons` | A salon is an owner `profiles` row; discovery filters on `salon_name is not null` | a `salons` table (would also fix the geo collision below) |
 | `notifications` | Delivered by email address — the one customer-readable policy in the schema | an `on delete cascade` recipient key, i.e. `user_id` on the row |
+| `profile_settings` | Language (and any display preference) has nowhere to live, so it is device-scoped | a `preferences` jsonb column on `profiles`, or a `customer_preferences` table |
 
-**The `profiles` geo collision.** `latitude` / `longitude` / `city` on a
-`profiles` row are the *salon's* public discovery coordinates. A customer signing
-in with an owner account must not move that salon on every map, so
-`POST /api/customer/me/profile` refuses to write geo columns on a row that looks
-like a published salon (`isSalonProfile`) and answers with a `notice` saying so;
-those customers keep their location on the device. That guard is the reason a
-customer profile and an owner profile can share one table safely.
+**The `profiles` shared-row guard.** A `profiles` row can be *both* a customer
+and a published salon, so on a row that publishes a salon the customer app may
+write only the columns about the person: `full_name`, `phone_number`, `whatsapp`.
+Everything that appears on the salon's public page — `city`, `full_address`,
+`address_line2`, `postal_code`, `state`, `landmark`, `owner_photo_url`,
+`latitude`, `longitude` (`SALON_PUBLIC_COLUMNS`) — is refused with a notice that
+points at the owner dashboard instead. Without that rule, one customer saving their
+own locality or GPS fix would silently move that salon on every map, distance sort
+and search result in the app.
+
+**Language has no column.** Nothing in `profiles`, `clients` or `bookings` means
+"language", so the Settings preference is stored on the device, applied to
+`document.lang`, and labelled device-scoped (it is listed as a mapping gap on the
+Data-sources screen). What was *not* done is smuggling it into an owner column.
 
 ---
 
@@ -206,9 +219,29 @@ recorded. If the money was captured but the row could not be updated, the answer
 is `success: true` + `needsSalonAttention: true` and a `notice` — never a silent
 loss of a paid deposit.
 
-QR rewards are not a second ledger: confirming one writes a
-`loyalty_point_transactions` row and credits `clients.points`; if the credit
-fails, the ledger row is deleted so points never exist without their transaction.
+**QR rewards cannot credit themselves.** `POST /api/customer/me/qr-payments/confirm`
+writes a `loyalty_point_transactions` row with `points_change = 0` and an "awaiting
+verification" description, and touches no wallet — an amount typed into a form is a
+claim, not a payment. Points appear only through
+`POST /api/customer/me/qr-payments/verify`, where the **server** looks the payment
+up at the gateway and credits what the *gateway* says was captured:
+
+| Situation | Answer |
+|---|---|
+| Gateway reports `captured` | ledger row updated in place (never duplicated), wallet credited, `verified pay_…` recorded |
+| Not captured, or no such payment | `payment_unverified`, nothing credited |
+| Verified amount **less** than the claim | `payment_amount_mismatch` — the claim is refused, not quietly honoured |
+| Verified amount **more** than the claim | the gateway amount becomes the amount of record |
+| Verified but under ₹100 | `below_minimum`: recorded, marked, earns nothing |
+| No gateway keys, or a simulated gateway | `payments_disabled` — the entry stays pending for the salon to confirm |
+| Row already credited | the original credit, `alreadyVerified: true`, no second credit |
+| Someone else's row id | `404 not_found`, indistinguishable from a wrong id |
+
+The ₹100 qualifying floor is one constant (`QR_MIN_QUALIFYING_RUPEES` in
+`schema.ts`) used by the record step and the verification step alike. Referrals
+follow the same shape: a referral reads as `credited` only when a **bonus ledger
+row exists** (owner- or backend-written) — no route marks a referral rewarded from
+the customer side, and none marks a visit completed from it either.
 
 Every failure answer carries a stable `code`, a `requestId` to grep in the
 server logs, and `retryable` where a retry is safe. Nothing on this list leaves a
@@ -247,12 +280,85 @@ half-written booking.
 npm test
 ```
 
-* `tests/customerRoutes.test.ts` — identity, scoping, the whitelist that keeps
-  salon columns away from customers, the transactional booking and its rollback,
-  slot derivation, cancellation and review rules, deposit verification.
+* `tests/customerRoutes.test.ts` (28) — identity, scoping, the whitelist that
+  keeps salon columns away from customers, the transactional booking and its
+  rollback, slot derivation, cancellation and review rules, deposit verification,
+  discovery filters, and the whole QR money rule (claim → verify → credit, once).
+* `tests/customerDataLayer.test.ts` (28) — the mapping's invariants, referral
+  codes, slot arithmetic (including `HH:MM:00` spelling), mappers never inventing a
+  missing value, the QR `description` round-trip, service and staff favourites,
+  discount labels, error copy.
+* `tests/customerScreens.test.ts` (7) — every screen renders with no session, no
+  database and no props; no mock data in rendered markup; source labels do not
+  claim a database before the API answers.
 * `tests/customerDataLayer.test.ts` — the mapping's invariants, referral codes,
   slot arithmetic (including `HH:MM:00` spelling), mappers never inventing a
   missing value, the QR `description` round-trip, error copy.
 * `tests/customerScreens.test.ts` — every screen renders without a session, a
   database or props; no mock data in rendered markup; source labels do not claim
   a database before the API answers.
+
+---
+
+## 9. Screen-by-screen wiring check
+
+What each screen calls, and what that reads. Every row is an endpoint in
+`server/customerRoutes.ts`, and `npm run verify` stage 1 asserts the route exists.
+
+| Screen | Reads | Tables actually touched |
+|---|---|---|
+| Login / signup | `supabase.auth` + `GET/POST /me/profile` | `profiles` |
+| Profile | `GET/POST /me/profile` | `profiles` (guarded columns) |
+| Settings | the private reads below + device buckets | `profiles`, `bookings`, ledger, device |
+| Location | `/geocode` + `POST /me/location` | `profiles` (non-salon rows), device |
+| Home / discovery | `GET /salons?city&lat&lng&sort` | `profiles`, `services`, `loyalty_rewards`, `bookings` |
+| Search + filters | the same, with `q`, `category`, `maxPrice`, `minRating`, `openNow`, `offersOnly` | as above; `search_history` on device |
+| Salon profile | `GET /salons/:id` | `profiles`, `social_videos`, `bookings` (ratings) |
+| Services | `GET /salons/:id/services` | `services`, `loyalty_rewards` (discount labels) |
+| Staff | `GET /salons/:id/staff` | `stylists` |
+| Slots | `GET /salons/:id/slots?date&serviceIds&staffId` | `stylists.schedule` − `bookings` |
+| Booking flow | `POST /bookings/create` | `bookings` (+ `metadata.services[]`), `profiles` |
+| Booking detail | `GET /me/bookings/:id` | `bookings`, `profiles` |
+| My bookings | `GET /me/bookings`, cancel / reschedule / advance / rebook | `bookings`, `profiles` |
+| Reviews | `GET/POST /me/reviews`, `GET /salons/:id/reviews` | `bookings.metadata.review_*` |
+| Favourites | `GET /me/favourites` + device pins | `bookings`, `profiles`, device |
+| Rewards wallet | `GET /me/rewards` | `clients`, `loyalty_point_transactions`, `loyalty_config`, `loyalty_redeemed_rewards` |
+| QR payments | `GET /me/qr-payments`, `POST …/confirm`, `POST …/verify` | `loyalty_point_transactions`, `clients`, gateway |
+| Membership | `GET /me/memberships` | `clients.loyalty_tier`, `loyalty_config` |
+| Referrals | `GET /me/referrals` | `bookings.metadata.referral_code`, ledger |
+| Notifications | `GET /me/notifications`, `POST /me/notifications/read` | `in_app_notifications` |
+| Offers | `GET /offers`, `POST /offers/redeem` | `loyalty_rewards`, `loyalty_redeemed_rewards`, `clients`, ledger |
+
+No row above has a mock-data fallback, and `tests/customerScreens.test.ts` fails if
+a string that exists only in `src/mockData.ts` ever renders inside the customer
+app.
+
+---
+
+## 10. "Never bypass RLS" — what this build does instead
+
+The instruction and the deployed schema are in tension, so the honest answer is
+written down rather than glossed over:
+
+* `services`, `stylists`, `loyalty_*` and `bookings` have **owner-only** SELECT
+  policies and no customer policy at all. A customer token querying Supabase
+  directly does not "respect RLS" — it gets `[]` for everything except
+  `in_app_notifications`. A purely browser-direct client therefore cannot render a
+  service menu, and making it able to would mean *adding* a policy, which this task
+  forbade.
+* Reads and writes go through `/api/customer/*`, which uses the `service_role` key
+  **on the server only** — the same pattern `/api/bookings/create` already uses in
+  this repo. `SUPABASE_SERVICE_ROLE_KEY` appears in no client file, is never sent
+  to the browser, and the bundle scan in `npm run verify` is what keeps it that way.
+* The RLS *intent* is reproduced in code and tested: identity comes from the
+  verified bearer token alone; every private read is filtered to that customer (or,
+  for `clients`, to rows whose contact keys resolve to them); salon-owned columns
+  are refused on write; foreign ids answer 404; catalogue tables have no write route
+  at all; and no route lets a customer complete their own visit, credit their own
+  wallet, or redeem a reward they have not earned.
+
+If you would rather the browser talk to PostgREST directly, the delta is small but
+it is a policy change: a "customer may read published salons and their
+services/stylists" policy, plus a `bookings` SELECT policy on
+`user_id = auth.uid()`. That is a one-file migration — it is just not something
+this task was allowed to do silently.

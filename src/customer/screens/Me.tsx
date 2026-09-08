@@ -19,7 +19,15 @@ import {
   currentCustomerUser,
   listMyRewards,
 } from '../../lib/customer/api';
-import { readLocation, requestBrowserLocation, reverseGeocodeCity, writeLocation } from '../../lib/customer/deviceStore';
+import {
+  CUSTOMER_LANGUAGES,
+  readLanguage,
+  readLocation,
+  requestBrowserLocation,
+  reverseGeocodeCity,
+  writeLanguage,
+  writeLocation,
+} from '../../lib/customer/deviceStore';
 import { readSearchHistory, clearSearchHistory } from '../../lib/customer/deviceStore';
 import type { CustomerLocation, CustomerProfile } from '../../lib/customer/types';
 import { Button, CARD_CLASS, Chip, ConnectionNotice, ErrorState, Field, LoadingRows, MUTED_CLASS, SourceChip, StatTile } from '../ui';
@@ -41,7 +49,18 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
   const [notice, setNotice] = useState('');
   const [mode, setMode] = useState<'live' | 'mock'>('live');
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
-  const [form, setForm] = useState({ fullName: '', phone: '', whatsapp: '', city: '', address: '', postalCode: '', state: '', landmark: '' });
+  const [form, setForm] = useState({
+    fullName: '',
+    phone: '',
+    whatsapp: '',
+    city: '',
+    area: '',
+    address: '',
+    postalCode: '',
+    state: '',
+    landmark: '',
+    avatarUrl: '',
+  });
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -70,10 +89,12 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
         phone: row?.phone || '',
         whatsapp: row?.whatsapp || '',
         city: row?.city || '',
+        area: row?.area || '',
         address: row?.address || '',
         postalCode: row?.postalCode || '',
         state: row?.state || '',
         landmark: row?.landmark || '',
+        avatarUrl: row?.avatarUrl || '',
       });
       setLoading(false);
       if (row?.id) {
@@ -93,6 +114,8 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
       form.phone !== profile.phone ||
       form.whatsapp !== profile.whatsapp ||
       form.city !== profile.city ||
+      form.area !== profile.area ||
+      form.avatarUrl !== profile.avatarUrl ||
       form.address !== profile.address ||
       form.postalCode !== profile.postalCode ||
       form.state !== profile.state ||
@@ -173,6 +196,19 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
           <Field label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />
           <Field label="Street address" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
           <Field label="Landmark" value={form.landmark} onChange={(value) => setForm({ ...form, landmark: value })} />
+          <Field
+            label="Area or locality"
+            value={form.area}
+            onChange={(value) => setForm({ ...form, area: value })}
+            hint="Saved to profiles.address_line2 — the same column a salon uses for its second address line"
+          />
+          <Field
+            label="Profile photo URL"
+            value={form.avatarUrl}
+            onChange={(value) => setForm({ ...form, avatarUrl: value })}
+            hint="Saved to profiles.owner_photo_url. On an account that publishes a salon this column belongs to the salon page, so it stays untouched."
+          />
+          <LanguageRow customerId={userId} />
         </div>
 
         {saveError ? <p className="text-sm font-semibold text-rose-700">{saveError}</p> : null}
@@ -190,6 +226,48 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
 // ---------------------------------------------------------------------------
 // Location
 // ---------------------------------------------------------------------------
+/**
+ * Language is the one profile field this schema cannot hold: no table has a
+ * column for it, and inventing one is out of bounds. So it is stored on the
+ * device, applied to `document.lang` immediately, and labelled as such instead of
+ * pretending to be a row.
+ */
+const LanguageRow: React.FC<{ customerId?: string | null }> = ({ customerId }) => {
+  const [language, setLanguage] = useState(() => readLanguage(customerId));
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') document.documentElement.lang = language;
+  }, [language]);
+
+  return (
+    <div className="sm:col-span-2">
+      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Language</label>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {CUSTOMER_LANGUAGES.map((entry) => (
+          <button
+            key={entry.code}
+            type="button"
+            onClick={() => {
+              setLanguage(entry.code);
+              setSaved(writeLanguage(customerId, entry.code));
+            }}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
+              language === entry.code ? 'bg-slate-900 text-white border-transparent' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1.5">
+        {saved ? 'Saved on this device' : 'Saved on this device'} · kept in this browser, because no table in the current schema has a language column. The
+        app\'s own copy is English.
+      </p>
+    </div>
+  );
+};
+
 export const LocationScreen: React.FC<MeScreenProps & { onDone?: () => void }> = ({
   userId,
   accentHex = '#C20E5A',

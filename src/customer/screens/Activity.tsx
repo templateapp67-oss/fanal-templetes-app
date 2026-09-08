@@ -217,9 +217,11 @@ const FavouritesPanel: React.FC<{
     const result = await toggleFavourite(userId, {
       salonId: item.salonId,
       staffId: item.staffId,
+      serviceId: item.serviceId,
       kind: item.kind,
       salonName: item.salonName,
       staffName: item.staffName,
+      serviceName: item.serviceName,
       pinned: false,
     });
     setBusy('');
@@ -232,8 +234,9 @@ const FavouritesPanel: React.FC<{
       <div className={`${CARD_CLASS} p-3.5 flex items-start gap-3`}>
         <Info className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />
         <p className={`text-xs ${MUTED_CLASS}`}>
-          The current schema has no favourites table, so this list is two things: salons you have actually booked (derived from your `bookings` rows) and
-          salons you pinned on <em>this device</em>. Pinned entries do not follow you to another phone — that is a mapping gap, not a bug in this screen.
+          The current schema has no favourites table, so this list is two things: salons, staff and services you have actually booked (derived from your
+          `bookings` rows and their service lines) and anything you pinned on <em>this device</em>. Pinned entries do not follow you to another phone —
+          that is a mapping gap, not a bug in this screen.
         </p>
       </div>
       {error ? <p className="text-xs font-semibold text-rose-600">{error}</p> : null}
@@ -243,7 +246,7 @@ const FavouritesPanel: React.FC<{
         <EmptyState
           icon={<Heart className="w-6 h-6 text-slate-400" />}
           title="No favourites yet"
-          body="Book once and the salon shows up here automatically, or pin it from the salon page."
+          body="Book once and the salon shows up here automatically, or pin a salon, a stylist or a service from its row — the heart is on every one."
         />
       ) : null}
       <div className="grid gap-2 sm:grid-cols-2">
@@ -252,9 +255,10 @@ const FavouritesPanel: React.FC<{
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm font-bold text-slate-900 truncate">
-                  {item.kind === 'staff' ? item.staffName : item.salonName}
-                  {item.kind === 'staff' && item.staffName ? <span className={`text-xs font-medium ${MUTED_CLASS}`}> · {item.salonName}</span> : null}
+                  {item.kind === 'salon' ? item.salonName : item.kind === 'staff' ? item.staffName || 'A stylist' : item.serviceName || 'A service'}
+                  {item.kind !== 'salon' && item.salonName ? <span className={`text-xs font-medium ${MUTED_CLASS}`}> · {item.salonName}</span> : null}
                 </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">{item.kind === 'service' ? 'service' : item.kind}</p>
                 <p className={`text-xs mt-0.5 ${MUTED_CLASS}`}>
                   {item.visits} visit{item.visits === 1 ? '' : 's'}
                   {item.lastVisit ? ` · last ${dayLabel(item.lastVisit)}` : ''}

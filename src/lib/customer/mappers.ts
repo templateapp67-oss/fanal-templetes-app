@@ -22,7 +22,7 @@ import {
 // Same helper the client's checkout button and the server's advance endpoint use,
 // so the amount shown, charged and recorded can never drift apart.
 import { computeAdvanceDeposit } from '../advanceDeposit';
-import type {
+import type { SalonGalleryItem,
   BookingServiceLine,
   CustomerBooking,
   CustomerFavourite,
@@ -107,6 +107,11 @@ export function toCustomerSalon(
   extras: {
     from?: { latitude?: number | null; longitude?: number | null } | null;
     serviceCount?: number;
+    minServicePrice?: number | null;
+    categories?: string[];
+    hasActiveOffers?: boolean;
+    recentBookings?: number;
+    gallery?: SalonGalleryItem[];
     rating?: { average: number; count: number };
     favourite?: boolean;
     now?: Date;
@@ -146,8 +151,13 @@ export function toCustomerSalon(
     distanceKm: distanceKm(extras.from, row),
     openNow: openNowFrom(hours, extras.now),
     serviceCount: num(extras.serviceCount),
+    minServicePrice: extras.minServicePrice === undefined || extras.minServicePrice === null ? null : num(extras.minServicePrice),
+    categories: Array.isArray(extras.categories) ? extras.categories.filter(Boolean).map((entry) => String(entry)) : [],
+    hasActiveOffers: extras.hasActiveOffers === true,
+    recentBookings: num(extras.recentBookings),
     rating: extras.rating ?? { average: 0, count: 0 },
     favourite: !!extras.favourite,
+    gallery: Array.isArray(extras.gallery) ? extras.gallery : [],
     source: 'supabase',
   };
 }
@@ -180,13 +190,23 @@ export function toCustomerProfile(row: any): CustomerProfile {
     phone: str(row?.phone_number),
     whatsapp: str(row?.whatsapp || row?.phone_number),
     city: str(row?.city),
+    // `address_line2` is the salon's second address line for a published row and
+    // the customer's locality otherwise - which is exactly why the write handler
+    // refuses it on a salon row. Read is fine; the guard is on the way in.
+    area: str(row?.address_line2),
     address: str(row?.full_address),
+    avatarUrl: str(row?.owner_photo_url),
     postalCode: str(row?.postal_code),
     state: str(row?.state),
     landmark: str(row?.landmark),
     latitude: row?.latitude === null || row?.latitude === undefined ? null : num(row.latitude),
     longitude: row?.longitude === null || row?.longitude === undefined ? null : num(row.longitude),
     updatedAt: row?.updated_at ? isoDateTime(row.updated_at) : null,
+    // No column anywhere in this schema means "language", so the API answers
+    // empty and the screen fills it from the device. Returning a guess here would
+    // make a stored value look real.
+    language: '',
+    languageSource: 'none' as const,
     // A customer profile row is one that has not published a salon.
     isCustomerRecord: !isSalonProfile(row),
     referralCode: referralCodeFor(str(row?.id) || null),
@@ -197,7 +217,37 @@ export function toCustomerProfile(row: any): CustomerProfile {
 // services / stylists
 // ---------------------------------------------------------------------------
 
-export function toCustomerService(row: any): CustomerService {
+/**
+ * A `services` row carries a price and no discount. The only discount this
+ * product can honestly show is one the SALON published as a `loyalty_rewards`
+ * row (`percentage_discount` / `flat_discount`, optionally scoped to a
+ * category), so that is what a service card shows - matched by category,
+ * never invented.
+ */
+export function serviceDiscountFor(row: any, rewards: any[] = []): { label: string; percent: number; points: number | null } {
+  const category = str(row.category) || 'General';
+  const applicable = (rewards || []).filter(
+    (reward: any) => reward && reward.is_active !== false && (!reward.applicable_category || String(reward.applicable_category).trim() === '' || str(reward.applicable_category) === category)
+  );
+  if (!applicable.length) return { label: '', percent: 0, points: null };
+  const best = applicable.slice().sort((a: any, b: any) => Number(b.discount_value ?? 0) - Number(a.discount_value ?? 0))[0];
+  const value = num(best.discount_value);
+  const type = str(best.reward_type);
+  const label =
+    type === 'flat_discount' && value > 0
+      ? `Rs${value % 1 ? value.toFixed(2) : value} off with ${Math.max(1, num(best.required_points, 1))} pts`
+      : value > 0
+        ? `${Math.round(value)}% off with ${Math.max(1, num(best.required_points, 1))} pts`
+        : str(best.title) || '';
+  return {
+    label,
+    percent: type === 'percentage_discount' || type === '' ? Math.max(0, Math.min(100, Math.round(value))) : 0,
+    points: num(best.required_points) || null,
+  };
+}
+
+export function toCustomerService(row: any, extras: { rewards?: any[] } = {}): CustomerService {
+  const discount = serviceDiscountFor(row, extras.rewards || []);
   return {
     id: str(row.id),
     salonId: str(row.owner_id),
@@ -206,10 +256,16 @@ export function toCustomerService(row: any): CustomerService {
     description: str(row.description),
     icon: str(row.icon) || 'sparkles',
     price: num(row.price),
-    durationMinutes: num(row.duration_minutes, DEFAULT_SERVICE_MINUTES),
+    // A NULL `duration_minutes` is 0 by `num()`'s rules, and a 0-minute service
+    // makes every slot bookable back-to-back. The column is nullable even though
+    // it has a default, so treat "no value" as the app's own fallback.
+    durationMinutes: row.duration_minutes === null || row.duration_minutes === undefined || row.duration_minutes === '' ? DEFAULT_SERVICE_MINUTES : num(row.duration_minutes),
     popular: bool(row.popular),
     showDuration: row.show_duration === false ? false : true,
     sortOrder: num(row.sort_order),
+    discountLabel: discount.label,
+    discountPercent: discount.percent,
+    discountPoints: discount.points,
     source: 'supabase',
   };
 }
@@ -382,19 +438,89 @@ export function toRewardTransaction(row: any, salonName = ''): RewardTransaction
   };
 }
 
+/**
+ * `loyalty_point_transactions` has no amount, status or reference column, so a
+ * QR payment's money detail lives in its `description`. Both halves are here on
+ * purpose: `qrLedgerDescription` is the ONLY writer and `toQrPayment` is the
+ * ONLY reader, so the two cannot drift apart the way a hand-written regex
+ * against someone else's string always does.
+ *
+ * A customer-recorded payment is NOT credited: `points_change` stays 0 until the
+ * gateway confirms the money moved, at which point the row is updated in place
+ * (never duplicated) and carries `verified <payment id>`.
+ */
+export const QR_STATE_PENDING = 'awaiting verification';
+export const QR_STATE_VERIFIED = 'verified';
+export const QR_STATE_BELOW_MINIMUM = 'below earning minimum';
+
+export function qrLedgerDescription(input: {
+  amount: number;
+  reference: string;
+  state?: typeof QR_STATE_PENDING | typeof QR_STATE_BELOW_MINIMUM;
+  gatewayPaymentId?: string;
+}): string {
+  const amount = `₹${Math.max(0, Math.round(Number(input.amount || 0) * 100) / 100).toFixed(2)}`;
+  const reference = String(input.reference || '').trim().slice(0, 64);
+  const state = input.gatewayPaymentId
+    ? `${QR_STATE_VERIFIED} ${String(input.gatewayPaymentId).trim().slice(0, 64)}`
+    : input.state || QR_STATE_PENDING;
+  return `QR payment (${state}) ${amount}${reference ? ` ref:${reference}` : ''}`.slice(0, 200);
+}
+
+/** The salon's published showcase, from `social_videos`. Empty is a real answer. */
+export function toSalonGallery(rows: any[]): SalonGalleryItem[] {
+  return (Array.isArray(rows) ? rows : []).map((row: any) => ({
+    id: str(row.id),
+    title: str(row.title) || 'Salon video',
+    url: str(row.youtube_url),
+    thumbnailUrl: str(row.thumbnail_url),
+    kind: 'video' as const,
+  }));
+}
+
+/** Reverse of `qrLedgerDescription`, tolerant of rows the owner typed by hand. */
+export function parseQrDescription(description: string): {
+  amount: number;
+  reference: string;
+  gatewayPaymentId: string;
+  state: typeof QR_STATE_PENDING | typeof QR_STATE_VERIFIED | typeof QR_STATE_BELOW_MINIMUM;
+} {
+  const text = String(description || '');
+  const reference = /(?:ref|reference|txn)[:#]?\s*([A-Za-z0-9-]{4,32})/i.exec(text)?.[1] || '';
+  const amountRaw =
+    /₹\s*([\d,.]+)/.exec(text)?.[1] || /(?:^|\s)(\d{1,7}(?:\.\d{1,2})?)\s*(?:INR|rs)/i.exec(text)?.[1] || '';
+  const gatewayPaymentId = new RegExp(`${QR_STATE_VERIFIED}\\s+([A-Za-z0-9_\\-]{4,64})`).exec(text)?.[1] || '';
+  const state: typeof QR_STATE_PENDING | typeof QR_STATE_VERIFIED | typeof QR_STATE_BELOW_MINIMUM = gatewayPaymentId
+    ? QR_STATE_VERIFIED
+    : text.toLowerCase().includes(QR_STATE_BELOW_MINIMUM)
+      ? QR_STATE_BELOW_MINIMUM
+      : QR_STATE_PENDING;
+  return { amount: num(String(amountRaw).replace(/,/g, '')), reference, gatewayPaymentId, state };
+}
+
 export function toQrPayment(row: any, salonName = ''): QrPayment {
-  const description = str(row.description);
-  const reference = /(?:ref|reference|txn)[:#]?\s*([A-Za-z0-9-]{4,32})/i.exec(description)?.[1] || '';
-  const amount = /₹\s*([\d,.]+)/.exec(description)?.[1] || /(?:^|\s)(\d{1,7}(?:\.\d{1,2})?)\s*(?:INR|rs)/i.exec(description)?.[1] || '';
+  const parsed = parseQrDescription(str(row.description));
+  const pointsCredited = num(row.points_change);
+  // A positive balance change is the only thing that makes a payment credited —
+  // never the words in the description. `verified` without points is a gateway
+  // lookup that has not been applied yet, and `credited` without a lookup is a
+  // row the owner wrote themselves (they carry no marker at all).
+  const creditedByBalance = pointsCredited > 0;
   return {
     id: str(row.id),
     salonId: str(row.owner_id),
     salonName,
-    reference,
-    amount: num(String(amount).replace(/,/g, '')),
-    pointsCredited: num(row.points_change),
+    reference: parsed.reference,
+    amount: parsed.amount,
+    pointsCredited: creditedByBalance ? pointsCredited : 0,
     date: isoDate(row.date || row.created_at),
-    status: 'credited',
+    paymentStatus: parsed.state === QR_STATE_VERIFIED ? 'verified' : 'claimed',
+    rewardStatus: creditedByBalance
+      ? 'credited'
+      : parsed.state === QR_STATE_BELOW_MINIMUM
+        ? 'below_minimum'
+        : 'awaiting_verification',
+    gatewayPaymentId: parsed.gatewayPaymentId,
     source: 'supabase',
   };
 }
@@ -407,7 +533,14 @@ export function toQrPayment(row: any, salonName = ''): QrPayment {
  */
 export function toRewardWallet(
   row: any,
-  extras: { salonName?: string; currency?: string; config?: any; programEnabled?: boolean } = {}
+  extras: {
+    salonName?: string;
+    currency?: string;
+    config?: any;
+    programEnabled?: boolean;
+    lifetimeEarned?: number;
+    lifetimeRedeemed?: number;
+  } = {}
 ): RewardWallet {
   const lifetime = num(row.lifetime_points, num(row.points));
   const thresholds =
@@ -431,6 +564,9 @@ export function toRewardWallet(
     currency: str(extras.currency) || '₹',
     points: num(row.points),
     lifetimePoints: lifetime,
+    lifetimeEarned: num(extras.lifetimeEarned, lifetime),
+    lifetimeRedeemed: num(extras.lifetimeRedeemed),
+    tierLadder: order.map((entry) => entry.tier),
     tier: str(row.loyalty_tier) || 'bronze',
     totalVisits: num(row.total_visits),
     totalSpent: num(row.total_spent),
@@ -449,7 +585,7 @@ export function toRewardWallet(
 
 export function toMembership(
   row: any,
-  extras: { salonName?: string; config?: any } = {}
+  extras: { salonName?: string; config?: any; programEnabled?: boolean } = {}
 ): Membership {
   const config = extras.config || {};
   const tier = str(row.loyalty_tier) || 'bronze';
@@ -487,6 +623,10 @@ export function toMembership(
           progress: Math.max(0, Math.min(1, (lifetime - previousMin) / span)),
         }
       : null,
+    startDate: isoDate(row.created_at),
+    // No expiry column exists on `clients`, so the honest answer is "none set".
+    endDate: row.membership_ends_on ? isoDate(row.membership_ends_on) : null,
+    active: extras.programEnabled !== false && !!tier,
     memberSince: isoDate(row.created_at),
     source: 'supabase',
   };
@@ -574,12 +714,33 @@ export function deriveFavourites(
       salonName: name,
       staffId: '',
       staffName: '',
+      serviceId: '',
+      serviceName: '',
       kind: 'salon',
       origin: 'booked',
       lastVisit: (existing?.lastVisit || '') > booking.date ? existing!.lastVisit : booking.date,
       visits: (existing?.visits || 0) + 1,
       source: 'derived',
     });
+    for (const line of booking.serviceLines || []) {
+      if (!line?.serviceId) continue;
+      const serviceKey = `service:${booking.salonId}:${line.serviceId}`;
+      const serviceExisting = byKey.get(serviceKey);
+      byKey.set(serviceKey, {
+        id: serviceKey,
+        salonId: booking.salonId,
+        salonName: name,
+        staffId: line.staffId || '',
+        staffName: line.staffName || '',
+        serviceId: line.serviceId,
+        serviceName: line.name || 'Service',
+        kind: 'service',
+        origin: 'booked',
+        lastVisit: (serviceExisting?.lastVisit || '') > booking.date ? serviceExisting!.lastVisit : booking.date,
+        visits: (serviceExisting?.visits || 0) + 1,
+        source: 'derived',
+      });
+    }
     for (const staffName of booking.staffNames) {
       const staffKey = `staff:${booking.salonId}:${staffName}`;
       const staffExisting = byKey.get(staffKey);
@@ -589,6 +750,8 @@ export function deriveFavourites(
         salonName: name,
         staffId: '',
         staffName,
+        serviceId: '',
+        serviceName: '',
         kind: 'staff',
         origin: 'booked',
         lastVisit: (staffExisting?.lastVisit || '') > booking.date ? staffExisting!.lastVisit : booking.date,

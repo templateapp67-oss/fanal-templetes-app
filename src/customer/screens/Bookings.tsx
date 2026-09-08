@@ -20,6 +20,7 @@ import {
   Clock,
   IndianRupee,
   RefreshCw,
+  RotateCcw,
   Star,
   Ticket,
   X,
@@ -71,6 +72,8 @@ export interface BookingsProps {
   /** `?open=<id>` from a notification — that card starts expanded. */
   openBookingId?: string;
   onOpenSalon?: (salonId: string) => void;
+  /** "Rebook" on a finished visit: the shell opens the flow for this booking. */
+  onRebook?: (booking: CustomerBooking) => void;
   onRequireAuth?: () => void;
 }
 
@@ -81,6 +84,7 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
   refreshToken = 0,
   openBookingId = '',
   onOpenSalon,
+  onRebook,
   onRequireAuth,
 }) => {
   const [tab, setTab] = useState<BookingTabId>('upcoming');
@@ -191,6 +195,7 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
                 open={openId === booking.id}
                 onToggle={() => setOpenId((prev) => (prev === booking.id ? '' : booking.id))}
                 onOpenSalon={onOpenSalon}
+                onRebook={onRebook}
                 onChanged={(next, notice) => {
                   if (next) state.setData(bookings.map((item) => (item.id === next.id ? next : item)));
                   if (notice) setFlash(notice);
@@ -224,7 +229,8 @@ const BookingCard: React.FC<{
   onToggle: () => void;
   onChanged: (booking: CustomerBooking | null, notice: string) => void;
   onOpenSalon?: (salonId: string) => void;
-}> = ({ booking, accentHex, open, onToggle, onChanged, onOpenSalon, onRequireAuth }) => {
+  onRebook?: (booking: CustomerBooking) => void;
+}> = ({ booking, accentHex, open, onToggle, onChanged, onOpenSalon, onRebook, onRequireAuth }) => {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -495,6 +501,11 @@ const BookingCard: React.FC<{
                   {reviewable ? (
                     <Button variant="secondary" onClick={() => setMode('review')} accentHex={accentHex}>
                       <Star className="w-4 h-4" /> {booking.review ? 'Update review' : 'Leave a review'}
+                    </Button>
+                  ) : null}
+                  {onRebook && booking.salonId ? (
+                    <Button variant="secondary" onClick={() => onRebook(booking)} accentHex={accentHex} title="Opens the booking flow with the services and stylist from this visit">
+                      <RotateCcw className="w-4 h-4" /> Rebook
                     </Button>
                   ) : null}
                   {booking.status !== 'cancelled' && booking.status !== 'completed' ? (

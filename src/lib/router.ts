@@ -43,6 +43,7 @@ export type CustomerSection =
   | 'referral'
   | 'notifications'
   | 'offers'
+  | 'settings'
   | 'data';
 
 export interface CustomerRoute {
@@ -83,6 +84,9 @@ const CUSTOMER_SECTIONS: Record<string, CustomerSection> = {
   notifications: 'notifications',
   offers: 'offers',
   data: 'data',
+  settings: 'settings',
+  support: 'settings',
+  privacy: 'settings',
 };
 
 /**

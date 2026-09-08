@@ -36,6 +36,7 @@ import type { CustomerBooking, CustomerProfile, CustomerSlot } from '../../lib/c
 import {
   createBooking,
   fetchSlotWindow,
+  getMyBooking,
   getMyProfile,
   getSalon,
   listSalonServices,
@@ -74,6 +75,13 @@ export interface BookingFlowProps {
   accentHex?: string;
   /** From a shared link (`/app/book/:salon?ref=NX-…`). Never invented. */
   referralCodeFromLink?: string;
+  /**
+   * A booking to rebook from. The services and stylist are read back from THAT
+   * row - the real, stored ones - and anything the salon has since removed is
+   * reported as removed rather than quietly swapped for something similar.
+   */
+  rebookFromId?: string;
+  onRebookApplied?: () => void;
   onRequireAuth: () => void;
   onOpenBooking: (bookingId: string) => void;
   onExit: () => void;
@@ -97,6 +105,8 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   email,
   accentHex = '#C20E5A',
   referralCodeFromLink = '',
+  rebookFromId = '',
+  onRebookApplied,
   onRequireAuth,
   onOpenBooking,
   onExit,
@@ -114,6 +124,13 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const [submitting, setSubmitting] = useState(false);
 
   const salonState = useCustomerQuery(() => getSalon(salonId), [salonId]);
+  // Rebook: load the previous booking once, then match its lines against the
+  // CURRENT menu by id first and exact name second. A deleted service is
+  // announced, not replaced.
+  const rebookState = useCustomerQuery(
+    () => (rebookFromId ? getMyBooking(rebookFromId) : Promise.resolve(null)),
+    [rebookFromId]
+  );
   const servicesState = useCustomerQuery(() => listSalonServices(salonId), [salonId]);
   const staffState = useCustomerQuery(() => listSalonStaff(salonId), [salonId]);
   const profileState = useCustomerQuery(() => getMyProfile(), [userId]);
@@ -126,6 +143,47 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const salon = salonState.data;
   const services = servicesState.data || [];
   const staff = staffState.data || [];
+  const [rebookNotice, setRebookNotice] = useState('');
+
+  // Rebook prefill. Runs once the previous row and the current menu are both
+  // here: match by service id first, then by exact name, and say plainly what
+  // could not be matched instead of substituting something similar.
+  const rebookApplied = useRef('');
+  useEffect(() => {
+    if (!rebookFromId || rebookApplied.current === rebookFromId) return;
+    if (!services.length || rebookState.loading) return;
+    rebookApplied.current = rebookFromId;
+    const previous = rebookState.data as unknown as CustomerBooking | null;
+    if (!previous) {
+      setRebookNotice('That booking could not be read back, so nothing was preselected.');
+      return;
+    }
+    const lines = previous.serviceLines?.length ? previous.serviceLines : previous.serviceName ? [{ serviceId: '', name: previous.serviceName }] : [];
+    const matched: string[] = [];
+    const missing: string[] = [];
+    for (const line of lines) {
+      const entry = line as { serviceId?: string; name?: string; staffId?: string; staffName?: string };
+      const found =
+        services.find((service) => entry.serviceId && service.id === entry.serviceId) ||
+        services.find((service) => String(service.name).toLowerCase() === String(entry.name || '').toLowerCase());
+      if (found) matched.push(found.id);
+      else if (entry.name) missing.push(String(entry.name));
+    }
+    if (matched.length) setServiceIds(matched);
+    const wantedStaffId = lines.map((line: any) => line?.staffId).filter(Boolean)[0] || '';
+    const wantedStaffName = lines.map((line: any) => line?.staffName).filter(Boolean)[0] || '';
+    const staffMatch =
+      staff.find((member) => wantedStaffId && member.id === wantedStaffId) ||
+      staff.find((member) => wantedStaffName && String(member.name).toLowerCase() === String(wantedStaffName).toLowerCase());
+    if (staffMatch && staffMatch.status !== 'Inactive') setStaffId(staffMatch.id);
+    const parts = [
+      matched.length ? `Carried over ${matched.length} service${matched.length === 1 ? '' : 's'} from ${previous.date || 'that visit'}` : '',
+      missing.length ? `no longer offered: ${missing.join(', ')}` : '',
+      staffMatch ? `with ${staffMatch.name}` : wantedStaffName ? `${wantedStaffName} is not on the current team` : 'any available stylist',
+    ].filter(Boolean);
+    setRebookNotice(parts.join(' · '));
+    onRebookApplied?.();
+  }, [rebookFromId, services, staff, rebookState.loading, rebookState.data, onRebookApplied]);
   const slots = slotsState.data?.slots || [];
 
   // Prefill from the customer's own profile row — the API returns only their

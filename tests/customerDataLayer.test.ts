@@ -22,6 +22,7 @@ import {
   RLS_REALITY,
   SALON_DISCOVERY_FILTERS,
   buildSlotGrid,
+  QR_MIN_QUALIFYING_RUPEES,
   dayWindowFor,
   distanceKm,
   isReferralCode,
@@ -39,6 +40,9 @@ import {
   depositDueFor,
   depositPolicyPercent,
   deriveFavourites,
+  serviceDiscountFor,
+  toSalonGallery,
+  toCustomerProfile,
   isSalonProfile,
   jsonValue,
   openNowFrom,
@@ -48,6 +52,9 @@ import {
   toCustomerService,
   toCustomerStaff,
   toMembership,
+  qrLedgerDescription,
+  parseQrDescription,
+  QR_STATE_BELOW_MINIMUM,
   toQrPayment,
   toRewardTransaction,
   toRewardWallet,
@@ -55,7 +62,7 @@ import {
   QR_PAYMENT_TYPE,
   REWARD_TYPE_PREFIX,
 } from '../src/lib/customer/mappers';
-import { mergeFavourites, isPinned } from '../src/lib/customer/deviceStore';
+import { isSupportedLanguage, mergeFavourites, isPinned, readLanguage } from '../src/lib/customer/deviceStore';
 import { notificationTouches, slotsSignature } from '../src/lib/customer/realtime';
 import { normalizeCustomerErrorMessage } from '../src/lib/customer/api';
 
@@ -374,21 +381,141 @@ test('rewards and QR payments name the rows they came from', () => {
   assert.equal(transaction.pointsChange, -100);
   assert.equal(transaction.type, 'redeem');
 
-  // `loyalty_point_transactions` has no amount or reference column, and adding
-  // one is out of bounds, so the ledger's `description` is the record. The writer
-  // in server/customerRoutes.ts and this parser are the two ends of that
-  // agreement — this test is what keeps them from drifting apart.
-  const description = `QR payment ₹${(750).toFixed(2)} ref:UPI-123`;
-  const qr = toQrPayment({ id: 'q1', date: '2026-09-01', points_change: 75, description, type: QR_PAYMENT_TYPE });
-  assert.equal(qr.amount, 750);
-  assert.equal(qr.reference, 'UPI-123');
-  assert.equal(qr.pointsCredited, 75);
-  assert.equal(qr.date, '2026-09-01');
-  assert.equal(qr.status, 'credited');
+  // `loyalty_point_transactions` has no amount, status or reference column, and
+  // adding one is out of bounds, so the ledger's `description` IS the record. The
+  // writer and this parser are the two ends of that agreement — this is what
+  // keeps them from drifting apart, including the three states a QR row can be in.
+  const verified = toQrPayment({
+    id: 'q1',
+    owner_id: OWNER,
+    date: '2026-09-01',
+    points_change: 75,
+    description: qrLedgerDescription({ amount: 750, reference: 'UPI-123', gatewayPaymentId: 'pay_ABC123' }),
+    type: QR_PAYMENT_TYPE,
+  });
+  assert.equal(verified.amount, 750);
+  assert.equal(verified.reference, 'UPI-123');
+  assert.equal(verified.pointsCredited, 75);
+  assert.equal(verified.date, '2026-09-01');
+  assert.equal(verified.paymentStatus, 'verified');
+  assert.equal(verified.rewardStatus, 'credited');
+  assert.equal(verified.gatewayPaymentId, 'pay_ABC123');
+
+  // A row the customer recorded but nobody has confirmed: zero points, and the
+  // reader must not upgrade it to credited because the words look promising.
+  const pending = toQrPayment({
+    id: 'q3',
+    owner_id: OWNER,
+    points_change: 0,
+    description: qrLedgerDescription({ amount: 750, reference: 'UPI-9' }),
+    type: QR_PAYMENT_TYPE,
+  });
+  assert.equal(pending.rewardStatus, 'awaiting_verification');
+  assert.equal(pending.paymentStatus, 'claimed');
+  assert.equal(pending.pointsCredited, 0, 'a row with no points does not report points');
+
+  const below = toQrPayment({
+    id: 'q4',
+    owner_id: OWNER,
+    points_change: 0,
+    description: qrLedgerDescription({ amount: 40, reference: 'UPI-8', state: QR_STATE_BELOW_MINIMUM }),
+    type: QR_PAYMENT_TYPE,
+  });
+  assert.equal(below.rewardStatus, 'below_minimum');
+  assert.equal(below.amount, 40, 'a non-earning payment is still a payment');
+
+  // The salon's own entry credits points without ever going through this app.
+  const byHand = toQrPayment({ id: 'q5', owner_id: OWNER, points_change: 20, description: 'QR payment ₹200.00 ref:UPI-7', type: QR_PAYMENT_TYPE });
+  assert.equal(byHand.rewardStatus, 'credited');
+  assert.equal(byHand.paymentStatus, 'claimed', 'no gateway lookup happened, so no gateway claim is made');
   assert.equal(QR_PAYMENT_TYPE, 'qr_payment');
+  assert.equal(QR_MIN_QUALIFYING_RUPEES, 100, 'the 100-rupee qualifying floor is one constant, not a magic number in three places');
   const unreadable = toQrPayment({ id: 'q2', description: 'Owner added points by hand', type: 'manual' });
   assert.equal(unreadable.amount, 0, 'a row that never carried an amount does not gain one');
   assert.ok(REWARD_TYPE_PREFIX === 'Referral', 'referral ledger rows are matched by this prefix');
+});
+
+test('service favourites: derived from the stored lines, pinned from the device', () => {
+  const bookings = [
+    {
+      id: 'b1',
+      salonId: OWNER,
+      salonName: 'Glow Studio',
+      date: '2026-08-01',
+      status: 'completed',
+      staffNames: ['Ravi'],
+      serviceLines: [
+        { id: 'l1', serviceId: 'svc-1', name: 'Hair Spa', price: 900, durationMinutes: 45, staffId: 'st-1', staffName: 'Ravi' },
+        { id: 'l2', serviceId: 'svc-2', name: 'Blow Dry', price: 400, durationMinutes: 30, staffId: '', staffName: '' },
+      ],
+    },
+  ];
+  const derived = deriveFavourites(bookings as any, new Map());
+  const services = derived.filter((row) => row.kind === 'service');
+  assert.equal(services.length, 2, 'each booked service becomes one favourite');
+  const blowDry = services.find((row) => row.serviceId === 'svc-2');
+  assert.ok(blowDry, 'both booked services are present');
+  assert.equal(blowDry!.serviceName, 'Blow Dry');
+  assert.equal(blowDry!.staffId, '', 'a line without a stylist does not invent one');
+  assert.equal(services[0].origin, 'booked', 'derived rows are never labelled as choices');
+  assert.ok(derived.some((row) => row.kind === 'salon' && row.visits === 1), 'the salon half still derives');
+
+  // A pin for a service the customer never booked shows up as a device entry.
+  const merged = mergeFavourites(derived, [
+    { salonId: OWNER, kind: 'service', serviceId: 'svc-9', serviceName: 'Bridal Makeup', salonName: 'Glow Studio', pinnedAt: '2026-09-01T00:00:00Z' },
+  ]);
+  const pinned = merged.find((row) => row.serviceId === 'svc-9');
+  assert.ok(pinned, 'the device pin is merged in');
+  assert.equal(pinned!.kind, 'service');
+  assert.equal(pinned!.origin, 'pinned');
+  assert.equal(pinned!.source, 'device', 'a pin must never look like a row from the database');
+  assert.equal(isPinned([{ salonId: OWNER, kind: 'service', serviceId: 'svc-9', pinnedAt: '' }] as any, { salonId: OWNER, kind: 'service', serviceId: 'svc-9' }), true);
+  assert.equal(isPinned([{ salonId: OWNER, kind: 'service', serviceId: 'svc-9', pinnedAt: '' }] as any, { salonId: OWNER, kind: 'service', serviceId: 'svc-1' }), false, 'one service pin is not all of them');
+});
+
+test('a service discount comes from the salon\'s own reward rows, matched by category', () => {
+  // The label has to come from loyalty_rewards: `services` has no discount column.
+  const rewards = [
+    { id: 'r1', reward_type: 'percentage_discount', discount_value: 15, applicable_category: 'Hair', required_points: 200, is_active: true },
+    { id: 'r2', reward_type: 'percentage_discount', discount_value: 5, applicable_category: 'Nails', required_points: 50, is_active: true },
+    { id: 'r3', reward_type: 'percentage_discount', discount_value: 90, applicable_category: 'Hair', required_points: 10, is_active: false },
+  ];
+  const hair = serviceDiscountFor({ category: 'Hair' }, rewards);
+  assert.equal(hair.percent, 15);
+  assert.match(hair.label, /15% off with 200 pts/);
+  const nails = serviceDiscountFor({ category: 'Nails' }, rewards);
+  assert.equal(nails.percent, 5, 'an irrelevant bigger discount must not leak across categories');
+  const beard = serviceDiscountFor({ category: 'Beard' }, rewards);
+  assert.equal(beard.percent, 0);
+  assert.equal(beard.label, '', 'no matching reward means no discount shown, never a zero-percent badge');
+  assert.equal(serviceDiscountFor({ category: 'Hair' }, []).label, '', 'no rewards configured means no discount shown');
+
+  const service = toCustomerService({ id: 's1', owner_id: OWNER, name: 'Keratin', category: 'Hair', price: 2000, duration_minutes: null }, { rewards });
+  assert.equal(service.discountLabel, '15% off with 200 pts');
+  assert.equal(service.durationMinutes, DEFAULT_SERVICE_MINUTES, 'a NULL duration must not become a 0-minute service');
+  assert.equal(toCustomerService({ id: 's2', owner_id: OWNER, name: 'X', category: 'Hair', price: 100, duration_minutes: 0 }).durationMinutes, 0, 'a real 0 is still a 0');
+});
+
+test('a language preference is validated and never claimed as a stored row', () => {
+  assert.equal(readLanguage(null), 'en', 'the default is explicit, not undefined');
+  assert.equal(isSupportedLanguage('fr'), false, 'only the languages this app can actually label are accepted');
+  assert.equal(isSupportedLanguage('ta'), true);
+  const profile = toCustomerProfile({ id: OWNER, full_name: 'Ananya', city: 'Jaipur', address_line2: 'Indiranagar', owner_photo_url: 'https://x/y.png' });
+  assert.equal(profile.area, 'Indiranagar');
+  assert.equal(profile.avatarUrl, 'https://x/y.png');
+  assert.equal(profile.language, '', 'the API has no column to read it from, so it answers empty');
+});
+
+test('the salon gallery is the published social_videos rows, nothing more', () => {
+  const gallery = toSalonGallery([
+    { id: 'v1', title: 'Before / after balayage', youtube_url: 'https://youtu.be/abc', thumbnail_url: 'https://img/1.jpg', category_tag: 'REEL' },
+    { id: 'v2', title: '', youtube_url: 'https://youtu.be/def', thumbnail_url: null },
+  ]);
+  assert.equal(gallery.length, 2);
+  assert.equal(gallery[0].kind, 'video');
+  assert.equal(gallery[0].url, 'https://youtu.be/abc');
+  assert.equal(gallery[1].thumbnailUrl, '', 'a missing thumbnail stays missing');
+  assert.equal(toSalonGallery([]).length, 0);
 });
 
 test('favourites are counted from real bookings, newest first', () => {

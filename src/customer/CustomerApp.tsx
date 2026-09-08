@@ -32,6 +32,7 @@ import { BookingsScreen } from './screens/Bookings';
 import { RewardsScreen } from './screens/Rewards';
 import { ActivityScreen } from './screens/Activity';
 import { LocationScreen, ProfileScreen } from './screens/Me';
+import { SettingsScreen } from './screens/Settings';
 import { Button, CARD_CLASS, Chip, MUTED_CLASS } from './ui';
 
 export interface CustomerAppProps {
@@ -57,7 +58,7 @@ const NAV: Array<{ section: CustomerSection; label: string; icon: React.ReactNod
 ];
 
 /** Screens that are meaningless without an account (booking is the whole point). */
-const PRIVATE: CustomerSection[] = ['bookings', 'booking', 'profile', 'wallet', 'qr', 'membership', 'referral', 'notifications', 'favourites', 'reviews', 'offers'];
+const PRIVATE: CustomerSection[] = ['bookings', 'booking', 'profile', 'settings', 'wallet', 'qr', 'membership', 'referral', 'notifications', 'favourites', 'reviews', 'offers'];
 
 export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accentHex: tenantAccentHex = '', tenantSubdomain = '', tenantName = '' }) => {
   const route = useMemo(() => matchCustomerRoute(path), [path]);
@@ -175,6 +176,11 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
   // for the visit: in-app navigation rewrites the URL and drops the query, so
   // reading it per-render would lose the code before the customer ever reaches
   // the booking step that stores it.
+  // "Rebook" on a past visit hands the flow a booking id rather than a
+  // prefilled form: the flow reads the stored row itself, so what gets carried
+  // over is what the database holds, not a snapshot the list happened to render.
+  const [rebookFor, setRebookFor] = useState<{ salonId: string; bookingId: string } | null>(null);
+
   const [referralFromLink] = useState(() => {
     if (typeof window === 'undefined') return '';
     return String(new URLSearchParams(window.location.search).get('ref') || '').trim();
@@ -275,6 +281,8 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
             email={session?.email}
             accentHex={accentHex}
             referralCodeFromLink={referralFromLink}
+            rebookFromId={rebookFor && rebookFor.salonId === route.id ? rebookFor.bookingId : ''}
+            onRebookApplied={() => setRebookFor(null)}
             onRequireAuth={() => requireAuth(customerPath('book', route.id))}
             onOpenBooking={(id) => go('booking', id)}
             onExit={() => (route.id ? go('salon', route.id) : go('home'))}
@@ -290,6 +298,11 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
             refreshToken={refreshToken}
             openBookingId={route.section === 'booking' ? route.id : ''}
             onOpenSalon={(id) => go('salon', id)}
+            onRebook={(booking) => {
+              if (!booking.salonId) return;
+              setRebookFor({ salonId: booking.salonId, bookingId: booking.id });
+              go('book', booking.salonId);
+            }}
             onRequireAuth={() => requireAuth(customerPath('bookings'))}
           />
         );
@@ -338,12 +351,27 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
                 <Button variant="secondary" onClick={() => go('location')}>
                   Location
                 </Button>
+                <Button variant="secondary" onClick={() => go('settings')}>
+                  Settings
+                </Button>
                 <Button variant="ghost" onClick={signOut}>
                   <LogOut className="w-4 h-4" /> Sign out
                 </Button>
               </div>
             </div>
           </div>
+        );
+      case 'settings':
+        return (
+          <SettingsScreen
+            userId={session?.id}
+            email={session?.email}
+            accentHex={accentHex}
+            refreshToken={refreshToken}
+            onSignOut={signOut}
+            onOpenData={() => go('data')}
+            onOpenProfile={() => go('profile')}
+          />
         );
       case 'location':
         return <LocationScreen userId={session?.id} accentHex={accentHex} refreshToken={refreshToken} onDone={() => go('profile')} />;
@@ -420,7 +448,8 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
               (item.section === 'home' && (route.section === 'salon' || route.section === 'book' || route.section === 'location')) ||
               (item.section === 'bookings' && route.section === 'booking') ||
               (item.section === 'wallet' && ['wallet', 'qr', 'membership', 'referral', 'offers'].includes(route.section)) ||
-              (item.section === 'notifications' && ['notifications', 'favourites', 'reviews', 'data'].includes(route.section));
+              (item.section === 'notifications' && ['notifications', 'favourites', 'reviews', 'data'].includes(route.section)) ||
+              (item.section === 'profile' && route.section === 'settings');
             return (
               <button
                 key={item.section}

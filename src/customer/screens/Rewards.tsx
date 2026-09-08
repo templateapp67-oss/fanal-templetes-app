@@ -39,6 +39,7 @@ import {
 import type { Offer, QrPayment, RewardWallet } from '../../lib/customer/types';
 import {
   confirmQrPayment,
+  verifyQrPayment,
   listMyMemberships,
   listOffers,
   listMyQrPayments,
@@ -209,12 +210,41 @@ const Card: React.FC<{ salon: RewardWallet; onOpenSalon?: (id: string) => void }
     </div>
     <div className="flex items-end gap-2 mt-3">
       <p className="text-3xl font-extrabold text-slate-900">{salon.points}</p>
-      <p className={`text-xs pb-1.5 ${MUTED_CLASS}`}>points</p>
+      <p className={`text-xs pb-1.5 ${MUTED_CLASS}`} title="clients.points — the spendable balance">available</p>
       <p className="ml-auto text-xs text-slate-500 pb-1.5">
         {salon.totalSpent ? `${money(salon.totalSpent, salon.currency || '₹')} spent · ` : ''}
         {salon.totalVisits} visit{salon.totalVisits === 1 ? '' : 's'}
       </p>
     </div>
+    <div className="grid grid-cols-2 gap-2 mt-3">
+      <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Lifetime earned</p>
+        <p className="text-sm font-extrabold text-slate-900 mt-0.5" title="clients.lifetime_points, plus every positive row in your ledger">
+          {salon.lifetimeEarned} pts
+        </p>
+      </div>
+      <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Lifetime redeemed</p>
+        <p className="text-sm font-extrabold text-slate-900 mt-0.5" title="Sum of points_spent on your loyalty_redeemed_rewards rows">
+          {salon.lifetimeRedeemed} pts
+        </p>
+      </div>
+    </div>
+    {salon.tierLadder.length ? (
+      <div className="flex flex-wrap items-center gap-1.5 mt-3">
+        {salon.tierLadder.map((tier) => (
+          <span
+            key={tier}
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+              tier === salon.tier ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+            }`}
+            title={tier === salon.tier ? 'Your tier at this salon' : 'Configured in loyalty_config.tier_thresholds'}
+          >
+            {tier}
+          </span>
+        ))}
+      </div>
+    ) : null}
     {salon.nextTier ? (
       <div className="mt-3">
         <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
@@ -345,6 +375,66 @@ const OffersPanel: React.FC<{
 // ---------------------------------------------------------------------------
 // QR payments at the counter
 // ---------------------------------------------------------------------------
+/**
+ * One pending QR row and the only way it can be credited: ask the server to look
+ * the payment up at the gateway. The amount is deliberately absent — typing a
+ * bigger number here must not be able to buy points.
+ */
+const QrVerifyRow: React.FC<{ payment: QrPayment; accentHex: string; onVerified: () => void }> = ({
+  payment,
+  accentHex,
+  onVerified,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [gatewayId, setGatewayId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function verify() {
+    if (!gatewayId.trim()) {
+      setError('The gateway payment id is printed on your payment receipt (it starts with pay_).');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const result = await verifyQrPayment({ paymentId: payment.id, razorpayPaymentId: gatewayId.trim() });
+    setBusy(false);
+    if (!result.ok) {
+      setError(normalizeCustomerErrorMessage(result));
+      return;
+    }
+    setOpen(false);
+    setGatewayId('');
+    onVerified();
+  }
+
+  return (
+    <div className="mt-2">
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)} className="text-[11px] font-bold underline underline-offset-2" style={{ color: accentHex }}>
+          I have the gateway receipt — verify this payment
+        </button>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+          <p className="text-[11px] text-slate-600">
+            What gets credited is whatever the gateway says was captured — not what is entered here.
+          </p>
+          <Field label="Gateway payment id" value={gatewayId} onChange={setGatewayId} placeholder="pay_…" />
+          {error ? <p className="text-[11px] font-semibold text-rose-700">{error}</p> : null}
+          <div className="flex items-center gap-2">
+            <Button busy={busy} onClick={verify} accentHex={accentHex}>
+              Verify with the gateway
+            </Button>
+            <Button variant="ghost" onClick={() => setOpen(false)} accentHex={accentHex}>
+              Not now
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const QrPanel: React.FC<{
   wallets: RewardWallet[];
   state: { data: QrPayment[] | null; loading: boolean; failed: boolean; error: string; reload: () => void; notice: string };
@@ -381,9 +471,14 @@ const QrPanel: React.FC<{
       setMessage({ text: normalizeCustomerErrorMessage(result), kind: 'error' });
       return;
     }
-    const credited = result.data?.payment?.pointsCredited ?? 0;
+    const rewardState = result.data?.payment?.rewardStatus || 'awaiting_verification';
     setMessage({
-      text: `Recorded as ${result.data?.payment?.status || 'pending'}: ${credited} point${credited === 1 ? '' : 's'} ${result.data?.payment?.status === 'pending' ? 'will appear when the salon confirms' : 'credited to your wallet'}.`,
+      text:
+        rewardState === 'credited'
+          ? 'Recorded and credited.'
+          : rewardState === 'below_minimum'
+            ? "Recorded. This amount is below the salon's earning minimum, so it does not earn points."
+            : `Recorded as awaiting verification. ${(result.data as any)?.estimatedPoints ?? 0} point(s) appear once the payment gateway — or the salon — confirms the payment. This screen cannot add points to itself.`,
       kind: 'ok',
     });
     setAmount('');
@@ -416,8 +511,9 @@ const QrPanel: React.FC<{
       <div className={`${CARD_CLASS} p-4 space-y-3`}>
         <p className="text-sm font-bold text-slate-900">I paid by QR — log it</p>
         <p className={`text-xs ${MUTED_CLASS}`}>
-          This writes a `loyalty_point_transactions` row of type `qr_payment` against your client record and credits points the way the salon's
-          configuration says. It does not move money — the money moved in your UPI app.
+          This records the payment as a `loyalty_point_transactions` row of type `qr_payment` on your client row. It does not move money and it does not
+          add points: the entry sits at zero until the payment gateway confirms the amount (or the salon credits it), because a number typed into this form
+          is a claim, not a payment. Payments below ₹100 are recorded but do not earn.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Amount paid (₹)" value={amount} onChange={setAmount} placeholder="e.g. 750" type="number" />
@@ -444,23 +540,48 @@ const QrPanel: React.FC<{
           <p className={`text-sm ${MUTED_CLASS}`}>No QR payments recorded on your client rows yet.</p>
         ) : null}
         <ul className="divide-y divide-slate-100">
-          {(payments || []).slice(0, 20).map((payment) => (
-            <li key={payment.id} className="py-2.5 flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900">
-                  {money(payment.amount, '₹')} · +{payment.pointsCredited} pts
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {payment.salonName ? `${payment.salonName} · ` : ''}
-                  {payment.reference} · {payment.date ? new Date(payment.date).toLocaleString() : ''}
-                </p>
+          {payments.slice(0, 20).map((payment) => (
+            <li key={payment.id} className="py-2.5">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {money(payment.amount, '₹')} · {payment.pointsCredited > 0 ? `+${payment.pointsCredited} pts` : 'points pending'}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {payment.salonName ? `${payment.salonName} · ` : ''}
+                    {payment.reference || 'no reference'} · {payment.date ? new Date(payment.date).toLocaleString() : ''}
+                    {payment.paymentStatus === 'verified' ? ' · gateway-verified' : ''}
+                  </p>
+                </div>
+                <Chip
+                  tone={payment.rewardStatus === 'credited' ? 'success' : payment.rewardStatus === 'below_minimum' ? 'neutral' : 'warn'}
+                  title={
+                    payment.rewardStatus === 'credited'
+                      ? `ledger row and wallet both written${payment.gatewayPaymentId ? ` (gateway ${payment.gatewayPaymentId})` : ''}`
+                      : payment.rewardStatus === 'below_minimum'
+                        ? "recorded, and below the salon's earning minimum"
+                        : 'ledger row written with zero points — the gateway or the salon confirms the amount'
+                  }
+                >
+                  {payment.rewardStatus === 'awaiting_verification'
+                    ? 'awaiting verification'
+                    : payment.rewardStatus === 'below_minimum'
+                      ? 'below minimum'
+                      : 'credited'}
+                </Chip>
               </div>
-              <Chip tone={payment.status === 'credited' ? 'success' : 'warn'} title={payment.status === 'credited' ? 'ledger row + wallet update both written' : 'ledger row written; the salon confirms the amount'}>
-                {payment.status}
-              </Chip>
+              {payment.rewardStatus === 'awaiting_verification' ? (
+                <QrVerifyRow payment={payment} accentHex={accentHex} onVerified={onRecorded} />
+              ) : null}
             </li>
           ))}
         </ul>
+        {payments.some((payment) => payment.rewardStatus === 'awaiting_verification') ? (
+          <p className={`text-[11px] mt-2 ${MUTED_CLASS}`}>
+            Awaiting verification means exactly that: the entry is real, the money has not been confirmed for it yet, and nobody using this app can confirm
+            it themselves.
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -533,6 +654,22 @@ const MembershipPanel: React.FC<{
               ))}
             </ul>
           ) : null}
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            <Chip tone={membership.active ? 'success' : 'warn'} title="loyalty_config.program_enabled is the only on/off switch this schema has for membership">
+              {membership.active ? 'active' : 'program switched off'}
+            </Chip>
+            {membership.startDate ? (
+              <span className="text-[11px] text-slate-500">
+                since {new Date(membership.startDate).toLocaleDateString()}
+              </span>
+            ) : null}
+            <span
+              className="text-[11px] text-slate-500"
+              title="clients has no membership expiry column, and adding one is out of bounds - so there is no end date to show"
+            >
+              {membership.endDate ? `until ${new Date(membership.endDate).toLocaleDateString()}` : 'no end date in this schema'}
+            </span>
+          </div>
           {onOpenSalon && membership.salonId ? (
             <button type="button" onClick={() => onOpenSalon(membership.salonId)} className="text-xs font-bold mt-3 text-slate-900">
               Book at this salon →
