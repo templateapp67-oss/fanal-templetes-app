@@ -38,6 +38,7 @@ import {
   responseAlreadyEnded,
 } from './dbGuard';
 import type { BookingAuthResult, BookingAuthUser } from './bookingAuth';
+import { isMissingTableError } from './safeError';
 
 // Shared with the client UI via src/lib/bookingStatus.ts, so the API and the
 // screens can never disagree about which statuses exist. This list used to be
@@ -799,7 +800,11 @@ export function createBookingHandler(deps: BookingCreateDeps) {
               () => deps.db.from('in_app_notifications').insert(withOwnerEmail),
               { label: `booking notification (${requestId})`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
             );
-            if (notifError) console.warn('[Bookings] Notification insert error:', notifError.message || notifError);
+            if (notifError) {
+              if (!isMissingTableError(notifError, 'in_app_notifications')) {
+                console.warn('[Bookings] Notification insert error:', notifError.message || notifError);
+              }
+            }
           } catch (notifErr: any) {
             console.warn('[Bookings] Notification insert threw:', notifErr?.message || notifErr);
           }

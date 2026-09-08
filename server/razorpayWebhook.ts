@@ -25,7 +25,7 @@
 
 import crypto from 'node:crypto';
 import { runDb, DEFAULT_DB_TIMEOUT_MS, LOOKUP_DB_TIMEOUT_MS, responseAlreadyEnded } from './dbGuard';
-import { sendSafeError } from './safeError';
+import { sendSafeError, isMissingTableError } from './safeError';
 
 /** Events we act on. Anything else is acknowledged and ignored. */
 export const HANDLED_EVENTS = new Set([
@@ -314,7 +314,11 @@ async function applyWebhookToBooking(
         { label: 'Razorpay webhook notification', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
       );
       // A notification failure must never make Razorpay retry a processed event.
-      if (notifResult.error) console.warn('[Razorpay webhook] Notification insert failed:', notifResult.error.message || notifResult.error);
+      if (notifResult.error) {
+        if (!isMissingTableError(notifResult.error, 'in_app_notifications')) {
+          console.warn('[Razorpay webhook] Notification insert failed:', notifResult.error.message || notifResult.error);
+        }
+      }
     } catch (notifErr: any) {
       console.warn('[Razorpay webhook] Notification insert threw:', notifErr?.message || notifErr);
     }

@@ -6,7 +6,8 @@ import {
   RewardThreshold, 
   PointTransaction, 
   RedeemedReward,
-  SalonProfile
+  SalonProfile,
+  Appointment
 } from '../types';
 import { 
   TIER_METADATA, 
@@ -14,6 +15,8 @@ import {
   calculateRewardProgress, 
   generateCouponCode 
 } from '../loyaltyData';
+import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
+import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
 import { getSiteUrl } from '../lib/salonStore';
 
 interface LoyaltyManagementProps {
@@ -23,6 +26,7 @@ interface LoyaltyManagementProps {
   setLoyaltyConfig: React.Dispatch<React.SetStateAction<LoyaltyConfig>>;
   primaryAccentColor?: string;
   profile: SalonProfile;
+  appointments?: Appointment[];
   onNavigateToPreview?: () => void;
 }
 
@@ -33,10 +37,11 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
   setLoyaltyConfig,
   primaryAccentColor = '#0f172a',
   profile,
+  appointments = [],
   onNavigateToPreview,
 }) => {
   // Navigation & Tabs within Loyalty
-  const [activeSubTab, setActiveSubTab] = useState<'members' | 'rewards' | 'rules'>('members');
+  const [activeSubTab, setActiveSubTab] = useState<'members' | 'rewards' | 'rules' | 'analytics'>('members');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedTierFilter, setSelectedTierFilter] = useState<LoyaltyTier | 'all'>('all');
 
@@ -474,6 +479,18 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
           <span className="material-symbols-outlined text-base">tune</span>
           <span>Earning Rules & Tier Thresholds</span>
         </button>
+
+        <button
+          onClick={() => setActiveSubTab('analytics')}
+          className={`pb-3 text-xs font-bold font-mono-caps flex items-center gap-2 border-b-2 cursor-pointer transition-colors ${
+            activeSubTab === 'analytics'
+              ? 'border-gray-900 text-gray-900 font-extrabold'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base">bar_chart</span>
+          <span>Top Clients Tier Distribution Chart</span>
+        </button>
       </div>
 
       {/* ========================================================================= */}
@@ -579,7 +596,17 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
                     </div>
                   </div>
 
-                  {/* MIDDLE: LOYALTY PROGRESS BAR TO NEXT REWARD */}
+                  {/* MIDDLE 1: LOYALTY TIER PROGRESSION BAR */}
+                  <LoyaltyTierProgressBar
+                    lifetimePoints={client.lifetimePoints || client.points || 0}
+                    currentPoints={client.points}
+                    tierThresholds={loyaltyConfig.tierThresholds}
+                    tierMultipliers={loyaltyConfig.tierMultipliers}
+                    variant="compact"
+                    showPerks={true}
+                  />
+
+                  {/* MIDDLE 2: LOYALTY PROGRESS BAR TO NEXT REWARD */}
                   <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex flex-col gap-2">
                     <div className="flex justify-between items-center text-xs">
                       <span className="font-bold text-gray-700 flex items-center gap-1">
@@ -992,6 +1019,22 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
       )}
 
       {/* ========================================================================= */}
+      {/* SUB-TAB 4: TOP CLIENTS TIER DISTRIBUTION BAR CHART & VIP ANALYTICS */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'analytics' && (
+        <TopClientsLoyaltyChart
+          clients={clients}
+          appointments={appointments}
+          loyaltyConfig={loyaltyConfig}
+          primaryAccentColor={primaryAccentColor}
+          onSelectClient={(client) => {
+            setSearchQuery(client.name);
+            setActiveSubTab('members');
+          }}
+        />
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL 1: ADD / EDIT REWARD THRESHOLD */}
       {/* ========================================================================= */}
       {isAddRewardModalOpen && (
@@ -1329,6 +1372,21 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
               >
                 ✕
               </button>
+            </div>
+
+            {/* FULL VIP TIER ROADMAP */}
+            <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200">
+              <label className="text-[11px] font-bold font-mono-caps text-gray-700 block mb-2">
+                VIP Tier Progress & Roadmap
+              </label>
+              <LoyaltyTierProgressBar
+                lifetimePoints={historyClient.lifetimePoints || historyClient.points || 0}
+                currentPoints={historyClient.points}
+                tierThresholds={loyaltyConfig.tierThresholds}
+                tierMultipliers={loyaltyConfig.tierMultipliers}
+                variant="roadmap"
+                showPerks={true}
+              />
             </div>
 
             {/* Vouchers Claimed */}

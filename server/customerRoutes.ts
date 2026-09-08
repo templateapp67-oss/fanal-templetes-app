@@ -95,7 +95,7 @@ import {
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
 } from './dbGuard';
-import { safeDatabaseError, sendSafeError } from './safeError';
+import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError';
 
 export interface CustomerRoutesDeps {
   db: any;
@@ -1423,7 +1423,9 @@ async function bestEffortNotification(
       retry: false,
     });
     if (error) {
-      console.warn('[Customer] Notification insert failed (action kept):', error.message || error);
+      if (!isMissingTableError(error, 'in_app_notifications')) {
+        console.warn('[Customer] Notification insert failed (action kept):', error.message || error);
+      }
       return 0;
     }
     return 1;
@@ -2197,8 +2199,13 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
           deadlineAt,
           retry: false,
         });
-        if (notif.error) console.warn(`[Customer] (${requestId}) Notification insert failed (booking kept):`, notif.error.message || notif.error);
-        else notificationsWritten = notifRows.length;
+        if (notif.error) {
+          if (!isMissingTableError(notif.error, 'in_app_notifications')) {
+            console.warn(`[Customer] (${requestId}) Notification insert failed (booking kept):`, notif.error.message || notif.error);
+          }
+        } else {
+          notificationsWritten = notifRows.length;
+        }
       } catch (err: any) {
         console.warn(`[Customer] (${requestId}) Notification step threw (booking kept):`, err?.message || err);
       }
@@ -3653,9 +3660,21 @@ export function createMyNotificationsHandler(deps: CustomerRoutesDeps) {
             .limit(100),
         { label: 'customer notifications', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
       );
-      if (error) return void fail(res, requestId, error, 'Your notifications could not be loaded.');
+      if (error) {
+        if (isMissingTableError(error, 'in_app_notifications')) {
+          const rows = deps
+            .getMockNotifications()
+            .filter((row: any) => String(row.user_email).toLowerCase() === String(user.email).toLowerCase())
+            .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
+          return void ok(res, deps, requestId, rows.map(toCustomerNotification));
+        }
+        return void fail(res, requestId, error, 'Your notifications could not be loaded.');
+      }
       ok(res, deps, requestId, (Array.isArray(data) ? data : []).map(toCustomerNotification));
     } catch (err: any) {
+      if (isMissingTableError(err, 'in_app_notifications')) {
+        return void ok(res, deps, requestId, []);
+      }
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your notifications could not be loaded.' });
     }
   };
@@ -3691,9 +3710,24 @@ export function createMarkReadHandler(deps: CustomerRoutesDeps) {
             .select('id'),
         { label: 'mark notifications read', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
       );
-      if (error) return void fail(res, requestId, error, 'Your notifications could not be marked as read.');
+      if (error) {
+        if (isMissingTableError(error, 'in_app_notifications')) {
+          let updated = 0;
+          for (const row of deps.getMockNotifications()) {
+            if (String(row.user_email).toLowerCase() === String(user.email).toLowerCase() && !row.is_read) {
+              row.is_read = true;
+              updated += 1;
+            }
+          }
+          return void ok(res, deps, requestId, { updated });
+        }
+        return void fail(res, requestId, error, 'Your notifications could not be marked as read.');
+      }
       ok(res, deps, requestId, { updated: Array.isArray(data) ? data.length : 0 });
     } catch (err: any) {
+      if (isMissingTableError(err, 'in_app_notifications')) {
+        return void ok(res, deps, requestId, { updated: 0 });
+      }
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your notifications could not be marked as read.' });
     }
   };
