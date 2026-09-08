@@ -36,6 +36,8 @@ import { WebsiteSavedModal } from './WebsiteSavedModal';
 import { GuestModeBanner } from './GuestModeBanner';
 import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
+import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';
+import { GooglePlacesAutocompleteInput } from './GooglePlacesAutocompleteInput';
 
 interface WebsiteEditorProps {
   profile: SalonProfile;
@@ -88,6 +90,33 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
   const upd = (patch: Partial<SalonProfile>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
+
+  // Automatically geocode address with Google Maps API when profile.address updates
+  React.useEffect(() => {
+    if (!profile.address || profile.address.trim().length < 5) return;
+
+    const timer = setTimeout(async () => {
+      const result = await geocodeAddressWithGoogleMaps(profile.address);
+      if (result) {
+        setProfile((prev) => {
+          // Avoid triggering unnecessary re-renders if coordinates haven't changed significantly
+          if (
+            Math.abs((prev.latitude || 0) - result.lat) < 0.0001 &&
+            Math.abs((prev.longitude || 0) - result.lng) < 0.0001
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            latitude: result.lat,
+            longitude: result.lng,
+          };
+        });
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [profile.address, setProfile]);
 
   // -- Services ------------------------------------------------
   const addService = () => {
@@ -391,20 +420,26 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Physical Address / Location <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <MapPin className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={profile.address}
-                  onChange={(e) => upd({ address: e.target.value })}
-                  placeholder="Plot 42, Road No 36, Jubilee Hills"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                />
-              </div>
+            <div className="md:col-span-2">
+              <GooglePlacesAutocompleteInput
+                value={profile.address}
+                onChange={(val) => upd({ address: val })}
+                latitude={profile.latitude}
+                longitude={profile.longitude}
+                label="Physical Address / Location (Google Places Autocomplete API)"
+                onAddressSelected={(selectedAddr, lat, lng, comps) => {
+                  upd({
+                    address: selectedAddr,
+                    latitude: lat,
+                    longitude: lng,
+                    city: comps?.city || profile.city,
+                    postalCode: comps?.pincode || profile.postalCode,
+                  });
+                }}
+                onCoordinatesUpdate={(lat, lng) => {
+                  upd({ latitude: lat, longitude: lng });
+                }}
+              />
             </div>
 
             <div className="md:col-span-2">

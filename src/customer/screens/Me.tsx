@@ -31,6 +31,7 @@ import {
 import { readSearchHistory, clearSearchHistory } from '../../lib/customer/deviceStore';
 import type { CustomerLocation, CustomerProfile } from '../../lib/customer/types';
 import { Button, CARD_CLASS, Chip, ConnectionNotice, ErrorState, Field, LoadingRows, MUTED_CLASS, SourceChip, StatTile } from '../ui';
+import { GoogleMapsView } from '../../components/GoogleMapsView';
 
 export interface MeScreenProps {
   userId?: string | null;
@@ -413,6 +414,35 @@ export const LocationScreen: React.FC<MeScreenProps & { onDone?: () => void }> =
           <StatTile label="Coordinates" value={location?.latitude !== null && location?.latitude !== undefined ? `${location.latitude.toFixed(3)}, ${Number(location.longitude).toFixed(3)}` : 'not shared'} hint={location?.source === 'gps' ? 'from this device GPS' : 'tap Use GPS for distance sorting'} />
           <StatTile label="Last updated" value={location?.updatedAt ? new Date(location.updatedAt).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'} />
           <StatTile label="Saved searches" value={String(recentSearches)} hint="this device only — no history table exists" />
+        </div>
+
+        {/* Live Interactive Google Map */}
+        <div className="mt-5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 block">
+            Location Map Preview
+          </label>
+          <GoogleMapsView
+            latitude={location?.latitude ?? 19.0760}
+            longitude={location?.longitude ?? 72.8777}
+            title={location?.city ? `Salons near ${location.city}` : 'Your Selected Location'}
+            address={location?.city ? `${location.city}, India` : 'Mumbai, Maharashtra, India'}
+            height="260px"
+            zoom={13}
+            interactive={true}
+            accentColor={accentHex}
+            onPositionChange={(lat, lng) => {
+              const updated: CustomerLocation = {
+                city: location?.city || cityDraft || 'Selected Location',
+                latitude: lat,
+                longitude: lng,
+                label: `Pinned (${lat.toFixed(3)}, ${lng.toFixed(3)})`,
+                source: 'gps',
+                updatedAt: new Date().toISOString(),
+              };
+              setLocation(updated);
+              writeLocation(userId, updated);
+            }}
+          />
         </div>
       </div>
 
