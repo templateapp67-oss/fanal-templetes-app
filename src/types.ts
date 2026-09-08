@@ -305,6 +305,10 @@ export interface LoyaltyConfig {
   programEnabled: boolean;
   pointsPerVisit: number;
   pointsPerHundredSpent: number;
+  /** Points credited at check-in when the visit date matches the customer's birthday (0 disables). */
+  birthdayBonusPoints?: number;
+  /** Points credited to the referrer wallet when a referred booking is checked in (0 disables). */
+  referralBonusPoints?: number;
   tierThresholds: {
     bronze: number;
     silver: number;

@@ -18,6 +18,7 @@ import {
   createNotificationsReadHandler,
   type BookingRoutesDeps,
 } from "../server/bookingRoutes";
+import { createBookingCheckinHandler } from "../server/bookingCheckin";
 import { registerCustomerRoutes } from "../server/customerRoutes";
 import {
   createMyBookingsListHandler,
@@ -515,6 +516,7 @@ app.post("/api/bookings/mine/review", withRequestTimeout(API_REQUEST_TIMEOUT_MS)
 app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
 app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingGetHandler(bookingRouteDeps)));
 app.post("/api/bookings/update", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingUpdateHandler(bookingRouteDeps)));
+  app.post("/api/bookings/check-in", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingCheckinHandler(bookingRouteDeps)));
 app.get("/api/notifications", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createNotificationsListHandler(bookingRouteDeps)));
 app.post("/api/notifications/read", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createNotificationsReadHandler(bookingRouteDeps)));
 // ============================================================================

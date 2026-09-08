@@ -10,6 +10,8 @@ import {
   RefreshCw,
   CircleCheckBig,
   UserX,
+  UserCheck,
+  ScanLine,
 } from 'lucide-react';
 import { CustomerBookingPortal } from './CustomerBookingPortal';
 import { BookingStatusBadge } from './BookingStatusBadge';
@@ -41,6 +43,9 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [demoCustomerId, setDemoCustomerId] = useState<string | null>(null);
+  const [passInput, setPassInput] = useState('');
+  const [checkinBusy, setCheckinBusy] = useState<string | null>(null);
+  const [checkinFeedback, setCheckinFeedback] = useState<{ tone: 'ok' | 'warn'; lines: string[] } | null>(null);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
   const mountedRef = useRef(true);
@@ -109,6 +114,63 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
     };
   }, [fetchBookings]);
 
+  /** Salon check-in — by pass code or by booking row (see server/bookingCheckin.ts). */
+  const handleCheckIn = async (target: { code?: string; bookingId?: string }) => {
+    const busyKey = target.bookingId || 'code';
+    setCheckinBusy(busyKey);
+    setCheckinFeedback(null);
+    setActionError('');
+    try {
+      const res = await fetch(`/api/bookings/check-in${scopeQuery}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target.code ? { code: target.code } : { booking_id: target.bookingId }),
+      });
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
+      if (!res.ok || !json?.success) {
+        const message = json?.error || (text ? `HTTP ${res.status} — ${text.slice(0, 160)}` : `HTTP ${res.status}`);
+        setCheckinFeedback({ tone: 'warn', lines: [message] });
+        return;
+      }
+      const data = json.data || {};
+      const credits: any[] = data.credits || [];
+      const lines: string[] = [];
+      if (json.duplicate) {
+        lines.push('Already checked in today — nothing was changed.');
+      } else {
+        const who = data.booking?.customer_name ? ` for ${data.booking.customer_name}` : '';
+        lines.push(`Checked in${who} — ${data.booking?.service_name || 'appointment'} at ${data.booking?.time_slot || ''}.`);
+      }
+      for (const credit of credits) {
+        if (credit.status === 'credited') lines.push(`+${credit.points} points — ${credit.label}.`);
+        else if (credit.status === 'planned') lines.push(`${credit.label} would earn ${credit.points} points (no ledger in demo mode).`);
+        else if (credit.reason) lines.push(`${credit.label} skipped — ${credit.reason}`);
+      }
+      if (json.notice && !lines.some((line) => line === json.notice)) lines.push(json.notice);
+      setCheckinFeedback({ tone: json.duplicate ? 'warn' : 'ok', lines: lines.length ? lines : ['Checked in.'] });
+      setPassInput('');
+      void fetchBookings();
+    } catch (err: any) {
+      setCheckinFeedback({ tone: 'warn', lines: [err?.message || 'Check-in failed. Please try again.'] });
+    } finally {
+      setCheckinBusy(null);
+    }
+  };
+
+  /** Only today's open rows can be checked in (the API enforces this too). */
+  const isCheckinableRow = (b: any) =>
+    ['pending', 'confirmed', 'reschedule_proposed', 'reschedule_requested'].includes(String(b?.status)) &&
+    String(b?.booking_date) === new Date().toLocaleDateString('en-CA');
+
+  /** Whether the code the receptionist pasted is non-empty and plausible. */
+  const hasPassInput = /^fanal[-\s]?[A-Za-z0-9_-]+$/i.test(String(passInput).trim().replace(/\s+/g, ''));
+
   const handleUpdateStatus = async (id: string, status: string, proposedDate?: string, proposedTime?: string) => {
     setActionError('');
     setUpdatingId(id);
@@ -152,6 +214,55 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
               title="Refresh now"
             >
               <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
+        </div>
+
+        {checkinFeedback && (
+          <div
+            className={`mb-4 flex items-start gap-2 p-3 rounded-xl border text-xs ${
+              checkinFeedback.tone === 'ok'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-amber-50 border-amber-300 text-amber-900'
+            }`}
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              {checkinFeedback.lines.map((line, index) => (
+                <p key={index}>{line}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-4 p-4 rounded-2xl border border-slate-200 bg-slate-50/60">
+          <div className="flex items-center gap-2 mb-2">
+            <ScanLine className="w-4 h-4 text-slate-500" />
+            <h3 className="text-xs font-mono-caps font-bold text-slate-700 uppercase tracking-wider">Salon check-in</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            The customer shows their Salon pass (QR or code) on the customer app. Paste or type the{' '}
+            <span className="font-mono font-bold">FANAL-…</span> code here — the pass resolves to their account, so today's
+            open booking is checked in and the configured visit bonuses (birthday / referral) are credited.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              value={passInput}
+              onChange={(event) => setPassInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && hasPassInput && checkinBusy !== 'code') handleCheckIn({ code: passInput });
+              }}
+              placeholder="FANAL-…"
+              className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-slate-300"
+            />
+            <button
+              type="button"
+              disabled={!hasPassInput || checkinBusy !== null}
+              onClick={() => handleCheckIn({ code: passInput })}
+              className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              <UserCheck className="w-4 h-4" />
+              {checkinBusy === 'code' ? 'Checking in…' : 'Check in'}
             </button>
           </div>
         </div>
@@ -230,10 +341,31 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
                         <button onClick={() => setSelectedBooking(b)} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Suggest New Time">
                           <Edit2 className="w-4 h-4" />
                         </button>
+
+                        {isCheckinableRow(b) && (
+                          <button
+                            disabled={checkinBusy !== null || updatingId === b.id}
+                            onClick={() => handleCheckIn({ bookingId: b.id })}
+                            className="p-1.5 bg-violet-100 text-violet-700 rounded hover:bg-violet-200 disabled:opacity-40"
+                            title="Check in — customer arrived today"
+                          >
+                            {checkinBusy === b.id ? <span className="block w-4 h-4 animate-pulse rounded-full bg-violet-300" /> : <UserCheck className="w-4 h-4" />}
+                          </button>
+                        )}
                       </div>
                     )}
                     {b.status === 'confirmed' && (
                       <div className="flex items-center justify-end gap-2">
+                        {isCheckinableRow(b) && (
+                          <button
+                            disabled={checkinBusy !== null || updatingId === b.id}
+                            onClick={() => handleCheckIn({ bookingId: b.id })}
+                            className="p-1.5 bg-violet-100 text-violet-700 rounded hover:bg-violet-200 disabled:opacity-40"
+                            title="Check in — customer arrived today (credits visit bonuses)"
+                          >
+                            {checkinBusy === b.id ? <span className="block w-4 h-4 animate-pulse rounded-full bg-violet-300" /> : <UserCheck className="w-4 h-4" />}
+                          </button>
+                        )}
                         <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'completed')} className="p-1.5 bg-sky-100 text-sky-700 rounded hover:bg-sky-200 disabled:opacity-40" title="Mark Completed">
                           <CircleCheckBig className="w-4 h-4" />
                         </button>

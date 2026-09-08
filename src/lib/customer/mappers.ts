@@ -195,6 +195,7 @@ export function toCustomerProfile(row: any): CustomerProfile {
     // refuses it on a salon row. Read is fine; the guard is on the way in.
     area: str(row?.address_line2),
     address: str(row?.full_address),
+    dateOfBirth: typeof row?.date_of_birth === 'string' ? row.date_of_birth.slice(0, 10) : undefined,
     avatarUrl: str(row?.owner_photo_url),
     postalCode: str(row?.postal_code),
     state: str(row?.state),
@@ -300,10 +301,11 @@ export function toCustomerStaff(row: any): CustomerStaff {
 /**
  * `booking_services` line items, read out of `bookings.metadata.services`.
  *
- * Falls back to the booking's own single-service columns, because bookings
- * created before the customer app (or by the public site's BookingModal) only
- * carry `service_id`/`service_name`. A list built from those rows is still a
- * one-line item list, so every screen renders lines uniformly.
+ * Falls back to the booking's own single-service columns for rows created
+ * before the structured-lines convention existed (older customer-app builds,
+ * older public-site BookingModal writes). Rows written by the current customer
+ * app and the public site's modal both carry the full ordered line list, so
+ * every screen renders lines uniformly either way.
  */
 export function toBookingServiceLines(row: any): BookingServiceLine[] {
   const raw = jsonValue(row, 'services');

@@ -62,6 +62,8 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfig = {
   programEnabled: true,
   pointsPerVisit: 50,
   pointsPerHundredSpent: 10, // 10 pts per ₹100 spent (10% back in points)
+  birthdayBonusPoints: 250, // annual birthday-visit bonus, credited at check-in
+  referralBonusPoints: 100, // credited to the referrer when their referral checks in
   tierThresholds: {
     bronze: 0,
     silver: 300,

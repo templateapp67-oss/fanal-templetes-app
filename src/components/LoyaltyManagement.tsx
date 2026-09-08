@@ -900,6 +900,56 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
                     <span className="text-xs text-gray-500">points per ₹100 spent ({loyaltyConfig.pointsPerHundredSpent}% cashback value)</span>
                   </div>
                 </div>
+
+                <div className="border-t border-gray-200 pt-3">
+                  <p className="text-[11px] font-bold font-mono-caps text-gray-400 mb-2">
+                    Visit bonuses — credited when the salon checks a customer in
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                        Birthday Bonus Points
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={loyaltyConfig.birthdayBonusPoints ?? 250}
+                          onChange={(e) =>
+                            setLoyaltyConfig((prev) => ({
+                              ...prev,
+                              birthdayBonusPoints: Number(e.target.value),
+                            }))
+                          }
+                          className="w-32 p-2.5 rounded-xl border border-gray-300 font-mono font-bold text-xs bg-white text-gray-900"
+                        />
+                        <span className="text-xs text-gray-500">once a year, when the visit lands on their birthday (0 = off)</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                        Referral Bonus Points
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={loyaltyConfig.referralBonusPoints ?? 100}
+                          onChange={(e) =>
+                            setLoyaltyConfig((prev) => ({
+                              ...prev,
+                              referralBonusPoints: Number(e.target.value),
+                            }))
+                          }
+                          className="w-32 p-2.5 rounded-xl border border-gray-300 font-mono font-bold text-xs bg-white text-gray-900"
+                        />
+                        <span className="text-xs text-gray-500">to the referrer, when a referral booking is checked in (0 = off)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

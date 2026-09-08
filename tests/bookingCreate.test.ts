@@ -10,6 +10,7 @@ import {
 import { authenticateBookingRequest } from '../server/bookingAuth';
 import { sanitizeBookingRow } from '../server/bookingOps';
 import { toBookingDetailView } from '../src/lib/bookingDetail';
+import { toCustomerBookingCard } from '../src/lib/bookingTabs';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const OTHER_OWNER = '3f0d9a2e-5c4b-4a1d-8b7e-11223344aabb';
@@ -742,9 +743,11 @@ test('an empty or whitespace note is not stored', () => {
 });
 
 test('add-ons survive sanitizeBookingRow, which keeps only shallow primitives', () => {
-  // safeMetadataObject drops nested objects and arrays outright, so an array of
-  // {name, price} objects would vanish here and the detail page would show only
-  // the primary service. Pinning the round trip is what stops that regressing.
+  // safeMetadataObject drops nested objects and arrays outright (the one
+  // deliberate exception is the structured `metadata.services` key), so an
+  // array of {name, price} objects would vanish here and the detail page would
+  // show only the primary service. Pinning the round trip is what stops that
+  // regressing for the legacy add-ons path.
   const result = validateBookingPayload({
     ...VALID_BOOKING,
     service_addons: [
@@ -791,4 +794,145 @@ test('a persisted booking reads back as every service the customer picked', () =
   assert.equal(view.staffName, 'Ananya');
   assert.equal(view.salonName, 'Luxe Salon');
   assert.equal(view.customerNote, 'Ring the bell');
+});
+
+// ---------------------------------------------------------------------------
+// Structured multi-service lines — bookings.metadata.services
+// ---------------------------------------------------------------------------
+
+test('structured service lines are stored under metadata.services with a derived parent row', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_id: 'hs-1',
+    service_name: 'Master Stylist Precision Cut',
+    services: [
+      { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+      { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+      { service_id: 'hs-4', name: 'Full Set Gel-X Nails', price: 2400, duration_minutes: 90 },
+    ],
+    total_amount: 8350,
+    advance_paid_amount: 2088,
+  });
+  assert.ok(result.valid, result.errors.join(' '));
+  const row = sanitizeBookingRow({ ...result.value, user_id: 'mock-user-1' });
+  // Parent row follows the customer-app convention: first id + joined names.
+  assert.equal(row.metadata.service_id, 'hs-1');
+  assert.equal(
+    row.service_name,
+    'Master Stylist Precision Cut + Signature Caramel Balayage + Full Set Gel-X Nails'
+  );
+  assert.deepEqual(row.metadata.services, [
+    { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+    { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+    { service_id: 'hs-4', name: 'Full Set Gel-X Nails', price: 2400, duration_minutes: 90 },
+  ]);
+  assert.equal(row.metadata.duration_minutes, 285);
+});
+
+test('the parent service_name is rebuilt from the lines when the scalar only names the primary', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_name: 'Master Stylist Precision Cut',
+    service_id: 'hs-1',
+    services: [
+      { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+      { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+    ],
+  });
+  assert.ok(result.valid, result.errors.join(' '));
+  assert.equal(result.value.service_name, 'Master Stylist Precision Cut + Signature Caramel Balayage');
+  assert.equal(result.value.service_id, 'hs-1');
+  assert.deepEqual(result.value.metadata.services, [
+    { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+    { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+  ]);
+  assert.equal(result.value.metadata.duration_minutes, 195);
+});
+
+test('services alone satisfy the service requirement when no service_name is sent', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_name: '',
+    services: [{ service_id: 'hs-1', name: 'Hair Spa', price: 1200, duration_minutes: 60 }],
+  });
+  assert.ok(result.valid, result.errors.join(' '));
+  assert.equal(result.value.service_name, 'Hair Spa');
+});
+
+test('service lines accept camelCase keys and unit_price, and drop unusable entries', () => {
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    services: [
+      { serviceId: 'hs-1', service_name: 'Master Stylist Precision Cut', unit_price: 750, durationMinutes: 45 },
+      // No id: kept by name, priced zero like the customer-app fallback path.
+      { name: 'Head Massage', price: 300, duration_minutes: 15 },
+      null,
+      5,
+      { name: '   ' },
+    ],
+  });
+  assert.ok(result.valid, result.errors.join(' '));
+  assert.deepEqual(result.value.metadata.services, [
+    { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+    { service_id: '', name: 'Head Massage', price: 300, duration_minutes: 15 },
+  ]);
+  assert.equal(result.value.metadata.duration_minutes, 60);
+});
+
+test('a multi-service booking reads back as every service in detail and on the card', () => {
+  // The full path: client payload -> validated value -> sanitized row -> the
+  // view models the detail page and "My Bookings" cards render.
+  const result = validateBookingPayload({
+    ...VALID_BOOKING,
+    service_name: 'Master Stylist Precision Cut',
+    salon_name: 'Arts By Uma',
+    stylist_name: 'Ananya',
+    services: [
+      { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+      { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+    ],
+    total_amount: 5950,
+    advance_paid_amount: 1488,
+  });
+  const stored = sanitizeBookingRow({ ...result.value, id: 'mock-bk-1', user_id: 'mock-user-1' });
+  const view = toBookingDetailView({ row: stored });
+  assert.deepEqual(view.services, ['Master Stylist Precision Cut', 'Signature Caramel Balayage']);
+  const card = toCustomerBookingCard(stored, Date.now());
+  assert.equal(card.serviceName, 'Master Stylist Precision Cut + Signature Caramel Balayage');
+});
+
+test('an authenticated mock booking with several services stores the structured lines', async () => {
+  const stored: any[] = [];
+  const handler = createBookingHandler(
+    baseDeps({
+      isMock: true,
+      addMockBooking: (row: any) => stored.push(row),
+      authenticateUser: async () => ({ ok: true, user: { id: 'customer-1' } }),
+    })
+  );
+  const res = makeRes();
+  await handler(
+    {
+      body: {
+        booking: {
+          ...VALID_BOOKING,
+          services: [
+            { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+            { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+          ],
+          total_amount: 5950,
+        },
+        notifications: [],
+      },
+      headers: {},
+    },
+    res
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(stored.length, 1);
+  const row = stored[0];
+  assert.equal(row.service_name, 'Master Stylist Precision Cut + Signature Caramel Balayage');
+  assert.equal(row.metadata.services.length, 2);
+  assert.equal(row.metadata.services[1].price, 5200);
+  assert.equal(row.metadata.duration_minutes, 195);
 });

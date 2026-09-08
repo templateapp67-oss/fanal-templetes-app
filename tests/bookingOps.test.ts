@@ -192,3 +192,69 @@ test('the owner notification uses the human label, not the raw column value', ()
   assert.ok(!notifs!.owner.message.includes('_'), notifs!.owner.message);
   assert.equal(notifs!.owner.message, "Riya Sharma's booking was marked no-show.");
 });
+
+// ============================================================================
+// Structured multi-service lines — metadata.services is the ONE nested key
+// the sanitizer keeps, everything else stays shallow
+// ============================================================================
+
+test('sanitizeBookingRow keeps structured metadata.services lines', () => {
+  const row = sanitizeBookingRow({
+    customer_name: 'Riya Sharma',
+    service_id: 'hs-1',
+    service_name: 'Cut + Balayage',
+    metadata: {
+      salon_name: 'Arts By Uma',
+      services: [
+        { service_id: 'hs-1', name: 'Cut', price: 750, duration_minutes: 45 },
+        { service_id: 'hs-3', name: 'Balayage', price: 5200, duration_minutes: 150 },
+      ],
+      duration_minutes: 195,
+    },
+  });
+  assert.deepEqual(row.metadata.services, [
+    { service_id: 'hs-1', name: 'Cut', price: 750, duration_minutes: 45 },
+    { service_id: 'hs-3', name: 'Balayage', price: 5200, duration_minutes: 150 },
+  ]);
+  assert.equal(row.metadata.duration_minutes, 195);
+  assert.equal(row.metadata.salon_name, 'Arts By Uma');
+});
+
+test('nested values under ANY other metadata key are still dropped', () => {
+  const row = sanitizeBookingRow({
+    customer_name: 'Riya Sharma',
+    service_name: 'Cut',
+    metadata: {
+      services: [{ service_id: 'hs-1', name: 'Cut', price: 750, duration_minutes: 45 }],
+      requested_slot: { date: '2026-10-02', time: '11:30' },
+      arbitrary_nested: [{ sneaky: true }],
+      deposit_policy: { require_deposit: true },
+    },
+  });
+  assert.equal(row.metadata.services.length, 1);
+  assert.ok(!('requested_slot' in row.metadata));
+  assert.ok(!('arbitrary_nested' in row.metadata));
+  assert.ok(!('deposit_policy' in row.metadata));
+});
+
+test('service lines are capped, junk entries are dropped, and fields are normalized', () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    service_id: `s-${i}`,
+    name: `Service ${i}`,
+    price: 100,
+    duration_minutes: 10,
+  }));
+  const row = sanitizeBookingRow({
+    customer_name: 'Riya Sharma',
+    service_name: 'Many',
+    metadata: {
+      services: [...many, null, 5, { name: '   ' }, { name: 'x'.repeat(500), price: -5, duration_minutes: '30' }],
+    },
+  });
+  assert.equal(row.metadata.services.length, 20);
+  assert.equal(row.metadata.services[19].name, 'Service 19');
+  const junkFree = row.metadata.services.every(
+    (line: any) => line.service_id && line.name && line.price >= 0 && line.duration_minutes > 0
+  );
+  assert.ok(junkFree);
+});

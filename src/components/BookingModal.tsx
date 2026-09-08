@@ -22,7 +22,9 @@ import {
   Wallet,
   AlertCircle,
   ChevronRight,
-  Lock
+  Lock,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
 import { payAdvanceWithRazorpay, type PaymentGatewayMode, type RazorpayOutcome } from '../lib/razorpayCheckout';
@@ -112,6 +114,8 @@ const TIME_SLOTS = [
 
 const LOCAL_STORAGE_GUEST_KEY = 'salon_guest_booking_info';
 
+const formatIndianMoney = (value: number) => (value || 0).toLocaleString('en-IN');
+
 export const BookingModal: React.FC<BookingModalProps> = ({
   isOpen,
   onClose,
@@ -167,17 +171,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   // Step 1: Branch, Service & Specialist
   const [selectedBranch, setSelectedBranch] = useState<string>('main');
-  const [selectedService, setSelectedService] = useState<SalonService>(
-    initialService || (services && services[0]) || {
-      id: 'default',
-      name: 'Signature Service',
-      category: 'Hair',
-      durationMinutes: 45,
-      price: 1200,
-      description: 'Standard treatment',
-      icon: 'sparkles'
-    }
-  );
+  // MULTI-SERVICE selection: customers can tick several treatments (e.g.
+  // haircut + balayage + nails) and every later step — totals, draft, payment
+  // and confirmation — works from the whole array. Order = click order; the
+  // first entry is the "primary" service used for the single-service fields
+  // the salon database still stores (bookings.service_id/service_name).
+  const [selectedServices, setSelectedServices] = useState<SalonService[]>(() => {
+    const initial = initialService || (services && services[0]);
+    return initial ? [initial] : [];
+  });
   const [selectedUpgrades, setSelectedUpgrades] = useState<SalonService[]>([]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(
     initialStylist || (stylists && stylists[0]) || ANY_SPECIALIST
@@ -298,12 +300,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   }, []);
 
-  // Synchronize initialService when changed
+  // Synchronize the *starting* service whenever the modal opens or is retargeted
+  // (service-card "Book" buttons and "Rebook" pre-select one service in the
+  // caller before opening). Reset to just that service so a previous session's
+  // multi-selection never leaks into a new booking. While the modal stays open
+  // the effect does not refire (isOpen unchanged, same target id), so choices
+  // made inside the flow — and while navigating steps — are never clobbered.
+  const targetServiceId = initialService?.id ?? null;
   useEffect(() => {
-    if (initialService && initialService.id !== selectedService?.id) {
-      setSelectedService(initialService);
-    }
-  }, [initialService, selectedService]);
+    if (!isOpen) return;
+    const target = initialService || (services && services[0]) || null;
+    setSelectedServices(target ? [target] : []);
+    setSelectedUpgrades([]);
+  }, [isOpen, targetServiceId]);
+
+  // Catalog loaded after the modal opened (first load): seed the default pick.
+  useEffect(() => {
+    if (!isOpen || selectedServices.length > 0 || services.length === 0) return;
+    setSelectedServices([services[0]]);
+  }, [isOpen, services, selectedServices.length]);
 
   // Offer to resume a draft whose payment was interrupted (same salon only,
   // unpaid, less than 30 minutes old). Checked once per open.
@@ -481,9 +496,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // when the order is created, so the ₹ on the button and the paise in the
   // Razorpay order can never disagree (src/lib/advanceDeposit.ts).
   const homeServiceCharge = bookingType === 'home' ? (profile.homeService?.baseCharge || 0) : 0;
+  // Combined totals over EVERY chosen service (+ optional add-ons + home visit
+  // fee). These drive the live summary bar, the deposit maths, the payment
+  // step and the confirmation — always the sum of what the customer picked.
+  const servicesTotalPrice = selectedServices.reduce((sum, service) => sum + service.price, 0);
+  const servicesTotalMinutes = selectedServices.reduce((sum, service) => sum + (service.durationMinutes || 0), 0);
   const upgradesPrice = selectedUpgrades.reduce((sum, upgrade) => sum + upgrade.price, 0);
-  const totalAmount = selectedService.price + homeServiceCharge + upgradesPrice;
+  const upgradesTotalMinutes = selectedUpgrades.reduce((sum, upgrade) => sum + (upgrade.durationMinutes || 0), 0);
+  const totalAmount = servicesTotalPrice + upgradesPrice + homeServiceCharge;
+  const totalDurationMinutes = servicesTotalMinutes + upgradesTotalMinutes;
   const depositPercent = DEFAULT_DEPOSIT_PERCENT;
+  // First-picked treatment — drives the single-service columns the database
+  // still stores and the add-on suggestions shown on step 2.
+  const primarySelectedService: SalonService | null = selectedServices[0] || null;
+  // Optional-upgrades list: same-category menu items that are not already
+  // chosen anywhere (services or add-ons), so nothing is offered twice.
+  const chosenServiceIds = new Set([...selectedServices, ...selectedUpgrades].map((s) => s.id));
+  const addonCandidates = (
+    primarySelectedService
+      ? services.filter((s) => s.category === primarySelectedService.category && !chosenServiceIds.has(s.id))
+      : []
+  ).slice(0, 4);
   const advanceTokenAmount = computeAdvanceDeposit(totalAmount, depositPercent).rupees;
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
 
@@ -504,7 +537,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const confirmationSummary = buildConfirmationSummary({
     bookingId: bookingRef,
     salonName: profile.businessName,
-    serviceName: selectedService.name,
+    // Full list — "Haircut + Balayage + Gel-X Nails" — so the pass, the
+    // calendar event and the WhatsApp message all describe the real booking.
+    serviceName: [...selectedServices, ...selectedUpgrades].map((s) => s.name).join(' + ') || 'Selected service',
     staffName: selectedStylist.name,
     date: bookingDate,
     time: bookingTime,
@@ -512,7 +547,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     addressKind: bookingType === 'home' ? 'home' : 'salon',
     totalAmount,
     currency: profile.currency || '₹',
-    durationMinutes: selectedService.durationMinutes,
+    durationMinutes: totalDurationMinutes,
     // A home visit has no salon pin to route to; fall back to the typed address.
     latitude: bookingType === 'home' ? null : profile.latitude ?? null,
     longitude: bookingType === 'home' ? null : profile.longitude ?? null,
@@ -542,8 +577,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // ==========================================================================
 
   /** Snapshot the current selections + contact details into a draft. */
-  const buildDraftFromForm = (refNum: string): BookingDraft =>
-    buildBookingDraft({
+  const buildDraftFromForm = (refNum: string): BookingDraft => {
+    // A draft stores one `service` (the database row) plus everything else in
+    // `upgrades` — same convention the customer app uses, and what lets the
+    // booking detail page list every treatment the customer picked.
+    const [primaryService, ...extraServices] = selectedServices;
+    return buildBookingDraft({
       id: refNum,
       salon: {
         ownerId: profile.ownerId || null,
@@ -553,13 +592,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         email: profile.email || null,
         currency: profile.currency || '₹',
       },
-      service: {
-        id: selectedService.id,
-        name: selectedService.name,
-        price: selectedService.price,
-        durationMinutes: selectedService.durationMinutes,
-      },
-      upgrades: selectedUpgrades.map((u) => ({ id: u.id, name: u.name, price: u.price, durationMinutes: u.durationMinutes })),
+      service: primaryService
+        ? {
+            id: primaryService.id,
+            name: primaryService.name,
+            price: primaryService.price,
+            durationMinutes: primaryService.durationMinutes,
+          }
+        : { id: 'none', name: 'Unselected service', price: 0 },
+      upgrades: [
+        ...extraServices.map((s) => ({ id: s.id, name: s.name, price: s.price, durationMinutes: s.durationMinutes })),
+        ...selectedUpgrades.map((u) => ({ id: u.id, name: u.name, price: u.price, durationMinutes: u.durationMinutes })),
+      ],
       stylist: { id: selectedStylist.id, name: selectedStylist.name },
       date: bookingDate,
       time: bookingTime,
@@ -576,6 +620,35 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       paymentMethod,
       depositPercent,
     });
+  };
+
+  /** "Haircut + Balayage + Gel-X Nails" from a frozen draft (primary + extras + add-ons). */
+  const draftServicesLabel = (draft: BookingDraft): string =>
+    [draft.service, ...draft.upgrades]
+      .map((s) => s.name)
+      .filter(Boolean)
+      .join(' + ');
+
+  /** Toggle one treatment in/out of the multi-service selection. */
+  const toggleServiceSelection = (srv: SalonService) => {
+    const alreadyChosen = selectedServices.some((s) => s.id === srv.id);
+    if (alreadyChosen) {
+      setSelectedServices((prev) => prev.filter((s) => s.id !== srv.id));
+    } else {
+      setSelectedServices((prev) => [...prev, srv]);
+      // A treatment can only live in one basket: if it was ticked earlier as
+      // an add-on (step 2), promote it to a fully selected service.
+      setSelectedUpgrades((prev) => (prev.some((u) => u.id === srv.id) ? prev.filter((u) => u.id !== srv.id) : prev));
+    }
+  };
+
+  /** "Haircut + Balayage +2 more" — compact names for pills and banners. */
+  const shortServiceListLabel = (list: SalonService[], maxNames = 2): string => {
+    if (!list.length) return 'No services selected';
+    const names = list.slice(0, maxNames).map((s) => s.name);
+    const rest = list.length - maxNames;
+    return rest > 0 ? `${names.join(' + ')} +${rest} more` : names.join(' + ');
+  };
 
   /** Human wording for the failure panel, from a typed checkout outcome. */
   const describePaymentFailure = (outcome: RazorpayOutcome) => {
@@ -700,6 +773,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           customer_email: workingDraft.customer.email || undefined,
           service_id: workingDraft.service.id,
           service_name: workingDraft.service.name,
+          // Every treatment the customer picked, in click order, as structured
+          // lines (primary + extras + add-ons). `bookings` has one parent row,
+          // so the API persists these into `metadata.services` and rebuilds the
+          // parent `service_name` from them — the same line shape the customer
+          // app writes, which lets "My Bookings", the detail page and rebooking
+          // show every service instead of only the primary.
+          services: [workingDraft.service, ...workingDraft.upgrades].map((item) => ({
+            service_id: String(item.id ?? ''),
+            name: String(item.name ?? '').trim(),
+            price: Number(item.price) || 0,
+            duration_minutes: Number(item.durationMinutes) || 0,
+          })),
           // Persisted into the booking's metadata by the API. The customer's
           // "My Bookings" cards need these: `bookings` has no salon or
           // stylist column, so without them the card cannot say who or where.
@@ -707,8 +792,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           salon_name: workingDraft.salon.name,
           // `bookings` stores one service plus a total; checkout folds the
           // add-on prices in without itemising them. Sending them here is
-          // what lets the booking detail page list everything the customer
-          // actually picked.
+          // what lets older reads (and rows created before the structured
+          // `services` lines above existed) still list everything the
+          // customer actually picked.
           service_addons: workingDraft.upgrades.map((addon) => ({
             name: addon.name,
             price: addon.price,
@@ -731,7 +817,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           {
             user_email: workingDraft.salon.email || 'owner@salon.com',
             title: 'New Booking Request',
-            message: `New booking from ${workingDraft.customer.name} for ${workingDraft.service.name} on ${workingDraft.slot.date}. ${
+            message: `New booking from ${workingDraft.customer.name} for ${draftServicesLabel(workingDraft)} on ${workingDraft.slot.date}. ${
               paidAdvance
                 ? `${workingDraft.pricing.depositPercent}% Advance Paid: ₹${advanceAmount}${paidMode === 'mock' ? ' (TEST — simulated)' : ''}`
                 : 'Advance not paid (pay at salon).'
@@ -820,7 +906,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             : `Booking Pending Approval. ${workingDraft.pricing.depositPercent}% Deposit Paid.`
           : 'Booking Pending Approval. Pay at salon.',
         clientName: newApt.clientName,
-        serviceName: newApt.serviceName,
+        serviceName: draftServicesLabel(workingDraft),
         stylistName: newApt.stylistName,
         dateTime: `${workingDraft.slot.date} at ${workingDraft.slot.time}`,
         refCode: workingDraft.id,
@@ -890,7 +976,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (cleanPhone.length !== 10) problems.push('a valid 10-digit mobile number');
     if (!bookingDate) problems.push('a booking date');
     if (!bookingTime) problems.push('a time slot');
-    if (!selectedService?.name) problems.push('a service');
+    if (selectedServices.length === 0) problems.push('at least one service');
     if (problems.length > 0) {
       setSubmitError(`Please add ${problems.join(', ')} before confirming.`);
       setCurrentStep('guest');
@@ -939,20 +1025,28 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   /** Put a stored draft back into the form so every field can be edited. */
   const applyDraftToForm = (draft: BookingDraft) => {
-    const service = services.find((s) => s.id === draft.service.id) || {
-      id: draft.service.id,
-      name: draft.service.name,
-      category: selectedService.category,
-      durationMinutes: draft.service.durationMinutes || selectedService.durationMinutes,
-      price: draft.service.price,
-      description: '',
-      icon: 'sparkles',
-    };
-    setSelectedService(service);
-    setSelectedUpgrades(
-      draft.upgrades
-        .map((u) => services.find((s) => s.id === u.id) || { id: u.id, name: u.name, price: u.price, category: service.category, durationMinutes: u.durationMinutes || 0, description: '', icon: 'sparkles' })
-    );
+    // The draft folds everything except the primary service into `upgrades`;
+    // restore the whole list into the multi-select so every treatment the
+    // customer picked comes back checked on the service step (add-ons they
+    // added later simply appear among the chosen services, which is honest).
+    const restoreService = (item: { id: string; name: string; price: number; durationMinutes?: number }, category: string): SalonService =>
+      services.find((s) => s.id === item.id) || {
+        id: item.id,
+        name: item.name,
+        category,
+        durationMinutes: item.durationMinutes || 0,
+        price: item.price,
+        description: '',
+        icon: 'sparkles',
+      };
+    const primaryFromCatalog = services.find((s) => s.id === draft.service.id);
+    const fallbackCategory = primaryFromCatalog?.category || selectedServices[0]?.category || 'General';
+    const restoredServices = [
+      primaryFromCatalog || restoreService(draft.service, fallbackCategory),
+      ...draft.upgrades.map((u) => restoreService(u, fallbackCategory)),
+    ];
+    setSelectedServices(restoredServices);
+    setSelectedUpgrades([]);
     const stylist = draft.stylist.id === ANY_SPECIALIST.id ? ANY_SPECIALIST : stylists.find((s) => s.id === draft.stylist.id);
     setSelectedStylist(stylist || { ...ANY_SPECIALIST, id: draft.stylist.id, name: draft.stylist.name });
     setBookingDate(draft.slot.date);
@@ -977,7 +1071,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setResumableDraft(null);
     setPaymentFailure({
       title: 'Advance payment incomplete',
-      detail: `Your previous attempt for ${resumableDraft.service.name} on ${resumableDraft.slot.date} at ${resumableDraft.slot.time} did not complete${
+      detail: `Your previous attempt for ${draftServicesLabel(resumableDraft)} on ${resumableDraft.slot.date} at ${resumableDraft.slot.time} did not complete${
         resumableDraft.payment.lastError ? ` (${resumableDraft.payment.lastError})` : ''
       }. Nothing was charged — retry the payment or review the details below.`,
       retryable: true,
@@ -1011,7 +1105,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       advancePaid,
       advanceAmount: advanceTokenAmount,
       balanceAmount: remainingAmount,
-      upgrades: selectedUpgrades.map((u) => u.name),
+      // summary.serviceName already carries the full "A + B + C" list, so no
+      // separate add-on string is needed (it would repeat names).
+      upgrades: [],
       bookingTypeLabel: bookingType === 'home' ? 'Home Service' : 'In-Salon',
     });
 
@@ -1021,17 +1117,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setWhatsappConfirmationSent(true);
   };
 
-  // Open WhatsApp with pre-filled service, date, time shortcut
+  // Open WhatsApp with pre-filled services, date, time shortcut
   const handleQuickWhatsAppBooking = () => {
     const formattedPhone = (profile.whatsapp || '').replace(/\D/g, '');
+    const chosen = [...selectedServices, ...selectedUpgrades];
+    const serviceLines = chosen
+      .map((s) => `• ${s.name} — ₹${formatIndianMoney(s.price)} (${s.durationMinutes || 0} mins)`)
+      .join('\n');
+    const totalNote =
+      chosen.length > 1
+        ? `💰 Total for ${chosen.length} services: ₹${formatIndianMoney(totalAmount)} (${totalDurationMinutes} mins)`
+        : `💰 Estimated total: ₹${formatIndianMoney(totalAmount)}`;
     const msg = `Namaste ${profile.businessName}! 🌟\n\n` +
       `I would like to book a quick appointment with these details:\n` +
-      `💇‍♂️ Service: ${selectedService.name} (₹${selectedService.price.toLocaleString('en-IN')})\n` +
+      `💇‍♂️ Service${chosen.length > 1 ? 's' : ''}:\n${serviceLines}\n` +
+      `${totalNote}\n` +
       `📅 Date: ${bookingDate}\n` +
       `⏰ Time: ${bookingTime} IST\n` +
       `👤 Specialist: ${selectedStylist.name}\n\n` +
       `Please let me know if this slot is available to confirm! Thank you.`;
-    
+
     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`;
     window.open(whatsappUrl, '_blank');
   };
@@ -1159,7 +1264,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="flex items-start gap-2">
                 <RotateCcw className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Unfinished booking found:</strong> {resumableDraft.service.name} with {resumableDraft.stylist.name} on{' '}
+                  <strong>Unfinished booking found:</strong> {draftServicesLabel(resumableDraft)} with {resumableDraft.stylist.name} on{' '}
                   {resumableDraft.slot.date} at {resumableDraft.slot.time} — advance of ₹
                   {resumableDraft.pricing.depositAmount.toLocaleString('en-IN')} was not paid (ref {resumableDraft.id}).
                 </span>
@@ -1225,61 +1330,124 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
 
-              {/* Service Selection */}
+              {/* Service Selection — MULTI-SELECT: tick any number of
+                  treatments (haircut + colour + nails); each card carries an
+                  explicit Add to Booking / Remove toggle, and the summary bar
+                  at the bottom of the modal updates price + duration live. */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-bold font-mono-caps text-slate-700">
                     2. Select Treatment / Service
                   </label>
-                  <span className="text-[11px] text-emerald-700 font-mono font-bold">
-                    All prices in ₹ INR
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                      selectedServices.length > 0
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-500 border-slate-200'
+                    }`}
+                  >
+                    {selectedServices.length} Selected
                   </span>
                 </div>
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
-                  {(services || []).map((srv) => {
-                    const isSelected = selectedService.id === srv.id;
-                    return (
-                      <div
-                        key={srv.id}
-                        onClick={() => setSelectedService(srv)}
-                        className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                          isSelected
-                            ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1 pr-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-extrabold text-xs text-slate-900">{srv.name}</span>
-                            {srv.popular && (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 text-[10px] font-extrabold">
-                                Popular
+                <p className="text-[10px] text-slate-500 mb-2">
+                  Combine treatments in one visit (e.g. haircut + balayage + nails) — tap a card or use its button. Price &amp; duration update instantly.
+                </p>
+                {services.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
+                    The service menu is still loading — please try again in a moment.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1" role="group" aria-label="Available services">
+                    {(services || []).map((srv) => {
+                      const isSelected = selectedServices.some((s) => s.id === srv.id);
+                      return (
+                        <div
+                          key={srv.id}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onClick={() => toggleServiceSelection(srv)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleServiceSelection(srv);
+                            }
+                          }}
+                          className={`group p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                            isSelected
+                              ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900 shadow-xs'
+                              : 'border-slate-200 hover:border-slate-300 bg-white'
+                          }`}
+                        >
+                          {/* Checkbox affordance */}
+                          <span
+                            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                              isSelected
+                                ? 'bg-slate-900 border-slate-900 text-white'
+                                : 'bg-white border-slate-300 text-transparent group-hover:border-slate-400'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5" strokeWidth={4} />
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-extrabold text-xs ${isSelected ? 'text-slate-900' : 'text-slate-800'}`}>{srv.name}</span>
+                              {srv.popular && (
+                                <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 text-[10px] font-extrabold shrink-0">
+                                  Popular
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 mt-1">
+                              <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[10px]">{srv.category}</span>
+                              <span>•</span>
+                              <span className="flex items-center gap-1 font-mono text-slate-700">
+                                <Clock className="w-3 h-3 text-slate-500" />
+                                {srv.durationMinutes} mins
                               </span>
-                            )}
+                            </div>
                           </div>
-                          <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 mt-0.5">
-                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[10px]">{srv.category}</span>
-                            <span>•</span>
-                            <span className="flex items-center gap-1 font-mono text-slate-700">
-                              <Clock className="w-3 h-3 text-slate-500" />
-                              {srv.durationMinutes} mins
-                            </span>
+
+                          <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                            <div className="font-extrabold text-sm text-slate-900 font-mono">
+                              ₹{formatIndianMoney(srv.price)}
+                            </div>
+                            <button
+                              type="button"
+                              aria-label={isSelected ? `Remove ${srv.name} from booking` : `Add ${srv.name} to booking`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleServiceSelection(srv);
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border transition-colors cursor-pointer flex items-center gap-1 ${
+                                isSelected
+                                  ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+                                  : 'bg-white border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <>
+                                  <Minus className="w-3 h-3" /> Remove
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-3 h-3" /> Add to Booking
+                                </>
+                              )}
+                            </button>
                           </div>
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="font-extrabold text-sm text-slate-900 font-mono">
-                            ₹{srv.price.toLocaleString('en-IN')}
-                          </div>
-                          {isSelected && (
-                            <span className="text-[10px] font-bold text-emerald-600 flex items-center justify-end gap-0.5">
-                              <Check className="w-3 h-3" /> Selected
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedServices.length === 0 && (
+                  <p className="text-[11px] text-rose-600 font-semibold mt-2 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Select at least one service to continue booking.</span>
+                  </p>
+                )}
               </div>
 
               {/* Specialist Selection ("Any Available" by default) */}
@@ -1338,10 +1506,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <button
                 type="button"
                 onClick={() => setCurrentStep('upgrades')}
-                className="w-full py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95 active:scale-[0.99] mt-2"
+                disabled={selectedServices.length === 0}
+                className="w-full py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 mt-2 transition-opacity hover:opacity-95 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ backgroundColor: themeAccentHex }}
               >
-                <span>Continue to Optional Upgrades</span>
+                <span>
+                  Continue to Optional Upgrades
+                  {selectedServices.length > 0 && (
+                    <span className="font-mono font-bold ml-2 opacity-90">
+                      ₹{formatIndianMoney(totalAmount)} • {totalDurationMinutes} mins
+                    </span>
+                  )}
+                </span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </motion.div>
@@ -1358,14 +1534,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               className="flex flex-col gap-4"
             >
               <h4 className="font-bold text-sm text-slate-900">Make your service even better!</h4>
-              <p className="text-[11px] text-slate-500">Popular add-ons for {selectedService.name}</p>
+              <p className="text-[11px] text-slate-500">
+                {selectedUpgrades.length > 0
+                  ? `${selectedUpgrades.length} add-on${selectedUpgrades.length > 1 ? 's' : ''} added · same-category extras for ${primarySelectedService?.name || 'your visit'}`
+                  : `Popular add-ons for ${primarySelectedService?.name || 'your visit'}`}
+              </p>
 
-              <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
-                {(services || []).filter(s => s.category === selectedService.category && s.id !== selectedService.id).slice(0, 3).map(addon => {
+              <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
+                {addonCandidates.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
+                    Nothing left to add here — every {primarySelectedService?.category || 'recommended'} option is already in your booking. Jump to the slot picker!
+                  </div>
+                ) : (
+                  addonCandidates.map(addon => {
                     const isSelected = selectedUpgrades.some(u => u.id === addon.id);
                     return (
-                        <div 
+                        <div
                             key={addon.id}
+                            role="checkbox"
+                            aria-checked={isSelected}
                             onClick={() => {
                                 if (isSelected) {
                                     setSelectedUpgrades(prev => prev.filter(u => u.id !== addon.id));
@@ -1373,15 +1560,31 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                     setSelectedUpgrades(prev => [...prev, addon]);
                                 }
                             }}
-                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                                isSelected ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'
+                            className={`group p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${
+                                isSelected ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300 bg-white'
                             }`}
                         >
-                            <div className="text-xs font-bold text-slate-900">{addon.name}</div>
-                            <div className="text-xs font-mono font-bold text-slate-900">₹{addon.price.toLocaleString('en-IN')}</div>
+                            <span
+                              className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
+                                isSelected
+                                  ? 'bg-slate-900 border-slate-900 text-white'
+                                  : 'bg-white border-slate-300 text-transparent group-hover:border-slate-400'
+                              }`}
+                            >
+                              <Check className="w-3.5 h-3.5" strokeWidth={4} />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-bold text-slate-900">{addon.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                {addon.durationMinutes} mins
+                              </div>
+                            </div>
+                            <div className="text-xs font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(addon.price)}</div>
                         </div>
                     )
-                })}
+                })
+                )}
               </div>
 
               <div className="flex items-center gap-2 pt-2">
@@ -1520,12 +1723,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {/* Current Selection Pill */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-center justify-between font-mono">
-                <div className="flex items-center gap-2">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-center justify-between gap-3 font-mono">
+                <div className="flex items-center gap-2 shrink-0">
                   <Calendar className="w-4 h-4 text-slate-500" />
                   <span>{bookingDate} at {bookingTime} IST</span>
                 </div>
-                <span className="text-slate-600">{selectedService.name} ({selectedStylist.name})</span>
+                <span className="text-slate-600 text-right min-w-0 truncate">
+                  {shortServiceListLabel(selectedServices, 2)} • {selectedStylist.name}
+                </span>
               </div>
 
               {/* Step Navigation Actions */}
@@ -1856,19 +2061,59 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </span>
               </div>
 
-              {/* Comprehensive Booking Summary Card */}
+              {/* Comprehensive Booking Summary Card — itemises EVERY chosen
+                  service + add-on, and shows the combined total & duration. */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2.5 text-xs">
-                <div className="flex justify-between items-start pb-2 border-b border-slate-200">
-                  <div>
-                    <span className="text-slate-400 font-mono text-[10px] uppercase">Service & Specialist</span>
-                    <div className="font-bold text-sm text-slate-900">{selectedService.name}</div>
-                    <div className="text-[11px] text-slate-500">With {selectedStylist.name} ({selectedService.durationMinutes} mins)</div>
+                <div>
+                  <span className="text-slate-400 font-mono text-[10px] uppercase">
+                    Service{selectedServices.length !== 1 ? 's' : ''} & Specialist
+                  </span>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    With {selectedStylist.name} • {totalDurationMinutes} mins total
                   </div>
-                  <div className="text-right">
-                    <span className="text-slate-400 font-mono text-[10px] uppercase">Total Fee</span>
-                    <div className="font-bold text-base text-slate-900 font-mono">
-                      ₹{selectedService.price.toLocaleString('en-IN')}
+                </div>
+
+                <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto pr-1 border-y border-slate-200 py-2">
+                  {selectedServices.map((srv, idx) => (
+                    <div key={srv.id} className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 font-semibold text-slate-800">
+                        {selectedServices.length > 1 && <span className="text-slate-400 font-mono mr-1">{idx + 1}.</span>}
+                        {srv.name}
+                        <span className="text-slate-400 font-normal"> ({srv.durationMinutes} mins)</span>
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(srv.price)}</span>
                     </div>
+                  ))}
+                  {selectedUpgrades.map((upgrade) => (
+                    <div key={upgrade.id} className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 text-slate-700">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wide text-slate-400 mr-1">Add-on:</span>
+                        {upgrade.name}
+                        <span className="text-slate-400 font-normal"> ({upgrade.durationMinutes} mins)</span>
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(upgrade.price)}</span>
+                    </div>
+                  ))}
+                  {homeServiceCharge > 0 && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 text-slate-700">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wide text-slate-400 mr-1">Travel:</span>
+                        Home visit base charge
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(homeServiceCharge)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-0.5">
+                  <div>
+                    <span className="text-slate-400 block font-mono text-[10px] uppercase">Total Fee</span>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {selectedServices.length + selectedUpgrades.length} item{selectedServices.length + selectedUpgrades.length !== 1 ? 's' : ''} • {totalDurationMinutes} mins
+                    </span>
+                  </div>
+                  <div className="font-bold text-base text-slate-900 font-mono">
+                    ₹{formatIndianMoney(totalAmount)}
                   </div>
                 </div>
 
@@ -2075,7 +2320,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 receiptId: paymentReceiptId,
                 simulated: paymentMode === 'mock',
               }}
-              upgrades={selectedUpgrades.map((u) => u.name)}
+              upgrades={[]}
               bookingTypeLabel={bookingType === 'home' ? 'Home Service' : 'In-Salon'}
               whatsapp={whatsappStatus}
               onSendWhatsapp={handleSendWhatsAppConfirmation}
@@ -2088,6 +2333,44 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           )}
 
         </div>
+
+        {/* FLOATING SUMMARY BAR — always visible while navigating steps so the
+            customer sees the running Total (₹) & Total Duration (mins) for all
+            selected services (+ add-ons) without scrolling back to step 1. */}
+        {currentStep !== 'confirmed' && (
+          <div
+            className="shrink-0 border-t border-slate-200 bg-white/95 backdrop-blur px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 shadow-[0_-8px_20px_-12px_rgba(15,23,42,0.25)]"
+            data-testid="booking-summary-bar"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`px-2 py-1 rounded-lg text-[10px] font-extrabold font-mono shrink-0 ${
+                  selectedServices.length > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {selectedServices.length} Service{selectedServices.length !== 1 ? 's' : ''} Selected
+              </span>
+              {selectedUpgrades.length > 0 && (
+                <span className="px-2 py-1 rounded-lg text-[10px] font-extrabold font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                  +{selectedUpgrades.length} Add-on{selectedUpgrades.length !== 1 ? 's' : ''}
+                </span>
+              )}
+              <span className="hidden md:inline text-[10px] text-slate-500 font-mono truncate min-w-0 max-w-[240px]">
+                {shortServiceListLabel(selectedServices, 2)}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-mono shrink-0">
+              <span className="text-slate-700">
+                Total: <strong className="text-slate-900 font-extrabold">₹{formatIndianMoney(totalAmount)}</strong>
+              </span>
+              <span className="flex items-center gap-1 text-slate-600">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <strong className="text-slate-900 font-extrabold">{totalDurationMinutes}</strong> mins
+              </span>
+            </div>
+          </div>
+        )}
       </motion.div>
     </div>
   );

@@ -472,6 +472,8 @@ export function saveMyProfile(input: {
   postalCode?: string;
   state?: string;
   landmark?: string;
+  /** YYYY-MM-DD; empty string clears it. Used for the annual birthday bonus. */
+  dateOfBirth?: string;
   latitude?: number | null;
   longitude?: number | null;
 }): Promise<CustomerResult<CustomerProfile | null>> {
@@ -794,6 +796,18 @@ export function listMyMemberships(): Promise<CustomerResult<Membership[]>> {
   return customerRequest<Membership[]>('/api/customer/me/memberships', {
     requireAuth: true,
     empty: [],
+  });
+}
+
+/** Salon-pass payload: the deterministic check-in code for this customer. */
+export interface CustomerPass {
+  code: string;
+}
+
+export function getMyPass(): Promise<CustomerResult<CustomerPass | null>> {
+  return customerRequest<CustomerPass | null>('/api/customer/me/pass', {
+    requireAuth: true,
+    empty: null,
   });
 }
 

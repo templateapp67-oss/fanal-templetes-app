@@ -53,6 +53,7 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
     fullName: '',
     phone: '',
     whatsapp: '',
+    dateOfBirth: '',
     city: '',
     area: '',
     address: '',
@@ -88,6 +89,7 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
         fullName: row?.fullName || '',
         phone: row?.phone || '',
         whatsapp: row?.whatsapp || '',
+        dateOfBirth: row?.dateOfBirth || '',
         city: row?.city || '',
         area: row?.area || '',
         address: row?.address || '',
@@ -113,6 +115,7 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
       form.fullName !== profile.fullName ||
       form.phone !== profile.phone ||
       form.whatsapp !== profile.whatsapp ||
+      (form.dateOfBirth || undefined) !== profile.dateOfBirth ||
       form.city !== profile.city ||
       form.area !== profile.area ||
       form.avatarUrl !== profile.avatarUrl ||
@@ -187,6 +190,13 @@ export const ProfileScreen: React.FC<MeScreenProps> = ({ userId, accentHex = '#C
           <Field label="Full name" value={form.fullName} onChange={(value) => setForm({ ...form, fullName: value })} />
           <Field label="Mobile" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} type="tel" hint="Salons use this to find your booking" />
           <Field label="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} type="tel" hint="Confirmations are sent here" />
+          <Field
+            label="Date of birth"
+            value={form.dateOfBirth}
+            onChange={(value) => setForm({ ...form, dateOfBirth: value })}
+            type="date"
+            hint="Your salon credits the annual birthday bonus when you check in on this day"
+          />
           <Field label="Pincode" value={form.postalCode} onChange={(value) => setForm({ ...form, postalCode: value })} />
         </div>
 
