@@ -41,13 +41,16 @@ import {
   usePathRoute,
   isCustomerAppPath,
   isMyBookingsPath,
+  isStaffPerformancePath,
   MY_BOOKINGS_PATH,
+  STAFF_PERFORMANCE_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
 import { BookingDetailPage } from './components/BookingDetailPage';
+import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -241,8 +244,12 @@ export default function App() {
       setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
       return;
     }
+    if (isStaffPerformancePath(path)) {
+      setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
+      return;
+    }
     setCurrentViewState((view) =>
-      view === 'bookings' || view === 'bookingDetail' ? 'landing' : view
+      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' ? 'landing' : view
     );
   }, [path]);
 
@@ -258,6 +265,8 @@ export default function App() {
         navigate(MY_BOOKINGS_PATH);
       } else if (view === 'bookingDetail') {
         navigate(bookingDetailPath(bookingDetailId ?? ''));
+      } else if (view === 'staffPerformance') {
+        navigate(STAFF_PERFORMANCE_PATH);
       } else {
         navigate('/');
       }
@@ -1537,6 +1546,18 @@ export default function App() {
           siteUrl={getSiteUrl(profile)}
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
+          onNavigateToStaffPerformance={() => setCurrentView('staffPerformance')}
+        />
+      )}
+
+      {currentView === 'staffPerformance' && (
+        <StaffPerformanceDashboard
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onBackToDashboard={() => setCurrentView('dashboard')}
+          primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          currencySymbol={profile.currency || '₹'}
+          salonName={profile.businessName}
         />
       )}
 

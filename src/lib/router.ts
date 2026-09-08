@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
+export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
 
 // ---------------------------------------------------------------------------
 // Customer App (`/app/...`)
@@ -128,6 +129,11 @@ export function normalizePath(pathname: string): string {
 /** True when the path is the customer's "My Bookings" page. */
 export function isMyBookingsPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === MY_BOOKINGS_PATH;
+}
+
+/** True when the path is the owner-only Staff Performance dashboard. */
+export function isStaffPerformancePath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === STAFF_PERFORMANCE_PATH;
 }
 
 /** Canonical URL for one booking's detail page. */

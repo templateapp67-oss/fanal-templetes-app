@@ -40,6 +40,7 @@ interface SaaSDashboardProps {
   siteUrl?: string;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  onNavigateToStaffPerformance?: () => void;
 }
 
 type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
@@ -62,6 +63,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   siteUrl,
   isAuthenticated = true,
   onRequireAuth,
+  onNavigateToStaffPerformance,
 }) => {
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
@@ -403,7 +405,17 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabType)}
+                onClick={() => {
+                  if (tab.id === 'staff_performance') {
+                    if (!isAuthenticated) {
+                      onRequireAuth?.('login');
+                      return;
+                    }
+                    onNavigateToStaffPerformance?.();
+                    return;
+                  }
+                  setActiveTab(tab.id as TabType);
+                }}
                 className={`px-4 py-3 text-xs font-bold font-mono-caps border-b-2 flex items-center gap-2 transition-all whitespace-nowrap cursor-pointer ${
                   isTabActive
                     ? 'font-extrabold'
@@ -495,6 +507,30 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 <div className="text-[11px] text-emerald-600 font-bold mt-1">+8% automated retention</div>
               </div>
             </div>
+
+            {onNavigateToStaffPerformance && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    onRequireAuth?.('login');
+                    return;
+                  }
+                  onNavigateToStaffPerformance();
+                }}
+                className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs text-left hover:border-gray-300 cursor-pointer"
+                id="overview-open-staff-performance"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold font-mono-caps text-gray-500">Staff Performance</div>
+                    <div className="font-display font-bold text-lg mt-1">Bookings, payments, commission & reviews</div>
+                    <p className="text-xs text-gray-500 mt-1">Owner-only analytics from secure RPCs.</p>
+                  </div>
+                  <span className="material-symbols-outlined">monitoring</span>
+                </div>
+              </button>
+            )}
 
             {/* DATA VISUALIZATION: TOP CLIENTS LOYALTY TIER DISTRIBUTION BAR CHART */}
             <TopClientsLoyaltyChart
