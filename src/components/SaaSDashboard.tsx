@@ -8,7 +8,8 @@ import { ServiceManagement } from './ServiceManagement';
 import { PromoStudio } from './PromoStudio';
 import { LoyaltyManagement } from './LoyaltyManagement';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
-import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
+import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
+import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress, calculateTierProgress } from '../loyaltyData';
 import { getSiteUrl } from '../lib/salonStore';
 
 import { BookingManager } from './BookingManager';
@@ -56,6 +57,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   const setLoyaltyConfig = externalSetLoyaltyConfig || setInternalLoyaltyConfig;
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [dashboardTierClientSearch, setDashboardTierClientSearch] = useState<string>('');
+  const [dashboardTierFilter, setDashboardTierFilter] = useState<string>('all');
   const [marketingSms, setMarketingSms] = useState<string>('');
   const [marketingLoading, setMarketingLoading] = useState<boolean>(false);
   const [smsSentNotice, setSmsSentNotice] = useState<string>('');
@@ -453,6 +456,160 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 </table>
               </div>
             </div>
+
+            {/* CLIENT LOYALTY TIER PROGRESSION & VIP LEADERBOARD */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gray-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                      <span className="material-symbols-outlined text-lg">military_tech</span>
+                    </span>
+                    <h2 className="font-display font-bold text-lg text-gray-900">
+                      Client Loyalty Tier Progression
+                    </h2>
+                    <span className="bg-amber-100 text-amber-900 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                      Live VIP Tiers
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Visual tracker showing how close clients are to leveling up to their next loyalty tier (Silver, Gold, Platinum VIP).
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('loyalty')}
+                    className="text-xs font-bold px-3.5 py-2 rounded-xl text-white shadow-xs flex items-center gap-1.5 cursor-pointer hover:opacity-95"
+                    style={{ backgroundColor: currentPrimaryColor }}
+                  >
+                    <span className="material-symbols-outlined text-sm">tune</span>
+                    <span>Manage Loyalty Program</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* TIER DISTRIBUTION SUMMARY PILLS */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(['bronze', 'silver', 'gold', 'platinum'] as const).map((t) => {
+                  const meta = TIER_METADATA[t];
+                  const count = clients.filter(
+                    (c) => (c.loyaltyTier || calculateLoyaltyTier(c.lifetimePoints || 0, loyaltyConfig.tierThresholds)) === t
+                  ).length;
+                  const isSelected = dashboardTierFilter === t;
+
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setDashboardTierFilter(isSelected ? 'all' : t)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        isSelected
+                          ? `${meta.badgeBg} ${meta.borderColor} ring-2 ring-amber-400 shadow-xs font-bold`
+                          : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80 text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base">{meta.icon}</span>
+                        <div>
+                          <div className="text-xs font-bold">{meta.name.split(' ')[0]}</div>
+                          <div className="text-[10px] opacity-75 font-mono">
+                            {loyaltyConfig.tierThresholds[t]} pts ({loyaltyConfig.tierMultipliers[t]}x)
+                          </div>
+                        </div>
+                      </div>
+                      <div className="font-mono font-extrabold text-base">{count}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* SEARCH & FILTER BAR */}
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+                <div className="relative flex-1 max-w-sm">
+                  <span className="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-sm">search</span>
+                  <input
+                    type="text"
+                    value={dashboardTierClientSearch}
+                    onChange={(e) => setDashboardTierClientSearch(e.target.value)}
+                    placeholder="Search client by name or phone..."
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-gray-300 text-xs bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gray-300 outline-none"
+                  />
+                </div>
+
+                <div className="text-[11px] text-gray-500 font-mono">
+                  Showing {
+                    clients.filter((c) => {
+                      const matchesQuery =
+                        c.name.toLowerCase().includes(dashboardTierClientSearch.toLowerCase()) ||
+                        c.phone.includes(dashboardTierClientSearch);
+                      const t = c.loyaltyTier || calculateLoyaltyTier(c.lifetimePoints || 0, loyaltyConfig.tierThresholds);
+                      const matchesFilter = dashboardTierFilter === 'all' || t === dashboardTierFilter;
+                      return matchesQuery && matchesFilter;
+                    }).length
+                  } of {clients.length} clients
+                </div>
+              </div>
+
+              {/* CLIENTS TIER PROGRESS BARS GRID */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {clients
+                  .filter((c) => {
+                    const matchesQuery =
+                      c.name.toLowerCase().includes(dashboardTierClientSearch.toLowerCase()) ||
+                      c.phone.includes(dashboardTierClientSearch);
+                    const t = c.loyaltyTier || calculateLoyaltyTier(c.lifetimePoints || 0, loyaltyConfig.tierThresholds);
+                    const matchesFilter = dashboardTierFilter === 'all' || t === dashboardTierFilter;
+                    return matchesQuery && matchesFilter;
+                  })
+                  .map((client) => {
+                    const lifetimePts = client.lifetimePoints || client.points || 0;
+                    return (
+                      <div
+                        key={client.id}
+                        className="p-4 rounded-xl border border-gray-200 bg-white hover:border-amber-300 hover:shadow-xs transition-all flex flex-col justify-between gap-3"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="font-bold text-sm text-gray-900">{client.name}</span>
+                            <div className="text-[11px] text-gray-500 font-mono">{client.phone}</div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-mono font-bold text-amber-800 text-xs">
+                              {client.points || 0} pts balance
+                            </span>
+                            <div className="text-[10px] text-gray-400 font-mono">
+                              {client.totalVisits} visits • ₹{client.totalSpent.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Visual Progress Bar to Next Loyalty Tier */}
+                        <LoyaltyTierProgressBar
+                          lifetimePoints={lifetimePts}
+                          currentPoints={client.points}
+                          tierThresholds={loyaltyConfig.tierThresholds}
+                          tierMultipliers={loyaltyConfig.tierMultipliers}
+                          variant="standard"
+                          showPerks={true}
+                        />
+
+                        <div className="flex justify-between items-center text-[10px] text-gray-400 pt-1 border-t border-gray-100">
+                          <span>Stylist: {client.favoriteStylist}</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('loyalty')}
+                            className="text-purple-700 hover:text-purple-900 font-bold flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span>Manage in CRM</span>
+                            <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -514,6 +671,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               {clients.map((cli) => {
                 const tier = cli.loyaltyTier || calculateLoyaltyTier(cli.lifetimePoints || 0, loyaltyConfig.tierThresholds);
                 const tierMeta = TIER_METADATA[tier];
+                const lifetimePts = cli.lifetimePoints || cli.points || 0;
                 const { nextReward, pointsNeeded, progressPercentage, unlockedRewards } = calculateRewardProgress(
                   cli.points || 0,
                   loyaltyConfig.rewards
@@ -524,7 +682,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                     key={cli.id} 
                     className="p-4 rounded-xl border border-gray-200 bg-white hover:border-gray-300 shadow-xs flex flex-col justify-between gap-3 text-xs"
                   >
-                    <div>
+                    <div className="flex flex-col gap-3">
                       {/* Top identity & Tier */}
                       <div className="flex justify-between items-start">
                         <div>
@@ -546,41 +704,34 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
                       {/* Notes */}
                       {cli.notes && (
-                        <div className="text-gray-600 italic bg-gray-50 p-2 rounded-lg border border-gray-100 text-[11px] mt-2">
+                        <div className="text-gray-600 italic bg-gray-50 p-2 rounded-lg border border-gray-100 text-[11px]">
                           "{cli.notes}"
                         </div>
                       )}
 
-                      {/* Loyalty Progress Card */}
-                      <div className="mt-3 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 flex flex-col gap-1.5">
-                        <div className="flex justify-between items-center text-[11px]">
-                          <span className="font-bold text-amber-900 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-xs text-amber-600">stars</span>
-                            <span>{cli.points || 0} pts balance</span>
-                          </span>
-                          <span className="text-[10px] font-mono text-gray-500">
-                            {progressPercentage}% to next reward
-                          </span>
-                        </div>
+                      {/* Visual Loyalty Tier Progress Bar */}
+                      <LoyaltyTierProgressBar
+                        lifetimePoints={lifetimePts}
+                        currentPoints={cli.points}
+                        tierThresholds={loyaltyConfig.tierThresholds}
+                        tierMultipliers={loyaltyConfig.tierMultipliers}
+                        variant="standard"
+                        showPerks={true}
+                      />
 
-                        {/* Progress Bar */}
-                        <div className="w-full bg-amber-200/60 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-amber-500 to-purple-600 rounded-full"
-                            style={{ width: `${progressPercentage}%` }}
-                          />
-                        </div>
-
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-gray-600 truncate max-w-[180px]">
-                            {nextReward ? `Next: ${nextReward.title}` : '⭐ Max Tier Achieved'}
+                      {/* Next Reward Milestone Chip */}
+                      <div className="p-2 rounded-lg border border-purple-200 bg-purple-50/60 flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-purple-900 flex items-center gap-1 truncate max-w-[180px]">
+                          <span className="material-symbols-outlined text-xs text-purple-600">redeem</span>
+                          <span>{nextReward ? nextReward.title : 'All Rewards Unlocked'}</span>
+                        </span>
+                        {nextReward ? (
+                          <span className="font-mono font-bold text-purple-800 text-[10px] shrink-0">
+                            {cli.points || 0}/{nextReward.requiredPoints} pts
                           </span>
-                          {nextReward && (
-                            <span className="font-bold text-amber-800 font-mono">
-                              +{pointsNeeded} pts
-                            </span>
-                          )}
-                        </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-emerald-700">Ready</span>
+                        )}
                       </div>
                     </div>
 

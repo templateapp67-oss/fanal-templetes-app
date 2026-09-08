@@ -14,6 +14,7 @@ import {
   calculateRewardProgress, 
   generateCouponCode 
 } from '../loyaltyData';
+import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
 import { getSiteUrl } from '../lib/salonStore';
 
 interface LoyaltyManagementProps {
@@ -579,7 +580,17 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
                     </div>
                   </div>
 
-                  {/* MIDDLE: LOYALTY PROGRESS BAR TO NEXT REWARD */}
+                  {/* MIDDLE 1: LOYALTY TIER PROGRESSION BAR */}
+                  <LoyaltyTierProgressBar
+                    lifetimePoints={client.lifetimePoints || client.points || 0}
+                    currentPoints={client.points}
+                    tierThresholds={loyaltyConfig.tierThresholds}
+                    tierMultipliers={loyaltyConfig.tierMultipliers}
+                    variant="compact"
+                    showPerks={true}
+                  />
+
+                  {/* MIDDLE 2: LOYALTY PROGRESS BAR TO NEXT REWARD */}
                   <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex flex-col gap-2">
                     <div className="flex justify-between items-center text-xs">
                       <span className="font-bold text-gray-700 flex items-center gap-1">
@@ -1279,6 +1290,21 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
               >
                 ✕
               </button>
+            </div>
+
+            {/* FULL VIP TIER ROADMAP */}
+            <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200">
+              <label className="text-[11px] font-bold font-mono-caps text-gray-700 block mb-2">
+                VIP Tier Progress & Roadmap
+              </label>
+              <LoyaltyTierProgressBar
+                lifetimePoints={historyClient.lifetimePoints || historyClient.points || 0}
+                currentPoints={historyClient.points}
+                tierThresholds={loyaltyConfig.tierThresholds}
+                tierMultipliers={loyaltyConfig.tierMultipliers}
+                variant="roadmap"
+                showPerks={true}
+              />
             </div>
 
             {/* Vouchers Claimed */}

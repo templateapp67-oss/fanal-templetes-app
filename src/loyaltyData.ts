@@ -187,6 +187,47 @@ export function calculateRewardProgress(
   };
 }
 
+export function calculateTierProgress(
+  lifetimePoints: number,
+  thresholds: LoyaltyConfig['tierThresholds'] = DEFAULT_LOYALTY_CONFIG.tierThresholds
+) {
+  const currentTier = calculateLoyaltyTier(lifetimePoints, thresholds);
+  const tiers: LoyaltyTier[] = ['bronze', 'silver', 'gold', 'platinum'];
+  const currentIndex = tiers.indexOf(currentTier);
+  const isMaxTier = currentIndex === tiers.length - 1;
+  const nextTier: LoyaltyTier | null = isMaxTier ? null : tiers[currentIndex + 1];
+
+  const currentThreshold = thresholds[currentTier] || 0;
+  const nextThreshold = nextTier ? thresholds[nextTier] : currentThreshold;
+
+  const span = Math.max(1, nextThreshold - currentThreshold);
+  const currentInSpan = Math.max(0, lifetimePoints - currentThreshold);
+  const progressPercentage = isMaxTier
+    ? 100
+    : Math.min(100, Math.max(0, Math.round((currentInSpan / span) * 100)));
+  const pointsNeeded = isMaxTier ? 0 : Math.max(0, nextThreshold - lifetimePoints);
+
+  return {
+    currentTier,
+    nextTier,
+    currentTierMeta: TIER_METADATA[currentTier],
+    nextTierMeta: nextTier ? TIER_METADATA[nextTier] : null,
+    currentThreshold,
+    nextThreshold,
+    pointsNeeded,
+    progressPercentage,
+    isMaxTier,
+    allTiers: tiers.map((t) => ({
+      tier: t,
+      threshold: thresholds[t],
+      meta: TIER_METADATA[t],
+      isAchieved: lifetimePoints >= thresholds[t],
+      isCurrent: t === currentTier,
+      isNext: t === nextTier,
+    })),
+  };
+}
+
 export function generateCouponCode(prefix: string): string {
   const randomHex = Math.floor(1000 + Math.random() * 9000);
   return `${prefix}-${randomHex}`;
