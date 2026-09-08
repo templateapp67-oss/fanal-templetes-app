@@ -16,7 +16,8 @@
     "verify": "node --import tsx scripts/verify-supabase-connection.mjs",
     "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs",
     "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs",
-    "validate:staff-commission": "node --import tsx scripts/validate_staff_commission_payouts_migration.mjs"
+    "validate:staff-commission": "node --import tsx scripts/validate_staff_commission_payouts_migration.mjs",
+    "validate:staff-notifications": "node --import tsx scripts/validate_staff_performance_notifications_migration.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

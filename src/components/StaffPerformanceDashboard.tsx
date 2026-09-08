@@ -56,6 +56,7 @@ import {
   resolveOwnerSalon,
   triggerCsvDownload,
 } from '../lib/staffPerformanceApi';
+import { StaffPerformanceAlerts } from './StaffPerformanceAlerts';
 
 const PAGE_SIZE = 8;
 const PRESETS: Array<{ id: StaffDatePreset; label: string }> = [
@@ -627,6 +628,17 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {onOpenCommission && (
+                <button
+                  type="button"
+                  onClick={onOpenCommission}
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
+                  id="staff-performance-commission"
+                >
+                  <span className="material-symbols-outlined text-sm">payments</span>
+                  Commission
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void handleRefresh()}
