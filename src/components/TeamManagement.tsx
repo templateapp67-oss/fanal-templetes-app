@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AddStaffModal } from './AddStaffModal';
+import { StylistAvatarUpload } from './StylistAvatarUpload';
 
 interface TeamManagementProps {
   stylists: Stylist[];
@@ -617,28 +618,22 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
 
               {/* Avatar Selection */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Stylist Profile Photo
-                </label>
-                
-                <div className="flex items-center gap-3 mb-2">
-                  <img
-                    src={formData.avatarUrl || AVATAR_PRESETS[0].url}
-                    alt="Preview"
-                    className="w-12 h-12 rounded-xl object-cover border border-gray-200 shadow-xs shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = AVATAR_PRESETS[0].url;
-                    }}
-                  />
-                  <input
-                    type="url"
-                    value={formData.avatarUrl}
-                    onChange={(e) => setFormData({ ...formData, avatarUrl: e.target.value })}
-                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-300 text-gray-700 font-mono focus:border-gray-500 outline-none"
-                  />
-                </div>
+                <StylistAvatarUpload
+                  value={formData.avatarUrl}
+                  onChange={(avatarUrl) => setFormData({ ...formData, avatarUrl })}
+                  accentHex={primaryAccentColor}
+                  fallbackUrl={AVATAR_PRESETS[0].url}
+                />
 
-                <div className="flex flex-col gap-1.5">
+                <input
+                  type="url"
+                  value={formData.avatarUrl.startsWith('data:') ? '' : formData.avatarUrl}
+                  onChange={(e) => setFormData({ ...formData, avatarUrl: e.target.value })}
+                  placeholder="Or paste a photo URL"
+                  className="mt-2 w-full px-3 py-2 text-xs rounded-xl border border-gray-300 text-gray-700 font-mono focus:border-gray-500 outline-none"
+                />
+
+                <div className="flex flex-col gap-1.5 mt-2">
                   <span className="text-[11px] text-gray-500">Or pick preset avatar:</span>
                   <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
                     {AVATAR_PRESETS.map((preset, idx) => {
