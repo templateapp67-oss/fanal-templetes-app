@@ -41,15 +41,19 @@ import {
   usePathRoute,
   isCustomerAppPath,
   isMyBookingsPath,
+  isStaffPerformancePath,
+  isStaffCommissionPath,
   MY_BOOKINGS_PATH,
+  STAFF_PERFORMANCE_PATH,
+  STAFF_COMMISSION_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
-  isOwnerStaffPerformancePath,
-  OWNER_STAFF_PERFORMANCE_PATH,
 } from './lib/router';
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
 import { BookingDetailPage } from './components/BookingDetailPage';
+import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
+import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -243,12 +247,18 @@ export default function App() {
       setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
       return;
     }
-    if (isOwnerStaffPerformancePath(path)) {
-      setCurrentViewState((view) => (view === 'dashboard' ? view : 'dashboard'));
+    if (isStaffCommissionPath(path)) {
+      setCurrentViewState((view) => (view === 'staffCommission' ? view : 'staffCommission'));
+      return;
+    }
+    if (isStaffPerformancePath(path)) {
+      setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
       return;
     }
     setCurrentViewState((view) =>
-      view === 'bookings' || view === 'bookingDetail' ? 'landing' : view
+      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission'
+        ? 'landing'
+        : view
     );
   }, [path]);
 
@@ -264,8 +274,10 @@ export default function App() {
         navigate(MY_BOOKINGS_PATH);
       } else if (view === 'bookingDetail') {
         navigate(bookingDetailPath(bookingDetailId ?? ''));
-      } else if (view === 'dashboard') {
-        navigate(OWNER_STAFF_PERFORMANCE_PATH);
+      } else if (view === 'staffPerformance') {
+        navigate(STAFF_PERFORMANCE_PATH);
+      } else if (view === 'staffCommission') {
+        navigate(STAFF_COMMISSION_PATH);
       } else {
         navigate('/');
       }
@@ -1545,6 +1557,32 @@ export default function App() {
           siteUrl={getSiteUrl(profile)}
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
+          onNavigateToStaffPerformance={() => setCurrentView('staffPerformance')}
+          onNavigateToStaffCommission={() => setCurrentView('staffCommission')}
+        />
+      )}
+
+      {currentView === 'staffPerformance' && (
+        <StaffPerformanceDashboard
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onBackToDashboard={() => setCurrentView('dashboard')}
+          onOpenCommission={() => setCurrentView('staffCommission')}
+          primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          currencySymbol={profile.currency || '₹'}
+          salonName={profile.businessName}
+        />
+      )}
+
+      {currentView === 'staffCommission' && (
+        <StaffCommissionDashboard
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onBackToDashboard={() => setCurrentView('dashboard')}
+          onOpenStaffPerformance={() => setCurrentView('staffPerformance')}
+          primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          currencySymbol={profile.currency || '₹'}
+          salonName={profile.businessName}
         />
       )}
 

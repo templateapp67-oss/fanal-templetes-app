@@ -10,6 +10,9 @@ import {
   Check
 } from 'lucide-react';
 import { SalonProfile } from '../types';
+import { GoogleMapsView } from './GoogleMapsView';
+import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';
+import { GooglePlacesAutocompleteInput, AddressComponents } from './GooglePlacesAutocompleteInput';
 
 interface InteractiveMapSetupProps {
   profile: SalonProfile;
@@ -38,6 +41,7 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [pinValidationMsg, setPinValidationMsg] = useState<string>('');
+  const [geocodeStatusMsg, setGeocodeStatusMsg] = useState<string>('');
 
   // Address construct helper
   const constructFullAddress = (
@@ -111,6 +115,31 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
       setFullAddress(profile.address || '');
     }
   }, [profile.address]);
+
+  // Automatically fetch & update salon GPS coordinates using Google Maps Geocoding API whenever fullAddress changes
+  useEffect(() => {
+    if (!fullAddress || fullAddress.trim().length < 5) return;
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      setGeocodeStatusMsg('Fetching coordinates via Google Maps...');
+      const result = await geocodeAddressWithGoogleMaps(fullAddress);
+      if (result) {
+        setProfile((prev) => ({
+          ...prev,
+          latitude: result.lat,
+          longitude: result.lng,
+        }));
+        setPinConfirmed(true);
+        setGeocodeStatusMsg(`Google Maps GPS updated (${result.lat.toFixed(4)}, ${result.lng.toFixed(4)})`);
+      } else {
+        setGeocodeStatusMsg('Unable to geocode address via Google Maps');
+      }
+      setIsSearching(false);
+    }, 750);
+
+    return () => clearTimeout(timer);
+  }, [fullAddress, setProfile]);
 
   // Load Leaflet dynamically to avoid bundler conflicts
   useEffect(() => {
@@ -220,26 +249,20 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
     }
   };
 
-  // Geocode address via Nominatim OpenStreetMap API
+  // Geocode address via Google Maps Geocoding API
   const handleLocateAddress = async () => {
     const query = fullAddress || `${shopFlatNo} ${areaLocality} ${city} ${state} ${pincode}`;
     if (!query.trim()) return;
 
     setIsSearching(true);
+    setGeocodeStatusMsg('Geocoding address via Google Maps API...');
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query + ', India')}`
-      );
-      const data = await response.json();
-      if (data && data.length > 0) {
-        const item = data[0];
-        const lat = parseFloat(item.lat);
-        const lon = parseFloat(item.lon);
-
+      const result = await geocodeAddressWithGoogleMaps(query);
+      if (result) {
         setProfile((prev) => ({
           ...prev,
-          latitude: lat,
-          longitude: lon,
+          latitude: result.lat,
+          longitude: result.lng,
           shopFlatNo,
           areaLocality,
           city,
@@ -248,17 +271,15 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
           landmark,
           address: fullAddress
         }));
-
-        if (mapInstanceRef.current && markerInstanceRef.current) {
-          mapInstanceRef.current.setView([lat, lon], 16);
-          markerInstanceRef.current.setLatLng([lat, lon]);
-        }
         setPinConfirmed(true);
+        setGeocodeStatusMsg(`Google Maps GPS updated (${result.lat.toFixed(4)}, ${result.lng.toFixed(4)})`);
       } else {
-        alert('Could not find location coordinates for this address. Please drag the pin manually.');
+        alert('Could not find location coordinates via Google Maps API. Please drag the pin manually.');
+        setGeocodeStatusMsg('Geocoding failed');
       }
     } catch (err) {
       console.error(err);
+      setGeocodeStatusMsg('Error geocoding address');
     } finally {
       setIsSearching(false);
     }
@@ -276,29 +297,39 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
           <p className="text-[11px] text-slate-500">Add detailed location inputs to guide clients right to your salon doors.</p>
         </div>
 
-        {/* Full Address Multi-line Area */}
-        <div className="space-y-1">
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Full Business Address (Public Display)
-          </label>
-          <div className="relative">
-            <textarea
-              rows={3}
-              value={fullAddress}
-              onChange={(e) => setFullAddress(e.target.value)}
-              placeholder="e.g. Shop No. 5, Indiranagar Double Road, Opp. Metro Pillar 42, Bengaluru, Karnataka - 560038"
-              className="w-full p-2.5 bg-slate-50 hover:bg-slate-50/70 focus:bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none transition-all leading-normal"
-            />
-            <button
-              type="button"
-              onClick={handleLocateAddress}
-              disabled={isSearching}
-              className="absolute right-2 bottom-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-            >
-              <Compass className={`w-3.5 h-3.5 ${isSearching ? 'animate-spin' : ''}`} />
-              <span>{isSearching ? 'Locating...' : 'Auto-Locate Pin'}</span>
-            </button>
-          </div>
+        {/* Full Address Multi-line Area with Google Places Autocomplete */}
+        <div className="space-y-2">
+          <GooglePlacesAutocompleteInput
+            value={fullAddress}
+            onChange={(val) => setFullAddress(val)}
+            latitude={profile.latitude}
+            longitude={profile.longitude}
+            label="Salon Address (Google Places Autocomplete API)"
+            onAddressSelected={(selectedAddr, lat, lng, comps) => {
+              setFullAddress(selectedAddr);
+              setProfile((prev) => ({
+                ...prev,
+                address: selectedAddr,
+                latitude: lat,
+                longitude: lng,
+                city: comps?.city || prev.city,
+                state: comps?.state || prev.state,
+                postalCode: comps?.pincode || prev.postalCode,
+              }));
+              if (comps?.city) setCity(comps.city);
+              if (comps?.state) setState(comps.state);
+              if (comps?.pincode) setPincode(comps.pincode);
+              setPinConfirmed(true);
+            }}
+            onCoordinatesUpdate={(lat, lng) => {
+              setProfile((prev) => ({
+                ...prev,
+                latitude: lat,
+                longitude: lng,
+              }));
+              setPinConfirmed(true);
+            }}
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -483,33 +514,26 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
             </div>
           </div>
 
-          {/* Leaflet Map Frame Wrapper */}
-          <div className="relative border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 h-[220px] lg:h-full min-h-[220px] flex-1">
-            <div ref={mapContainerRef} className="absolute inset-0 z-0 w-full h-full" />
-            
-            {/* Real Zoom Controls overlay */}
-            <div className="absolute right-3 bottom-3 z-10 flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={handleZoomIn}
-                className="w-7 h-7 bg-white hover:bg-slate-50 text-slate-900 font-extrabold text-base rounded-lg border border-slate-200 shadow-md flex items-center justify-center cursor-pointer"
-              >
-                +
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                className="w-7 h-7 bg-white hover:bg-slate-50 text-slate-900 font-extrabold text-base rounded-lg border border-slate-200 shadow-md flex items-center justify-center cursor-pointer"
-              >
-                -
-              </button>
-            </div>
-
-            {/* Draggable notice card */}
-            <div className="absolute left-3 top-3 z-10 bg-white/95 backdrop-blur-xs border border-slate-200 rounded-lg p-2 shadow-sm text-[9px] font-bold text-slate-700 flex items-center gap-1.5 max-w-[190px]">
-              <Navigation className="w-3.5 h-3.5 text-blue-600 rotate-45" />
-              <span>Drag pin directly on map to fine-tune placement</span>
-            </div>
+          {/* Google Maps Container */}
+          <div className="relative rounded-2xl overflow-hidden h-[300px] lg:h-full min-h-[280px] flex-1">
+            <GoogleMapsView
+              latitude={profile.latitude || 19.0760}
+              longitude={profile.longitude || 72.8777}
+              title={profile.businessName || 'Nexora Salon & Spa'}
+              address={fullAddress}
+              phone={profile.phone || '+91 98765 43210'}
+              height="100%"
+              interactive={true}
+              onPositionChange={(lat, lng) => {
+                setProfile((prev) => ({
+                  ...prev,
+                  latitude: lat,
+                  longitude: lng,
+                }));
+                setPinConfirmed(true);
+              }}
+              accentColor={themePrimaryColor}
+            />
           </div>
 
           <p className="text-[10px] text-slate-400 font-medium italic mt-2 text-center">
