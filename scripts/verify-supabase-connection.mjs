@@ -156,8 +156,8 @@ for (const entry of CUSTOMER_SCHEMA_MAP) {
   // A device-stored entity may still READ real tables for the derived half of
   // its list (popular searches come from `services`), but it must never claim a
   // host table, because nothing is ever written to the database for it.
-  if (entry.kind === 'device' && entry.table) {
-    failures.push(`${entry.logical}: device-stored data claims a host table \`${entry.table}\` — it would be written to a table that does not hold it.`);
+  if ((entry.kind === 'device' || entry.kind === 'derived') && entry.table) {
+    failures.push(`${entry.logical}: ${entry.kind} data claims a host table \`${entry.table}\` — the reader would look for a row that does not hold it.`);
   }
   if (entry.table && !entry.tables.includes(entry.table)) {
     failures.push(`${entry.logical}: host table \`${entry.table}\` is not among the tables it reads (${entry.tables.join(', ') || 'none'}).`);
@@ -168,15 +168,39 @@ for (const entry of CUSTOMER_SCHEMA_MAP) {
 // Every endpoint the UI is told to call must be registered on the server.
 const serverPath = path.join(cwd, 'server/customerRoutes.ts');
 const serverSource = fs.existsSync(serverPath) ? fs.readFileSync(serverPath, 'utf8') : '';
+// Route paths are compared after normalising placeholders, because the map
+// spells them `{salonId}` and the router spells them `:idOrSubdomain` — and a
+// comparison that only strips one of the two styles reports every nested route
+// as missing (or, as this check used to, quietly skips the entity entirely).
+const normalisePath = (value) =>
+  String(value || '')
+    .replace(/\{[^}]+\}/g, '*')
+    .replace(/:[A-Za-z0-9_]+/g, '*')
+    .replace(/\/+$/, '');
+const endpointPath = (endpoint) => normalisePath(String(endpoint || '').trim().split(' ').pop());
+
 if (!serverSource) {
   failures.push('server/customerRoutes.ts is missing — the customer API does not exist.');
 } else {
+  const registered = new Set(
+    [...serverSource.matchAll(/^\s*\['(\/api\/customer[^']+)', '(get|post)'/gm)].map((match) => normalisePath(match[1]))
+  );
+  if (!registered.size) {
+    failures.push('No /api/customer routes could be read out of the router table — the endpoint check cannot run.');
+  }
   for (const entry of CUSTOMER_SCHEMA_MAP) {
-    const route = String(entry.endpoint || '').split(' ')[1] || '';
-    if (!route) continue;
-    const literal = route.replace(/\/:[^/]+/g, '');
-    if (!serverSource.includes(literal) && !serverSource.includes(route)) {
+    const path = endpointPath(entry.endpoint);
+    if (!path) {
+      failures.push(`${entry.logical}: no endpoint to verify.`);
+      continue;
+    }
+    if (!registered.has(path)) {
       failures.push(`${entry.logical}: nothing in server/customerRoutes.ts serves \`${entry.endpoint}\`.`);
+    }
+    for (const extra of entry.alsoEndpoints || []) {
+      if (!registered.has(endpointPath(extra))) {
+        failures.push(`${entry.logical}: nothing serves the additional endpoint \`${extra}\`.`);
+      }
     }
   }
   if (!serverSource.includes("'/api/customer/health'") && !serverSource.includes('/api/customer/connection')) {

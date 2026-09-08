@@ -40,7 +40,7 @@ Nothing else restates this list, and `npm run verify` fails if the two drift.
 | `favourites` | **derived** | your `bookings` and their service lines (+ device pins) | `GET /api/customer/me/favourites` |
 | `reviews` | **jsonb** | `bookings.metadata.review_*` | `GET/POST /api/customer/me/reviews` |
 | `reward_wallets` | table | `clients` + `loyalty_config` | `GET /api/customer/me/rewards` |
-| `reward_transactions` | table | `loyalty_point_transactions` | `GET /api/customer/me/rewards` |
+| `reward_transactions` | table | `loyalty_point_transactions` | same response as the wallet — a balance without its history is not explainable |
 | `customer_qr_payments` | table | `loyalty_point_transactions` where `type = 'qr_payment'` | `GET/POST /api/customer/me/qr-payments[/confirm]` |
 | `memberships` | table | `clients.loyalty_tier` vs `loyalty_config` thresholds | `GET /api/customer/me/memberships` |
 | `referrals` | **derived** | `bookings.metadata.referral_code` + `loyalty_point_transactions` | `GET /api/customer/me/referrals` |
@@ -288,6 +288,12 @@ npm test
   codes, slot arithmetic (including `HH:MM:00` spelling), mappers never inventing a
   missing value, the QR `description` round-trip, service and staff favourites,
   discount labels, error copy.
+* `tests/customerMap.test.ts` (6) — the data diagram itself, parsed from the tree
+  and asserted node by node and edge by edge: every node has a mapping entry,
+  every endpoint is in the router table *and* built by `src/lib/customer/api.ts`,
+  every edge is backed by the query or mapper that implements it, and every
+  customer-side node is `readScope: 'self'`. (This is what caught a map entry
+  pointing at a `/me/rewards/transactions` route that never existed.)
 * `tests/customerScreens.test.ts` (7) — every screen renders with no session, no
   database and no props; no mock data in rendered markup; source labels do not
   claim a database before the API answers.

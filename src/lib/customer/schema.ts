@@ -115,6 +115,8 @@ export const CUSTOMER_SCHEMA_MAP: CustomerEntityMap[] = [
       'postal_code',
       'state',
       'landmark',
+      'address_line2',
+      'owner_photo_url',
       'latitude',
       'longitude',
       'updated_at',
@@ -330,8 +332,8 @@ export const CUSTOMER_SCHEMA_MAP: CustomerEntityMap[] = [
     filters: ['client_id=eq.{walletId}'],
     readScope: 'self',
     writeScope: 'self',
-    endpoint: '/api/customer/me/rewards/transactions',
-    note: 'The points ledger table, filtered to the customer\'s own wallet rows. Types in use today: visit_earned, spend_earned, bonus, redeemed — plus qr_payment for QR rewards.',
+    endpoint: '/api/customer/me/rewards',
+    note: 'The points ledger table, filtered to the customer\'s own wallet rows. There is no separate transactions route: /api/customer/me/rewards returns the wallet and this ledger in one response (data.wallets, data.transactions), because a balance without its history is not explainable. Types in use today: visit_earned, spend_earned, bonus, redeemed — plus qr_payment for QR rewards.',
   },
   {
     logical: 'customer_qr_payments',
@@ -359,7 +361,10 @@ export const CUSTOMER_SCHEMA_MAP: CustomerEntityMap[] = [
   },
   {
     logical: 'referrals',
-    table: 'bookings',
+    // Derived from two places (the code from the auth id, the count from
+    // bookings.metadata.referral_code), so no single row "hosts" it — naming one
+    // would make the Data-sources screen look like it reads a referrals table.
+    table: null,
     tables: ['bookings', 'profiles', 'loyalty_point_transactions'],
     kind: 'derived',
     columns: ['metadata'],
