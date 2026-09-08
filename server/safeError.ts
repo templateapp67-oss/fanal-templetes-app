@@ -16,6 +16,32 @@ export interface SafeErrorInfo {
   retryable: boolean;
 }
 
+/**
+ * Detect when a Supabase / PostgREST query failed because the target table
+ * does not exist in the database or schema cache.
+ */
+export function isMissingTableError(error: any, table?: string): boolean {
+  if (!error) return false;
+  const msg = String(error?.message ?? error ?? '').toLowerCase();
+  const code = String(error?.code ?? '').toUpperCase();
+  // Postgres 42P01: undefined_table
+  // PostgREST PGRST205: relation does not exist
+  if (code === '42P01' || code === 'PGRST205') return true;
+  if (
+    msg.includes('in the schema cache') ||
+    (msg.includes('relation') && msg.includes('does not exist')) ||
+    msg.includes('could not find the table') ||
+    (msg.includes('table') && msg.includes('does not exist'))
+  ) {
+    if (table) {
+      const target = table.toLowerCase();
+      return msg.includes(target) || !msg.includes('table');
+    }
+    return true;
+  }
+  return false;
+}
+
 function errorCode(error: any): string {
   return typeof error?.code === 'string' && error.code.trim() ? error.code.trim() : 'unexpected_error';
 }

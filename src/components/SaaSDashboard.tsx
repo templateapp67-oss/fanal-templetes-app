@@ -9,6 +9,7 @@ import { PromoStudio } from './PromoStudio';
 import { LoyaltyManagement } from './LoyaltyManagement';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
 import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
+import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress, calculateTierProgress } from '../loyaltyData';
 import { getSiteUrl } from '../lib/salonStore';
 
@@ -389,6 +390,19 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
+            {/* DATA VISUALIZATION: TOP CLIENTS LOYALTY TIER DISTRIBUTION BAR CHART */}
+            <TopClientsLoyaltyChart
+              clients={clients}
+              appointments={appointments}
+              loyaltyConfig={loyaltyConfig}
+              primaryAccentColor={currentPrimaryColor}
+              onSelectClient={(client) => {
+                setDashboardTierClientSearch(client.name);
+                setActiveTab('clients');
+              }}
+              onNavigateToLoyalty={() => setActiveTab('loyalty')}
+            />
+
             {/* Upcoming Appointments Table */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
               <div className="flex justify-between items-center mb-4">
@@ -762,6 +776,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             setLoyaltyConfig={setLoyaltyConfig}
             primaryAccentColor={currentPrimaryColor}
             profile={profile}
+            appointments={appointments}
             onNavigateToPreview={onNavigateToPreview}
           />
         )}

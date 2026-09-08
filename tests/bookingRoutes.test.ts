@@ -288,3 +288,57 @@ test('POST /api/notifications/read succeeds in mock mode and flips the rows', as
   assert.equal(res.body.success, true);
   assert.equal(stored[0].is_read, true);
 });
+
+test('GET /api/notifications gracefully degrades to in-memory when table is missing from schema cache', async () => {
+  let stored = [{ user_email: 'owner@real.com', title: 'Test', is_read: false }];
+  const { db } = makeDb({
+    in_app_notifications: {
+      select: {
+        data: null,
+        error: { code: 'PGRST205', message: "Could not find the table 'public.in_app_notifications' in the schema cache" },
+      },
+    },
+  });
+  const handler = createNotificationsListHandler(
+    baseDeps({
+      db,
+      isMock: false,
+      getMockNotifications: () => stored,
+    })
+  );
+  const res = makeRes();
+  await handler({ query: { email: 'owner@real.com' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.mode, 'memory_fallback');
+  assert.equal(res.body.data.length, 1);
+});
+
+test('POST /api/notifications/read gracefully degrades to in-memory when table is missing from schema cache', async () => {
+  let stored = [{ user_email: 'owner@real.com', title: 'Test', is_read: false }];
+  const { db } = makeDb({
+    in_app_notifications: {
+      update: {
+        data: null,
+        error: { code: 'PGRST205', message: "Could not find the table 'public.in_app_notifications' in the schema cache" },
+      },
+    },
+  });
+  const handler = createNotificationsReadHandler(
+    baseDeps({
+      db,
+      isMock: false,
+      getMockNotifications: () => stored,
+      setMockNotifications: (rows: any[]) => {
+        stored = rows;
+      },
+    })
+  );
+  const res = makeRes();
+  await handler({ body: { email: 'owner@real.com' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.mode, 'memory_fallback');
+  assert.equal(stored[0].is_read, true);
+});
+

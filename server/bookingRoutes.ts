@@ -33,7 +33,7 @@ import {
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
 } from './dbGuard';
-import { safeDatabaseError, sendSafeError } from './safeError';
+import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError';
 
 export interface BookingRoutesDeps {
   db: any;
@@ -376,7 +376,7 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
         if (notifs) {
           const rows = [notifs.owner];
           if (notifs.customer) rows.unshift(notifs.customer);
-          if (deps.isMock) {
+          if (deps.isMock || inAppNotificationsTableMissing) {
             deps.addMockNotifications(
               rows.map((n) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() }))
             );
@@ -385,7 +385,16 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
               () => deps.db.from('in_app_notifications').insert(rows),
               { label: `status notification (${requestId})`, timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt, retry: false }
             );
-            if (notifError) console.warn(`[Bookings] (${requestId}) Notification insert error:`, notifError.message);
+            if (notifError) {
+              if (isMissingTableError(notifError, 'in_app_notifications')) {
+                inAppNotificationsTableMissing = true;
+                deps.addMockNotifications(
+                  rows.map((n) => ({ ...n, id: String(Date.now() + Math.random()), created_at: new Date().toISOString() }))
+                );
+              } else {
+                console.warn(`[Bookings] (${requestId}) Notification insert error:`, notifError.message);
+              }
+            }
           }
         }
       } catch (notifErr: any) {
@@ -409,6 +418,8 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
 // ---------------------------------------------------------------------------
 // GET /api/notifications?email=
 // ---------------------------------------------------------------------------
+let inAppNotificationsTableMissing = false;
+
 export function createNotificationsListHandler(deps: BookingRoutesDeps) {
   return async function listNotifications(req: any, res: any): Promise<void> {
     const requestId = newRequestId('ntls');
@@ -422,10 +433,18 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
           .json({ success: false, code: 'invalid_request', requestId, error: 'An email address is required.' });
       }
 
-      if (deps.isMock) {
-        const rows = deps.getMockNotifications().filter((n) => n.user_email === email).sort(byNewestFirst);
+      if (deps.isMock || inAppNotificationsTableMissing) {
+        const rows = deps
+          .getMockNotifications()
+          .filter((n) => String(n.user_email || '').toLowerCase() === email.toLowerCase())
+          .sort(byNewestFirst);
         if (responseAlreadyEnded(res)) return;
-        return void res.json({ success: true, mode: 'mock', requestId, data: rows });
+        return void res.json({
+          success: true,
+          mode: deps.isMock ? 'mock' : 'memory_fallback',
+          requestId,
+          data: rows,
+        });
       }
 
       const { data, error } = await runDb(
@@ -440,6 +459,15 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
       );
 
       if (error) {
+        if (isMissingTableError(error, 'in_app_notifications')) {
+          inAppNotificationsTableMissing = true;
+          const rows = deps
+            .getMockNotifications()
+            .filter((n) => String(n.user_email || '').toLowerCase() === email.toLowerCase())
+            .sort(byNewestFirst);
+          if (responseAlreadyEnded(res)) return;
+          return void res.json({ success: true, mode: 'memory_fallback', requestId, data: rows });
+        }
         console.warn(`[Notifications] (${requestId}) List failed:`, error.message || error);
         if (responseAlreadyEnded(res)) return;
         const safe = safeDatabaseError(error, 'Notifications could not be loaded.');
@@ -454,6 +482,15 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
       if (responseAlreadyEnded(res)) return;
       res.json({ success: true, mode: 'live', requestId, data: data || [] });
     } catch (err: any) {
+      if (isMissingTableError(err, 'in_app_notifications')) {
+        inAppNotificationsTableMissing = true;
+        const rows = deps
+          .getMockNotifications()
+          .filter((n) => String(n.user_email || '').toLowerCase() === email.toLowerCase())
+          .sort(byNewestFirst);
+        if (responseAlreadyEnded(res)) return;
+        return void res.json({ success: true, mode: 'memory_fallback', requestId, data: rows });
+      }
       console.error(`[Notifications] (${requestId}) List threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
       sendSafeError(res, err, {
@@ -471,22 +508,24 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
 export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
   return async function markNotificationsRead(req: any, res: any): Promise<void> {
     const requestId = newRequestId('ntrd');
+    const deadlineAt = res.locals?.requestDeadlineAt;
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
     try {
       if (rejectMissingAdminClient(deps, res, requestId)) return;
-      const deadlineAt = res.locals?.requestDeadlineAt;
-      const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
       if (!email) {
         return void res
           .status(400)
           .json({ success: false, code: 'invalid_request', requestId, error: 'An email address is required.' });
       }
 
-      if (deps.isMock) {
+      if (deps.isMock || inAppNotificationsTableMissing) {
         deps.setMockNotifications(
-          deps.getMockNotifications().map((n) => (n.user_email === email ? { ...n, is_read: true } : n))
+          deps.getMockNotifications().map((n) =>
+            String(n.user_email || '').toLowerCase() === email.toLowerCase() ? { ...n, is_read: true } : n
+          )
         );
         if (responseAlreadyEnded(res)) return;
-        return void res.json({ success: true, mode: 'mock', requestId });
+        return void res.json({ success: true, mode: deps.isMock ? 'mock' : 'memory_fallback', requestId });
       }
 
       const { error } = await runDb(
@@ -495,6 +534,16 @@ export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
       );
 
       if (error) {
+        if (isMissingTableError(error, 'in_app_notifications')) {
+          inAppNotificationsTableMissing = true;
+          deps.setMockNotifications(
+            deps.getMockNotifications().map((n) =>
+              String(n.user_email || '').toLowerCase() === email.toLowerCase() ? { ...n, is_read: true } : n
+            )
+          );
+          if (responseAlreadyEnded(res)) return;
+          return void res.json({ success: true, mode: 'memory_fallback', requestId });
+        }
         // Previously this answered `success: true`, so the badge silently came
         // back on the next poll with no explanation anywhere.
         console.warn(`[Notifications] (${requestId}) Mark-read failed:`, error.message || error);
@@ -511,6 +560,16 @@ export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
       if (responseAlreadyEnded(res)) return;
       res.json({ success: true, mode: 'live', requestId });
     } catch (err: any) {
+      if (isMissingTableError(err, 'in_app_notifications')) {
+        inAppNotificationsTableMissing = true;
+        deps.setMockNotifications(
+          deps.getMockNotifications().map((n) =>
+            String(n.user_email || '').toLowerCase() === email.toLowerCase() ? { ...n, is_read: true } : n
+          )
+        );
+        if (responseAlreadyEnded(res)) return;
+        return void res.json({ success: true, mode: 'memory_fallback', requestId });
+      }
       console.error(`[Notifications] (${requestId}) Mark-read threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
       sendSafeError(res, err, {
