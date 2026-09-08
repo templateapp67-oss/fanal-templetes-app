@@ -26,7 +26,7 @@
 // ============================================================================
 
 import { isUuidLike, sanitizeBookingRow } from './bookingOps';
-import { isRazorpayConfigured, verifyRazorpaySignature } from './razorpay';
+import { resolveSignatureSecret, verifyRazorpaySignature, isMockOrderId } from './razorpay';
 import { resolveTenantFromHost } from '../src/lib/tenant';
 import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus';
 import {
@@ -576,19 +576,36 @@ export function createBookingHandler(deps: BookingCreateDeps) {
       // Never trust "I paid" from the browser: the signature is checked with
       // the key secret before the booking is marked as paid.
       let verifiedPaymentId: string | null = null;
+      let paymentGatewayMode: 'live' | 'test' | 'mock' | 'disabled' = 'disabled';
       if (payment && typeof payment === 'object' && payment.razorpay_payment_id) {
-        if (!isRazorpayConfigured()) {
-          console.warn('[Bookings] Payment reference received but Razorpay is not configured — storing as unverified.');
+        // The secret depends on the ACTIVE gateway: the real key secret in
+        // test/live mode, the mock secret when the simulated gateway is on,
+        // and nothing at all when payments are disabled.
+        const { secret, mode } = resolveSignatureSecret();
+        paymentGatewayMode = mode;
+        const orderId = String(payment.razorpay_order_id || '');
+        if (!secret) {
+          console.warn('[Bookings] Payment reference received but the payment gateway is disabled — storing as unverified.');
+        } else if (mode !== 'mock' && isMockOrderId(orderId)) {
+          // A mock-signed triple must never be accepted as a real payment.
+          console.error('[Bookings] Refused a MOCK order id while the real gateway is active', { order: orderId });
+          return void fail(
+            400,
+            'payment_unverified',
+            'We could not verify your payment with Razorpay. The booking was not saved — no amount was captured.'
+          );
         } else {
           const ok = verifyRazorpaySignature({
-            orderId: String(payment.razorpay_order_id || ''),
+            orderId,
             paymentId: String(payment.razorpay_payment_id || ''),
             signature: String(payment.razorpay_signature || ''),
+            keySecret: secret,
           });
           if (!ok) {
             console.error('[Bookings] Razorpay signature verification FAILED', {
               order: payment.razorpay_order_id,
               payment: payment.razorpay_payment_id,
+              mode,
             });
             return void fail(
               400,
@@ -597,7 +614,9 @@ export function createBookingHandler(deps: BookingCreateDeps) {
             );
           }
           verifiedPaymentId = String(payment.razorpay_payment_id);
-          console.log(`[Bookings] Verified Razorpay payment ${verifiedPaymentId} (order ${payment.razorpay_order_id})`);
+          console.log(
+            `[Bookings] Verified ${mode === 'mock' ? 'MOCK ' : ''}Razorpay payment ${verifiedPaymentId} (order ${payment.razorpay_order_id})`
+          );
         }
       }
 
@@ -693,6 +712,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
             duplicate: true,
             data: existing,
             paymentVerified: !!verifiedPaymentId,
+            paymentMode: verifiedPaymentId ? paymentGatewayMode : undefined,
           });
         }
       }
@@ -780,6 +800,8 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         requestId,
         data: bookingData,
         paymentVerified: !!verifiedPaymentId,
+        // 'mock' tells the UI the advance was simulated (no money moved).
+        paymentMode: verifiedPaymentId ? paymentGatewayMode : undefined,
       });
     } catch (err: any) {
       // Absolute last resort — an unexpected fault. Log the stack so the real

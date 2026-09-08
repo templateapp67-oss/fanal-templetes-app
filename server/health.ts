@@ -15,7 +15,7 @@
 
 import { runDb, LOOKUP_DB_TIMEOUT_MS } from './dbGuard';
 import { safeDatabaseError } from './safeError';
-import { getRazorpayConfigIssues, readRazorpayCredentials } from './razorpay';
+import { describeRazorpayGateway } from './razorpay';
 import { isWebhookConfigured } from './razorpayWebhook';
 
 export interface HealthDeps {
@@ -44,8 +44,7 @@ export interface HealthCheck {
 export function createHealthHandler(deps: HealthDeps) {
   return async function health(req: any, res: any): Promise<void> {
     const deep = req.query?.deep === '1' || req.query?.deep === 'true';
-    const razorpayIssues = getRazorpayConfigIssues();
-    const { keyId } = readRazorpayCredentials();
+    const gateway = describeRazorpayGateway();
 
     const checks: HealthCheck[] = [];
     const problems: string[] = [];
@@ -77,14 +76,15 @@ export function createHealthHandler(deps: HealthDeps) {
           : 'SUPABASE_SERVICE_ROLE_KEY is missing: authenticated booking inserts will be rejected by Row Level Security.',
     });
 
+    // live/test: real keys. mock: no keys on a non-production runtime, the
+    // checkout runs against the simulated gateway (a legitimate dev/preview
+    // state, reported ok). disabled: no keys in production → pay-at-salon.
     checks.push({
       name: 'razorpay',
-      ok: razorpayIssues.length === 0,
-      detail:
-        razorpayIssues.length === 0
-          ? `Gateway ready (${keyId.startsWith('rzp_live_') ? 'LIVE' : 'TEST'} key).`
-          : `Online payments disabled — ${razorpayIssues.join(' ')} Checkout falls back to pay-at-salon.`,
+      ok: gateway.ready,
+      detail: `[${gateway.mode}] ${gateway.summary}`,
     });
+    for (const warning of gateway.warnings) problems.push(`razorpay: ${warning}`);
 
     checks.push({
       name: 'razorpay_webhook',
@@ -154,6 +154,8 @@ export function createHealthHandler(deps: HealthDeps) {
       app: 'Nexora Salon OS',
       entrypoint: deps.entrypoint,
       mode: deps.isMock ? 'mock' : 'live',
+      /** live | test | mock | disabled — which payment gateway serves checkout. */
+      paymentMode: gateway.mode,
       bookingReady,
       supabase: {
         host: deps.supabaseConfig.urlHost,

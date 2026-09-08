@@ -26,7 +26,19 @@ import {
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS } from '../mockData';
-import { payAdvanceWithRazorpay } from '../lib/razorpayCheckout';
+import { payAdvanceWithRazorpay, type PaymentGatewayMode, type RazorpayOutcome } from '../lib/razorpayCheckout';
+import {
+  buildBookingDraft,
+  toAdvancePaymentInput,
+  recordPaymentAttempt,
+  describeBookingDraft,
+  draftHomeAddress,
+  saveBookingDraft,
+  loadBookingDraft,
+  clearBookingDraft,
+  type BookingDraft,
+} from '../lib/bookingDraft';
+import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../lib/advanceDeposit';
 import { BookingConfirmation } from './BookingConfirmation';
 import {
   buildConfirmationSummary,
@@ -233,6 +245,35 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [paymentNotice, setPaymentNotice] = useState<string>('');
   const [advancePaid, setAdvancePaid] = useState<boolean>(false);
   const [paymentReceiptId, setPaymentReceiptId] = useState<string>('');
+  // Which gateway took the advance. 'mock' = simulated (dev/preview) — the
+  // pass and the toast must never claim real money moved in that case.
+  const [paymentMode, setPaymentMode] = useState<PaymentGatewayMode | null>(null);
+
+  // ---- Active draft -------------------------------------------------------
+  // Frozen snapshot of salon / service / add-ons / specialist / slot / contact
+  // / deposit taken when the customer taps confirm (src/lib/bookingDraft.ts).
+  // "Retry Payment" re-opens checkout from THIS object, so a re-render, a
+  // changed default or a stale closure can never charge a different amount or
+  // book a different slot than the one the customer saw. Mirrored to
+  // sessionStorage so a reload mid-payment (UPI app hand-offs) keeps it.
+  const [activeDraft, setActiveDraft] = useState<BookingDraft | null>(null);
+  // "Payment Failure / Advance Payment Incomplete" panel state. `null` = no
+  // failure to show. The payment never blocks the customer from reviewing or
+  // editing the draft: every field stays exactly as entered.
+  const [paymentFailure, setPaymentFailure] = useState<{
+    title: string;
+    detail: string;
+    /** True when tapping Retry can reasonably succeed (declined card, closed window, network blip). */
+    retryable: boolean;
+    /** Salon-side gap (gateway disabled/unreachable) — offer pay-at-salon. */
+    canPayAtSalon: boolean;
+  } | null>(null);
+  const [showDraftReview, setShowDraftReview] = useState<boolean>(false);
+  // A draft found in sessionStorage from an interrupted attempt (e.g. the tab
+  // reloaded while the UPI app was open). Offered back to the customer rather
+  // than silently applied.
+  const [resumableDraft, setResumableDraft] = useState<BookingDraft | null>(null);
+  const restoredDraftRef = useRef<boolean>(false);
   // Did the booking actually reach the salon's database? When the API is
   // unreachable we still keep a local copy, but the pass must SAY it is not
   // confirmed with the salon yet instead of implying everything is fine.
@@ -260,6 +301,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setSelectedService(initialService);
     }
   }, [initialService, selectedService]);
+
+  // Offer to resume a draft whose payment was interrupted (same salon only,
+  // unpaid, less than 30 minutes old). Checked once per open.
+  useEffect(() => {
+    if (!isOpen) {
+      restoredDraftRef.current = false;
+      return;
+    }
+    if (restoredDraftRef.current) return;
+    restoredDraftRef.current = true;
+    const found = loadBookingDraft({
+      salon: { ownerId: profile.ownerId, subdomain: profile.subdomain, name: profile.businessName },
+    });
+    if (found && found.payment.attempts > 0) setResumableDraft(found);
+  }, [isOpen, profile.ownerId, profile.subdomain, profile.businessName]);
 
   // 5-minute Slot Lock Timer countdown
   useEffect(() => {
@@ -418,11 +474,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  // Calculate advance token amount (25%)
+  // Calculate advance token amount (25%). The same helper runs on the server
+  // when the order is created, so the ₹ on the button and the paise in the
+  // Razorpay order can never disagree (src/lib/advanceDeposit.ts).
   const homeServiceCharge = bookingType === 'home' ? (profile.homeService?.baseCharge || 0) : 0;
   const upgradesPrice = selectedUpgrades.reduce((sum, upgrade) => sum + upgrade.price, 0);
   const totalAmount = selectedService.price + homeServiceCharge + upgradesPrice;
-  const advanceTokenAmount = Math.round((totalAmount * 25) / 100);
+  const depositPercent = DEFAULT_DEPOSIT_PERCENT;
+  const advanceTokenAmount = computeAdvanceDeposit(totalAmount, depositPercent).rupees;
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
 
   // ==========================================================================
@@ -463,18 +522,312 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   });
 
   // ==========================================================================
-  // CONFIRM BOOKING  (payment → persist → pass)
+  // CONFIRM BOOKING  (draft → payment → persist → pass)
   // --------------------------------------------------------------------------
   // Order of operations, and why:
   //   1. Validate locally so obviously incomplete details never hit the API.
-  //   2. Take the 25% advance through Razorpay (server creates the order and
-  //      verifies the signature — the key secret never touches the browser).
-  //      If the gateway isn't configured the flow degrades to "pay at salon"
-  //      instead of failing the booking.
-  //   3. POST the booking. The API answers a readable error for validation /
+  //   2. Freeze every parameter into a BookingDraft (salon, slot, stylist,
+  //      services, deposit). Everything below works from that snapshot.
+  //   3. Take the 25% advance through Razorpay (server derives the paise
+  //      amount, creates the order and verifies the signature — the key secret
+  //      never touches the browser). A failed / dismissed payment shows the
+  //      "Advance Payment Incomplete" panel with Retry Payment + Review Draft
+  //      and KEEPS the draft. If the gateway is disabled server-side the flow
+  //      degrades to "pay at salon" instead of failing the booking.
+  //   4. POST the booking. The API answers a readable error for validation /
   //      owner / database problems; only then do we show the pass.
   // ==========================================================================
-  const handleFinalSubmitBooking = async () => {
+
+  /** Snapshot the current selections + contact details into a draft. */
+  const buildDraftFromForm = (refNum: string): BookingDraft =>
+    buildBookingDraft({
+      id: refNum,
+      salon: {
+        ownerId: profile.ownerId || null,
+        subdomain: profile.subdomain || null,
+        businessName: profile.businessName,
+        city: profile.city || null,
+        email: profile.email || null,
+        currency: profile.currency || '₹',
+      },
+      service: {
+        id: selectedService.id,
+        name: selectedService.name,
+        price: selectedService.price,
+        durationMinutes: selectedService.durationMinutes,
+      },
+      upgrades: selectedUpgrades.map((u) => ({ id: u.id, name: u.name, price: u.price, durationMinutes: u.durationMinutes })),
+      stylist: { id: selectedStylist.id, name: selectedStylist.name },
+      date: bookingDate,
+      time: bookingTime,
+      bookingType,
+      homeAddress: homeServiceAddress,
+      homePinCode: homeServicePinCode,
+      homeServiceCharge: profile.homeService?.baseCharge || 0,
+      customer: {
+        name: guestName.trim() || 'Guest Client',
+        phone: sanitizeIndianPhone(guestPhone),
+        email: guestEmail.trim() || user?.email || null,
+        notes: guestNotes.trim() || null,
+      },
+      paymentMethod,
+      depositPercent,
+    });
+
+  /** Human wording for the failure panel, from a typed checkout outcome. */
+  const describePaymentFailure = (outcome: RazorpayOutcome) => {
+    if (outcome.status === 'dismissed') {
+      return {
+        title: 'Advance payment incomplete',
+        detail: 'The payment window was closed before the advance was paid. Nothing was charged and no appointment was created — your slot, specialist and services are still saved below.',
+        retryable: true,
+        canPayAtSalon: false,
+      };
+    }
+    if (outcome.status === 'failed') {
+      return {
+        title: 'Payment failed',
+        detail: `${outcome.reason.replace(/\.?$/, '.')} No amount was charged and no appointment was created.`,
+        retryable: outcome.retryable,
+        canPayAtSalon: false,
+      };
+    }
+    // 'unavailable' — salon-side gap, not the customer's fault.
+    return {
+      title: 'Online payment unavailable',
+      detail: `Online booking payment is temporarily unavailable because the secure payment service is not configured (${outcome.reason}). No appointment was created.`,
+      retryable: true,
+      canPayAtSalon: true,
+    };
+  };
+
+  /**
+   * Run checkout for a draft: payment (if an advance is due) → persist → pass.
+   * Shared by the confirm button and "Retry Payment". `options.skipPayment`
+   * is the explicit "book now, pay at salon" choice offered when the gateway
+   * itself is unavailable.
+   */
+  const runCheckout = async (
+    draft: BookingDraft,
+    options: { skipPayment?: boolean; accessToken: string }
+  ): Promise<void> => {
+    let workingDraft = draft;
+    let paymentPayload: {
+      razorpay_order_id?: string;
+      razorpay_payment_id?: string;
+      razorpay_signature?: string;
+    } | undefined;
+    let paidAdvance = false;
+    let paidMode: PaymentGatewayMode | null = null;
+
+    // ---- 3. Advance payment via Razorpay ------------------------------------
+    const advanceDue = workingDraft.payment.method === 'pay_advance_token' && workingDraft.pricing.depositAmount > 0;
+    if (advanceDue && !options.skipPayment) {
+      setSubmitStage('paying');
+      // The payload comes from the DRAFT, never from live form state.
+      const outcome = await payAdvanceWithRazorpay(
+        toAdvancePaymentInput(workingDraft, { themeColor: themeAccentHex, accountEmail: user?.email || null })
+      );
+
+      if (outcome.status === 'paid') {
+        paidAdvance = true;
+        paidMode = outcome.mode;
+        paymentPayload = {
+          razorpay_order_id: outcome.orderId,
+          razorpay_payment_id: outcome.paymentId,
+          razorpay_signature: outcome.signature,
+        };
+        workingDraft = recordPaymentAttempt(workingDraft, {
+          status: 'paid',
+          orderId: outcome.orderId,
+          paymentId: outcome.paymentId,
+          signature: outcome.signature,
+          mode: outcome.mode,
+        });
+        setActiveDraft(workingDraft);
+        saveBookingDraft(workingDraft);
+        setPaymentReceiptId(outcome.paymentId);
+        setPaymentMode(outcome.mode);
+      } else if (outcome.status === 'unavailable') {
+        // Salon-side gap (gateway disabled / unreachable). Do NOT silently
+        // book as pay-at-salon: show the panel and let the customer choose.
+        console.warn('[Booking] Razorpay unavailable:', outcome.reason);
+        workingDraft = recordPaymentAttempt(workingDraft, { status: 'failed', error: outcome.reason });
+        setActiveDraft(workingDraft);
+        saveBookingDraft(workingDraft);
+        setPaymentFailure(describePaymentFailure(outcome));
+        return;
+      } else {
+        // 'dismissed' | 'failed' — keep the draft, show Retry / Review.
+        workingDraft = recordPaymentAttempt(workingDraft, {
+          status: outcome.status === 'dismissed' ? 'dismissed' : 'failed',
+          error: outcome.status === 'failed' ? outcome.reason : 'Payment window closed',
+          orderId: outcome.orderId || null,
+        });
+        setActiveDraft(workingDraft);
+        saveBookingDraft(workingDraft);
+        setPaymentFailure(describePaymentFailure(outcome));
+        return;
+      }
+    } else if (advanceDue && options.skipPayment) {
+      setPaymentNotice('Online payment is not enabled for this salon yet — your slot is held and you can pay at the salon.');
+    }
+
+    setAdvancePaid(paidAdvance);
+    if (!paidAdvance) setPaymentMode(null);
+
+    // ---- 4. Persist the booking -------------------------------------------
+    setSubmitStage('saving');
+    let savedRemotely = false;
+    // Whatever the salon's database wrote back is the status the confirmation
+    // page will show. Never assume: a duplicate submission returns the row
+    // that already existed, which the owner may have confirmed or cancelled.
+    let remoteStatus: unknown = 'pending';
+    const advanceAmount = paidAdvance ? workingDraft.pricing.depositAmount : 0;
+    try {
+      const requestBody = JSON.stringify({
+        owner_id: workingDraft.salon.ownerId || undefined,
+        subdomain: workingDraft.salon.subdomain || undefined,
+        owner_email: workingDraft.salon.email || undefined,
+        payment: paymentPayload,
+        booking: {
+          owner_id: workingDraft.salon.ownerId || undefined,
+          customer_name: workingDraft.customer.name,
+          customer_phone: workingDraft.customer.phone,
+          customer_email: workingDraft.customer.email || undefined,
+          service_id: workingDraft.service.id,
+          service_name: workingDraft.service.name,
+          // Persisted into the booking's metadata by the API. The customer's
+          // "My Bookings" cards need these: `bookings` has no salon or
+          // stylist column, so without them the card cannot say who or where.
+          stylist_name: workingDraft.stylist.name,
+          salon_name: workingDraft.salon.name,
+          // `bookings` stores one service plus a total; checkout folds the
+          // add-on prices in without itemising them. Sending them here is
+          // what lets the booking detail page list everything the customer
+          // actually picked.
+          service_addons: workingDraft.upgrades.map((addon) => ({
+            name: addon.name,
+            price: addon.price,
+            duration: addon.durationMinutes,
+          })),
+          // Optional message for the salon. `bookings.notes` is the column
+          // for it — distinct from the Razorpay *order* note further down.
+          notes: workingDraft.customer.notes || undefined,
+          booking_date: workingDraft.slot.date,
+          time_slot: workingDraft.slot.time,
+          total_amount: workingDraft.pricing.total,
+          advance_paid_amount: advanceAmount,
+          status: 'pending',
+          payment_status: paidAdvance ? 'paid_deposit' : 'pending',
+          payment_id: paymentPayload?.razorpay_payment_id || workingDraft.id,
+          booking_type: workingDraft.bookingType,
+          home_address: draftHomeAddress(workingDraft),
+        },
+        notifications: [
+          {
+            user_email: workingDraft.salon.email || 'owner@salon.com',
+            title: 'New Booking Request',
+            message: `New booking from ${workingDraft.customer.name} for ${workingDraft.service.name} on ${workingDraft.slot.date}. ${
+              paidAdvance
+                ? `${workingDraft.pricing.depositPercent}% Advance Paid: ₹${advanceAmount}${paidMode === 'mock' ? ' (TEST — simulated)' : ''}`
+                : 'Advance not paid (pay at salon).'
+            }`,
+          },
+        ],
+      });
+
+      // Transient faults (cold serverless start, a database blip, a dropped
+      // mobile connection) used to surface as a dead-end "Server error
+      // (HTTP 500)". Retry those automatically before bothering the customer;
+      // 4xx answers are the customer's own input and are never retried.
+      const outcome = await postBookingWithRetry(requestBody, { accessToken: options.accessToken });
+
+      if (outcome.ok) {
+        savedRemotely = true;
+        if (outcome.data && typeof outcome.data === 'object' && 'status' in outcome.data) {
+          remoteStatus = (outcome.data as any).status;
+        }
+      } else if (outcome.kind === 'offline') {
+        // Truly unreachable (offline / preview sandbox with no API): keep a
+        // local copy so the salon dashboard on this device still shows it,
+        // but SAY SO on the pass instead of pretending it was confirmed.
+        console.warn('Booking API unreachable — keeping a local copy only.', outcome.detail);
+      } else {
+        console.error('Failed to create booking:', outcome.detail, outcome);
+        if (outcome.code === 'auth_required') {
+          setSubmitError('Your session has expired. Please sign in again. Your booking details are still here.');
+          onRequireAuth?.('login');
+          return;
+        }
+        const support = outcome.requestId ? ` (ref ${outcome.requestId})` : '';
+        const retryHint = outcome.retryable
+          ? ' This is usually temporary — please try again in a minute.'
+          : ' Please try again — your details are still here.';
+        setSubmitError(
+          paidAdvance
+            ? `Your payment went through (ref ${paymentPayload?.razorpay_payment_id}) but we couldn't save the booking (${outcome.detail})${support}. Please share this reference with the salon — you will not be charged twice.`
+            : `We couldn't save your booking (${outcome.detail})${support}.${retryHint}`
+        );
+        return;
+      }
+    } catch (e: any) {
+      // Nothing above should throw; treat it like an unreachable API rather
+      // than losing the customer's details.
+      console.warn('Booking save threw unexpectedly — keeping a local copy only.', e);
+    }
+    setSavedToCloud(savedRemotely);
+    setStoredStatus(String(remoteStatus ?? 'pending'));
+    // The draft did its job — a paid/saved booking must not be offered for
+    // "resume" on the next open.
+    clearBookingDraft();
+    setPaymentFailure(null);
+    setShowDraftReview(false);
+
+    const newApt: Appointment = {
+      id: `apt-${Date.now()}`,
+      clientName: workingDraft.customer.name,
+      clientPhone: `+91 ${workingDraft.customer.phone}`,
+      clientEmail: workingDraft.customer.email || `${workingDraft.customer.phone}@guest.in`,
+      serviceId: workingDraft.service.id,
+      serviceName: workingDraft.service.name,
+      servicePrice: workingDraft.pricing.total,
+      stylistId: workingDraft.stylist.id,
+      stylistName: workingDraft.stylist.name,
+      date: workingDraft.slot.date,
+      time: workingDraft.slot.time,
+      status: 'pending', // Set initial status to pending
+      paymentStatus: paidAdvance ? 'paid_deposit' : 'pay_at_salon',
+      amountPaid: advanceAmount,
+      createdAt: new Date().toISOString()
+    };
+
+    onAddAppointment(newApt);
+    setCurrentStep('confirmed');
+
+    // MOCK EMAIL TRIGGER
+    console.log(`[MOCK EMAIL] Confirmation sent to ${newApt.clientEmail} for appointment ${workingDraft.id}`);
+
+    if (onShowToast) {
+      onShowToast({
+        id: String(Date.now()),
+        title: paidAdvance
+          ? paidMode === 'mock'
+            ? `Booking Pending Approval. ${workingDraft.pricing.depositPercent}% Deposit Simulated (test mode).`
+            : `Booking Pending Approval. ${workingDraft.pricing.depositPercent}% Deposit Paid.`
+          : 'Booking Pending Approval. Pay at salon.',
+        clientName: newApt.clientName,
+        serviceName: newApt.serviceName,
+        stylistName: newApt.stylistName,
+        dateTime: `${workingDraft.slot.date} at ${workingDraft.slot.time}`,
+        refCode: workingDraft.id,
+        price: workingDraft.pricing.total
+      });
+    }
+  };
+
+  /** Common guard + bookkeeping around runCheckout. */
+  const startCheckout = async (draft: BookingDraft, options: { skipPayment?: boolean } = {}) => {
     if (isSubmitting) return; // guard against double clicks / double charges
 
     // Keep a second client-side gate in addition to the public-site trigger.
@@ -485,6 +838,46 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       onRequireAuth?.('login');
       return;
     }
+
+    // Shared with "My Bookings" (src/lib/bookingApi.ts). Mock auth is a
+    // namespaced token understood only by the local/mock server; live bookings
+    // use the short-lived Supabase access token. The service-role key is never
+    // present in client code or request headers.
+    const accessToken = await getBookingAccessToken(user);
+    if (!accessToken) {
+      setSubmitError('Your session has expired. Please sign in again before confirming this appointment.');
+      onRequireAuth?.('login');
+      return;
+    }
+
+    setBookingRef(draft.id);
+    setActiveDraft(draft);
+    saveBookingDraft(draft);
+    setSubmitError('');
+    setPaymentNotice('');
+    setPaymentFailure(null);
+    setShowDraftReview(false);
+    setResumableDraft(null);
+    setSavedToCloud(true);
+    setStoredStatus('pending');
+    setWhatsappConfirmationSent(false);
+    setIsSubmitting(true);
+
+    try {
+      await runCheckout(draft, { ...options, accessToken });
+    } catch (err: any) {
+      // Nothing in the flow above should throw, but a stray exception must not
+      // leave the button spinning forever with no explanation.
+      console.error('[Booking] Unexpected checkout error:', err);
+      setSubmitError(`Something went wrong while confirming (${err?.message || 'unknown error'}). Please try again.`);
+    } finally {
+      setIsSubmitting(false);
+      setSubmitStage('idle');
+    }
+  };
+
+  const handleFinalSubmitBooking = async () => {
+    if (isSubmitting) return;
 
     const cleanPhone = sanitizeIndianPhone(guestPhone);
 
@@ -501,17 +894,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
-    // Shared with "My Bookings" (src/lib/bookingApi.ts). Mock auth is a
-    // namespaced token understood only by the local/mock server; live bookings
-    // use the short-lived Supabase access token. The service-role key is never
-    // present in client code or request headers.
-    const bookingAccessToken = await getBookingAccessToken(user);
-    if (!bookingAccessToken) {
-      setSubmitError('Your session has expired. Please sign in again before confirming this appointment.');
-      onRequireAuth?.('login');
-      return;
-    }
-
     const cityCode = profile.city?.toUpperCase().includes('BENGALURU') ? 'BLR'
       : profile.city?.toUpperCase().includes('MUMBAI') ? 'BOM'
       : profile.city?.toUpperCase().includes('DELHI') ? 'DEL'
@@ -521,208 +903,97 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       : profile.city?.toUpperCase().includes('PUNE') ? 'PNQ'
       : 'IND';
 
+    // ---- 2. Freeze the draft --------------------------------------------------
+    // Reuse the reference (and attempt history) when the customer confirms
+    // again after a failed payment without changing anything, so the salon
+    // sees ONE booking reference across retries.
     const refNum = bookingRef || `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
-    setBookingRef(refNum);
+    const fresh = buildDraftFromForm(refNum);
+    const draft =
+      activeDraft && activeDraft.id === refNum
+        ? { ...fresh, createdAt: activeDraft.createdAt, payment: { ...fresh.payment, attempts: activeDraft.payment.attempts } }
+        : fresh;
+
+    await startCheckout(draft);
+  };
+
+  /**
+   * "Retry Payment": re-open Razorpay Checkout with the ACTIVE draft payload —
+   * same salon, slot, stylist, services and deposit. A new Razorpay order is
+   * created for the same booking reference (orders are single-use once an
+   * attempt failed), and the server verifies the new signature as usual.
+   */
+  const handleRetryPayment = async () => {
+    if (!activeDraft) return handleFinalSubmitBooking();
+    await startCheckout({ ...activeDraft, payment: { ...activeDraft.payment, method: 'pay_advance_token' } });
+  };
+
+  /** "Book now, pay at salon" — offered only when the gateway itself is down. */
+  const handleContinueWithoutPayment = async () => {
+    if (!activeDraft) return;
+    await startCheckout(activeDraft, { skipPayment: true });
+  };
+
+  /** Put a stored draft back into the form so every field can be edited. */
+  const applyDraftToForm = (draft: BookingDraft) => {
+    const service = services.find((s) => s.id === draft.service.id) || {
+      id: draft.service.id,
+      name: draft.service.name,
+      category: selectedService.category,
+      durationMinutes: draft.service.durationMinutes || selectedService.durationMinutes,
+      price: draft.service.price,
+      description: '',
+      icon: 'sparkles',
+    };
+    setSelectedService(service);
+    setSelectedUpgrades(
+      draft.upgrades
+        .map((u) => services.find((s) => s.id === u.id) || { id: u.id, name: u.name, price: u.price, category: service.category, durationMinutes: u.durationMinutes || 0, description: '', icon: 'sparkles' })
+    );
+    const stylist = draft.stylist.id === ANY_SPECIALIST.id ? ANY_SPECIALIST : stylists.find((s) => s.id === draft.stylist.id);
+    setSelectedStylist(stylist || { ...ANY_SPECIALIST, id: draft.stylist.id, name: draft.stylist.name });
+    setBookingDate(draft.slot.date);
+    setBookingTime(draft.slot.time);
+    setBookingType(draft.bookingType);
+    setHomeServiceAddress(draft.homeAddress || '');
+    setHomeServicePinCode(draft.homePinCode || '');
+    setGuestName(draft.customer.name);
+    setGuestPhone(draft.customer.phone);
+    setGuestEmail(draft.customer.email || '');
+    setGuestNotes(draft.customer.notes || '');
+    setPaymentMethod(draft.payment.method);
+    setBookingRef(draft.id);
+    setActiveDraft(draft);
+  };
+
+  /** Resume an interrupted draft found in sessionStorage. */
+  const handleResumeDraft = () => {
+    if (!resumableDraft) return;
+    applyDraftToForm(resumableDraft);
+    setIsWhatsappVerified(true);
+    setResumableDraft(null);
+    setPaymentFailure({
+      title: 'Advance payment incomplete',
+      detail: `Your previous attempt for ${resumableDraft.service.name} on ${resumableDraft.slot.date} at ${resumableDraft.slot.time} did not complete${
+        resumableDraft.payment.lastError ? ` (${resumableDraft.payment.lastError})` : ''
+      }. Nothing was charged — retry the payment or review the details below.`,
+      retryable: true,
+      canPayAtSalon: false,
+    });
+    setCurrentStep('payment');
+  };
+
+  const handleDiscardResumableDraft = () => {
+    clearBookingDraft();
+    setResumableDraft(null);
+  };
+
+  /** "Review Draft" → jump to the step that edits a field; nothing is lost. */
+  const handleEditDraftField = (step: 'service' | 'upgrades' | 'datetime' | 'guest') => {
+    setShowDraftReview(false);
+    setPaymentFailure(null);
     setSubmitError('');
-    setPaymentNotice('');
-    setSavedToCloud(true);
-    setStoredStatus('pending');
-    setWhatsappConfirmationSent(false);
-    setIsSubmitting(true);
-
-    try {
-      // ---- 2. Advance payment via Razorpay ----------------------------------
-      let paymentPayload: {
-        razorpay_order_id?: string;
-        razorpay_payment_id?: string;
-        razorpay_signature?: string;
-      } | undefined;
-      let paidAdvance = false;
-
-      if (paymentMethod === 'pay_advance_token' && advanceTokenAmount > 0) {
-        setSubmitStage('paying');
-        const outcome = await payAdvanceWithRazorpay({
-          amount: advanceTokenAmount,
-          receipt: refNum,
-          description: `25% advance for ${selectedService.name} on ${bookingDate} at ${bookingTime}`,
-          customer: {
-            name: guestName.trim() || 'Guest Client',
-            email: guestEmail.trim() || user?.email || undefined,
-            contact: cleanPhone,
-          },
-          salonName: profile.businessName,
-          themeColor: themeAccentHex,
-          notes: { booking_ref: refNum, service: selectedService.name, slot: `${bookingDate} ${bookingTime}` },
-        });
-
-        if (outcome.status === 'paid') {
-          paidAdvance = true;
-          paymentPayload = {
-            razorpay_order_id: outcome.orderId,
-            razorpay_payment_id: outcome.paymentId,
-            razorpay_signature: outcome.signature,
-          };
-          setPaymentReceiptId(outcome.paymentId);
-        } else if (outcome.status === 'dismissed') {
-          setSubmitError('Payment window closed before the advance was paid. Your details are still here — tap confirm to try again.');
-          return;
-        } else if (outcome.status === 'failed') {
-          setSubmitError(`Payment could not be completed (${outcome.reason}). No amount was charged — please try again.`);
-          return;
-        } else {
-          // 'unavailable' — the salon hasn't switched online payments on yet.
-          console.warn('[Booking] Razorpay unavailable, continuing as pay-at-salon:', outcome.reason);
-          setPaymentNotice('Online payment is not enabled for this salon yet — your slot is held and you can pay at the salon.');
-        }
-      }
-
-      setAdvancePaid(paidAdvance);
-
-      // ---- 3. Persist the booking -------------------------------------------
-      setSubmitStage('saving');
-      let savedRemotely = false;
-      // Whatever the salon's database wrote back is the status the confirmation
-      // page will show. Never assume: a duplicate submission returns the row
-      // that already existed, which the owner may have confirmed or cancelled.
-      let remoteStatus: unknown = 'pending';
-      try {
-        const requestBody = JSON.stringify({
-            owner_id: profile.ownerId || undefined,
-            subdomain: profile.subdomain || undefined,
-            owner_email: profile.email || undefined,
-            payment: paymentPayload,
-            booking: {
-              owner_id: profile.ownerId || undefined,
-              customer_name: guestName.trim() || 'Guest Client',
-              customer_phone: cleanPhone,
-              customer_email: guestEmail.trim() || user?.email || undefined,
-              service_id: selectedService.id,
-              service_name: selectedService.name,
-              // Persisted into the booking's metadata by the API. The customer's
-              // "My Bookings" cards need these: `bookings` has no salon or
-              // stylist column, so without them the card cannot say who or where.
-              stylist_name: selectedStylist.name,
-              salon_name: profile.businessName,
-              // `bookings` stores one service plus a total; checkout folds the
-              // add-on prices in without itemising them. Sending them here is
-              // what lets the booking detail page list everything the customer
-              // actually picked.
-              service_addons: selectedUpgrades.map((addon) => ({
-                name: addon.name,
-                price: addon.price,
-                duration: addon.duration,
-              })),
-              // Optional message for the salon. `bookings.notes` is the column
-              // for it — distinct from the Razorpay *order* note further down.
-              notes: guestNotes.trim() || undefined,
-              booking_date: bookingDate,
-              time_slot: bookingTime,
-              total_amount: totalAmount,
-              advance_paid_amount: paidAdvance ? advanceTokenAmount : 0,
-              status: 'pending',
-              payment_status: paidAdvance ? 'paid_deposit' : 'pending',
-              payment_id: paymentPayload?.razorpay_payment_id || refNum,
-              booking_type: bookingType === 'home' ? 'home' : 'salon',
-              home_address: bookingType === 'home'
-                ? `${homeServiceAddress}${homeServicePinCode ? ` (PIN: ${homeServicePinCode})` : ''}`.trim()
-                : undefined,
-            },
-            notifications: [
-              {
-                user_email: profile.email || 'owner@salon.com',
-                title: 'New Booking Request',
-                message: `New booking from ${guestName} for ${selectedService.name} on ${bookingDate}. ${paidAdvance ? `25% Advance Paid: ₹${advanceTokenAmount}` : 'Advance not paid (pay at salon).'}`,
-              }
-            ]
-          });
-
-        // Transient faults (cold serverless start, a database blip, a dropped
-        // mobile connection) used to surface as a dead-end "Server error
-        // (HTTP 500)". Retry those automatically before bothering the customer;
-        // 4xx answers are the customer's own input and are never retried.
-        const outcome = await postBookingWithRetry(requestBody, { accessToken: bookingAccessToken });
-
-        if (outcome.ok) {
-          savedRemotely = true;
-          if (outcome.data && typeof outcome.data === 'object' && 'status' in outcome.data) {
-            remoteStatus = (outcome.data as any).status;
-          }
-        } else if (outcome.kind === 'offline') {
-          // Truly unreachable (offline / preview sandbox with no API): keep a
-          // local copy so the salon dashboard on this device still shows it,
-          // but SAY SO on the pass instead of pretending it was confirmed.
-          console.warn('Booking API unreachable — keeping a local copy only.', outcome.detail);
-        } else {
-          console.error('Failed to create booking:', outcome.detail, outcome);
-          if (outcome.code === 'auth_required') {
-            setSubmitError('Your session has expired. Please sign in again. Your booking details are still here.');
-            onRequireAuth?.('login');
-            return;
-          }
-          const support = outcome.requestId ? ` (ref ${outcome.requestId})` : '';
-          const retryHint = outcome.retryable
-            ? ' This is usually temporary — please try again in a minute.'
-            : ' Please try again — your details are still here.';
-          setSubmitError(
-            paidAdvance
-              ? `Your payment went through (ref ${paymentPayload?.razorpay_payment_id}) but we couldn't save the booking (${outcome.detail})${support}. Please share this reference with the salon — you will not be charged twice.`
-              : `We couldn't save your booking (${outcome.detail})${support}.${retryHint}`
-          );
-          return;
-        }
-      } catch (e: any) {
-        // Nothing above should throw; treat it like an unreachable API rather
-        // than losing the customer's details.
-        console.warn('Booking save threw unexpectedly — keeping a local copy only.', e);
-      }
-      setSavedToCloud(savedRemotely);
-      setStoredStatus(String(remoteStatus ?? 'pending'));
-
-      const newApt: Appointment = {
-        id: `apt-${Date.now()}`,
-        clientName: guestName.trim() || 'Guest Client',
-        clientPhone: `+91 ${cleanPhone}`,
-        clientEmail: guestEmail.trim() || user?.email || `${cleanPhone}@guest.in`,
-        serviceId: selectedService.id,
-        serviceName: selectedService.name,
-        servicePrice: totalAmount,
-        stylistId: selectedStylist.id,
-        stylistName: selectedStylist.name,
-        date: bookingDate,
-        time: bookingTime,
-        status: 'pending', // Set initial status to pending
-        paymentStatus: paidAdvance ? 'paid_deposit' : 'pay_at_salon',
-        amountPaid: paidAdvance ? advanceTokenAmount : 0,
-        createdAt: new Date().toISOString()
-      };
-
-      onAddAppointment(newApt);
-      setCurrentStep('confirmed');
-
-      // MOCK EMAIL TRIGGER
-      console.log(`[MOCK EMAIL] Confirmation sent to ${newApt.clientEmail} for appointment ${refNum}`);
-
-      if (onShowToast) {
-        onShowToast({
-          id: String(Date.now()),
-          title: paidAdvance ? 'Booking Pending Approval. 25% Deposit Paid.' : 'Booking Pending Approval. Pay at salon.',
-          clientName: newApt.clientName,
-          serviceName: newApt.serviceName,
-          stylistName: newApt.stylistName,
-          dateTime: `${bookingDate} at ${bookingTime}`,
-          refCode: refNum,
-          price: totalAmount
-        });
-      }
-    } catch (err: any) {
-      // Nothing in the flow above should throw, but a stray exception must not
-      // leave the button spinning forever with no explanation.
-      console.error('[Booking] Unexpected checkout error:', err);
-      setSubmitError(`Something went wrong while confirming (${err?.message || 'unknown error'}). Please try again.`);
-    } finally {
-      setIsSubmitting(false);
-      setSubmitStage('idle');
-    }
+    setCurrentStep(step);
   };
 
   // Open WhatsApp prefilled confirmation.
@@ -775,11 +1046,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setPaymentNotice('');
     setAdvancePaid(false);
     setPaymentReceiptId('');
+    setPaymentMode(null);
     setIsSubmitting(false);
     setSubmitStage('idle');
     setSavedToCloud(true);
     setStoredStatus('pending');
     setWhatsappConfirmationSent(false);
+    setActiveDraft(null);
+    setPaymentFailure(null);
+    setShowDraftReview(false);
+    setResumableDraft(null);
+    clearBookingDraft();
     // Deliberate: name/phone/email are remembered for 1-click rebooking, but a
     // note is specific to this visit — carrying "ring the bell" into the next
     // appointment would be wrong.
@@ -868,6 +1145,40 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
         {/* MODAL BODY (SCROLLABLE) */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col gap-4">
+
+          {/* Interrupted-payment draft found for THIS salon (e.g. the tab
+              reloaded while the UPI app was open). Offered, never forced. */}
+          {resumableDraft && currentStep !== 'confirmed' && !activeDraft && (
+            <div
+              className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex flex-col gap-2"
+              data-testid="resume-draft-banner"
+            >
+              <div className="flex items-start gap-2">
+                <RotateCcw className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Unfinished booking found:</strong> {resumableDraft.service.name} with {resumableDraft.stylist.name} on{' '}
+                  {resumableDraft.slot.date} at {resumableDraft.slot.time} — advance of ₹
+                  {resumableDraft.pricing.depositAmount.toLocaleString('en-IN')} was not paid (ref {resumableDraft.id}).
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResumeDraft}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-bold text-[11px] cursor-pointer hover:bg-amber-700"
+                >
+                  Resume &amp; Retry Payment
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDiscardResumableDraft}
+                  className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-900 font-bold text-[11px] cursor-pointer hover:bg-amber-100"
+                >
+                  Start fresh
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ========================================================= */}
           {/* STEP 1: SELECT LOCATION, SERVICE & SPECIALIST */}
@@ -1617,11 +1928,90 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
               )}
 
+              {/* ===== PAYMENT FAILURE / ADVANCE PAYMENT INCOMPLETE =====
+                  Shown when the Razorpay attempt was declined, closed, could
+                  not be verified, or the gateway is unavailable. The draft is
+                  intact: Retry re-opens checkout with the SAME payload, Review
+                  lists every parameter it will use. */}
+              {paymentFailure && activeDraft && !isSubmitting && (
+                <div
+                  className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col gap-3"
+                  role="alert"
+                  data-testid="payment-failure-panel"
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-rose-900">{paymentFailure.title}</div>
+                      <p className="text-[11px] text-rose-800 mt-0.5 leading-relaxed">{paymentFailure.detail}</p>
+                      <p className="text-[10px] font-mono text-rose-700/80 mt-1">
+                        Draft {activeDraft.id} · attempt {activeDraft.payment.attempts}
+                        {activeDraft.payment.lastOrderId ? ` · order ${activeDraft.payment.lastOrderId}` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRetryPayment}
+                      data-testid="retry-payment-button"
+                      className="flex-1 min-w-[140px] py-2.5 px-3 rounded-xl font-bold text-xs text-white shadow-sm flex items-center justify-center gap-1.5 cursor-pointer hover:opacity-95"
+                      style={{ backgroundColor: themeAccentHex }}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Retry Payment (₹{activeDraft.pricing.depositAmount.toLocaleString('en-IN')})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDraftReview((v) => !v)}
+                      data-testid="review-draft-button"
+                      aria-expanded={showDraftReview}
+                      className="flex-1 min-w-[120px] py-2.5 px-3 rounded-xl border border-rose-300 bg-white text-rose-900 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer hover:bg-rose-100/60"
+                    >
+                      <span>{showDraftReview ? 'Hide Draft' : 'Review Draft'}</span>
+                      <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showDraftReview ? 'rotate-90' : ''}`} />
+                    </button>
+                    {paymentFailure.canPayAtSalon && (
+                      <button
+                        type="button"
+                        onClick={handleContinueWithoutPayment}
+                        data-testid="pay-at-salon-button"
+                        className="w-full py-2.5 px-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-100"
+                      >
+                        <Wallet className="w-3.5 h-3.5" />
+                        <span>Book now &amp; pay ₹{activeDraft.pricing.total.toLocaleString('en-IN')} at the salon</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {showDraftReview && (
+                    <div className="rounded-xl bg-white border border-rose-100 divide-y divide-slate-100" data-testid="draft-review">
+                      {describeBookingDraft(activeDraft).map((row) => (
+                        <div key={row.key} className="flex items-start justify-between gap-3 px-3 py-2 text-[11px]">
+                          <span className="text-slate-500 font-mono text-[10px] uppercase shrink-0 pt-0.5">{row.label}</span>
+                          <span className="text-slate-900 font-semibold text-right flex-1 break-words">{row.value}</span>
+                          {row.editStep && (
+                            <button
+                              type="button"
+                              onClick={() => handleEditDraftField(row.editStep!)}
+                              className="text-[10px] font-bold underline text-slate-600 hover:text-slate-900 cursor-pointer shrink-0"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Final Step Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => { setSubmitError(''); setCurrentStep('guest'); }}
+                  onClick={() => { setSubmitError(''); setPaymentFailure(null); setShowDraftReview(false); setCurrentStep('guest'); }}
                   disabled={isSubmitting}
                   className="px-4 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -1630,8 +2020,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={handleFinalSubmitBooking}
+                  onClick={paymentFailure && activeDraft ? handleRetryPayment : handleFinalSubmitBooking}
                   disabled={isSubmitting}
+                  data-testid="confirm-booking-button"
                   className="flex-1 py-3.5 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95 disabled:opacity-70 disabled:cursor-wait"
                   style={{ backgroundColor: themeAccentHex }}
                 >
@@ -1644,10 +2035,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                           : 'Saving your booking…'}
                       </span>
                     </>
+                  ) : paymentFailure && activeDraft ? (
+                    <>
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Retry Payment &amp; Generate Pass (₹{activeDraft.pricing.depositAmount.toLocaleString('en-IN')})</span>
+                    </>
                   ) : (
                     <>
                       <CalendarCheck className="w-4 h-4" />
-                      <span>Confirm Appointment & Generate Pass (₹{advanceTokenAmount.toLocaleString('en-IN')})</span>
+                      <span>Confirm Appointment &amp; Generate Pass (₹{advanceTokenAmount.toLocaleString('en-IN')})</span>
                     </>
                   )}
                 </button>
@@ -1674,6 +2070,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 advanceAmount: advanceTokenAmount,
                 balanceAmount: remainingAmount,
                 receiptId: paymentReceiptId,
+                simulated: paymentMode === 'mock',
               }}
               upgrades={selectedUpgrades.map((u) => u.name)}
               bookingTypeLabel={bookingType === 'home' ? 'Home Service' : 'In-Salon'}

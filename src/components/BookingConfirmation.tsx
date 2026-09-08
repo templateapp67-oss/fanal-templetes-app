@@ -54,6 +54,12 @@ export interface BookingConfirmationPayment {
   advanceAmount: number;
   balanceAmount: number;
   receiptId?: string;
+  /**
+   * True when the advance went through the simulated (mock) gateway — a
+   * development/preview state in which no money moved. The pass must say so
+   * rather than telling the customer they paid.
+   */
+  simulated?: boolean;
 }
 
 export interface BookingConfirmationProps {
@@ -368,6 +374,14 @@ export const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
               {payment.advancePaid && payment.receiptId && (
                 <span className="block text-[10px] font-mono font-normal text-slate-500 mt-0.5">
                   Ref: {payment.receiptId}
+                </span>
+              )}
+              {payment.advancePaid && payment.simulated && (
+                <span
+                  className="block text-[10px] font-semibold text-amber-700 mt-0.5"
+                  data-testid="payment-simulated-notice"
+                >
+                  Test mode: this advance was simulated — no money was charged.
                 </span>
               )}
             </strong>
