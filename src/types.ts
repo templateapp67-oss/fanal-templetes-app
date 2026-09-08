@@ -418,3 +418,184 @@ export interface ReengagementAnalysisResult {
   modelUsed?: string;
 }
 
+export type StaffCommissionType = 'percentage' | 'fixed' | 'both';
+export type StaffCommissionBasis = 'net' | 'gross';
+
+export interface StaffPerformanceSummary {
+  staffId: string;
+  staffName: string;
+  staffRole: string;
+  avatarUrl?: string;
+  status: string;
+  isActive: boolean;
+  commissionRate: number;
+  fixedCommissionAmount: number;
+  commissionType: StaffCommissionType;
+  commissionBasis: StaffCommissionBasis;
+  totalBookings: number;
+  confirmedBookings: number;
+  pendingBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  totalGrossAmount: number;
+  totalPaidAmount: number;
+  totalDiscountAmount: number;
+  netRevenue: number;
+  commissionAmount: number;
+  ownerShareAmount: number;
+  totalReviews: number;
+  averageRating: number;
+  fiveStarCount: number;
+  fourStarCount: number;
+  threeStarCount: number;
+  twoStarCount: number;
+  oneStarCount: number;
+  last7dCompletedBookings: number;
+  last7dRevenue: number;
+  last7dCommission: number;
+  last7dDiscount: number;
+  last7dReviews: number;
+  last7dAverageRating: number;
+  grossSales?: number;
+  totalDiscounts?: number;
+  totalCommission?: number;
+  netSalonShare?: number;
+  reviewCount?: number;
+  leaderboardRank?: number;
+  grossRevenue7d?: number;
+}
+
+export interface StaffLeaderboardItem {
+  leaderboardRank: number;
+  staffId: string;
+  staffName: string;
+  staffRole: string;
+  avatarUrl?: string;
+  completedBookings7d: number;
+  grossRevenue7d: number;
+  netRevenue7d: number;
+  commissionGenerated7d: number;
+  reviewsCount7d: number;
+  averageRating7d: number;
+}
+
+export interface StaffBookingDetail {
+  bookingId: string;
+  staffId: string;
+  staffName: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  serviceName: string;
+  bookingDate: string;
+  timeSlot: string;
+  status: string;
+  paymentStatus: string;
+  grossAmount: number;
+  advancePaid: number;
+  discountAmount: number;
+  netRevenue: number;
+  commissionRate: number;
+  commissionAmount: number;
+  ownerShare: number;
+  createdAt: string;
+}
+
+export interface StaffPaymentDetail {
+  paymentId: string;
+  bookingId: string;
+  staffId: string;
+  staffName: string;
+  customerName: string;
+  bookingDate: string;
+  serviceName: string;
+  grossAmount: number;
+  advancePaid: number;
+  discountAmount: number;
+  netRevenue: number;
+  paymentStatus: string;
+  commissionAmount: number;
+  ownerShare: number;
+  createdAt: string;
+}
+
+export interface StaffReviewDetail {
+  reviewId: string;
+  bookingId: string;
+  staffId: string;
+  staffName: string;
+  customerName: string;
+  serviceName: string;
+  rating: number;
+  comment: string;
+  reviewedAt: string;
+}
+
+export interface UpdateStaffCommissionPayload {
+  staffId: string;
+  commissionRate: number;
+  fixedAmount?: number;
+  commissionType?: StaffCommissionType;
+  commissionBasis?: StaffCommissionBasis;
+}
+
+export type PayoutStatus = 'Pending' | 'Paid' | 'Processing';
+export type PayoutPaymentMethod = 'Bank Transfer' | 'UPI' | 'Cash' | 'Cheque';
+
+export interface StaffPayrollRecord {
+  payoutId?: string;
+  staffId: string;
+  staffName: string;
+  staffRole: string;
+  avatarUrl?: string;
+  payoutPeriod: string; // 'YYYY-MM'
+  commissionRate: number;
+  commissionType: StaffCommissionType;
+  commissionBasis: StaffCommissionBasis;
+  fixedCommissionAmount: number;
+  completedBookingsCount: number;
+  grossSales: number;
+  calculatedCommission: number;
+  bonusAmount: number;
+  deductionsAmount: number;
+  netPayout: number;
+  status: PayoutStatus;
+  paymentMethod: PayoutPaymentMethod;
+  paymentReference?: string;
+  paidAt?: string;
+  notes?: string;
+}
+
+export interface MarkPayoutPaidPayload {
+  staffId: string;
+  payoutPeriod: string; // 'YYYY-MM'
+  grossSales?: number;
+  commissionEarned?: number;
+  bonusAmount?: number;
+  deductionsAmount?: number;
+  netPayout?: number;
+  status?: PayoutStatus;
+  paymentMethod?: PayoutPaymentMethod;
+  paymentReference?: string;
+  notes?: string;
+}
+
+export interface StaffPayoutHistoryItem {
+  payoutId: string;
+  staffId: string;
+  staffName: string;
+  payoutPeriod: string;
+  grossSales: number;
+  commissionEarned: number;
+  bonusAmount: number;
+  deductionsAmount: number;
+  netPayout: number;
+  status: PayoutStatus;
+  paymentMethod: PayoutPaymentMethod;
+  paymentReference?: string;
+  paidAt?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+

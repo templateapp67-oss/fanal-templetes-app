@@ -22,6 +22,7 @@ import {
 } from "./server/bookingRoutes";
 import { createBookingCheckinHandler } from "./server/bookingCheckin";
 import { registerCustomerRoutes } from "./server/customerRoutes";
+import { registerStaffPerformanceRoutes } from "./server/staffPerformanceRoutes";
 import {
   createMyBookingsListHandler,
   createMyBookingDetailHandler,
@@ -469,6 +470,8 @@ async function startServer() {
     asyncRoute,
     withRequestTimeout
   );
+
+  registerStaffPerformanceRoutes(app);
 
 
   // ==========================================================================

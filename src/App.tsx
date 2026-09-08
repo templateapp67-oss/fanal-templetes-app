@@ -44,6 +44,8 @@ import {
   MY_BOOKINGS_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
+  isOwnerStaffPerformancePath,
+  OWNER_STAFF_PERFORMANCE_PATH,
 } from './lib/router';
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
@@ -241,6 +243,10 @@ export default function App() {
       setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
       return;
     }
+    if (isOwnerStaffPerformancePath(path)) {
+      setCurrentViewState((view) => (view === 'dashboard' ? view : 'dashboard'));
+      return;
+    }
     setCurrentViewState((view) =>
       view === 'bookings' || view === 'bookingDetail' ? 'landing' : view
     );
@@ -258,6 +264,8 @@ export default function App() {
         navigate(MY_BOOKINGS_PATH);
       } else if (view === 'bookingDetail') {
         navigate(bookingDetailPath(bookingDetailId ?? ''));
+      } else if (view === 'dashboard') {
+        navigate(OWNER_STAFF_PERFORMANCE_PATH);
       } else {
         navigate('/');
       }

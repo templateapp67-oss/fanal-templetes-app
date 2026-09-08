@@ -19,6 +19,7 @@ import { GuestModeBanner } from './GuestModeBanner';
 import { AIClientReengagement } from './AIClientReengagement';
 import { PromotionalBannerConfigSection } from './PromotionalBannerConfigSection';
 import { BackupManagerModal } from './BackupManagerModal';
+import { StaffPerformanceDashboard } from './StaffPerformanceDashboard';
 import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 
@@ -42,7 +43,7 @@ interface SaaSDashboardProps {
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
-type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
+type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'payroll' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
 
 export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   profile,
@@ -390,6 +391,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             { id: 'calendar', label: 'Appointments', icon: 'calendar_month' },
             { id: 'services', label: 'Services Menu', icon: 'spa' },
             { id: 'team', label: 'Team Management', icon: 'badge' },
+            { id: 'payroll', label: 'Payroll & Payout', icon: 'payments' },
             { id: 'clients', label: 'Clients CRM', icon: 'group' },
             { id: 'loyalty', label: 'Loyalty & Rewards', icon: 'military_tech' },
             { id: 'reengagement', label: 'AI Re-Engagement', icon: 'psychology' },
@@ -441,6 +443,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 {tab.id === 'team' && (
                   <span className="bg-gray-100 text-gray-700 text-[10px] font-bold px-1.5 py-0.2 rounded-full border border-gray-200">
                     {stylists.length}
+                  </span>
+                )}
+                {tab.id === 'payroll' && (
+                  <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full">
+                    INR (₹)
                   </span>
                 )}
                 {tab.id === 'appearance' && (
@@ -856,6 +863,15 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             onNavigateToPreview={onNavigateToPreview}
             isAuthenticated={isAuthenticated}
             onRequireAuth={onRequireAuth}
+          />
+        )}
+
+        {/* TAB CONTENT: PAYROLL & PAYOUT (STAFF PERFORMANCE) */}
+        {activeTab === 'payroll' && (
+          <StaffPerformanceDashboard
+            stylists={stylists}
+            setStylists={setStylists}
+            primaryAccentColor={currentPrimaryColor}
           />
         )}
 

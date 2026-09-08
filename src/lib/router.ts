@@ -16,6 +16,13 @@ import { useCallback, useEffect, useState } from 'react';
 
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
+export const OWNER_STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
+
+/** True when the path is the owner staff performance dashboard route. */
+export function isOwnerStaffPerformancePath(pathname: string): boolean {
+  const norm = normalizePath(pathname).toLowerCase();
+  return norm === OWNER_STAFF_PERFORMANCE_PATH || norm === '/owner/dashboard';
+}
 
 // ---------------------------------------------------------------------------
 // Customer App (`/app/...`)
