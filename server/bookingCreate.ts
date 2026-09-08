@@ -26,7 +26,9 @@
 // ============================================================================
 
 import { isUuidLike, sanitizeBookingRow, normalizeServiceLines, joinServiceLineNames } from './bookingOps.js';
-import { resolveSignatureSecret, verifyRazorpaySignature, isMockOrderId } from './razorpay.js';
+import { confirmCapturedRazorpayPayment, createRazorpayClient } from './razorpay.js';
+import type { RazorpayClient } from './razorpay.js';
+import { computeAdvanceDeposit } from '../src/lib/advanceDeposit.js';
 import { resolveTenantFromHost } from '../src/lib/tenant.js';
 import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus.js';
 import {
@@ -524,6 +526,12 @@ export interface BookingCreateDeps {
    * booking mechanics without constructing an HTTP auth server.
    */
   authenticateUser?: (req: any, deadlineAt?: number) => Promise<BookingAuthResult>;
+  /**
+   * Gateway used to confirm capture + amount before a booking is marked paid.
+   * Injectable so tests can stub `fetchPayment` without a network. Left
+   * undefined in production, where `createRazorpayClient()` builds it from env.
+   */
+  gateway?: Pick<RazorpayClient, 'fetchPayment'> | RazorpayClient | null;
 }
 
 export function createBookingHandler(deps: BookingCreateDeps) {
@@ -591,49 +599,58 @@ export function createBookingHandler(deps: BookingCreateDeps) {
       }
 
       // ---- 2. Re-verify any claimed Razorpay payment server-side -----------
-      // Never trust "I paid" from the browser: the signature is checked with
-      // the key secret before the booking is marked as paid.
+      // A checkout HMAC is not "paid": Razorpay must report the payment as
+      // captured, for this order, at the deposit amount. Otherwise the booking
+      // is not saved as paid (an authorized/failed charge, or a cheaper order's
+      // signature, used to slip through).
       let verifiedPaymentId: string | null = null;
       let paymentGatewayMode: 'live' | 'test' | 'mock' | 'disabled' = 'disabled';
+      let capturedAmountRupees = 0;
       if (payment && typeof payment === 'object' && payment.razorpay_payment_id) {
-        // The secret depends on the ACTIVE gateway: the real key secret in
-        // test/live mode, the mock secret when the simulated gateway is on,
-        // and nothing at all when payments are disabled.
-        const { secret, mode } = resolveSignatureSecret();
-        paymentGatewayMode = mode;
-        const orderId = String(payment.razorpay_order_id || '');
-        if (!secret) {
-          console.warn('[Bookings] Payment reference received but the payment gateway is disabled — storing as unverified.');
-        } else if (mode !== 'mock' && isMockOrderId(orderId)) {
-          // A mock-signed triple must never be accepted as a real payment.
-          console.error('[Bookings] Refused a MOCK order id while the real gateway is active', { order: orderId });
-          return void fail(
-            400,
-            'payment_unverified',
-            'We could not verify your payment with Razorpay. The booking was not saved — no amount was captured.'
-          );
-        } else {
-          const ok = verifyRazorpaySignature({
-            orderId,
+        const claimedAdvance = Number(validation.value.advance_paid_amount);
+        const total = Number(validation.value.total_amount);
+        const expectedFromClient =
+          Number.isFinite(claimedAdvance) && claimedAdvance > 0 ? Math.round(claimedAdvance) : 0;
+        const expectedAmountRupees =
+          expectedFromClient > 0 ? expectedFromClient : computeAdvanceDeposit(total).rupees;
+
+        const client = deps.gateway === undefined ? createRazorpayClient() : deps.gateway;
+        const confirmed = await confirmCapturedRazorpayPayment(
+          {
+            orderId: String(payment.razorpay_order_id || ''),
             paymentId: String(payment.razorpay_payment_id || ''),
             signature: String(payment.razorpay_signature || ''),
-            keySecret: secret,
-          });
-          if (!ok) {
-            console.error('[Bookings] Razorpay signature verification FAILED', {
+            expectedAmountRupees: expectedAmountRupees > 0 ? expectedAmountRupees : undefined,
+            deadlineAt,
+          },
+          { client }
+        );
+
+        if (confirmed.ok === false) {
+          if (confirmed.code === 'razorpay_not_configured') {
+            console.warn(
+              '[Bookings] Payment reference received but the payment gateway is disabled — storing as unverified.'
+            );
+          } else {
+            console.error('[Bookings] Razorpay capture/amount verification FAILED', {
               order: payment.razorpay_order_id,
               payment: payment.razorpay_payment_id,
-              mode,
+              code: confirmed.code,
             });
             return void fail(
-              400,
-              'payment_unverified',
-              'We could not verify your payment with Razorpay. The booking was not saved — no amount was captured.'
+              confirmed.status,
+              confirmed.code,
+              confirmed.error ||
+                'We could not verify your payment with Razorpay. The booking was not saved — no amount was captured.',
+              confirmed.retryable ? { retryable: true } : {}
             );
           }
-          verifiedPaymentId = String(payment.razorpay_payment_id);
+        } else {
+          verifiedPaymentId = confirmed.paymentId;
+          paymentGatewayMode = confirmed.mode;
+          capturedAmountRupees = confirmed.amountRupees;
           console.log(
-            `[Bookings] Verified ${mode === 'mock' ? 'MOCK ' : ''}Razorpay payment ${verifiedPaymentId} (order ${payment.razorpay_order_id})`
+            `[Bookings] Verified ${confirmed.mock ? 'MOCK ' : ''}Razorpay captured payment ${verifiedPaymentId} (order ${confirmed.orderId}, ₹${capturedAmountRupees})`
           );
         }
       }
@@ -683,9 +700,10 @@ export function createBookingHandler(deps: BookingCreateDeps) {
 
       // Payment fields are untrusted browser input. A public caller must not be
       // able to set `payment_status: paid_deposit` or an advance amount without
-      // a signature that this server verified with Razorpay. Keep the booking
-      // reference for idempotency, but reset all unverified money claims.
-      const paymentWasVerified = !!verifiedPaymentId;
+      // a captured Razorpay payment whose amount this server confirmed. Keep
+      // the booking reference for idempotency, but reset all unverified money
+      // claims. The stored advance is the GATEWAY amount, never the claim.
+      const paymentWasVerified = !!verifiedPaymentId && capturedAmountRupees > 0;
       const bookingRow = sanitizeBookingRow({
         ...validation.value,
         // Never accept a client-supplied user_id. This is the verified
@@ -693,7 +711,7 @@ export function createBookingHandler(deps: BookingCreateDeps) {
         // mode it is intentionally non-UUID and is retained in metadata.
         user_id: authenticatedUser?.id,
         owner_id: ownerId,
-        advance_paid_amount: paymentWasVerified ? validation.value.advance_paid_amount : 0,
+        advance_paid_amount: paymentWasVerified ? capturedAmountRupees : 0,
         payment_id: verifiedPaymentId || validation.value.payment_id,
         payment_status: paymentWasVerified ? 'paid_deposit' : 'pending',
       });

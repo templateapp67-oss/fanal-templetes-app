@@ -617,7 +617,25 @@ test('a mock-signed payment is refused once real Razorpay keys are configured', 
   );
 });
 
-test('a genuine Razorpay payment marks the booking as paid_deposit', async () => {
+function capturedGateway(overrides: Record<string, unknown> = {}) {
+  return {
+    async fetchPayment(paymentId: string) {
+      return {
+        id: paymentId,
+        orderId: 'order_9',
+        amountRupees: 188,
+        amountPaidRupees: 188,
+        status: 'captured',
+        currency: 'INR',
+        captured: true,
+        method: 'card',
+        ...overrides,
+      };
+    },
+  };
+}
+
+test('a genuine Razorpay payment is paid_deposit only after capture and amount match', async () => {
   process.env.RAZORPAY_KEY_ID = 'rzp_test_TIzKly1Z2NMnum';
   process.env.RAZORPAY_KEY_SECRET = 'test_secret_value_123';
   try {
@@ -626,7 +644,9 @@ test('a genuine Razorpay payment marks the booking as paid_deposit', async () =>
       .update('order_9|pay_9')
       .digest('hex');
     const stored: any[] = [];
-    const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
+    const handler = createBookingHandler(
+      baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r), gateway: capturedGateway() })
+    );
     const res = makeRes();
     await handler(
       {
@@ -642,6 +662,79 @@ test('a genuine Razorpay payment marks the booking as paid_deposit', async () =>
     assert.equal(res.body.paymentVerified, true);
     assert.equal(stored[0].payment_status, 'paid_deposit');
     assert.equal(stored[0].payment_id, 'pay_9');
+    assert.equal(stored[0].advance_paid_amount, 188, 'the stored advance is the gateway amount, not a client claim');
+  } finally {
+    delete process.env.RAZORPAY_KEY_ID;
+    delete process.env.RAZORPAY_KEY_SECRET;
+  }
+});
+
+test('a valid checkout signature is not paid when Razorpay has not captured the payment', async () => {
+  process.env.RAZORPAY_KEY_ID = 'rzp_test_TIzKly1Z2NMnum';
+  process.env.RAZORPAY_KEY_SECRET = 'test_secret_value_123';
+  try {
+    const signature = crypto
+      .createHmac('sha256', 'test_secret_value_123')
+      .update('order_9|pay_9')
+      .digest('hex');
+    const stored: any[] = [];
+    const handler = createBookingHandler(
+      baseDeps({
+        isMock: true,
+        addMockBooking: (r: any) => stored.push(r),
+        gateway: capturedGateway({ status: 'authorized', captured: false, amountPaidRupees: 0 }),
+      })
+    );
+    const res = makeRes();
+    await handler(
+      {
+        body: {
+          booking: { ...VALID_BOOKING, payment_status: 'pending' },
+          payment: { razorpay_order_id: 'order_9', razorpay_payment_id: 'pay_9', razorpay_signature: signature },
+        },
+        headers: {},
+      },
+      res
+    );
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.code, 'payment_not_captured');
+    assert.equal(stored.length, 0, 'an authorized-but-uncaptured payment must not create a paid booking');
+  } finally {
+    delete process.env.RAZORPAY_KEY_ID;
+    delete process.env.RAZORPAY_KEY_SECRET;
+  }
+});
+
+test('a captured payment for the wrong amount is not marked paid', async () => {
+  process.env.RAZORPAY_KEY_ID = 'rzp_test_TIzKly1Z2NMnum';
+  process.env.RAZORPAY_KEY_SECRET = 'test_secret_value_123';
+  try {
+    const signature = crypto
+      .createHmac('sha256', 'test_secret_value_123')
+      .update('order_9|pay_9')
+      .digest('hex');
+    const stored: any[] = [];
+    const handler = createBookingHandler(
+      baseDeps({
+        isMock: true,
+        addMockBooking: (r: any) => stored.push(r),
+        gateway: capturedGateway({ amountRupees: 1, amountPaidRupees: 1 }),
+      })
+    );
+    const res = makeRes();
+    await handler(
+      {
+        body: {
+          booking: { ...VALID_BOOKING, payment_status: 'pending', advance_paid_amount: 188 },
+          payment: { razorpay_order_id: 'order_9', razorpay_payment_id: 'pay_9', razorpay_signature: signature },
+        },
+        headers: {},
+      },
+      res
+    );
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.code, 'payment_amount_mismatch');
+    assert.equal(stored.length, 0);
   } finally {
     delete process.env.RAZORPAY_KEY_ID;
     delete process.env.RAZORPAY_KEY_SECRET;

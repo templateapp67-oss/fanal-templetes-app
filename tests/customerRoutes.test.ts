@@ -43,7 +43,7 @@ import {
 } from '../server/customerRoutes';
 import { pickProfileUpdates, createPassHandler } from '../server/customerRoutes';
 import { passCodeFor } from '../src/lib/customer/checkin';
-import { normalizeGatewayPayment, signMockPayment, _resetPaymentOrderCache } from '../server/razorpay';
+import { normalizeGatewayPayment, createMockOrder, signMockPayment, _resetPaymentOrderCache } from '../server/razorpay';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -733,11 +733,12 @@ test('a deposit salon refuses to create a booking without a verified payment', a
   assert.equal(db.calls.some((call) => call.table === 'bookings' && call.op === 'insert'), false, 'no unpaid row is invented');
 });
 
-test('a deposit salon creates a confirmed booking only after the gateway HMAC verifies', async () => {
+test('a deposit salon creates a confirmed booking only after Razorpay reports the payment captured', async () => {
   await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
     const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
     const { deps } = makeDeps({ db });
-    const signed = signMockPayment('order_mock_ABCDEFGHIJKLMN');
+    const order = createMockOrder({ amount: 240, receipt: 'NX-JPR-53682' });
+    const signed = signMockPayment(order.id);
     const res = makeRes();
     await createBookingCreateHandler(deps)(
       {
@@ -759,6 +760,64 @@ test('a deposit salon creates a confirmed booking only after the gateway HMAC ve
     assert.equal(inserted!.body.payment_id, signed.razorpay_payment_id);
     assert.equal(res.body.data.depositDue, 0);
     assert.equal(res.body.data.paymentHandoff, 'razorpay_advance');
+  });
+});
+
+test('a valid mock signature does not create the appointment when the payment is not captured', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const order = createMockOrder({ amount: 240, receipt: 'NX-JPR-53682' });
+    const signed = signMockPayment(order.id);
+    const { deps } = makeDeps({
+      db,
+      gateway: {
+        async fetchPayment() {
+          return {
+            id: signed.razorpay_payment_id,
+            orderId: signed.razorpay_order_id,
+            amountRupees: 240,
+            amountPaidRupees: 0,
+            status: 'authorized',
+            currency: 'INR',
+            captured: false,
+            method: 'mock',
+          };
+        },
+      },
+    });
+    const res = makeRes();
+    await createBookingCreateHandler(deps)(
+      {
+        params: {},
+        query: {},
+        body: { ...depositSalonBody, payment: { ...signed, amount: 240 } },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+    assert.equal(res.body.code, 'payment_not_captured');
+    assert.equal(db.calls.some((call) => call.table === 'bookings' && call.op === 'insert'), false);
+  });
+});
+
+test('a captured payment for the wrong deposit amount never creates the appointment', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const { deps } = makeDeps({ db });
+    const order = createMockOrder({ amount: 1, receipt: 'NX-JPR-53682' });
+    const signed = signMockPayment(order.id);
+    const res = makeRes();
+    await createBookingCreateHandler(deps)(
+      {
+        params: {},
+        query: {},
+        body: { ...depositSalonBody, payment: { ...signed, amount: 240 } },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+    assert.equal(res.body.code, 'payment_amount_mismatch');
+    assert.equal(db.calls.some((call) => call.table === 'bookings' && call.op === 'insert'), false);
   });
 });
 

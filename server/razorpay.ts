@@ -23,10 +23,12 @@
 //
 // The MOCK gateway exists so a developer/preview/CI environment without keys
 // still exercises the *entire* checkout — order → checkout → signature →
-// verified booking — instead of dead-ending at "payment service is not
-// configured". Mock orders are `order_mock_…`, mock payments `pay_mock_…`, and
-// signatures are HMACs with a mock secret, so `/verify` and
-// `/api/bookings/create` run the very same code they run for a real payment.
+// capture lookup → amount check → verified booking — instead of dead-ending at
+// "payment service is not configured". Mock orders are `order_mock_…`, mock
+// payments `pay_mock_…`, and signatures are HMACs with a mock secret, so
+// `/verify` and `/api/bookings/create` run the very same code they run for a
+// real payment. A valid checkout HMAC is NEVER enough on its own: the server
+// still asks the gateway whether that payment was captured, and for how much.
 // It never activates on a production runtime unless RAZORPAY_MOCK_MODE=true is
 // set explicitly (and then it is logged loudly).
 //
@@ -241,10 +243,9 @@ export interface RazorpayClient {
   verifyPaymentSignature(input: { orderId: string; paymentId: string; signature: string }): boolean;
   /**
    * Ask the gateway what it knows about a payment. This is the only way a
-   * server-side process can credit a reward on evidence rather than on a claim:
-   * the customer's browser cannot make this call, because it needs the secret.
-   * `null` means the gateway has no such payment (or this mode keeps no payment
-   * records, which is true of the mock client).
+   * server-side process can credit a booking or a reward on evidence rather
+   * than on a checkout HMAC: the customer's browser cannot make this call,
+   * because it needs the secret. `null` means the gateway has no such payment.
    */
   fetchPayment?(paymentId: string, deadlineAt?: number): Promise<RazorpayPayment | null>;
 }
@@ -276,9 +277,48 @@ export function normalizeGatewayPayment(payload: any): RazorpayPayment | null {
     amountPaidRupees: toRupees(payload.amount_paid ?? payload.amount),
     status,
     currency: String(payload.currency || 'INR'),
+    // Status is the source of truth. Razorpay's `captured` boolean stays true
+    // after a refund, which must not count as a successful checkout.
     captured: status === 'captured',
     method: String(payload.method || ''),
   };
+}
+
+/** Whole-rupee comparison used when the gateway amount must match the deposit. */
+export const CAPTURE_AMOUNT_TOLERANCE_RUPEES = 1;
+
+export function amountsMatchRupees(actual: number, expected: number, tolerance = CAPTURE_AMOUNT_TOLERANCE_RUPEES): boolean {
+  return Math.abs(Number(actual) - Number(expected)) <= Math.max(0, Number(tolerance) || 0);
+}
+
+// ---------------------------------------------------------------------------
+// Mock gateway ledger — in-process stand-in for GET /v1/payments/:id
+// ---------------------------------------------------------------------------
+const mockOrdersById = new Map<string, RazorpayOrder>();
+const mockPaymentsById = new Map<string, RazorpayPayment>();
+
+export function rememberMockOrder(order: RazorpayOrder): RazorpayOrder {
+  mockOrdersById.set(order.id, order);
+  return order;
+}
+
+export function lookupMockOrder(orderId: string): RazorpayOrder | null {
+  return mockOrdersById.get(orderId) || null;
+}
+
+export function rememberMockPayment(payment: RazorpayPayment): RazorpayPayment {
+  mockPaymentsById.set(payment.id, payment);
+  return payment;
+}
+
+export function lookupMockPayment(paymentId: string): RazorpayPayment | null {
+  return mockPaymentsById.get(paymentId) || null;
+}
+
+/** Test seam — do not call from request handlers. */
+export function _resetMockGatewayState(): void {
+  mockOrdersById.clear();
+  mockPaymentsById.clear();
 }
 
 /** Shared by the real and the mock client: Razorpay refuses anything below ₹1.00. */
@@ -302,7 +342,7 @@ function normalizeNotes(notes?: Record<string, unknown>): Record<string, string>
 /** Build a mock order that looks exactly like Razorpay's response shape. */
 export function createMockOrder(input: CreateOrderInput): RazorpayOrder {
   const paise = paiseForOrder(input.amount);
-  return {
+  const order: RazorpayOrder = {
     id: `order_mock_${randomId()}`,
     entity: 'order',
     amount: paise,
@@ -314,6 +354,7 @@ export function createMockOrder(input: CreateOrderInput): RazorpayOrder {
     notes: normalizeNotes(input.notes),
     created_at: Math.floor(Date.now() / 1000),
   };
+  return rememberMockOrder(order);
 }
 
 /**
@@ -325,6 +366,18 @@ export function signMockPayment(
   env: EnvLike = process.env
 ): { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string } {
   const paymentId = `pay_mock_${randomId()}`;
+  const order = lookupMockOrder(orderId);
+  const amountRupees = order ? toRupees(order.amount) : 0;
+  rememberMockPayment({
+    id: paymentId,
+    orderId,
+    amountRupees,
+    amountPaidRupees: amountRupees,
+    status: 'captured',
+    currency: order?.currency || 'INR',
+    captured: true,
+    method: 'mock',
+  });
   return {
     razorpay_order_id: orderId,
     razorpay_payment_id: paymentId,
@@ -343,11 +396,12 @@ function createMockRazorpayClient(env: EnvLike): RazorpayClient {
     verifyPaymentSignature({ orderId, paymentId, signature }) {
       return verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
     },
-    // A mock payment never existed anywhere except this process, so there is
-    // nothing to look up. Returning null is what stops a mock deployment from
-    // ever self-crediting a reward.
-    async fetchPayment() {
-      return null;
+    // Look up payments this process actually issued via mock-pay / signMockPayment.
+    // Returning null for unknown ids is what stops a HMAC-only claim (and a
+    // mock deployment from self-crediting a QR reward — that path refuses the
+    // mock client entirely).
+    async fetchPayment(paymentId) {
+      return lookupMockPayment(String(paymentId || '').trim());
     },
   };
 }
@@ -478,6 +532,179 @@ export function createRazorpayClient(env: EnvLike = process.env): RazorpayClient
       }
       return normalizeGatewayPayment(payload);
     },
+  };
+}
+
+// ============================================================================
+// Capture + amount confirmation
+// ----------------------------------------------------------------------------
+// Razorpay's checkout HMAC is only `${order_id}|${payment_id}` — it does not
+// prove the payment was captured, and it does not include the amount. Treating
+// a valid signature as "paid" let an authorized/failed payment, or a cheaper
+// order's signature, mark a booking paid_deposit. Every path that marks money
+// received MUST go through confirmCapturedRazorpayPayment.
+// ============================================================================
+
+export interface ConfirmCapturedPaymentInput {
+  orderId: string;
+  paymentId: string;
+  signature: string;
+  /** Expected charge in ₹. When set (and > 0), the gateway amount must match. */
+  expectedAmountRupees?: number;
+  amountToleranceRupees?: number;
+  deadlineAt?: number;
+}
+
+export type ConfirmCapturedPaymentResult =
+  | {
+      ok: true;
+      paymentId: string;
+      orderId: string;
+      amountRupees: number;
+      mode: RazorpayGatewayMode;
+      mock: boolean;
+    }
+  | {
+      ok: false;
+      status: number;
+      code: string;
+      error: string;
+      retryable?: boolean;
+    };
+
+export interface ConfirmCapturedPaymentOptions {
+  /** Injected client (tests). `undefined` builds one from the environment. */
+  client?: Pick<RazorpayClient, 'fetchPayment'> | RazorpayClient | null;
+}
+
+/**
+ * Signature AND capture status AND amount. A checkout HMAC alone is not
+ * "payment successful".
+ */
+export async function confirmCapturedRazorpayPayment(
+  input: ConfirmCapturedPaymentInput,
+  options: ConfirmCapturedPaymentOptions = {}
+): Promise<ConfirmCapturedPaymentResult> {
+  const orderId = String(input.orderId || '').trim();
+  const paymentId = String(input.paymentId || '').trim();
+  const signature = String(input.signature || '').trim();
+
+  if (!orderId || !paymentId || !signature) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_reference_required',
+      error: 'razorpay_order_id, razorpay_payment_id and razorpay_signature are all required.',
+    };
+  }
+
+  const { secret, mode } = resolveSignatureSecret();
+  if (!secret) {
+    return {
+      ok: false,
+      status: 503,
+      code: 'razorpay_not_configured',
+      error: 'Payment verification is unavailable (RAZORPAY_KEY_SECRET is not configured on the server).',
+    };
+  }
+
+  if (mode !== 'mock' && isMockOrderId(orderId)) {
+    console.error(`[Razorpay] Refused mock order ${orderId} while the ${mode} gateway is active.`);
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_unverified',
+      error: 'Payment signature verification failed. The payment was not accepted.',
+    };
+  }
+
+  const signatureOk = verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
+  if (!signatureOk) {
+    console.error(`[Razorpay] Signature mismatch for order ${orderId} / payment ${paymentId}`);
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_unverified',
+      error: 'Payment signature verification failed. The payment was not accepted.',
+    };
+  }
+
+  const client = options.client === undefined ? createRazorpayClient() : options.client;
+  if (!client || typeof client.fetchPayment !== 'function') {
+    return {
+      ok: false,
+      status: 503,
+      code: 'razorpay_not_configured',
+      error: 'Payment verification is unavailable (the gateway cannot look up capture status).',
+    };
+  }
+
+  let payment: RazorpayPayment | null = null;
+  try {
+    payment = await client.fetchPayment(paymentId, input.deadlineAt);
+  } catch (err: any) {
+    const timeout = err?.code === 'razorpay_timeout';
+    console.error('[Razorpay] Capture lookup failed:', err?.message || err);
+    return {
+      ok: false,
+      status: timeout ? 504 : 503,
+      code: timeout ? 'request_timeout' : 'razorpay_unreachable',
+      retryable: true,
+      error: timeout
+        ? 'The payment gateway took too long to confirm capture. Nothing was marked paid — please try again.'
+        : 'The payment gateway could not be reached, so capture could not be confirmed. Nothing was marked paid.',
+    };
+  }
+
+  if (!payment) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'payment_unverified',
+      error: 'Razorpay has no such payment. The booking was not marked paid.',
+    };
+  }
+
+  if (payment.orderId && payment.orderId !== orderId) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_unverified',
+      error: 'This payment does not belong to the order that was checked out. The booking was not marked paid.',
+    };
+  }
+
+  if (!payment.captured) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'payment_not_captured',
+      error: `That payment is "${payment.status || 'not captured'}" at Razorpay, so it cannot be treated as successful. The booking was not marked paid.`,
+    };
+  }
+
+  const amountRupees = payment.amountPaidRupees || payment.amountRupees;
+  const expected = Number(input.expectedAmountRupees);
+  if (Number.isFinite(expected) && expected > 0) {
+    const tolerance =
+      input.amountToleranceRupees === undefined ? CAPTURE_AMOUNT_TOLERANCE_RUPEES : Number(input.amountToleranceRupees);
+    if (!amountsMatchRupees(amountRupees, expected, tolerance)) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'payment_amount_mismatch',
+        error: `Razorpay captured ₹${amountRupees} but this booking's deposit is ₹${Math.round(expected)}. Nothing was recorded as paid.`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    paymentId: payment.id || paymentId,
+    orderId: payment.orderId || orderId,
+    amountRupees,
+    mode,
+    mock: mode === 'mock',
   };
 }
 
@@ -712,6 +939,7 @@ export function consumePaymentOrder(fingerprint: string): void {
 /** Test seam — do not call from request handlers. */
 export function _resetPaymentOrderCache(): void {
   orderCache.clear();
+  _resetMockGatewayState();
 }
 
 /**
@@ -960,64 +1188,51 @@ export function handleMockRazorpayPayment(req: any, res: any): void {
 
 /**
  * POST /api/payments/razorpay/verify
- * Body: { razorpay_order_id, razorpay_payment_id, razorpay_signature }
- * → 200 { success: true, verified: true, mode } | 400 invalid | 503 disabled
+ * Body: { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount? }
+ * A valid checkout HMAC is not enough: the payment must be captured at
+ * Razorpay, and if `amount` is sent it must match the captured rupees.
+ * → 200 { success, verified, captured, amount, mode } | 400/409 | 503 disabled
  */
-export function handleVerifyRazorpayPayment(req: any, res: any): void {
+export async function handleVerifyRazorpayPayment(req: any, res: any): Promise<void> {
   try {
-    const {
-      razorpay_order_id: orderId,
-      razorpay_payment_id: paymentId,
-      razorpay_signature: signature,
-    } = req.body ?? {};
+    const body = req.body ?? {};
+    const expectedRaw = body.amount ?? body.expected_amount ?? body.expectedAmountRupees;
+    const expectedAmountRupees =
+      Number.isFinite(Number(expectedRaw)) && Number(expectedRaw) > 0 ? Number(expectedRaw) : undefined;
 
-    if (!orderId || !paymentId || !signature) {
-      console.warn('[Razorpay] Verification called with missing fields', {
-        orderId: !!orderId,
-        paymentId: !!paymentId,
-        signature: !!signature,
-      });
-      return void res.status(400).json({
+    const result = await confirmCapturedRazorpayPayment(
+      {
+        orderId: body.razorpay_order_id,
+        paymentId: body.razorpay_payment_id,
+        signature: body.razorpay_signature,
+        expectedAmountRupees,
+        deadlineAt: res.locals?.requestDeadlineAt,
+      }
+    );
+
+    if (result.ok === false) {
+      return void res.status(result.status).json({
         success: false,
         verified: false,
-        error: 'razorpay_order_id, razorpay_payment_id and razorpay_signature are all required.',
+        code: result.code,
+        error: result.error,
+        ...(result.retryable ? { retryable: true } : {}),
       });
     }
 
-    const { secret, mode } = resolveSignatureSecret();
-    if (!secret) {
-      console.error('[Razorpay] Cannot verify payment — the gateway is disabled (RAZORPAY_KEY_SECRET is not set).');
-      return void res.status(503).json({
-        success: false,
-        verified: false,
-        code: 'razorpay_not_configured',
-        error: 'Payment verification is unavailable (RAZORPAY_KEY_SECRET is not configured on the server).',
-      });
-    }
-
-    // A mock-signed triple must never verify against a real gateway and vice
-    // versa: mock ids only exist while the mock gateway is the active mode.
-    if (mode !== 'mock' && isMockOrderId(orderId)) {
-      console.error(`[Razorpay] Refused mock order ${orderId} while the ${mode} gateway is active.`);
-      return void res.status(400).json({
-        success: false,
-        verified: false,
-        error: 'Payment signature verification failed. The payment was not accepted.',
-      });
-    }
-
-    const verified = verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
-    if (!verified) {
-      console.error(`[Razorpay] Signature mismatch for order ${orderId} / payment ${paymentId}`);
-      return void res.status(400).json({
-        success: false,
-        verified: false,
-        error: 'Payment signature verification failed. The payment was not accepted.',
-      });
-    }
-
-    console.log(`[Razorpay] ${mode === 'mock' ? 'MOCK payment' : 'Payment'} verified ${paymentId} for order ${orderId}`);
-    res.json({ success: true, verified: true, paymentId, orderId, mode, mock: mode === 'mock' });
+    console.log(
+      `[Razorpay] ${result.mock ? 'MOCK payment' : 'Payment'} captured ${result.paymentId} for order ${result.orderId} (₹${result.amountRupees})`
+    );
+    res.json({
+      success: true,
+      verified: true,
+      captured: true,
+      paymentId: result.paymentId,
+      orderId: result.orderId,
+      amount: result.amountRupees,
+      mode: result.mode,
+      mock: result.mock,
+    });
   } catch (err: any) {
     console.error('[Razorpay] Verification error:', err?.stack || err?.message || err);
     res.status(500).json({

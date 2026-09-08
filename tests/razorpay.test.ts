@@ -20,6 +20,7 @@ import {
   isMockOrderId,
   MOCK_KEY_ID,
   _resetPaymentOrderCache,
+  confirmCapturedRazorpayPayment,
 } from '../server/razorpay';
 import { computeAdvanceDeposit } from '../src/lib/advanceDeposit';
 
@@ -441,37 +442,133 @@ test('order endpoint sends the real Razorpay API the 25 % advance in integer pai
   });
 });
 
-test('verify endpoint rejects incomplete payloads and bad signatures', () => {
-  withEnv(REAL_KEYS, () => {
+function stubPaymentFetch(payload: Record<string, unknown> | null, status = 200) {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: any) => {
+    const url = String(input?.url ?? input);
+    if (!url.includes('/payments/')) {
+      return new Response('unexpected fetch', { status: 500 });
+    }
+    if (!payload) return new Response('{}', { status: 404 });
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+test('verify endpoint rejects incomplete payloads and bad signatures', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
     const missing = makeRes();
-    handleVerifyRazorpayPayment({ body: { razorpay_order_id: 'order_1' } }, missing);
+    await handleVerifyRazorpayPayment({ body: { razorpay_order_id: 'order_1' } }, missing);
     assert.equal(missing.statusCode, 400);
 
     const bad = makeRes();
-    handleVerifyRazorpayPayment(
+    await handleVerifyRazorpayPayment(
       { body: { razorpay_order_id: 'order_1', razorpay_payment_id: 'pay_1', razorpay_signature: 'nope' } },
       bad
     );
     assert.equal(bad.statusCode, 400);
     assert.equal(bad.body.verified, false);
 
-    const signature = crypto.createHmac('sha256', KEY_SECRET).update('order_1|pay_1').digest('hex');
-    const ok = makeRes();
-    handleVerifyRazorpayPayment(
-      { body: { razorpay_order_id: 'order_1', razorpay_payment_id: 'pay_1', razorpay_signature: signature } },
-      ok
-    );
-    assert.equal(ok.statusCode, 200);
-    assert.equal(ok.body.verified, true);
-    assert.equal(ok.body.mode, 'test');
-    assert.equal(ok.body.mock, false);
+    const restore = stubPaymentFetch({
+      id: 'pay_1',
+      order_id: 'order_1',
+      amount: 8700,
+      amount_paid: 8700,
+      status: 'captured',
+      captured: true,
+      currency: 'INR',
+      method: 'card',
+    });
+    try {
+      const signature = crypto.createHmac('sha256', KEY_SECRET).update('order_1|pay_1').digest('hex');
+      const ok = makeRes();
+      await handleVerifyRazorpayPayment(
+        { body: { razorpay_order_id: 'order_1', razorpay_payment_id: 'pay_1', razorpay_signature: signature } },
+        ok
+      );
+      assert.equal(ok.statusCode, 200, JSON.stringify(ok.body));
+      assert.equal(ok.body.verified, true);
+      assert.equal(ok.body.captured, true);
+      assert.equal(ok.body.amount, 87);
+      assert.equal(ok.body.mode, 'test');
+      assert.equal(ok.body.mock, false);
+    } finally {
+      restore();
+    }
   });
 });
 
-test('verify endpoint answers 503 when the gateway is disabled', () => {
-  withEnv(NO_KEYS_PROD, () => {
+test('verify endpoint refuses a valid HMAC when Razorpay has not captured the payment', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
+    const restore = stubPaymentFetch({
+      id: 'pay_1',
+      order_id: 'order_1',
+      amount: 8700,
+      amount_paid: 0,
+      status: 'authorized',
+      captured: false,
+      currency: 'INR',
+      method: 'card',
+    });
+    try {
+      const signature = crypto.createHmac('sha256', KEY_SECRET).update('order_1|pay_1').digest('hex');
+      const res = makeRes();
+      await handleVerifyRazorpayPayment(
+        { body: { razorpay_order_id: 'order_1', razorpay_payment_id: 'pay_1', razorpay_signature: signature } },
+        res
+      );
+      assert.equal(res.statusCode, 409);
+      assert.equal(res.body.verified, false);
+      assert.equal(res.body.code, 'payment_not_captured');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('verify endpoint refuses a captured payment whose amount does not match', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
+    const restore = stubPaymentFetch({
+      id: 'pay_1',
+      order_id: 'order_1',
+      amount: 100,
+      amount_paid: 100,
+      status: 'captured',
+      captured: true,
+      currency: 'INR',
+      method: 'card',
+    });
+    try {
+      const signature = crypto.createHmac('sha256', KEY_SECRET).update('order_1|pay_1').digest('hex');
+      const res = makeRes();
+      await handleVerifyRazorpayPayment(
+        {
+          body: {
+            razorpay_order_id: 'order_1',
+            razorpay_payment_id: 'pay_1',
+            razorpay_signature: signature,
+            amount: 87,
+          },
+        },
+        res
+      );
+      assert.equal(res.statusCode, 409);
+      assert.equal(res.body.code, 'payment_amount_mismatch');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('verify endpoint answers 503 when the gateway is disabled', async () => {
+  await withEnvAsync(NO_KEYS_PROD, async () => {
     const res = makeRes();
-    handleVerifyRazorpayPayment(
+    await handleVerifyRazorpayPayment(
       { body: { razorpay_order_id: 'order_1', razorpay_payment_id: 'pay_1', razorpay_signature: 'x' } },
       res
     );
@@ -499,7 +596,7 @@ test('mock-pay issues a signed payment for a mock order, and verify accepts exac
     assert.match(payRes.body.razorpay_signature, /^[0-9a-f]{64}$/);
 
     const verifyRes = makeRes();
-    handleVerifyRazorpayPayment(
+    await handleVerifyRazorpayPayment(
       {
         body: {
           razorpay_order_id: payRes.body.razorpay_order_id,
@@ -511,12 +608,14 @@ test('mock-pay issues a signed payment for a mock order, and verify accepts exac
     );
     assert.equal(verifyRes.statusCode, 200);
     assert.equal(verifyRes.body.verified, true);
+    assert.equal(verifyRes.body.captured, true);
+    assert.equal(verifyRes.body.amount, 87);
     assert.equal(verifyRes.body.mode, 'mock');
     assert.equal(verifyRes.body.mock, true);
 
     // tampering with the payment id breaks the signature
     const tampered = makeRes();
-    handleVerifyRazorpayPayment(
+    await handleVerifyRazorpayPayment(
       {
         body: {
           razorpay_order_id: payRes.body.razorpay_order_id,
@@ -565,12 +664,77 @@ test('mock-pay is a 404 whenever the mock gateway is not the active mode', () =>
   });
 });
 
-test('a mock-signed triple never verifies against the REAL gateway', () => {
+test('a mock-signed triple never verifies against the REAL gateway', async () => {
   const signed = withEnv(NO_KEYS_DEV, () => signMockPayment('order_mock_ABCDEFGHIJKLMN'));
-  withEnv(REAL_KEYS, () => {
+  await withEnvAsync(REAL_KEYS, async () => {
     const res = makeRes();
-    handleVerifyRazorpayPayment({ body: signed }, res);
+    await handleVerifyRazorpayPayment({ body: signed }, res);
     assert.equal(res.statusCode, 400);
     assert.equal(res.body.verified, false);
+  });
+});
+
+test('confirmCapturedRazorpayPayment requires capture and matching amount, not just HMAC', async () => {
+  await withEnvAsync(NO_KEYS_DEV, async () => {
+    _resetPaymentOrderCache();
+    const order = createMockOrder({ amount: 87, receipt: 'NX-BLR-confirm' });
+    const signed = signMockPayment(order.id);
+
+    const ok = await confirmCapturedRazorpayPayment({
+      orderId: signed.razorpay_order_id,
+      paymentId: signed.razorpay_payment_id,
+      signature: signed.razorpay_signature,
+      expectedAmountRupees: 87,
+    });
+    assert.equal(ok.ok, true);
+    if (ok.ok) {
+      assert.equal(ok.amountRupees, 87);
+      assert.equal(ok.mode, 'mock');
+    }
+
+    const cheap = createMockOrder({ amount: 1, receipt: 'NX-BLR-cheap' });
+    const cheapSigned = signMockPayment(cheap.id);
+    const mismatch = await confirmCapturedRazorpayPayment({
+      orderId: cheapSigned.razorpay_order_id,
+      paymentId: cheapSigned.razorpay_payment_id,
+      signature: cheapSigned.razorpay_signature,
+      expectedAmountRupees: 87,
+    });
+    assert.equal(mismatch.ok, false);
+    if (!mismatch.ok) {
+      assert.equal(mismatch.code, 'payment_amount_mismatch');
+      assert.equal(mismatch.status, 409);
+    }
+
+    const hmacOnly = await confirmCapturedRazorpayPayment(
+      {
+        orderId: signed.razorpay_order_id,
+        paymentId: signed.razorpay_payment_id,
+        signature: signed.razorpay_signature,
+        expectedAmountRupees: 87,
+      },
+      {
+        client: {
+          async fetchPayment() {
+            return {
+              id: signed.razorpay_payment_id,
+              orderId: signed.razorpay_order_id,
+              amountRupees: 87,
+              amountPaidRupees: 0,
+              status: 'failed',
+              currency: 'INR',
+              captured: false,
+              method: 'mock',
+            };
+          },
+        },
+      }
+    );
+    assert.equal(hmacOnly.ok, false);
+    if (!hmacOnly.ok) {
+      assert.equal(hmacOnly.code, 'payment_not_captured');
+      assert.equal(hmacOnly.status, 409);
+    }
+    _resetPaymentOrderCache();
   });
 });

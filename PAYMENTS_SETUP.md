@@ -40,7 +40,7 @@ customer lost the salon, slot, stylist, services and deposit they had chosen.
 |-------|-----|
 | Missing credentials were a **hard block** in every environment. | `server/razorpay.ts` now resolves a *gateway mode* — `live` / `test` / `mock` / `disabled`. Missing keys in a non-production runtime start the built-in **mock gateway** (§ 2b); only production stays `disabled`. |
 | The order route took a pre-computed `amount` from the browser. | The route now takes `{ totalAmount, depositPercent }`, derives the **25 % advance in integer paise itself** (`₹348 → ₹87 → 8700`) and rejects a browser amount that disagrees (`400 amount_mismatch`). |
-| A payment claim the server could not verify was reported as "service not configured". | Verification is **mode-aware** (`resolveSignatureSecret`) and answers `400 payment_unverified` — never a configuration error. |
+| A payment claim the server could not verify was reported as "service not configured". | Verification is **mode-aware** and answers `400 payment_unverified` — never a configuration error. A valid checkout HMAC is **not** treated as paid: the server looks the payment up at Razorpay and requires `status === captured` plus a matching amount. |
 | A failed/dismissed payment threw the draft away. | The modal freezes a **`BookingDraft`** before payment and keeps it through failure: **Retry Payment** (same booking ref, new order) and **Review Draft** (every parameter, with *Edit* links). The draft is mirrored to `sessionStorage` for 30 minutes and offered back if the modal is reopened. |
 
 ---
@@ -95,10 +95,11 @@ In mock mode:
   is `404 mock_gateway_disabled` in every other mode and refuses ids it did not
   issue (`400 invalid_mock_order`). `outcome: 'failure'` gives a `402` so the
   Retry-Payment path can be exercised without a card.
-* `/verify` and `/api/bookings/create` verify that signature exactly as they
-  verify a real one; a mock triple is **rejected** when real keys are active
-  and vice versa. Responses carry `paymentMode: 'mock'`; the booking
-  notification says `(TEST — simulated)` and the confirmation pass shows a
+* `/verify` and `/api/bookings/create` check the signature **and** look the
+  payment up (the mock ledger in this mode, Razorpay's Payments API in test/live).
+  Capture status and amount must match; a mock triple is **rejected** when real
+  keys are active and vice versa. Responses carry `paymentMode: 'mock'`; the
+  booking notification says `(TEST — simulated)` and the confirmation pass shows a
   "simulated payment" notice.
 * `npm run check:razorpay` explains which mode the current environment will
   get and exits non-zero only when payments would actually be disabled (or
@@ -160,16 +161,18 @@ DEFAULT_OWNER_ID=<auth user uuid>   # fallback owner for authenticated bookings
 | `GET`  | `/api/payments/razorpay/config` | `{ configured, mode, mock, keyId, depositPercent, notice? \| issues? }` — public key only, never the secret. |
 | `POST` | `/api/payments/razorpay/order`  | Body `{ totalAmount (₹), depositPercent? = 25, amount? (₹ shown to the customer), currency?, receipt?, notes? }` → server computes the advance in **integer paise** and creates the order. Legacy `{ amount }` still accepted. Returns `{ order: { id, amount, currency, receipt, status }, deposit: { rupees, paise, percent }, mode, mock, keyId }`. |
 | `POST` | `/api/payments/razorpay/mock-pay` | **Mock mode only.** Body `{ order_id, outcome? }` → signed payment triple (or `402 payment_failed`). |
-| `POST` | `/api/payments/razorpay/verify` | Body `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }` → HMAC-SHA256 check → `{ verified, mode, mock }`. |
+| `POST` | `/api/payments/razorpay/verify` | Body `{ razorpay_order_id, razorpay_payment_id, razorpay_signature, amount? }` → HMAC-SHA256 **and** Razorpay capture lookup (optional amount check) → `{ verified, captured, amount, mode, mock }`. |
 | `POST` | `/api/payments/razorpay/webhook` | Server-to-server callback from Razorpay (captured / failed / refunded). |
-| `POST` | `/api/bookings/create`          | Validates → resolves owner → re-verifies payment → inserts the booking. Adds `paymentMode` when a payment was verified. |
+| `POST` | `/api/bookings/create`          | Validates → resolves owner → confirms the payment is **captured at the deposit amount** → inserts the booking. Adds `paymentMode` when a payment was verified. The stored advance is the gateway amount. |
 
 Status codes are now precise — a 500 means "genuinely unexpected", nothing else:
 
 | Status | When |
 |--------|------|
 | `400 invalid_booking` | Missing/malformed booking details (`fieldErrors` says which). |
-| `400 payment_unverified` | The Razorpay signature did not match (or the gateway is disabled and a payment was claimed) — nothing is stored. |
+| `400 payment_unverified` | The Razorpay signature did not match, the payment id is unknown, or the payment belongs to a different order — nothing is stored as paid. |
+| `409 payment_not_captured` | The HMAC was valid but Razorpay has not captured the payment (`authorized` / `failed` / `created`) — nothing is marked paid. |
+| `409 payment_amount_mismatch` | Razorpay captured a different amount than this booking's deposit — nothing is marked paid. |
 | `400 invalid_amount` / `amount_mismatch` | The total is not a positive number / the amount the browser displayed is not 25 % of the total. |
 | `422 owner_unresolved` | The salon has no owner account to attach the booking to. |
 | `422` (`23502`/`23503`) | A database constraint rejected the row, explained in plain English. |
@@ -191,8 +194,8 @@ BookingModal → payAdvanceWithRazorpay(draft)      src/lib/razorpayCheckout.ts
    2. POST /api/payments/razorpay/order          server derives ₹348 × 25 % = ₹87 = 8700 paise
    3a. checkout.js opens with that order id      customer pays the advance       (live / test)
    3b. POST /api/payments/razorpay/mock-pay      simulated payment sheet         (mock)
-   4. POST /api/payments/razorpay/verify         HMAC signature check
-   5. POST /api/bookings/create { payment }      signature re-checked before the row is written
+   4. POST /api/payments/razorpay/verify         HMAC + capture status (amount optional)
+   5. POST /api/bookings/create { payment }      HMAC + capture + deposit amount re-checked before the row is written as paid
 ```
 
 * The confirm button is disabled while the flow runs (no double bookings /

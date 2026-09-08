@@ -35,9 +35,7 @@ import { isUuidLike, sanitizeBookingRow } from './bookingOps.js';
 import { isValidIsoDate } from './bookingCreate.js';
 import {
   createRazorpayClient,
-  isMockOrderId,
-  resolveSignatureSecret,
-  verifyRazorpaySignature,
+  confirmCapturedRazorpayPayment,
   razorpayPublicConfig,
   logRazorpayConfigSafely,
   fingerprintPaymentOrder,
@@ -47,7 +45,7 @@ import {
   resolveOrderAmount,
   getRazorpayConfigIssues,
 } from './razorpay.js';
-import type { RazorpayPayment } from './razorpay.js';
+import type { RazorpayClient, RazorpayPayment } from './razorpay.js';
 import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit.js';
 import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs.js';
 import {
@@ -1662,7 +1660,12 @@ function failIntent(res: any, requestId: string, intent: BookingIntentFailure): 
   });
 }
 
-function verifyPostedRazorpay(body: any): {
+async function verifyPostedRazorpay(
+  body: any,
+  expectedAmountRupees: number | undefined,
+  deadlineAt: number | undefined,
+  gateway: CustomerRoutesDeps['gateway'] | undefined
+): Promise<{
   ok: boolean;
   status?: number;
   code?: string;
@@ -1671,7 +1674,8 @@ function verifyPostedRazorpay(body: any): {
   paymentId?: string;
   signature?: string;
   mode?: string;
-} {
+  amountRupees?: number;
+}> {
   const orderId = String(body?.razorpay_order_id ?? body?.orderId ?? '');
   const paymentId = String(body?.razorpay_payment_id ?? body?.paymentId ?? '');
   const signature = String(body?.razorpay_signature ?? body?.signature ?? '');
@@ -1683,34 +1687,40 @@ function verifyPostedRazorpay(body: any): {
       error: 'The gateway reference is missing, so the payment cannot be verified — nothing was recorded.',
     };
   }
-  const { secret, mode } = resolveSignatureSecret();
-  if (!secret) {
+  const client: Pick<RazorpayClient, 'fetchPayment'> | RazorpayClient | null | undefined =
+    gateway === undefined ? createRazorpayClient() : gateway;
+  const confirmed = await confirmCapturedRazorpayPayment(
+    { orderId, paymentId, signature, expectedAmountRupees, deadlineAt },
+    { client }
+  );
+  if (confirmed.ok === false) {
+    if (confirmed.code === 'razorpay_not_configured') {
+      return {
+        ok: false,
+        status: 409,
+        code: 'payments_disabled',
+        error: 'Online payments are not enabled for this salon. Pay at the salon instead.',
+      };
+    }
+    console.error('[Customer] Razorpay capture/amount verification FAILED', {
+      order: orderId,
+      code: confirmed.code,
+    });
     return {
       ok: false,
-      status: 409,
-      code: 'payments_disabled',
-      error: 'Online payments are not enabled for this salon. Pay at the salon instead.',
+      status: confirmed.status,
+      code: confirmed.code,
+      error: confirmed.error || 'We could not verify your payment with the gateway. Nothing was recorded.',
     };
   }
-  if (mode !== 'mock' && isMockOrderId(orderId)) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'payment_unverified',
-      error: 'We could not verify your payment with the gateway. Nothing was recorded.',
-    };
-  }
-  const verified = verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
-  if (!verified) {
-    console.error('[Customer] Razorpay signature verification FAILED', { order: orderId, mode });
-    return {
-      ok: false,
-      status: 400,
-      code: 'payment_unverified',
-      error: 'We could not verify your payment with the gateway. Nothing was recorded.',
-    };
-  }
-  return { ok: true, orderId, paymentId, signature, mode };
+  return {
+    ok: true,
+    orderId: confirmed.orderId,
+    paymentId: confirmed.paymentId,
+    signature,
+    mode: confirmed.mode,
+    amountRupees: confirmed.amountRupees,
+  };
 }
 
 /**
@@ -1992,25 +2002,26 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
       } = intent;
       let metadata = intent.metadata;
 
-      // Deposit salons: the booking is created only after the gateway signature
-      // verifies. A client cannot skip this by posting `advance_paid_amount`.
+      // Deposit salons: the booking is created only after Razorpay reports the
+      // payment as captured for this deposit. A checkout HMAC is not enough,
+      // and a client cannot skip this by posting `advance_paid_amount`.
       let paidAdvance = 0;
       let paymentId: string | null = null;
       let paymentMode: string | null = null;
       if (deposit > 0) {
         const posted = body.payment && typeof body.payment === 'object' ? body.payment : body;
-        const verified = verifyPostedRazorpay(posted);
+        if (!posted?.razorpay_payment_id && !posted?.paymentId) {
+          return void answer(res, 402, {
+            success: false,
+            code: 'payment_required',
+            requestId,
+            error: 'This salon requires an online deposit before the appointment is created. Nothing was saved.',
+            depositDue: deposit,
+            depositPercent: depositPercentage,
+          });
+        }
+        const verified = await verifyPostedRazorpay(posted, deposit, deadlineAt, deps.gateway);
         if (!verified.ok) {
-          if (!posted?.razorpay_payment_id && !posted?.paymentId) {
-            return void answer(res, 402, {
-              success: false,
-              code: 'payment_required',
-              requestId,
-              error: 'This salon requires an online deposit before the appointment is created. Nothing was saved.',
-              depositDue: deposit,
-              depositPercent: depositPercentage,
-            });
-          }
           return void answer(res, verified.status || 400, {
             success: false,
             code: verified.code,
@@ -2018,16 +2029,7 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
             error: verified.error,
           });
         }
-        const claimed = Number(posted.amount);
-        if (Number.isFinite(claimed) && Math.abs(claimed - deposit) > 1) {
-          return void answer(res, 409, {
-            success: false,
-            code: 'payment_amount_mismatch',
-            requestId,
-            error: `The order was for ₹${Math.round(claimed)} but this booking's deposit is ₹${deposit}. Nothing was recorded.`,
-          });
-        }
-        paidAdvance = deposit;
+        paidAdvance = verified.amountRupees ?? deposit;
         paymentId = verified.paymentId || null;
         paymentMode = verified.mode || null;
         metadata = {
@@ -2440,46 +2442,6 @@ export function createBookingAdvanceHandler(deps: CustomerRoutesDeps) {
         return;
       }
 
-      const orderId = String(req.body?.razorpay_order_id ?? req.body?.orderId ?? '');
-      const paymentId = String(req.body?.razorpay_payment_id ?? req.body?.paymentId ?? '');
-      const signature = String(req.body?.razorpay_signature ?? req.body?.signature ?? '');
-      if (!orderId || !paymentId || !signature) {
-        return void answer(res, 400, {
-          success: false,
-          code: 'payment_reference_required',
-          requestId,
-          error: 'The gateway reference is missing, so the payment cannot be verified — nothing was recorded.',
-        });
-      }
-
-      const { secret, mode } = resolveSignatureSecret();
-      if (!secret) {
-        return void answer(res, 409, {
-          success: false,
-          code: 'payments_disabled',
-          requestId,
-          error: 'Online payments are not enabled for this salon. Pay at the salon instead.',
-        });
-      }
-      if (mode !== 'mock' && isMockOrderId(orderId)) {
-        return void answer(res, 400, {
-          success: false,
-          code: 'payment_unverified',
-          requestId,
-          error: 'We could not verify your payment with the gateway. The booking is still pending — no amount was recorded.',
-        });
-      }
-      const verified = verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
-      if (!verified) {
-        console.error('[Customer] Razorpay signature verification FAILED for a deposit', { order: orderId, mode });
-        return void answer(res, 400, {
-          success: false,
-          code: 'payment_unverified',
-          requestId,
-          error: 'We could not verify your payment with the gateway. The booking is still pending — no amount was recorded.',
-        });
-      }
-
       const total = Number(row.total_amount ?? 0);
       // Percentage precedence: what the client was told at booking time, then
       // the policy stored on the booking itself, then the app-wide default. The
@@ -2500,22 +2462,27 @@ export function createBookingAdvanceHandler(deps: CustomerRoutesDeps) {
           error: 'This booking has no deposit due.',
         });
       }
-      const claimed = Number(req.body?.amount);
-      if (Number.isFinite(claimed) && Math.abs(claimed - expected.rupees) > 1) {
-        return void answer(res, 409, {
+
+      const verified = await verifyPostedRazorpay(req.body, expected.rupees, deadlineAt, deps.gateway);
+      if (!verified.ok) {
+        return void answer(res, verified.status || 400, {
           success: false,
-          code: 'payment_amount_mismatch',
+          code: verified.code,
           requestId,
-          error: `The order was for ₹${Math.round(claimed)} but this booking's deposit is ₹${expected.rupees}. Nothing was recorded — please contact the salon.`,
+          error: verified.error,
         });
       }
+      const orderId = verified.orderId || '';
+      const paymentId = verified.paymentId || '';
+      const mode = verified.mode || '';
+      const capturedAmount = verified.amountRupees ?? expected.rupees;
 
       const metadata = { ...(row.metadata && typeof row.metadata === 'object' ? row.metadata : {}), deposit_paid_at: new Date((deps.now ?? Date.now)()).toISOString(), payment_gateway_mode: mode };
       const updated = await mutateOwnBooking(
         deps,
         row.id,
         {
-          advance_paid_amount: expected.rupees,
+          advance_paid_amount: capturedAmount,
           payment_id: paymentId,
           payment_status: 'paid_deposit',
           status: row.status === 'pending' ? 'confirmed' : row.status,
@@ -2534,7 +2501,7 @@ export function createBookingAdvanceHandler(deps: CustomerRoutesDeps) {
           requestId,
           notice:
             'Your payment succeeded, but the booking could not be updated. The salon has the payment reference — please show them this screen.',
-          data: { paymentId, orderId, amount: expected.rupees, needsSalonAttention: true },
+          data: { paymentId, orderId, amount: capturedAmount, needsSalonAttention: true },
           mapped: mappingSummary(),
         });
         return;
@@ -2544,14 +2511,14 @@ export function createBookingAdvanceHandler(deps: CustomerRoutesDeps) {
         deps,
         updated.row,
         'Deposit paid online',
-        `${row.customer_name || 'A customer'} paid a ₹${expected.rupees} deposit for the appointment on ${String(updated.row?.booking_date ?? row.booking_date ?? '')} at ${String(updated.row?.time_slot ?? row.time_slot ?? '')}.`,
+        `${row.customer_name || 'A customer'} paid a ₹${capturedAmount} deposit for the appointment on ${String(updated.row?.booking_date ?? row.booking_date ?? '')} at ${String(updated.row?.time_slot ?? row.time_slot ?? '')}.`,
         deadlineAt
       );
 
       ok(res, deps, requestId, toCustomerBooking(updated.row, {}), {
         paymentId,
         orderId,
-        amount: expected.rupees,
+        amount: capturedAmount,
         gatewayMode: mode,
       });
     } catch (err: any) {
