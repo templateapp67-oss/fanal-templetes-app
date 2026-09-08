@@ -18,6 +18,7 @@ export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
 export const STAFF_COMMISSION_PATH = '/owner/dashboard/staff-performance/commission';
+export const OWNER_STAFF_PERFORMANCE_PATH = STAFF_PERFORMANCE_PATH;
 
 // ---------------------------------------------------------------------------
 // Customer App (`/app/...`)
@@ -135,6 +136,11 @@ export function isMyBookingsPath(pathname: string): boolean {
 /** True when the path is the owner-only Staff Performance dashboard. */
 export function isStaffPerformancePath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === STAFF_PERFORMANCE_PATH;
+}
+
+/** Alias used by the main-line staff dashboard route. */
+export function isOwnerStaffPerformancePath(pathname: string): boolean {
+  return isStaffPerformancePath(pathname);
 }
 
 /** True when the path is the owner-only Staff Commission settings + payouts page. */

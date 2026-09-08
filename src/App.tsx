@@ -276,6 +276,8 @@ export default function App() {
         navigate(bookingDetailPath(bookingDetailId ?? ''));
       } else if (view === 'staffPerformance') {
         navigate(STAFF_PERFORMANCE_PATH);
+      } else if (view === 'staffCommission') {
+        navigate(STAFF_COMMISSION_PATH);
       } else {
         navigate('/');
       }

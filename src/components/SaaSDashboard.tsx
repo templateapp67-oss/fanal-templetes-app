@@ -44,7 +44,7 @@ interface SaaSDashboardProps {
   onNavigateToStaffCommission?: () => void;
 }
 
-type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
+type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'payroll' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
 
 export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   profile,
@@ -394,6 +394,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             { id: 'calendar', label: 'Appointments', icon: 'calendar_month' },
             { id: 'services', label: 'Services Menu', icon: 'spa' },
             { id: 'team', label: 'Team Management', icon: 'badge' },
+            { id: 'payroll', label: 'Payroll & Payout', icon: 'payments' },
             { id: 'clients', label: 'Clients CRM', icon: 'group' },
             { id: 'loyalty', label: 'Loyalty & Rewards', icon: 'military_tech' },
             { id: 'reengagement', label: 'AI Re-Engagement', icon: 'psychology' },
@@ -408,13 +409,19 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               <button
                 key={tab.id}
                 onClick={() => {
-                  if (tab.id === 'staff_performance') {
+                  if (tab.id === 'payroll') {
                     if (!isAuthenticated) {
                       onRequireAuth?.('login');
                       return;
                     }
-                    onNavigateToStaffPerformance?.();
-                    return;
+                    if (onNavigateToStaffCommission) {
+                      onNavigateToStaffCommission();
+                      return;
+                    }
+                    if (onNavigateToStaffPerformance) {
+                      onNavigateToStaffPerformance();
+                      return;
+                    }
                   }
                   setActiveTab(tab.id as TabType);
                 }}
@@ -455,6 +462,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 {tab.id === 'team' && (
                   <span className="bg-gray-100 text-gray-700 text-[10px] font-bold px-1.5 py-0.2 rounded-full border border-gray-200">
                     {stylists.length}
+                  </span>
+                )}
+                {tab.id === 'payroll' && (
+                  <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full">
+                    INR (₹)
                   </span>
                 )}
                 {tab.id === 'appearance' && (
@@ -922,6 +934,49 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             isAuthenticated={isAuthenticated}
             onRequireAuth={onRequireAuth}
           />
+        )}
+
+        {/* TAB CONTENT: PAYROLL & PAYOUT — owner commission / performance pages */}
+        {activeTab === 'payroll' && (
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">
+            <h2 className="font-display font-bold text-xl">Payroll & Payout</h2>
+            <p className="text-xs text-gray-500">
+              Owner-only staff commission settings, pending payouts, and performance analytics.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {onNavigateToStaffCommission && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      onRequireAuth?.('login');
+                      return;
+                    }
+                    onNavigateToStaffCommission();
+                  }}
+                  className="px-4 py-2 rounded-xl text-white text-xs font-bold cursor-pointer"
+                  style={{ backgroundColor: currentPrimaryColor }}
+                >
+                  Open commission & payouts
+                </button>
+              )}
+              {onNavigateToStaffPerformance && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      onRequireAuth?.('login');
+                      return;
+                    }
+                    onNavigateToStaffPerformance();
+                  }}
+                  className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold cursor-pointer"
+                >
+                  Open staff performance
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
         {/* TAB CONTENT: CLIENTS */}
