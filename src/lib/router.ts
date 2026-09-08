@@ -17,6 +17,100 @@ import { useCallback, useEffect, useState } from 'react';
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 
+// ---------------------------------------------------------------------------
+// Customer App (`/app/...`)
+// ---------------------------------------------------------------------------
+// The Customer App is a second surface of the same deployment: its own path
+// namespace, its own sub-navigation, and no changes to the owner screens. Like
+// the booking pages it is state-driven from the URL, so a refresh or a shared
+// deep link lands on the same screen.
+export const CUSTOMER_APP_ROOT = '/app';
+
+export type CustomerSection =
+  | 'auth'
+  | 'profile'
+  | 'location'
+  | 'home'
+  | 'salon'
+  | 'book'
+  | 'bookings'
+  | 'booking'
+  | 'reviews'
+  | 'favourites'
+  | 'wallet'
+  | 'qr'
+  | 'membership'
+  | 'referral'
+  | 'notifications'
+  | 'offers'
+  | 'data';
+
+export interface CustomerRoute {
+  section: CustomerSection;
+  /** `:id` segment for salon/booking routes (id or subdomain). */
+  id: string;
+  /** Second id segment, e.g. `/app/salon/:id/services` as a tab. */
+  tab: string;
+}
+
+/** True when the path belongs to the Customer App at all. */
+export function isCustomerAppPath(pathname: string): boolean {
+  const path = normalizePath(pathname);
+  return path === CUSTOMER_APP_ROOT || path.startsWith(`${CUSTOMER_APP_ROOT}/`);
+}
+
+const CUSTOMER_SECTIONS: Record<string, CustomerSection> = {
+  '': 'home',
+  auth: 'auth',
+  signin: 'auth',
+  profile: 'profile',
+  me: 'profile',
+  location: 'location',
+  home: 'home',
+  search: 'home',
+  salon: 'salon',
+  book: 'book',
+  bookings: 'bookings',
+  booking: 'booking',
+  reviews: 'reviews',
+  favourites: 'favourites',
+  wallet: 'wallet',
+  rewards: 'wallet',
+  qr: 'qr',
+  membership: 'membership',
+  referral: 'referral',
+  referrals: 'referral',
+  notifications: 'notifications',
+  offers: 'offers',
+  data: 'data',
+};
+
+/**
+ * Parse `/app`, `/app/salon/:id`, `/app/salon/:id/services`, `/app/booking/:id`.
+ * Unknown sub-paths fall back to `home` rather than a blank screen: a typo in a
+ * shared link should still land the customer somewhere they can use.
+ */
+export function matchCustomerRoute(pathname: string): CustomerRoute {
+  const path = normalizePath(pathname);
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+  if (segments[0]?.toLowerCase() !== 'app') return { section: 'home', id: '', tab: '' };
+  const raw = segments.slice(1);
+  const head = String(raw[0] || '').toLowerCase();
+  const section = CUSTOMER_SECTIONS[head] ?? 'home';
+  // Salon/booking routes carry an id; `salon` also carries a tab.
+  const id = section === 'salon' || section === 'book' || section === 'booking' ? decodeURIComponent(raw[1] || '') : '';
+  const tab = section === 'salon' ? decodeURIComponent(raw[2] || '') : '';
+  return { section, id, tab };
+}
+
+export function customerPath(section: CustomerSection, id = '', tab = ''): string {
+  const parts = [CUSTOMER_APP_ROOT];
+  if (section !== 'home') parts.push(section);
+  if (id) parts.push(encodeURIComponent(id));
+  if (tab) parts.push(tab);
+  return parts.join('/');
+}
+
 /** Strip a trailing slash (keeping the bare "/") so both spellings match. */
 export function normalizePath(pathname: string): string {
   const value = String(pathname ?? '').trim();

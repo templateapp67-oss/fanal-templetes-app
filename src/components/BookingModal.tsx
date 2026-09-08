@@ -25,7 +25,6 @@ import {
   Lock
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
-import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS } from '../mockData';
 import { payAdvanceWithRazorpay, type PaymentGatewayMode, type RazorpayOutcome } from '../lib/razorpayCheckout';
 import {
   buildBookingDraft,
@@ -136,14 +135,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   onRequireAuth,
   fromHistory = false,
 }) => {
-  // Safe resolved values
-  const profile = inputProfile || {
-    ...INITIAL_SALON_PROFILE,
-    businessName: aliasSalonName || INITIAL_SALON_PROFILE.businessName,
-    currency: aliasCurrency || INITIAL_SALON_PROFILE.currency || '₹',
-  };
-  const services = inputServices || aliasServicesList || INITIAL_SERVICES;
-  const stylists = inputStylists || aliasStylistsList || INITIAL_STYLISTS;
+  // Safe resolved values.
+  //
+  // These used to fall back to INITIAL_SALON_PROFILE / INITIAL_SERVICES /
+  // INITIAL_STYLISTS from src/mockData.ts, i.e. a fictional salon with a
+  // fictional price list. The only caller (SalonWebsitePreview) always passes the
+  // real rows, so the fallback could only ever fire when the salon's own data had
+  // NOT loaded — precisely the moment a booking widget must not invent a business
+  // name, a currency or a menu for a customer to look at. Now an absent salon
+  // yields an empty catalogue, which the existing empty states already handle.
+  const profile: SalonProfile = inputProfile || ({ businessName: aliasSalonName || '', currency: aliasCurrency || '₹' } as SalonProfile);
+  const services = inputServices || aliasServicesList || [];
+  const stylists = inputStylists || aliasStylistsList || [];
   const initialService = inputInitialService || aliasService;
   const initialStylist = inputInitialStylist || aliasStylist;
   const onAddAppointment = inputOnAddAppointment || (aliasOnConfirmBooking ? (apt: Appointment) => {

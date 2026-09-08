@@ -36,12 +36,14 @@ import {
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
 import {
   usePathRoute,
+  isCustomerAppPath,
   isMyBookingsPath,
   MY_BOOKINGS_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
 import { MyBookingsPage } from './components/MyBookingsPage';
+import { CustomerApp } from './customer/CustomerApp';
 import { BookingDetailPage } from './components/BookingDetailPage';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
@@ -390,6 +392,12 @@ export default function App() {
   // Computed before the hooks below so the auto-save engine can skip saving
   // when a visitor is viewing a salon's public white-label site.
   const isPublicSite = !!siteTenant?.isTenant && siteTenant.found;
+  // The Customer App (`/app`) is a second surface of this deployment. It is
+  // computed up here, next to `isPublicSite` and for the same reason, because
+  // the auto-save and appointment-sync effects below must both stay silent on
+  // it: a visitor with no owner session must never write the default salon
+  // profile over a real one.
+  const isCustomerApp = isCustomerAppPath(path);
 
   /**
    * Fetch a same-origin JSON API route with exact diagnostics.
@@ -1153,6 +1161,7 @@ export default function App() {
       return;
     }
     if (isPublicSite) return; // visitors on a public salon site never save
+    if (isCustomerApp) return; // …and neither does anyone in the Customer App
     if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
     setSaveStatus('pending');
     hasPendingSaveRef.current = true;
@@ -1172,6 +1181,7 @@ export default function App() {
     user?.id,
     isMockSupabase,
     isPublicSite,
+    isCustomerApp,
     persistSalonState,
   ]);
 
@@ -1310,7 +1320,10 @@ export default function App() {
       setClients((prev) => [newClientRecord as ClientRecord, ...prev]);
     }
 
-    if (isMockSupabase || isPublicSite) return;
+    // The customer app must never append to the owner's `appointments`/`clients`
+    // either: a customer booking arrives through /api/customer/* and is written
+    // against their own rows.
+    if (isMockSupabase || isPublicSite || isCustomerApp) return;
 
     const ownerId = user?.id ?? profile.ownerId;
     if (!ownerId) {
@@ -1365,6 +1378,26 @@ export default function App() {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
   };
+
+  // -------------------------------------------------------------------------
+  // CUSTOMER APP RENDER
+  //
+  // Ahead of the public site and the editor: `/app` belongs to the customer
+  // surface alone, so the owner UI never mounts underneath it. The accent comes
+  // from the tenant row when the request arrived on a salon subdomain, which is
+  // how one deployment serves both products without a second theme system.
+  // -------------------------------------------------------------------------
+  if (isCustomerApp) {
+    return (
+      <CustomerApp
+        path={path}
+        navigate={navigate}
+        accentHex={ACCENT_PALETTES[(siteTenant?.profile || profile)?.themeAccentKey as AccentPaletteKey]?.primaryHex}
+        tenantSubdomain={siteTenant?.isTenant && siteTenant.found ? siteTenant.subdomain || '' : ''}
+        tenantName={siteTenant?.isTenant && siteTenant.found ? siteTenant.profile?.businessName || '' : ''}
+      />
+    );
+  }
 
   // -------------------------------------------------------------------------
   // PUBLIC LIVE SITE RENDER

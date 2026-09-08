@@ -362,3 +362,30 @@ Notes:
   (the `NX-…` booking reference or the Razorpay payment id), so a retry after a
   timeout returns the original booking (`duplicate: true`) instead of creating
   a second one.
+
+---
+
+## 12. Customer App (`/app`)
+
+The customer-facing app (login, salon discovery, booking, reviews, favourites,
+rewards wallet, QR credits, membership, referrals, notifications, offers) runs on
+this **same database and the same 13 tables** — no extra tables, columns or
+policies. Six of the entities its spec names have no table and are derived or
+stored in existing `jsonb`; the mapping and the consequences are documented in
+**[`CUSTOMER_APP_SETUP.md`](./CUSTOMER_APP_SETUP.md)**.
+
+Two things to know before shipping it:
+
+* It adds **no environment variables**. If `SUPABASE_URL` / keys are missing,
+  customer reads come back empty with a "not connected" notice and customer
+  writes are refused with `503 supabase_not_configured` — the app never books
+  against a mock store.
+* Verify it against your project rather than trusting this document:
+
+```bash
+npm run verify                              # mapping integrity (offline)
+npm run verify -- --api https://your-host   # + table probes + RLS reality + API report
+```
+
+If stage 2 reports a missing table, the migrations in
+`supabase/migrations/` were not fully applied to that project.
