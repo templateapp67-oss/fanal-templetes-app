@@ -9,6 +9,8 @@ export type AppView =
   | 'wizard'
   | 'preview'
   | 'dashboard'
+  | 'staffPerformance'
+  | 'staffCommission'
   | 'bookings'
   | 'bookingDetail';
 

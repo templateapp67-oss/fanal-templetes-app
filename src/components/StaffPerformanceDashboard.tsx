@@ -1,1722 +1,838 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Stylist,
-  SalonService,
-  Appointment,
-  StaffPerformanceSummary,
-  StaffLeaderboardItem,
-  StaffPayrollRecord,
-  PayoutPaymentMethod,
-  PayoutStatus,
-} from '../types';
-import {
-  fetchStaffPerformanceSummary,
-  fetchStaffLeaderboard,
-  fetchMonthlyPayroll,
-  markPayoutPaid,
-  updateStaffCommission,
-} from '../lib/staffDashboard';
-import { StaffDetailDrawer } from './StaffDetailDrawer';
-import { LastSevenDaysLeaders } from './LastSevenDaysLeaders';
-import {
-  ResponsiveContainer,
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  Legend,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  LineChart,
-  Line,
 } from 'recharts';
+import {
+  STAFF_PERFORMANCE_ERROR_COPY,
+  aggregateSalonTotals,
+  bookingGrowthPercent,
+  chartStaffBars,
+  dailySeries,
+  emptyTotals,
+  filterStaffRows,
+  formatInr,
+  formatPercent,
+  formatRating,
+  STAFF_FILTER_DEBOUNCE_MS,
+  lastSevenCivilDays,
+  leaderBadgesFor,
+  mostImprovedStaffId,
+  paginateRows,
+  percentChange,
+  previousPeriod,
+  publicCustomerLabel,
+  ratingTrend,
+  resolveDateRange,
+  sortStaffRows,
+  staffInitials,
+  toIsoDate,
+  type DateRange,
+  type SalonTotals,
+  type StaffDailyPerformanceRow,
+  type StaffDatePreset,
+  type StaffDetailPayload,
+  type StaffLast7DaysRow,
+  type StaffLeaderBadge,
+  type StaffNumericSortKey,
+  type StaffPerformanceError,
+  type StaffPerformanceSummaryRow,
+} from '../lib/staffPerformance';
+import {
+  fetchStaffDailyPerformance,
+  fetchStaffDetail,
+  fetchStaffExport,
+  fetchStaffLast7Days,
+  fetchStaffPerformance,
+  isRpcFail,
+  refreshStaffDaily,
+  resolveOwnerSalon,
+  triggerCsvDownload,
+} from '../lib/staffPerformanceApi';
+import { StaffPerformanceAlerts } from './StaffPerformanceAlerts';
 
-interface StaffPerformanceDashboardProps {
-  stylists: Stylist[];
-  services?: SalonService[];
-  appointments?: Appointment[];
-  setStylists?: React.Dispatch<React.SetStateAction<Stylist[]>>;
-  primaryAccentColor?: string;
-  isAuthenticated?: boolean;
+const PAGE_SIZE = 8;
+const PRESETS: Array<{ id: StaffDatePreset; label: string }> = [
+  { id: 'today', label: 'Today' },
+  { id: 'last_7', label: 'Last 7 Days' },
+  { id: 'last_30', label: 'Last 30 Days' },
+  { id: 'this_month', label: 'This Month' },
+  { id: 'custom', label: 'Custom Range' },
+];
+
+const TABLE_COLUMNS: Array<{ key: StaffNumericSortKey; label: string; numeric?: boolean }> = [
+  { key: 'total_bookings', label: 'Total bookings', numeric: true },
+  { key: 'completed_bookings', label: 'Completed', numeric: true },
+  { key: 'cancelled_bookings', label: 'Cancelled', numeric: true },
+  { key: 'gross_amount', label: 'Gross', numeric: true },
+  { key: 'discount_amount', label: 'Discount', numeric: true },
+  { key: 'net_amount', label: 'Net revenue', numeric: true },
+  { key: 'paid_amount', label: 'Paid', numeric: true },
+  { key: 'commission_rate', label: 'Comm. rate', numeric: true },
+  { key: 'commission_amount', label: 'Commission', numeric: true },
+  { key: 'salon_amount', label: 'Salon share', numeric: true },
+  { key: 'review_count', label: 'Reviews', numeric: true },
+  { key: 'average_rating', label: 'Avg rating', numeric: true },
+  { key: 'seven_day_rank', label: '7-day rank', numeric: true },
+];
+
+export interface StaffPerformanceDashboardProps {
+  user: { id?: string } | null;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  onBackToDashboard?: () => void;
+  onOpenCommission?: () => void;
+  primaryAccentColor?: string;
+  currencySymbol?: string;
+  salonName?: string;
 }
 
-export type DateFilterType = 'today' | 'last_7_days' | 'last_30_days' | 'this_month' | 'custom';
+interface LoadedBundle {
+  salonId: string;
+  rows: StaffPerformanceSummaryRow[];
+  previousRows: StaffPerformanceSummaryRow[];
+  last7: StaffLast7DaysRow[];
+  previous7: StaffPerformanceSummaryRow[];
+  daily7: StaffDailyPerformanceRow[];
+}
 
-const CHART_COLORS = ['#C20E5A', '#059669', '#2563EB', '#D97706', '#7C3AED', '#DB2777', '#0891B2'];
+function canUseCharts(): boolean {
+  return typeof window !== 'undefined';
+}
 
-export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps> = ({
-  stylists,
-  services = [],
-  appointments = [],
-  setStylists,
-  primaryAccentColor = '#C20E5A',
-  isAuthenticated = true,
-  onRequireAuth,
-}) => {
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'leaders7d' | 'payroll' | 'commission'>('overview');
-
-  // Month Period State for Payroll (Format YYYY-MM)
-  const currentMonthPeriod = new Date().toISOString().slice(0, 7);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>(currentMonthPeriod);
-
-  // Global Filter States for Overview
-  const [dateFilter, setDateFilter] = useState<DateFilterType>('this_month');
-  const [customStartDate, setCustomStartDate] = useState<string>(
-    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  );
-  const [customEndDate, setCustomEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
-
-  // Table Sorting, Search, and Pagination
-  const [tableSearch, setTableSearch] = useState<string>('');
-  const [sortField, setSortField] = useState<keyof StaffPerformanceSummary>('grossSales');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(10);
-
-  // Data States
-  const [summaryData, setSummaryData] = useState<StaffPerformanceSummary[]>([]);
-  const [leaderboardData, setLeaderboardData] = useState<StaffLeaderboardItem[]>([]);
-  const [payrollRecords, setPayrollRecords] = useState<StaffPayrollRecord[]>([]);
-
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
-  const [successNotice, setSuccessNotice] = useState<string | null>(null);
-
-  // Staff Detail Drawer State
-  const [selectedStaffDetail, setSelectedStaffDetail] = useState<StaffPerformanceSummary | null>(null);
-
-  // Modal State for Marking Paid
-  const [selectedStaffForPayout, setSelectedStaffForPayout] = useState<StaffPayrollRecord | null>(null);
-  const [payoutBonusInput, setPayoutBonusInput] = useState<number>(0);
-  const [payoutDeductionsInput, setPayoutDeductionsInput] = useState<number>(0);
-  const [payoutMethod, setPayoutMethod] = useState<PayoutPaymentMethod>('Bank Transfer');
-  const [payoutReference, setPayoutReference] = useState<string>('');
-  const [payoutNotes, setPayoutNotes] = useState<string>('');
-  const [isSubmittingPayout, setIsSubmittingPayout] = useState<boolean>(false);
-
-  // Commission Edit State
-  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
-  const [editRate, setEditRate] = useState<number>(0);
-  const [editFixed, setEditFixed] = useState<number>(0);
-  const [editType, setEditType] = useState<'percentage' | 'fixed' | 'both'>('percentage');
-  const [editBasis, setEditBasis] = useState<'net' | 'gross'>('net');
-  const [isSavingCommission, setIsSavingCommission] = useState<boolean>(false);
-
-  // Categories extracted from services prop
-  const categoriesList = useMemo(() => {
-    const set = new Set<string>();
-    services.forEach((s) => {
-      if (s.category) set.add(s.category);
-    });
-    return Array.from(set);
-  }, [services]);
-
-  // Generate Month Options for past 12 months
-  const monthOptions = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    const value = d.toISOString().slice(0, 7);
-    const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    return { value, label };
-  });
-
-  // Calculate Date Ranges
-  const dateRangeBounds = useMemo(() => {
-    const now = new Date();
-    let start = new Date();
-    let end = new Date();
-
-    if (dateFilter === 'today') {
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-    } else if (dateFilter === 'last_7_days') {
-      start.setDate(now.getDate() - 7);
-      start.setHours(0, 0, 0, 0);
-    } else if (dateFilter === 'last_30_days') {
-      start.setDate(now.getDate() - 30);
-      start.setHours(0, 0, 0, 0);
-    } else if (dateFilter === 'this_month') {
-      start = new Date(now.getFullYear(), now.getMonth(), 1);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-    } else if (dateFilter === 'custom') {
-      start = new Date(customStartDate);
-      end = new Date(customEndDate);
-      end.setHours(23, 59, 59, 999);
-    }
-
-    return {
-      startDateStr: start.toISOString().split('T')[0],
-      endDateStr: end.toISOString().split('T')[0],
-      startDate: start,
-      endDate: end,
-    };
-  }, [dateFilter, customStartDate, customEndDate]);
-
-  // Load All Dashboard Data
-  const loadData = async () => {
-    setIsLoading(true);
-    setErrorNotice(null);
-
-    try {
-      // 1. Fetch Performance Summary
-      const summaryRes = await fetchStaffPerformanceSummary(
-        dateRangeBounds.startDateStr,
-        dateRangeBounds.endDateStr
-      );
-
-      let loadedSummaries: StaffPerformanceSummary[] = [];
-
-      if (summaryRes.data && summaryRes.data.length > 0) {
-        loadedSummaries = summaryRes.data;
-      } else {
-        // Build rich deterministic mock performance data grounded on current stylists
-        loadedSummaries = stylists.map((st, idx) => {
-          const totalBookings = 14 + (idx % 5) * 6;
-          const completedBookings = Math.round(totalBookings * 0.82);
-          const pendingBookings = Math.round(totalBookings * 0.12);
-          const cancelledBookings = totalBookings - completedBookings - pendingBookings;
-          const grossSales = completedBookings * (1200 + (idx % 3) * 450);
-          const totalDiscounts = Math.round(grossSales * 0.08);
-          const rate = st.commissionRate || 30;
-          const totalCommission = Math.round(((grossSales - totalDiscounts) * rate) / 100);
-          const netSalonShare = grossSales - totalDiscounts - totalCommission;
-          const reviewCount = 5 + (idx % 4) * 3;
-          const averageRating = Number((4.6 + (idx % 3) * 0.15).toFixed(2));
-
-          return {
-            staffId: st.id,
-            staffName: st.name,
-            staffRole: st.role || 'Senior Stylist',
-            avatarUrl: st.avatarUrl,
-            commissionRate: rate,
-            commissionType: (st.commissionType as any) || 'percentage',
-            commissionBasis: (st.commissionBasis as any) || 'net',
-            totalBookings,
-            confirmedBookings: completedBookings + pendingBookings,
-            pendingBookings,
-            completedBookings,
-            cancelledBookings,
-            grossSales,
-            totalPaid: Math.round(grossSales * 0.95),
-            totalDiscounts,
-            netSales: grossSales - totalDiscounts,
-            totalCommission,
-            netSalonShare,
-            reviewCount,
-            averageRating,
-            leaderboardRank: idx + 1,
-            grossRevenue7d: Math.round(grossSales * 0.35),
-            isActive: st.isActive !== false,
-          };
-        });
-      }
-
-      setSummaryData(loadedSummaries);
-
-      // 2. Fetch Leaderboard
-      const lbRes = await fetchStaffLeaderboard();
-      if (lbRes.data && lbRes.data.length > 0) {
-        setLeaderboardData(lbRes.data);
-      } else {
-        setLeaderboardData(
-          loadedSummaries.map((s, idx) => ({
-            leaderboardRank: idx + 1,
-            staffId: s.staffId,
-            staffName: s.staffName,
-            staffRole: s.staffRole,
-            avatarUrl: s.avatarUrl,
-            grossRevenue7d: s.grossRevenue7d ?? s.last7dRevenue ?? 0,
-            completedBookings7d: s.completedBookings,
-          }))
-        );
-      }
-
-      // 3. Fetch Monthly Payroll
-      const payrollRes = await fetchMonthlyPayroll(selectedPeriod);
-      if (payrollRes.data && payrollRes.data.length > 0) {
-        setPayrollRecords(payrollRes.data);
-      } else {
-        const fallbackPayroll: StaffPayrollRecord[] = stylists.map((s) => {
-          const gross = 18500 + Math.floor(Math.random() * 32000);
-          const rate = s.commissionRate || 30;
-          const comm = Math.round((gross * rate) / 100);
-          return {
-            staffId: s.id,
-            staffName: s.name,
-            staffRole: s.role || 'Service Provider',
-            avatarUrl: s.avatarUrl,
-            payoutPeriod: selectedPeriod,
-            commissionRate: rate,
-            commissionType: 'percentage',
-            commissionBasis: 'net',
-            fixedCommissionAmount: 0,
-            completedBookingsCount: 12 + Math.floor(Math.random() * 10),
-            grossSales: gross,
-            calculatedCommission: comm,
-            bonusAmount: 0,
-            deductionsAmount: 0,
-            netPayout: comm,
-            status: 'Pending',
-            paymentMethod: 'Bank Transfer',
-            paymentReference: '',
-            notes: '',
-          };
-        });
-        setPayrollRecords(fallbackPayroll);
-      }
-    } catch (err: any) {
-      setErrorNotice(err.message || 'Error initializing staff performance analytics.');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, [selectedPeriod, dateRangeBounds.startDateStr, dateRangeBounds.endDateStr]);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await loadData();
-  };
-
-  // Filtered Summary Records for Overview Tab
-  const filteredSummaryData = useMemo(() => {
-    return summaryData.filter((item) => {
-      // Staff filter
-      if (selectedStaffFilter !== 'all' && item.staffId !== selectedStaffFilter) {
-        return false;
-      }
-      // Text search
-      if (tableSearch.trim().length > 0) {
-        const query = tableSearch.toLowerCase();
-        const matchesName = item.staffName.toLowerCase().includes(query);
-        const matchesRole = item.staffRole.toLowerCase().includes(query);
-        if (!matchesName && !matchesRole) return false;
-      }
-      return true;
-    });
-  }, [summaryData, selectedStaffFilter, tableSearch]);
-
-  // Sorted Summary Records
-  const sortedSummaryData = useMemo(() => {
-    return [...filteredSummaryData].sort((a, b) => {
-      let valA: any = a[sortField];
-      let valB: any = b[sortField];
-
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [filteredSummaryData, sortField, sortOrder]);
-
-  // Paginated Summary Records
-  const paginatedSummaryData = useMemo(() => {
-    const startIdx = (currentPage - 1) * pageSize;
-    return sortedSummaryData.slice(startIdx, startIdx + pageSize);
-  }, [sortedSummaryData, currentPage, pageSize]);
-
-  const totalPages = Math.ceil(sortedSummaryData.length / pageSize) || 1;
-
-  const handleSort = (field: keyof StaffPerformanceSummary) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder('desc');
-    }
-  };
-
-  // Top Summary Cards Aggregates
-  const topMetrics = useMemo(() => {
-    const totalBookings = filteredSummaryData.reduce((acc, curr) => acc + curr.totalBookings, 0);
-    const completedBookings = filteredSummaryData.reduce((acc, curr) => acc + curr.completedBookings, 0);
-    const grossRevenue = filteredSummaryData.reduce((acc, curr) => acc + curr.grossSales, 0);
-    const totalDiscounts = filteredSummaryData.reduce((acc, curr) => acc + curr.totalDiscounts, 0);
-    const totalCommission = filteredSummaryData.reduce((acc, curr) => acc + curr.totalCommission, 0);
-    const netSalonRevenue = filteredSummaryData.reduce((acc, curr) => acc + curr.netSalonShare, 0);
-    const totalReviews = filteredSummaryData.reduce((acc, curr) => acc + curr.reviewCount, 0);
-
-    const avgRating =
-      filteredSummaryData.length > 0
-        ? (
-            filteredSummaryData.reduce((acc, curr) => acc + curr.averageRating, 0) /
-            filteredSummaryData.length
-          ).toFixed(2)
-        : '0.00';
-
-    const topPerformer = [...filteredSummaryData].sort((a, b) => b.grossSales - a.grossSales)[0];
-
-    return {
-      totalBookings,
-      completedBookings,
-      grossRevenue,
-      totalDiscounts,
-      totalCommission,
-      netSalonRevenue,
-      totalReviews,
-      avgRating,
-      topPerformer,
-    };
-  }, [filteredSummaryData]);
-
-  // Chart 1: Bookings Breakdown by Staff
-  const bookingsChartData = useMemo(() => {
-    return filteredSummaryData.map((s) => ({
-      name: s.staffName.split(' ')[0],
-      Completed: s.completedBookings,
-      Pending: s.pendingBookings,
-      Cancelled: s.cancelledBookings,
-    }));
-  }, [filteredSummaryData]);
-
-  // Chart 2: Revenue vs Net Salon Share
-  const revenueChartData = useMemo(() => {
-    return filteredSummaryData.map((s) => ({
-      name: s.staffName.split(' ')[0],
-      'Gross Revenue': s.grossSales,
-      'Salon Share': s.netSalonShare,
-      Commission: s.totalCommission,
-    }));
-  }, [filteredSummaryData]);
-
-  // Chart 3: Commission Distribution Pie Chart
-  const commissionPieData = useMemo(() => {
-    return filteredSummaryData.map((s, idx) => ({
-      name: s.staffName,
-      value: s.totalCommission,
-      color: CHART_COLORS[idx % CHART_COLORS.length],
-    }));
-  }, [filteredSummaryData]);
-
-  // Chart 4: Discounts Provided
-  const discountsChartData = useMemo(() => {
-    return filteredSummaryData.map((s) => ({
-      name: s.staffName.split(' ')[0],
-      Discounts: s.totalDiscounts,
-    }));
-  }, [filteredSummaryData]);
-
-  // Chart 5: Reviews Count
-  const reviewsChartData = useMemo(() => {
-    return filteredSummaryData.map((s) => ({
-      name: s.staffName.split(' ')[0],
-      Reviews: s.reviewCount,
-    }));
-  }, [filteredSummaryData]);
-
-  // Chart 6: Rating Comparison Radar
-  const ratingRadarData = useMemo(() => {
-    return filteredSummaryData.map((s) => ({
-      staff: s.staffName.split(' ')[0],
-      Rating: s.averageRating,
-      fullMark: 5,
-    }));
-  }, [filteredSummaryData]);
-
-  // Chart 7: 7-Day Trend Combo Chart
-  const sevenDayTrendData = useMemo(() => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days.map((day, i) => ({
-      day,
-      Bookings: 8 + (i * 3) % 7,
-      Revenue: 8500 + (i * 2400) % 12000,
-    }));
-  }, []);
-
-  // Payroll Metrics
-  const totalCommissionAccrued = payrollRecords.reduce((acc, curr) => acc + curr.calculatedCommission, 0);
-  const totalPaidOut = payrollRecords.filter((r) => r.status === 'Paid').reduce((acc, curr) => acc + curr.netPayout, 0);
-  const totalPendingPayout = payrollRecords.filter((r) => r.status !== 'Paid').reduce((acc, curr) => acc + curr.netPayout, 0);
-  const paidCount = payrollRecords.filter((r) => r.status === 'Paid').length;
-
-  // Export Summary Table CSV
-  const handleExportSummaryCSV = () => {
-    if (sortedSummaryData.length === 0) {
-      alert('No performance data available to export.');
-      return;
-    }
-
-    const headers = [
-      'Staff Member',
-      'Role',
-      'Commission Rate (%)',
-      'Total Bookings',
-      'Completed Bookings',
-      'Cancelled Bookings',
-      'Gross Sales (INR)',
-      'Total Discounts (INR)',
-      'Net Revenue (INR)',
-      'Commission Amount (INR)',
-      'Net Salon Share (INR)',
-      'Total Reviews',
-      'Average Rating',
-      '7-Day Rank',
-    ];
-
-    const rows = sortedSummaryData.map((s) => [
-      `"${s.staffName.replace(/"/g, '""')}"`,
-      `"${s.staffRole.replace(/"/g, '""')}"`,
-      s.commissionRate,
-      s.totalBookings,
-      s.completedBookings,
-      s.cancelledBookings,
-      s.grossSales,
-      s.totalDiscounts,
-      s.netSales,
-      s.totalCommission,
-      s.netSalonShare,
-      s.reviewCount,
-      s.averageRating,
-      s.leaderboardRank,
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute(
-      'download',
-      `staff_performance_report_${dateRangeBounds.startDateStr}_to_${dateRangeBounds.endDateStr}.csv`
+function Photo({ url, name, size = 36 }: { url: string | null; name: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <span
+        className="rounded-full bg-slate-800 text-white font-bold flex items-center justify-center shrink-0"
+        style={{ width: size, height: size, fontSize: size < 32 ? 10 : 12 }}
+        aria-hidden="true"
+      >
+        {staffInitials(name)}
+      </span>
     );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  // Export Payroll CSV
-  const handleDownloadPayrollCSV = () => {
-    if (payrollRecords.length === 0) {
-      alert('No payroll records available to export.');
-      return;
-    }
-
-    const headers = [
-      'Staff ID',
-      'Staff Name',
-      'Role',
-      'Period',
-      'Completed Visits',
-      'Gross Sales (INR)',
-      'Commission Rate',
-      'Calculated Commission (INR)',
-      'Bonus (INR)',
-      'Deductions (INR)',
-      'Net Payable (INR)',
-      'Status',
-      'Payment Method',
-      'Reference / UTR',
-      'Paid At Date',
-    ];
-
-    const rows = payrollRecords.map((r) => [
-      `"${r.staffId}"`,
-      `"${r.staffName.replace(/"/g, '""')}"`,
-      `"${r.staffRole.replace(/"/g, '""')}"`,
-      `"${r.payoutPeriod}"`,
-      r.completedBookingsCount,
-      r.grossSales,
-      r.commissionType === 'fixed' ? `₹${r.fixedCommissionAmount}` : `${r.commissionRate}%`,
-      r.calculatedCommission,
-      r.bonusAmount,
-      r.deductionsAmount,
-      r.netPayout,
-      `"${r.status}"`,
-      `"${r.paymentMethod}"`,
-      `"${(r.paymentReference || '').replace(/"/g, '""')}"`,
-      `"${r.paidAt || ''}"`,
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `staff_payroll_${selectedPeriod}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  // Open Mark Paid Modal
-  const handleOpenPayoutModal = (record: StaffPayrollRecord) => {
-    setSelectedStaffForPayout(record);
-    setPayoutBonusInput(record.bonusAmount || 0);
-    setPayoutDeductionsInput(record.deductionsAmount || 0);
-    setPayoutMethod(record.paymentMethod || 'Bank Transfer');
-    setPayoutReference(record.paymentReference || '');
-    setPayoutNotes(record.notes || '');
-  };
-
-  // Confirm Mark Paid
-  const handleConfirmMarkPaid = async (targetStatus: PayoutStatus = 'Paid') => {
-    if (!selectedStaffForPayout) return;
-    setIsSubmittingPayout(true);
-
-    const netCalc =
-      selectedStaffForPayout.calculatedCommission + payoutBonusInput - payoutDeductionsInput;
-
-    const res = await markPayoutPaid({
-      staffId: selectedStaffForPayout.staffId,
-      payoutPeriod: selectedPeriod,
-      grossSales: selectedStaffForPayout.grossSales,
-      commissionEarned: selectedStaffForPayout.calculatedCommission,
-      bonusAmount: payoutBonusInput,
-      deductionsAmount: payoutDeductionsInput,
-      netPayout: Math.max(0, netCalc),
-      status: targetStatus,
-      paymentMethod: payoutMethod,
-      paymentReference: payoutReference,
-      notes: payoutNotes,
-    });
-
-    setIsSubmittingPayout(false);
-
-    if (res.error) {
-      setErrorNotice(res.error);
-    } else {
-      setSuccessNotice(
-        `Payout status updated to "${targetStatus}" for ${selectedStaffForPayout.staffName} (Net: ₹${Math.max(
-          0,
-          netCalc
-        ).toLocaleString('en-IN')})`
-      );
-      setSelectedStaffForPayout(null);
-      loadData();
-      setTimeout(() => setSuccessNotice(null), 4000);
-    }
-  };
-
-  // Save Commission Configuration
-  const handleSaveCommission = async (staffId: string) => {
-    setIsSavingCommission(true);
-    const res = await updateStaffCommission({
-      staffId,
-      commissionRate: editRate,
-      fixedAmount: editFixed,
-      commissionType: editType,
-      commissionBasis: editBasis,
-    });
-    setIsSavingCommission(false);
-
-    if (res.error) {
-      setErrorNotice(res.error);
-    } else {
-      if (setStylists) {
-        setStylists((prev) =>
-          prev.map((st) =>
-            st.id === staffId
-              ? {
-                  ...st,
-                  commissionRate: editRate,
-                  fixedCommissionAmount: editFixed,
-                  commissionType: editType as any,
-                  commissionBasis: editBasis as any,
-                }
-              : st
-          )
-        );
-      }
-      setEditingStaffId(null);
-      setSuccessNotice('Commission structure updated and saved to backend!');
-      loadData();
-      setTimeout(() => setSuccessNotice(null), 4000);
-    }
-  };
-
+  }
   return (
-    <div className="space-y-6">
-      {/* ACCESS DENIED BANNER FOR UNAUTHENTICATED USERS */}
-      {!isAuthenticated && (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-2xl">lock</span>
-            </div>
-            <div>
-              <h4 className="font-display font-bold text-sm text-amber-950">
-                Salon Owner Authentication Required
-              </h4>
-              <p className="text-xs text-amber-800 mt-0.5">
-                The route <code className="font-mono bg-amber-100/80 px-1 py-0.5 rounded text-[11px]">/owner/dashboard/staff-performance</code> is restricted to verified owners. Sign in to edit commission rates or authorize payouts.
-              </p>
-            </div>
-          </div>
-          {onRequireAuth && (
-            <button
-              onClick={() => onRequireAuth('login')}
-              className="px-4 py-2.5 rounded-xl bg-amber-900 hover:bg-amber-950 text-white text-xs font-bold shadow-xs whitespace-nowrap cursor-pointer transition-transform hover:scale-[1.02]"
-              id="staff-dash-owner-signin-btn"
-            >
-              Sign In as Salon Owner
-            </button>
-          )}
-        </div>
+    <img
+      src={url}
+      alt=""
+      width={size}
+      height={size}
+      className="rounded-full object-cover shrink-0 bg-slate-200"
+      style={{ width: size, height: size }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs animate-pulse" data-testid="kpi-skeleton">
+      <div className="h-3 w-24 bg-gray-200 rounded mb-3" />
+      <div className="h-7 w-20 bg-gray-100 rounded mb-2" />
+      <div className="h-3 w-16 bg-gray-100 rounded" />
+    </div>
+  );
+}
+
+function Delta({ current, previous, money = false, currencySymbol = '₹' }: { current: number; previous: number; money?: boolean; currencySymbol?: string }) {
+  const pct = percentChange(current, previous);
+  const up = current >= previous;
+  const label = pct === null ? 'New' : formatPercent(pct);
+  return (
+    <div className={`text-[11px] font-bold mt-1 flex items-center gap-1 ${up ? 'text-emerald-600' : 'text-rose-600'}`}>
+      <span className="material-symbols-outlined text-sm">{up ? 'trending_up' : 'trending_down'}</span>
+      <span>{label}</span>
+      <span className="text-gray-400 font-medium">
+        vs {money ? formatInr(previous, currencySymbol) : previous.toLocaleString('en-IN')}
+      </span>
+    </div>
+  );
+}
+
+function EmptyBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="p-6 text-center text-xs text-gray-500 border border-dashed border-gray-200 rounded-xl bg-gray-50" role="status">
+      <div className="font-bold text-gray-700 mb-1">{title}</div>
+      <p>{body}</p>
+    </div>
+  );
+}
+
+function ErrorBlock({ error, onRetry }: { error: StaffPerformanceError; onRetry?: () => void }) {
+  return (
+    <div className="p-5 rounded-2xl border border-rose-200 bg-rose-50 text-rose-900" role="alert" data-error-code={error.code}>
+      <div className="font-bold text-sm mb-1">{error.message}</div>
+      <p className="text-xs text-rose-800/80 mb-3">{STAFF_PERFORMANCE_ERROR_COPY.unknown} Use Retry if this looks temporary.</p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="px-3.5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold cursor-pointer"
+        >
+          Retry
+        </button>
       )}
+    </div>
+  );
+}
 
-      {/* DASHBOARD HEADER & FILTER BAR */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs space-y-5">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-gray-100 pb-5">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display font-extrabold text-2xl text-gray-900">
-                Staff Performance Dashboard
-              </h1>
-              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-mono-caps font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                <span className="material-symbols-outlined text-xs">verified</span>
-                <span>OWNER PORTAL</span>
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Track bookings, revenue, discounts, commissions and customer reviews across your team.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5 self-end lg:self-auto">
-            {/* EXPORT BUTTON */}
-            <button
-              onClick={activeSubTab === 'payroll' ? handleDownloadPayrollCSV : handleExportSummaryCSV}
-              className="px-3.5 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 text-xs font-bold flex items-center gap-2 shadow-2xs cursor-pointer transition-colors"
-              title="Download detailed CSV report"
-              id="export-dashboard-report-btn"
-            >
-              <span className="material-symbols-outlined text-sm text-gray-600">download</span>
-              <span>Export Report</span>
-            </button>
-
-            {/* REFRESH BUTTON */}
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="px-3.5 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 text-xs font-bold flex items-center gap-2 shadow-2xs cursor-pointer transition-colors"
-              title="Refresh performance analytics"
-              id="refresh-dashboard-btn"
-            >
-              <span className={`material-symbols-outlined text-sm text-gray-600 ${isRefreshing ? 'animate-spin' : ''}`}>
-                refresh
-              </span>
-              <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-            </button>
-          </div>
+function AccessDenied({
+  error,
+  onRequireAuth,
+  onBack,
+}: {
+  error: StaffPerformanceError;
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  onBack?: () => void;
+}) {
+  const needsSignIn = error.code === 'session_expired';
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center px-4" data-testid="staff-performance-access-denied">
+      <div className="max-w-md w-full bg-white border border-gray-200 rounded-2xl p-8 shadow-xs text-center">
+        <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto mb-4">
+          <span className="material-symbols-outlined text-2xl">lock</span>
         </div>
-
-        {/* FILTERS TOOLBAR */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          {/* Date Filter */}
-          <div>
-            <label className="font-bold text-gray-700 block mb-1 font-mono-caps text-[10px]">
-              Date Period Range
-            </label>
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value as DateFilterType)}
-              className="w-full p-2.5 rounded-xl border border-gray-300 bg-white font-medium text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500"
-              id="date-filter-select"
+        <h1 className="font-display font-bold text-xl text-gray-900 mb-2">Access denied</h1>
+        <p className="text-sm text-gray-600 mb-6">{error.message}</p>
+        <div className="flex flex-col sm:flex-row gap-2 justify-center">
+          {needsSignIn && onRequireAuth && (
+            <button
+              type="button"
+              onClick={() => onRequireAuth('login')}
+              className="px-4 py-2.5 rounded-xl bg-[#C20E5A] text-white text-xs font-bold cursor-pointer"
             >
-              <option value="today">Today</option>
-              <option value="last_7_days">Last 7 Days</option>
-              <option value="last_30_days">Last 30 Days</option>
-              <option value="this_month">This Month</option>
-              <option value="custom">Custom Range</option>
-            </select>
-          </div>
-
-          {/* Custom Date Picker (if custom selected) */}
-          {dateFilter === 'custom' && (
-            <div className="grid grid-cols-2 gap-2 col-span-1 sm:col-span-2 lg:col-span-1">
-              <div>
-                <label className="font-bold text-gray-700 block mb-1 text-[10px] font-mono-caps">Start Date</label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="w-full p-2 rounded-xl border border-gray-300 text-xs bg-white"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-gray-700 block mb-1 text-[10px] font-mono-caps">End Date</label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="w-full p-2 rounded-xl border border-gray-300 text-xs bg-white"
-                />
-              </div>
-            </div>
+              Sign in
+            </button>
           )}
-
-          {/* Staff Member Filter */}
-          <div>
-            <label className="font-bold text-gray-700 block mb-1 font-mono-caps text-[10px]">
-              Staff Filter
-            </label>
-            <select
-              value={selectedStaffFilter}
-              onChange={(e) => setSelectedStaffFilter(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-gray-300 bg-white font-medium text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500"
-              id="staff-filter-select"
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-800 text-xs font-bold cursor-pointer"
             >
-              <option value="all">All Staff ({stylists.length})</option>
-              {stylists.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.name} ({st.role || 'Stylist'})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Service / Category Filter */}
-          <div>
-            <label className="font-bold text-gray-700 block mb-1 font-mono-caps text-[10px]">
-              Service Category
-            </label>
-            <select
-              value={selectedCategoryFilter}
-              onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-gray-300 bg-white font-medium text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500"
-              id="category-filter-select"
-            >
-              <option value="all">All Categories</option>
-              {categoriesList.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* SUB-TABS NAVIGATION BAR */}
-        <div className="flex border-b border-gray-200 pt-2 gap-3 overflow-x-auto">
-          {[
-            { id: 'overview', label: 'Overview & Analytics', icon: 'monitoring' },
-            { id: 'leaders7d', label: 'Last 7 Days Leaders', icon: 'emoji_events' },
-            { id: 'payroll', label: 'Payroll & Payout', icon: 'payments' },
-            { id: 'commission', label: 'Commission Rules & Terms', icon: 'tune' },
-          ].map((tab) => {
-            const isActive = activeSubTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSubTab(tab.id as any)}
-                className={`px-4 py-2.5 text-xs font-bold font-mono-caps border-b-2 flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'border-emerald-600 text-emerald-800 font-extrabold bg-emerald-50/40 rounded-t-xl'
-                    : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base">{tab.icon}</span>
-                <span>{tab.label}</span>
-                {tab.id === 'payroll' && (
-                  <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full">
-                    {payrollRecords.filter((r) => r.status !== 'Paid').length} Pending
-                  </span>
-                )}
-              </button>
-            );
-          })}
+              Back to dashboard
+            </button>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* NOTICES & ALERTS */}
-      {errorNotice && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-base">error</span>
-            <span>{errorNotice}</span>
-          </div>
-          <button onClick={() => setErrorNotice(null)} className="text-rose-600 hover:underline text-xs font-bold">
-            Dismiss
-          </button>
+function Badge({ label }: { label: StaffLeaderBadge; key?: string }) {
+  const tone: Record<StaffLeaderBadge, string> = {
+    'Best Overall': 'bg-amber-100 text-amber-900 border-amber-300',
+    'Booking Leader': 'bg-blue-100 text-blue-900 border-blue-300',
+    'Revenue Leader': 'bg-emerald-100 text-emerald-900 border-emerald-300',
+    'Review Leader': 'bg-purple-100 text-purple-900 border-purple-300',
+    'Most Improved': 'bg-sky-100 text-sky-900 border-sky-300',
+  };
+  return (
+    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full border ${tone[label]}`}>{label}</span>
+  );
+}
+
+function MiniChart({
+  title,
+  data,
+  currency,
+  color,
+}: {
+  title: string;
+  data: Array<{ name: string; value: number }>;
+  currency?: boolean;
+  color: string;
+}) {
+  const empty = data.length === 0 || data.every((d) => !d.value);
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs min-h-[220px]">
+      <h3 className="text-xs font-bold font-mono-caps text-gray-700 mb-2">{title}</h3>
+      {empty ? (
+        <EmptyBlock title="No chart data" body="Nothing to plot for this filter." />
+      ) : canUseCharts() ? (
+        <div className="h-44" role="img" aria-label={title}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="name" fontSize={10} interval={0} angle={-20} textAnchor="end" height={48} />
+              <YAxis fontSize={10} tickFormatter={(v) => (currency ? `₹${v}` : String(v))} allowDecimals={false} />
+              <Tooltip
+                formatter={(value: number) => (currency ? formatInr(value) : value)}
+                contentStyle={{ fontSize: 12, borderRadius: 12 }}
+              />
+              <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} maxBarSize={42} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
+      ) : (
+        <div className="text-xs text-gray-500">Charts load in the browser.</div>
       )}
+    </div>
+  );
+}
 
-      {successNotice && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-base">check_circle</span>
-            <span>{successNotice}</span>
-          </div>
-          <button onClick={() => setSuccessNotice(null)} className="text-emerald-700 hover:underline text-xs font-bold">
-            Dismiss
-          </button>
+function LineMini({
+  title,
+  data,
+  currency,
+  color,
+}: {
+  title: string;
+  data: Array<{ date: string; value: number }>;
+  currency?: boolean;
+  color: string;
+}) {
+  const empty = data.length === 0 || data.every((d) => !d.value);
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs min-h-[220px]">
+      <h3 className="text-xs font-bold font-mono-caps text-gray-700 mb-2">{title}</h3>
+      {empty ? (
+        <EmptyBlock title="No chart data" body="No daily values in the last 7 days." />
+      ) : canUseCharts() ? (
+        <div className="h-44" role="img" aria-label={title}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="date" fontSize={10} tickFormatter={(v) => String(v).slice(5)} />
+              <YAxis fontSize={10} tickFormatter={(v) => (currency ? `₹${v}` : String(v))} allowDecimals={false} />
+              <Tooltip
+                formatter={(value: number) => (currency ? formatInr(value) : value)}
+                contentStyle={{ fontSize: 12, borderRadius: 12 }}
+              />
+              <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
+      ) : (
+        <div className="text-xs text-gray-500">Charts load in the browser.</div>
       )}
+    </div>
+  );
+}
 
-      {/* SUB-TAB 1: OVERVIEW & PERFORMANCE ANALYTICS */}
-      {activeSubTab === 'overview' && (
-        <div className="space-y-6">
-          {/* TOP 8 SUMMARY CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 1: Total Bookings */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Total Bookings</span>
-                <span className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-                  <span className="material-symbols-outlined text-lg">calendar_month</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-gray-900">
-                {topMetrics.totalBookings}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-emerald-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_up</span> +14.2%
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps> = ({
+  user,
+  onRequireAuth,
+  onBackToDashboard,
+  onOpenCommission,
+  primaryAccentColor = '#C20E5A',
+  currencySymbol = '₹',
+  salonName,
+}) => {
+  const [preset, setPreset] = useState<StaffDatePreset>('last_7');
+  const [customFrom, setCustomFrom] = useState(toIsoDate(new Date()));
+  const [customTo, setCustomTo] = useState(toIsoDate(new Date()));
+  const range: DateRange = useMemo(
+    () => resolveDateRange(preset, { customFrom, customTo }),
+    [preset, customFrom, customTo]
+  );
+  const [debouncedRange, setDebouncedRange] = useState<DateRange>(range);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedRange(range), STAFF_FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [range.from, range.to, range.preset]);
 
-            {/* Card 2: Total Payments (Gross Sales) */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Total Payments</span>
-                <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
-                  <span className="material-symbols-outlined text-lg">payments</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-emerald-700">
-                ₹{topMetrics.grossRevenue.toLocaleString('en-IN')}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-emerald-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_up</span> +8.5%
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+  const [staffFilter, setStaffFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<StaffNumericSortKey>('completed_bookings');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
 
-            {/* Card 3: Total Discounts */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Total Discounts</span>
-                <span className="p-2 rounded-xl bg-amber-50 text-amber-700">
-                  <span className="material-symbols-outlined text-lg">loyalty</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-amber-800">
-                ₹{topMetrics.totalDiscounts.toLocaleString('en-IN')}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-rose-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_down</span> -2.1%
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [fatal, setFatal] = useState<StaffPerformanceError | null>(
+    user ? null : { code: 'session_expired', message: STAFF_PERFORMANCE_ERROR_COPY.session_expired, retryable: false }
+  );
+  const [loadError, setLoadError] = useState<StaffPerformanceError | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [bundle, setBundle] = useState<LoadedBundle | null>(null);
 
-            {/* Card 4: Total Commission */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Total Commission</span>
-                <span className="p-2 rounded-xl bg-purple-50 text-purple-700">
-                  <span className="material-symbols-outlined text-lg">account_balance_wallet</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-purple-900">
-                ₹{topMetrics.totalCommission.toLocaleString('en-IN')}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-emerald-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_up</span> +9.4%
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<StaffPerformanceError | null>(null);
+  const [detail, setDetail] = useState<StaffDetailPayload | null>(null);
+  const [detailDaily, setDetailDaily] = useState<StaffDailyPerformanceRow[]>([]);
+  const detailStaffIdRef = useRef<string | null>(null);
 
-            {/* Card 5: Net Salon Revenue */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Net Salon Revenue</span>
-                <span className="p-2 rounded-xl bg-blue-50 text-blue-700">
-                  <span className="material-symbols-outlined text-lg">savings</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-blue-900">
-                ₹{topMetrics.netSalonRevenue.toLocaleString('en-IN')}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-emerald-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_up</span> +7.9%
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+  const inflight = useRef(0);
+  const salonIdRef = useRef<string | null>(null);
 
-            {/* Card 6: Total Reviews */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Total Reviews</span>
-                <span className="p-2 rounded-xl bg-rose-50 text-rose-700">
-                  <span className="material-symbols-outlined text-lg">rate_review</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-gray-900">
-                {topMetrics.totalReviews}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-emerald-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_up</span> +12.0%
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+  const clearDashboard = useCallback(() => {
+    setBundle(null);
+    setDetail(null);
+    setDetailDaily([]);
+    setDetailOpen(false);
+    salonIdRef.current = null;
+    detailStaffIdRef.current = null;
+  }, []);
 
-            {/* Card 7: Average Rating */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Average Rating</span>
-                <span className="p-2 rounded-xl bg-amber-100 text-amber-800">
-                  <span className="material-symbols-outlined text-lg">star</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-gray-900 flex items-center gap-1">
-                <span>{topMetrics.avgRating}</span>
-                <span className="text-amber-500 text-lg">★</span>
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                <span className="text-emerald-600 font-bold flex items-center">
-                  <span className="material-symbols-outlined text-sm">trending_up</span> +0.15
-                </span>
-                <span className="text-gray-400">vs prior period</span>
-              </div>
-            </div>
+  const load = useCallback(async () => {
+    if (!user) {
+      clearDashboard();
+      setFatal({ code: 'session_expired', message: STAFF_PERFORMANCE_ERROR_COPY.session_expired, retryable: false });
+      setLoading(false);
+      return;
+    }
+    const ticket = ++inflight.current;
+    setLoading(true);
+    setLoadError(null);
+    setFatal(null);
 
-            {/* Card 8: Top Performing Staff */}
-            <div className="bg-gradient-to-br from-slate-900 to-slate-950 p-5 rounded-2xl text-white shadow-xs border border-slate-800">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold font-mono-caps text-amber-400">Top Performing Staff</span>
-                <span className="p-1.5 rounded-lg bg-amber-400/20 text-amber-300">
-                  <span className="material-symbols-outlined text-base">emoji_events</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-lg text-white truncate">
-                {topMetrics.topPerformer ? topMetrics.topPerformer.staffName : 'N/A'}
-              </div>
-              <div className="text-xs font-mono font-bold text-emerald-400 mt-1">
-                ₹{topMetrics.topPerformer ? topMetrics.topPerformer.grossSales.toLocaleString('en-IN') : 0} Sales
-              </div>
-            </div>
-          </div>
+    const owner = await resolveOwnerSalon();
+    if (ticket !== inflight.current) return;
+    if (isRpcFail(owner)) {
+      clearDashboard();
+      if (
+        owner.error.code === 'session_expired' ||
+        owner.error.code === 'owner_access_denied' ||
+        owner.error.code === 'salon_not_found'
+      ) {
+        setFatal(owner.error);
+      } else {
+        setLoadError(owner.error);
+      }
+      setLoading(false);
+      return;
+    }
 
-          {/* 7 INTERACTIVE DATA VISUALIZATION CHARTS */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Chart 1: Bookings Status Breakdown by Staff */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-gray-900">1. Bookings by Staff Member</h3>
-                  <p className="text-[11px] text-gray-500">Completed, Pending and Cancelled appointments</p>
-                </div>
-                <span className="material-symbols-outlined text-gray-400">bar_chart</span>
-              </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={bookingsChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                    <Bar dataKey="Completed" fill="#059669" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Pending" fill="#D97706" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Cancelled" fill="#E11D48" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+    salonIdRef.current = owner.context.salonId;
+    const seven = lastSevenCivilDays();
+    const prev7 = previousPeriod(seven.from, seven.to);
+    const prevRange = previousPeriod(debouncedRange.from, debouncedRange.to);
 
-            {/* Chart 2: Revenue vs Salon Share */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-gray-900">2. Revenue & Salon Share</h3>
-                  <p className="text-[11px] text-gray-500">Gross sales vs Net Salon Revenue per stylist</p>
-                </div>
-                <span className="material-symbols-outlined text-gray-400">query_stats</span>
-              </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={revenueChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(val: any) => [`₹${Number(val).toLocaleString('en-IN')}`, '']}
-                      contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                    <Bar dataKey="Gross Revenue" fill="#C20E5A" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Salon Share" fill="#2563EB" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+    const [current, previous, last7, previous7, daily7] = await Promise.all([
+      fetchStaffPerformance(owner.context.salonId, debouncedRange.from, debouncedRange.to, null),
+      fetchStaffPerformance(owner.context.salonId, prevRange.from, prevRange.to, null),
+      fetchStaffLast7Days(owner.context.salonId),
+      fetchStaffPerformance(owner.context.salonId, prev7.from, prev7.to, null),
+      fetchStaffDailyPerformance(owner.context.salonId, seven.from, seven.to, null),
+    ]);
+    if (ticket !== inflight.current) return;
 
-            {/* Chart 3: Commission Share Distribution */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-gray-900">3. Staff Commission Share</h3>
-                  <p className="text-[11px] text-gray-500">Distribution of total accrued commissions</p>
-                </div>
-                <span className="material-symbols-outlined text-gray-400">pie_chart</span>
-              </div>
-              <div className="h-64 w-full flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={commissionPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={4}
-                      dataKey="value"
-                    >
-                      {commissionPieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(val: any) => [`₹${Number(val).toLocaleString('en-IN')}`, 'Commission']}
-                      contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+    const firstFail = [current, previous, last7, previous7, daily7].find(isRpcFail);
+    if (firstFail) {
+      if (firstFail.error.code === 'session_expired' || firstFail.error.code === 'owner_access_denied') {
+        clearDashboard();
+        setFatal(firstFail.error);
+      } else {
+        setLoadError(firstFail.error);
+      }
+      setLoading(false);
+      return;
+    }
 
-            {/* Chart 4: Discounts Provided per Staff */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-gray-900">4. Discounts Applied</h3>
-                  <p className="text-[11px] text-gray-500">Total discount amounts given by staff</p>
-                </div>
-                <span className="material-symbols-outlined text-gray-400">loyalty</span>
-              </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={discountsChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(val: any) => [`₹${Number(val).toLocaleString('en-IN')}`, 'Discounts']}
-                      contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                    />
-                    <Bar dataKey="Discounts" fill="#D97706" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+    setBundle({
+      salonId: owner.context.salonId,
+      rows: current.ok ? current.rows : [],
+      previousRows: previous.ok ? previous.rows : [],
+      last7: last7.ok ? last7.rows : [],
+      previous7: previous7.ok ? previous7.rows : [],
+      daily7: daily7.ok ? daily7.rows : [],
+    });
+    setLoading(false);
+  }, [user, debouncedRange.from, debouncedRange.to, clearDashboard]);
 
-            {/* Chart 5: Reviews Count per Staff */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-gray-900">5. Review Volume</h3>
-                  <p className="text-[11px] text-gray-500">Customer review count by staff member</p>
-                </div>
-                <span className="material-symbols-outlined text-gray-400">rate_review</span>
-              </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={reviewsChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
-                    <Bar dataKey="Reviews" fill="#7C3AED" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+  useEffect(() => {
+    void load();
+    return () => {
+      inflight.current += 1;
+    };
+  }, [load]);
 
-            {/* Chart 6: Rating Comparison Radar */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-gray-900">6. Average Rating Comparison</h3>
-                  <p className="text-[11px] text-gray-500">Staff satisfaction scores (out of 5.0 ★)</p>
-                </div>
-                <span className="material-symbols-outlined text-gray-400">star_rate</span>
-              </div>
-              <div className="h-64 w-full flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius={75} data={ratingRadarData}>
-                    <PolarGrid />
-                    <PolarAngleAxis dataKey="staff" tick={{ fontSize: 10 }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 5]} tick={{ fontSize: 9 }} />
-                    <Radar name="Rating" dataKey="Rating" stroke="#059669" fill="#059669" fillOpacity={0.4} />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+  useEffect(() => {
+    if (!user) {
+      clearDashboard();
+      setFatal({ code: 'session_expired', message: STAFF_PERFORMANCE_ERROR_COPY.session_expired, retryable: false });
+      setLoading(false);
+    }
+  }, [user, clearDashboard]);
 
-          {/* Chart 7: 7-Day Trend Combo Chart */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-display font-bold text-sm text-gray-900">7. Seven-Day Daily Performance Trend</h3>
-                <p className="text-[11px] text-gray-500">Daily bookings volume & gross payment trajectory</p>
-              </div>
-              <span className="material-symbols-outlined text-gray-400">show_chart</span>
-            </div>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={sevenDayTrendData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area yAxisId="left" type="monotone" dataKey="Bookings" fill="#C20E5A" stroke="#C20E5A" fillOpacity={0.2} />
-                  <Area yAxisId="right" type="monotone" dataKey="Revenue" fill="#059669" stroke="#059669" fillOpacity={0.2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+  useEffect(() => {
+    setPage(1);
+  }, [search, staffFilter, sortKey, sortDir, range.from, range.to]);
 
-          {/* MAIN STAFF PERFORMANCE TABLE */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-gray-100">
-              <div>
-                <h3 className="font-display font-bold text-base text-gray-900">
-                  Detailed Staff Performance Breakdown
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Click on any column header to sort. Select "View Details" to open full staff profile metrics.
-                </p>
-              </div>
+  useEffect(() => {
+    if (!detailOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDetailOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailOpen]);
 
-              {/* SEARCH & PAGE SIZE TOOLBAR */}
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-64">
-                  <span className="material-symbols-outlined text-gray-400 absolute left-3 top-2.5 text-sm">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    value={tableSearch}
-                    onChange={(e) => {
-                      setTableSearch(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Search staff name..."
-                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"
-                    id="staff-table-search-input"
-                  />
-                </div>
+  const ranks = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const row of bundle?.last7 || []) map[row.staff_id] = row.overall_rank;
+    return map;
+  }, [bundle]);
 
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="p-2 border border-gray-300 rounded-xl text-xs bg-white"
-                >
-                  <option value={5}>5 per page</option>
-                  <option value={10}>10 per page</option>
-                  <option value={25}>25 per page</option>
-                </select>
-              </div>
-            </div>
+  const staffIdFilter = staffFilter === 'all' ? null : staffFilter;
 
-            {/* PERFORMANCE TABLE */}
-            {isLoading ? (
-              <div className="py-12 text-center text-xs text-gray-500 font-mono animate-pulse">
-                Loading staff metrics and performance calculations...
-              </div>
-            ) : sortedSummaryData.length === 0 ? (
-              <div className="py-12 text-center text-xs text-gray-500">
-                No staff performance records found matching the current filters.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-gray-500 font-mono-caps select-none">
-                      <th
-                        onClick={() => handleSort('staffName')}
-                        className="py-3 px-3 cursor-pointer hover:text-gray-900"
-                      >
-                        Staff Member {sortField === 'staffName' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('totalBookings')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Total {sortField === 'totalBookings' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('completedBookings')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Completed {sortField === 'completedBookings' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('cancelledBookings')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Cancelled {sortField === 'cancelledBookings' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('grossSales')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Gross Sales {sortField === 'grossSales' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('totalDiscounts')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Discounts {sortField === 'totalDiscounts' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('totalCommission')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Commission {sortField === 'totalCommission' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('netSalonShare')}
-                        className="py-3 px-3 text-right cursor-pointer hover:text-gray-900"
-                      >
-                        Net Salon Share {sortField === 'netSalonShare' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th
-                        onClick={() => handleSort('averageRating')}
-                        className="py-3 px-3 text-center cursor-pointer hover:text-gray-900"
-                      >
-                        Rating {sortField === 'averageRating' && (sortOrder === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="py-3 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedSummaryData.map((s) => {
-                      const isTop1 = s.leaderboardRank === 1;
-                      return (
-                        <tr
-                          key={s.staffId}
-                          className={`border-b border-gray-100 transition-colors hover:bg-gray-50/80 ${
-                            isTop1 ? 'bg-amber-50/20' : ''
-                          }`}
-                        >
-                          <td className="py-3.5 px-3">
-                            <div className="flex items-center gap-3">
-                              <div className="relative shrink-0">
-                                <img
-                                  src={
-                                    s.avatarUrl ||
-                                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'
-                                  }
-                                  alt={s.staffName}
-                                  className="w-9 h-9 rounded-xl object-cover border border-gray-200"
-                                />
-                                {isTop1 && (
-                                  <span
-                                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-slate-950 font-bold text-[9px] flex items-center justify-center shadow-xs"
-                                    title="Top #1 Performer"
-                                  >
-                                    ★
-                                  </span>
-                                )}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-gray-900 text-xs">{s.staffName}</span>
-                                  {isTop1 && (
-                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-bold px-1.5 rounded-full">
-                                      #1 TOP
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[11px] text-gray-500 block">{s.staffRole}</span>
-                              </div>
-                            </div>
-                          </td>
+  const visibleRows = useMemo(() => {
+    const filtered = filterStaffRows(bundle?.rows || [], { query: search, staffId: staffIdFilter });
+    return sortStaffRows(filtered, sortKey, sortDir, ranks);
+  }, [bundle, search, staffIdFilter, sortKey, sortDir, ranks]);
 
-                          <td className="py-3.5 px-3 text-right font-mono font-bold text-gray-900">
-                            {s.totalBookings}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-mono text-emerald-700 font-bold">
-                            {s.completedBookings}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-mono text-rose-600">
-                            {s.cancelledBookings}
-                          </td>
+  const paged = paginateRows<StaffPerformanceSummaryRow>(visibleRows, page, PAGE_SIZE);
+  const totals: SalonTotals = bundle ? aggregateSalonTotals(visibleRows) : emptyTotals();
+  const prevTotals: SalonTotals = bundle
+    ? aggregateSalonTotals(filterStaffRows(bundle.previousRows, { staffId: staffIdFilter }))
+    : emptyTotals();
 
-                          <td className="py-3.5 px-3 text-right font-mono font-bold text-gray-900">
-                            ₹{s.grossSales.toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-mono text-amber-700">
-                            ₹{s.totalDiscounts.toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-mono text-purple-700 font-bold">
-                            ₹{s.totalCommission.toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-mono font-extrabold text-blue-900">
-                            ₹{s.netSalonShare.toLocaleString('en-IN')}
-                          </td>
+  const previous7Map = useMemo(() => {
+    const map: Record<string, { completed_bookings: number; average_rating: number; paid_amount: number }> = {};
+    for (const row of bundle?.previous7 || []) {
+      map[row.staff_id] = {
+        completed_bookings: row.completed_bookings,
+        average_rating: row.average_rating,
+        paid_amount: row.paid_amount,
+      };
+    }
+    return map;
+  }, [bundle]);
 
-                          <td className="py-3.5 px-3 text-center">
-                            <span className="inline-flex items-center gap-1 font-bold text-[11px] bg-amber-50 text-amber-900 px-2 py-0.5 rounded-md border border-amber-200">
-                              <span>{s.averageRating}</span>
-                              <span className="text-amber-500">★</span>
-                            </span>
-                            <span className="text-[10px] text-gray-400 block mt-0.5">({s.reviewCount})</span>
-                          </td>
+  const improvedId = useMemo(
+    () => mostImprovedStaffId(bundle?.last7 || [], previous7Map),
+    [bundle, previous7Map]
+  );
 
-                          <td className="py-3.5 px-3 text-right">
-                            <button
-                              onClick={() => setSelectedStaffDetail(s)}
-                              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ml-auto shadow-2xs"
-                              id={`view-staff-detail-btn-${s.staffId}`}
-                            >
-                              <span className="material-symbols-outlined text-sm">visibility</span>
-                              <span>View Details</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+  const toggleSort = (key: StaffNumericSortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortKey(key);
+      setSortDir(key === 'staff_name' ? 'asc' : 'desc');
+    }
+  };
 
-            {/* PAGINATION CONTROLS */}
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-              <div>
-                Showing {Math.min((currentPage - 1) * pageSize + 1, sortedSummaryData.length)} to{' '}
-                {Math.min(currentPage * pageSize, sortedSummaryData.length)} of {sortedSummaryData.length} team members
-              </div>
+  const handleRefresh = async () => {
+    if (!salonIdRef.current || refreshing) return;
+    setRefreshing(true);
+    const result = await refreshStaffDaily(salonIdRef.current, range.to);
+    setRefreshing(false);
+    if (isRpcFail(result)) {
+      setLoadError(result.error);
+      return;
+    }
+    await load();
+  };
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50 font-bold"
-                >
-                  Previous
-                </button>
-                <span className="font-mono font-bold text-gray-800">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50 font-bold"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+  const handleExport = async () => {
+    if (!salonIdRef.current || exporting) return;
+    setExporting(true);
+    setExportError(null);
+    const staffId = staffFilter === 'all' ? null : staffFilter;
+    const result = await fetchStaffExport(salonIdRef.current, range.from, range.to, staffId);
+    setExporting(false);
+    if (isRpcFail(result)) {
+      setExportError(result.error.message);
+      return;
+    }
+    triggerCsvDownload(`staff-performance_${range.from}_${range.to}.csv`, result.csv);
+  };
 
-      {/* SUB-TAB: LAST 7 DAYS LEADERS */}
-      {activeSubTab === 'leaders7d' && (
-        <LastSevenDaysLeaders
-          summaryData={summaryData}
-          services={services}
-          onSelectStaff={(st) => setSelectedStaffDetail(st)}
-        />
-      )}
+  const openDetail = async (staffId: string) => {
+    if (!salonIdRef.current) return;
+    detailStaffIdRef.current = staffId;
+    setDetailOpen(true);
+    setDetail(null);
+    setDetailDaily([]);
+    setDetailError(null);
+    setDetailLoading(true);
+    const [result, daily] = await Promise.all([
+      fetchStaffDetail(salonIdRef.current, staffId, range.from, range.to),
+      fetchStaffDailyPerformance(salonIdRef.current, range.from, range.to, staffId),
+    ]);
+    setDetailLoading(false);
+    if (isRpcFail(result)) {
+      setDetailError(result.error);
+      return;
+    }
+    setDetail(result.detail);
+    setDetailDaily(isRpcFail(daily) ? [] : daily.rows.filter((row) => row.staff_id === staffId));
+  };
 
-      {/* SUB-TAB 2: PAYROLL & PAYOUT */}
-      {activeSubTab === 'payroll' && (
-        <div className="space-y-6">
-          {/* PAYROLL TOOLBAR & PERIOD SELECTOR */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+  if (fatal) {
+    return (
+      <div className="min-h-screen pt-24 pb-16 bg-[#f9f9ff]">
+        <AccessDenied error={fatal} onRequireAuth={onRequireAuth} onBack={onBackToDashboard} />
+      </div>
+    );
+  }
+
+  const money = (n: number) => formatInr(n, currencySymbol);
+  const staffOptions = bundle?.rows || [];
+  const chartRows = visibleRows;
+
+  const bookingBars = chartStaffBars(chartRows, 'total_bookings');
+  const revenueBars = chartStaffBars(chartRows, 'net_amount');
+  const commissionBars = chartStaffBars(chartRows, 'commission_amount');
+  const discountBars = chartStaffBars(chartRows, 'discount_amount');
+  const reviewBars = chartStaffBars(chartRows, 'review_count');
+  const ratingBars = chartStaffBars(chartRows, 'average_rating');
+  const seven = lastSevenCivilDays();
+  const dailySource =
+    staffFilter === 'all'
+      ? bundle?.daily7 || []
+      : (bundle?.daily7 || []).filter((row) => row.staff_id === staffFilter);
+  const dailyBookings = dailySeries(dailySource, seven.from, seven.to, 'bookings');
+  const dailyPaid = dailySeries(dailySource, seven.from, seven.to, 'paid_amount');
+
+  const kpis = [
+    { key: 'bookings', label: 'Total Bookings', value: String(totals.total_bookings), current: totals.total_bookings, previous: prevTotals.total_bookings, icon: 'event_available' },
+    { key: 'completed', label: 'Completed Bookings', value: String(totals.completed_bookings), current: totals.completed_bookings, previous: prevTotals.completed_bookings, icon: 'task_alt' },
+    { key: 'payments', label: 'Total Payments', value: money(totals.paid_amount), current: totals.paid_amount, previous: prevTotals.paid_amount, icon: 'payments', money: true },
+    { key: 'discounts', label: 'Total Discounts', value: money(totals.discount_amount), current: totals.discount_amount, previous: prevTotals.discount_amount, icon: 'sell', money: true },
+    { key: 'commission', label: 'Total Commission', value: money(totals.commission_amount), current: totals.commission_amount, previous: prevTotals.commission_amount, icon: 'account_balance_wallet', money: true },
+    { key: 'net', label: 'Salon Net Revenue', value: money(totals.salon_amount), current: totals.salon_amount, previous: prevTotals.salon_amount, icon: 'storefront', money: true },
+    { key: 'reviews', label: 'Total Reviews', value: String(totals.review_count), current: totals.review_count, previous: prevTotals.review_count, icon: 'reviews' },
+    { key: 'rating', label: 'Average Rating', value: formatRating(totals.average_rating), current: totals.average_rating, previous: prevTotals.average_rating, icon: 'star' },
+  ];
+
+  const last7filtered =
+    staffFilter === 'all' ? bundle?.last7 || [] : (bundle?.last7 || []).filter((r) => r.staff_id === staffFilter);
+
+  return (
+    <div className="min-h-screen pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
+      <div className="max-w-[1240px] w-full px-4 sm:px-6 flex flex-col gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs flex flex-col gap-4">
+          <div className="flex flex-col lg:flex-row justify-between gap-4">
             <div>
-              <h2 className="font-display font-bold text-lg text-gray-900">
-                Monthly Staff Payroll &amp; Commission Discard
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Calculated calculated commissions for past and active visits in {selectedPeriod}. Mark as Paid to confirm bank transfer.
+              <div className="flex items-center gap-2 flex-wrap">
+                {onBackToDashboard && (
+                  <button
+                    type="button"
+                    onClick={onBackToDashboard}
+                    className="text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">arrow_back</span>
+                    Dashboard
+                  </button>
+                )}
+                <h1 className="font-display text-2xl font-bold">Staff Performance</h1>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  Owner only
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {salonName ? `${salonName} · ` : ''}
+                {range.from} → {range.to} · currency {currencySymbol} INR · figures from secure RPCs
               </p>
             </div>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              {/* Period Select */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-700 font-mono-caps">Period:</span>
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="p-2.5 rounded-xl border border-gray-300 bg-white font-bold text-xs text-gray-900 shadow-2xs outline-none focus:ring-2 focus:ring-emerald-500"
-                  id="payroll-period-select"
+            <div className="flex items-center gap-2 flex-wrap">
+              {onOpenCommission && (
+                <button
+                  type="button"
+                  onClick={onOpenCommission}
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
+                  id="staff-performance-commission"
                 >
-                  {monthOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label} ({opt.value})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+                  <span className="material-symbols-outlined text-sm">payments</span>
+                  Commission
+                </button>
+              )}
               <button
-                onClick={handleDownloadPayrollCSV}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-2xs"
-                title="Download monthly payroll report as CSV"
-                id="download-payroll-csv-btn"
+                type="button"
+                onClick={() => void handleRefresh()}
+                disabled={refreshing || loading}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                id="staff-performance-refresh"
+              >
+                <span className="material-symbols-outlined text-sm">refresh</span>
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleExport()}
+                disabled={exporting || loading || !bundle}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl text-white flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                style={{ backgroundColor: primaryAccentColor }}
+                id="staff-performance-export"
               >
                 <span className="material-symbols-outlined text-sm">download</span>
-                <span>Export Payroll CSV</span>
+                {exporting ? 'Exporting…' : 'CSV Export'}
               </button>
             </div>
           </div>
 
-          {/* PAYROLL SUMMARY KPI METRIC CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 1: Total Accrued Commission */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Accrued Commission</span>
-                <span className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-                  <span className="material-symbols-outlined text-lg">account_balance_wallet</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-gray-900">
-                ₹{totalCommissionAccrued.toLocaleString('en-IN')}
-              </div>
-              <p className="text-[11px] text-gray-500 mt-1">
-                Calculated across {payrollRecords.length} team members
-              </p>
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl" role="tablist" aria-label="Date filter">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPreset(p.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                    preset === p.id ? 'bg-white shadow-xs text-gray-900' : 'text-gray-600'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
+            {preset === 'custom' && (
+              <div className="flex items-center gap-2 text-xs">
+                <label className="font-bold text-gray-600">
+                  From
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="ml-1 border border-gray-300 rounded-lg px-2 py-1"
+                  />
+                </label>
+                <label className="font-bold text-gray-600">
+                  To
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="ml-1 border border-gray-300 rounded-lg px-2 py-1"
+                  />
+                </label>
+              </div>
+            )}
+            <label className="text-xs font-bold text-gray-600 flex items-center gap-2">
+              Staff
+              <select
+                value={staffFilter}
+                onChange={(e) => setStaffFilter(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
+                aria-label="Staff filter"
+              >
+                <option value="all">All Staff</option>
+                {staffOptions.map((s) => (
+                  <option key={s.staff_id} value={s.staff_id}>
+                    {s.staff_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {exportError && <div className="text-xs text-rose-700 font-bold">{exportError}</div>}
+        </div>
 
-            {/* Card 2: Total Paid Out */}
-            <div className="bg-white p-5 rounded-2xl border border-emerald-200 bg-emerald-50/20 shadow-2xs">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps text-emerald-900">Total Paid Out</span>
-                <span className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
-                  <span className="material-symbols-outlined text-lg">check_circle</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-emerald-700">
-                ₹{totalPaidOut.toLocaleString('en-IN')}
-              </div>
-              <p className="text-[11px] text-emerald-700/80 mt-1 font-medium">
-                Completed payouts recorded
-              </p>
-            </div>
+        {loadError && <ErrorBlock error={loadError} onRetry={() => void load()} />}
 
-            {/* Card 3: Pending Payouts */}
-            <div className="bg-white p-5 rounded-2xl border border-amber-200 bg-amber-50/20 shadow-2xs">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps text-amber-900">Outstanding Payable</span>
-                <span className="p-2 rounded-xl bg-amber-100 text-amber-700">
-                  <span className="material-symbols-outlined text-lg">pending</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-amber-700">
-                ₹{totalPendingPayout.toLocaleString('en-IN')}
-              </div>
-              <p className="text-[11px] text-amber-700/80 mt-1 font-medium">
-                Awaiting owner payment authorization
-              </p>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {loading
+            ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
+            : kpis.map((card) => (
+                <div key={card.key} className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs" data-kpi={card.key}>
+                  <div className="flex justify-between items-center text-gray-500 mb-2">
+                    <span className="text-xs font-bold font-mono-caps">{card.label}</span>
+                    <span className="material-symbols-outlined text-base" style={{ color: primaryAccentColor }}>
+                      {card.icon}
+                    </span>
+                  </div>
+                  <div className="font-display font-extrabold text-2xl">{card.value || '—'}</div>
+                  <Delta
+                    current={card.current}
+                    previous={card.previous}
+                    money={!!card.money}
+                    currencySymbol={currencySymbol}
+                  />
+                </div>
+              ))}
+        </div>
 
-            {/* Card 4: Payout Completion Progress */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs">
-              <div className="flex items-center justify-between text-gray-500 mb-2">
-                <span className="text-xs font-bold font-mono-caps">Payout Completion</span>
-                <span className="p-2 rounded-xl bg-slate-100 text-slate-700">
-                  <span className="material-symbols-outlined text-lg">badge</span>
-                </span>
-              </div>
-              <div className="font-display font-extrabold text-2xl text-gray-900">
-                {paidCount} / {payrollRecords.length}
-              </div>
-              <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden mt-2">
-                <div
-                  className="bg-emerald-500 h-full transition-all duration-500"
-                  style={{
-                    width: `${payrollRecords.length ? (paidCount / payrollRecords.length) * 100 : 0}%`,
-                  }}
-                />
-              </div>
-            </div>
+        {!loading && bundle && bundle.rows.length === 0 && (
+          <EmptyBlock title={STAFF_PERFORMANCE_ERROR_COPY.no_staff} body="Add stylists in Team Management, then refresh." />
+        )}
+        {!loading && bundle && bundle.rows.length > 0 && totals.total_bookings === 0 && (
+          <EmptyBlock title={STAFF_PERFORMANCE_ERROR_COPY.no_bookings} body="Try a wider date range." />
+        )}
+        {!loading && bundle && totals.paid_amount === 0 && totals.total_bookings > 0 && (
+          <EmptyBlock title={STAFF_PERFORMANCE_ERROR_COPY.no_payment_data} body="Only successful / paid payments are counted." />
+        )}
+        {!loading && bundle && totals.review_count === 0 && bundle.rows.length > 0 && (
+          <EmptyBlock title={STAFF_PERFORMANCE_ERROR_COPY.no_review_data} body="Ratings appear after completed visits are reviewed." />
+        )}
+
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs">
+          <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
+            <h2 className="font-display font-bold text-lg">Staff performance</h2>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search staff by name"
+              className="w-full sm:w-64 pl-3 pr-3 py-2 rounded-xl border border-gray-300 text-xs bg-gray-50"
+              aria-label="Search staff by name"
+            />
           </div>
 
-          {/* MAIN PAYROLL TABLE */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-              <div>
-                <h3 className="font-display font-bold text-base text-gray-900">
-                  Monthly Commission Payout Breakdown
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Calculated automatically from completed bookings in {selectedPeriod}. Click "Mark as Paid" to record payment.
-                </p>
-              </div>
-
-              <div className="text-xs text-gray-500 font-mono">
-                Currency: <span className="font-bold text-gray-800">INR (₹)</span>
-              </div>
-            </div>
-
-            {isLoading ? (
-              <div className="py-12 text-center text-xs text-gray-500 font-mono animate-pulse">
-                Calculating monthly commissions and fetching payout statuses...
-              </div>
-            ) : payrollRecords.length === 0 ? (
-              <div className="py-12 text-center text-xs text-gray-500">
-                No staff members found for period {selectedPeriod}.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
+          {loading ? (
+            <div className="h-40 bg-gray-50 rounded-xl animate-pulse" data-testid="table-skeleton" />
+          ) : visibleRows.length === 0 ? (
+            <EmptyBlock title="No matching staff" body="Clear search or pick All Staff." />
+          ) : (
+            <>
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-gray-200 text-gray-500 font-mono-caps">
-                      <th className="py-3 px-3">Staff Member</th>
-                      <th className="py-3 px-3 text-right">Completed Visits</th>
-                      <th className="py-3 px-3 text-right">Gross Sales</th>
-                      <th className="py-3 px-3">Commission Terms</th>
-                      <th className="py-3 px-3 text-right">Base Earned</th>
-                      <th className="py-3 px-3 text-right">Adjustments</th>
-                      <th className="py-3 px-3 text-right">Net Payable</th>
-                      <th className="py-3 px-3 text-center">Status</th>
-                      <th className="py-3 px-3 text-right">Action</th>
+                      <th className="py-3 px-2">
+                        <button type="button" className="font-bold cursor-pointer" onClick={() => toggleSort('staff_name')}>
+                          Staff
+                        </button>
+                      </th>
+                      {TABLE_COLUMNS.map((col) => (
+                        <th key={col.key} className="py-3 px-2">
+                          <button type="button" className="font-bold cursor-pointer" onClick={() => toggleSort(col.key)}>
+                            {col.label}
+                            {sortKey === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                          </button>
+                        </th>
+                      ))}
+                      <th className="py-3 px-2 text-right"> </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {payrollRecords.map((record) => {
-                      const isPaid = record.status === 'Paid';
+                    {paged.items.map((row) => {
+                      const top = ranks[row.staff_id] === 1;
                       return (
                         <tr
-                          key={record.staffId}
-                          className={`border-b border-gray-100 transition-colors hover:bg-gray-50/80 ${
-                            isPaid ? 'bg-emerald-50/10' : ''
-                          }`}
+                          key={row.staff_id}
+                          className={`border-b border-gray-100 hover:bg-gray-50 ${top ? 'bg-amber-50/70' : ''}`}
                         >
-                          {/* Staff Member */}
-                          <td className="py-3.5 px-3">
-                            <div className="flex items-center gap-3">
-                              <img
-                                src={
-                                  record.avatarUrl ||
-                                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'
-                                }
-                                alt={record.staffName}
-                                className="w-9 h-9 rounded-xl object-cover border border-gray-200 shrink-0"
-                              />
+                          <td className="py-3 px-2">
+                            <div className="flex items-center gap-2">
+                              <Photo url={row.staff_photo} name={row.staff_name} />
                               <div>
-                                <span className="font-bold text-gray-900 block text-xs">
-                                  {record.staffName}
-                                </span>
-                                <span className="text-[11px] text-gray-500 block truncate max-w-[140px]">
-                                  {record.staffRole}
-                                </span>
+                                <div className="font-bold text-gray-900 max-w-[160px] truncate" title={row.staff_name}>{row.staff_name}</div>
+                                <div className="text-[10px] text-gray-500">{row.staff_role || '—'}</div>
                               </div>
                             </div>
                           </td>
-
-                          {/* Completed Visits */}
-                          <td className="py-3.5 px-3 text-right font-mono font-bold">
-                            {record.completedBookingsCount}
-                          </td>
-
-                          {/* Gross Sales */}
-                          <td className="py-3.5 px-3 text-right font-mono text-gray-700">
-                            ₹{record.grossSales.toLocaleString('en-IN')}
-                          </td>
-
-                          {/* Commission Terms */}
-                          <td className="py-3.5 px-3">
-                            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                              {record.commissionType === 'fixed'
-                                ? `₹${record.fixedCommissionAmount}/visit`
-                                : `${record.commissionRate}% (${record.commissionBasis})`}
-                            </span>
-                          </td>
-
-                          {/* Base Earned */}
-                          <td className="py-3.5 px-3 text-right font-mono font-bold text-gray-900">
-                            ₹{record.calculatedCommission.toLocaleString('en-IN')}
-                          </td>
-
-                          {/* Adjustments */}
-                          <td className="py-3.5 px-3 text-right font-mono text-[11px]">
-                            {record.bonusAmount > 0 && (
-                              <span className="text-emerald-600 block font-bold">+₹{record.bonusAmount}</span>
-                            )}
-                            {record.deductionsAmount > 0 && (
-                              <span className="text-rose-600 block font-bold">-₹{record.deductionsAmount}</span>
-                            )}
-                            {record.bonusAmount === 0 && record.deductionsAmount === 0 && (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </td>
-
-                          {/* Net Payable */}
-                          <td className="py-3.5 px-3 text-right font-mono font-extrabold text-sm text-gray-900">
-                            ₹{record.netPayout.toLocaleString('en-IN')}
-                          </td>
-
-                          {/* Status */}
-                          <td className="py-3.5 px-3 text-center">
-                            <span
-                              className={`inline-flex items-center gap-1 font-bold text-[10px] px-2.5 py-1 rounded-full border ${
-                                isPaid
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : 'bg-amber-100 text-amber-900 border-amber-300'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[13px]">
-                                {isPaid ? 'check_circle' : 'pending'}
-                              </span>
-                              <span>{record.status}</span>
-                            </span>
-                            {isPaid && record.paidAt && (
-                              <span className="text-[9px] text-gray-400 font-mono block mt-0.5">
-                                {new Date(record.paidAt).toLocaleDateString()}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Action Button */}
-                          <td className="py-3.5 px-3 text-right">
+                          <td className="py-3 px-2 font-mono">{row.total_bookings}</td>
+                          <td className="py-3 px-2 font-mono">{row.completed_bookings}</td>
+                          <td className="py-3 px-2 font-mono">{row.cancelled_bookings}</td>
+                          <td className="py-3 px-2 font-mono">{money(row.gross_amount)}</td>
+                          <td className="py-3 px-2 font-mono">{money(row.discount_amount)}</td>
+                          <td className="py-3 px-2 font-mono">{money(row.net_amount)}</td>
+                          <td className="py-3 px-2 font-mono">{money(row.paid_amount)}</td>
+                          <td className="py-3 px-2 font-mono">{row.commission_rate}%</td>
+                          <td className="py-3 px-2 font-mono">{money(row.commission_amount)}</td>
+                          <td className="py-3 px-2 font-mono">{money(row.salon_amount)}</td>
+                          <td className="py-3 px-2 font-mono">{row.review_count}</td>
+                          <td className="py-3 px-2 font-mono">{formatRating(row.average_rating)}</td>
+                          <td className="py-3 px-2 font-mono">{ranks[row.staff_id] ? `#${ranks[row.staff_id]}` : '—'}</td>
+                          <td className="py-3 px-2 text-right">
                             <button
-                              onClick={() => handleOpenPayoutModal(record)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ml-auto shadow-2xs ${
-                                isPaid
-                                  ? 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                              }`}
-                              id={`mark-paid-btn-${record.staffId}`}
+                              type="button"
+                              onClick={() => void openDetail(row.staff_id)}
+                              className="text-xs font-bold px-2.5 py-1 rounded-lg border border-gray-300 hover:bg-gray-100 cursor-pointer"
                             >
-                              <span className="material-symbols-outlined text-sm">
-                                {isPaid ? 'edit_note' : 'task_alt'}
-                              </span>
-                              <span>{isPaid ? 'Update Receipt' : 'Mark as Paid'}</span>
+                              View details
                             </button>
                           </td>
                         </tr>
@@ -1725,313 +841,342 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
                   </tbody>
                 </table>
               </div>
+
+              <div className="lg:hidden flex flex-col gap-3">
+                {paged.items.map((row) => (
+                  <div key={row.staff_id} className="border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Photo url={row.staff_photo} name={row.staff_name} />
+                        <div>
+                          <div className="font-bold text-sm">{row.staff_name}</div>
+                          <div className="text-[11px] text-gray-500">{row.staff_role || '—'}</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void openDetail(row.staff_id)}
+                        className="text-[11px] font-bold px-2 py-1 rounded-lg border border-gray-300"
+                      >
+                        View details
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                      <span>Bookings {row.total_bookings}</span>
+                      <span>Completed {row.completed_bookings}</span>
+                      <span>Cancelled {row.cancelled_bookings}</span>
+                      <span>Paid {money(row.paid_amount)}</span>
+                      <span>Net {money(row.net_amount)}</span>
+                      <span>Commission {money(row.commission_amount)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center mt-4 text-xs text-gray-500">
+                <span>
+                  Page {paged.page} of {paged.pages} · {visibleRows.length} staff
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={paged.page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="px-2 py-1 rounded border disabled:opacity-40 cursor-pointer"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    disabled={paged.page >= paged.pages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="px-2 py-1 rounded border disabled:opacity-40 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div>
+          <h2 className="font-display font-bold text-lg mb-3">Last 7 days leaderboard</h2>
+          {loading ? (
+            <div className="h-40 bg-white border rounded-2xl animate-pulse" data-testid="leaderboard-skeleton" />
+          ) : !loading && last7filtered.length === 0 ? (
+            <EmptyBlock title="No staff data" body="The 7-day leaderboard appears once staff exist." />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <LeaderCard
+                title="Top by Bookings"
+                rows={[...last7filtered].sort((a, b) => a.booking_rank - b.booking_rank)}
+                improvedId={improvedId}
+                previous7Map={previous7Map}
+                currencySymbol={currencySymbol}
+                variant="bookings"
+              />
+              <LeaderCard
+                title="Top by Payments"
+                rows={[...last7filtered].sort((a, b) => a.payment_rank - b.payment_rank)}
+                improvedId={improvedId}
+                previous7Map={previous7Map}
+                currencySymbol={currencySymbol}
+                variant="payments"
+              />
+              <LeaderCard
+                title="Top by Reviews"
+                rows={[...last7filtered].sort((a, b) => a.review_rank - b.review_rank)}
+                improvedId={improvedId}
+                previous7Map={previous7Map}
+                currencySymbol={currencySymbol}
+                variant="reviews"
+              />
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h2 className="font-display font-bold text-lg mb-3">Charts</h2>
+          {loading ? (
+            <div className="h-40 bg-white border rounded-2xl animate-pulse" />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <MiniChart title="Bookings by Staff" data={bookingBars} color={primaryAccentColor} />
+              <MiniChart title="Revenue by Staff" data={revenueBars} currency color="#047857" />
+              <MiniChart title="Commission by Staff" data={commissionBars} currency color="#b45309" />
+              <MiniChart title="Discounts by Staff" data={discountBars} currency color="#be123c" />
+              <MiniChart title="Reviews by Staff" data={reviewBars} color="#6d28d9" />
+              <MiniChart title="Rating Comparison" data={ratingBars} color="#ca8a04" />
+              <LineMini title="Daily Bookings for Last 7 Days" data={dailyBookings} color={primaryAccentColor} />
+              <LineMini title="Daily Payments for Last 7 Days" data={dailyPaid} currency color="#047857" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {detailOpen && (
+        <div className="fixed inset-0 z-[80] flex justify-end bg-black/40" role="dialog" aria-modal="true" aria-label="Staff details">
+          <button type="button" className="flex-1 cursor-pointer" aria-label="Close details" onClick={() => setDetailOpen(false)} />
+          <div className="w-full max-w-md h-full bg-white shadow-2xl overflow-y-auto p-5">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-display font-bold text-lg">Staff details</h2>
+              <button type="button" onClick={() => setDetailOpen(false)} className="p-1 rounded hover:bg-gray-100 cursor-pointer" aria-label="Close">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            {detailLoading && <div className="h-40 bg-gray-50 animate-pulse rounded-xl" data-testid="detail-skeleton" />}
+            {detailError && (
+              <ErrorBlock
+                error={detailError}
+                onRetry={() => {
+                  const id = detailStaffIdRef.current || detail?.staff_profile.staff_id;
+                  if (id) void openDetail(id);
+                }}
+              />
             )}
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 3: COMMISSION RULES & SETTINGS */}
-      {activeSubTab === 'commission' && (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-2xs space-y-4">
-          <div>
-            <h3 className="font-display font-bold text-base text-gray-900">
-              Staff Commission Rate Configuration
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Configure percentage or fixed commissions per service provider. All calculations apply server-side.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-gray-200 text-gray-500 font-mono-caps">
-                  <th className="py-3 px-3">Staff Member</th>
-                  <th className="py-3 px-3">Commission Type</th>
-                  <th className="py-3 px-3">Rate / Fixed Amount</th>
-                  <th className="py-3 px-3">Basis</th>
-                  <th className="py-3 px-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stylists.map((st) => {
-                  const isEditing = editingStaffId === st.id;
-                  return (
-                    <tr key={st.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3.5 px-3 font-bold text-gray-900">{st.name}</td>
-                      <td className="py-3.5 px-3">
-                        {isEditing ? (
-                          <select
-                            value={editType}
-                            onChange={(e) => setEditType(e.target.value as any)}
-                            className="text-xs p-1 border rounded"
-                          >
-                            <option value="percentage">Percentage (%)</option>
-                            <option value="fixed">Fixed (₹)</option>
-                            <option value="both">Both (% + ₹)</option>
-                          </select>
-                        ) : (
-                          <span className="capitalize">{st.commissionType || 'percentage'}</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3 font-mono">
-                        {isEditing ? (
-                          <div className="flex items-center gap-2">
-                            {editType !== 'fixed' && (
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={editRate}
-                                  onChange={(e) => setEditRate(Number(e.target.value))}
-                                  className="w-16 p-1 border rounded text-xs"
-                                  placeholder="Rate %"
-                                />
-                                <span className="text-[11px] text-gray-500">%</span>
-                              </div>
-                            )}
-                            {editType !== 'percentage' && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-gray-500">₹</span>
-                                <input
-                                  type="number"
-                                  value={editFixed}
-                                  onChange={(e) => setEditFixed(Number(e.target.value))}
-                                  className="w-20 p-1 border rounded text-xs"
-                                  placeholder="Fixed ₹"
-                                />
-                              </div>
-                            )}
+            {detail && !detailLoading && (
+              <div className="flex flex-col gap-4 text-xs">
+                <div className="flex items-center gap-3">
+                  <Photo url={detail.staff_profile.staff_photo} name={detail.staff_profile.staff_name} size={56} />
+                  <div>
+                    <div className="font-bold text-base max-w-[240px] truncate" title={detail.staff_profile.staff_name}>{detail.staff_profile.staff_name}</div>
+                    <div className="text-gray-500">{detail.staff_profile.staff_role || '—'}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Stat label="Total bookings" value={detail.booking_status_summary.total_bookings} />
+                  <Stat label="Pending" value={detail.booking_status_summary.pending_bookings} />
+                  <Stat label="Confirmed" value={detail.booking_status_summary.confirmed_bookings} />
+                  <Stat label="Completed" value={detail.booking_status_summary.completed_bookings} />
+                  <Stat label="Cancelled" value={detail.booking_status_summary.cancelled_bookings} />
+                  <Stat label="Gross" value={money(detail.payment_summary.gross_amount)} />
+                  <Stat label="Discounts" value={money(detail.discount_summary.discount_amount)} />
+                  <Stat label="Net revenue" value={money(detail.discount_summary.net_amount)} />
+                  <Stat label="Paid" value={money(detail.payment_summary.paid_amount)} />
+                  <Stat label="Commission rate" value={`${detail.commission_calculation.commission_rate}%`} />
+                  <Stat label="Commission" value={money(detail.commission_calculation.commission_amount)} />
+                  <Stat label="Salon share" value={money(detail.salon_share.salon_amount)} />
+                  <Stat label="Reviews" value={detail.review_summary.review_count} />
+                  <Stat label="Average rating" value={formatRating(detail.review_summary.average_rating)} />
+                </div>
+                <div>
+                  <div className="font-bold mb-1">Rating distribution</div>
+                  <div className="grid grid-cols-5 gap-1 text-center font-mono">
+                    <span>5★ {detail.rating_distribution.five_star_reviews}</span>
+                    <span>4★ {detail.rating_distribution.four_star_reviews}</span>
+                    <span>3★ {detail.rating_distribution.three_star_reviews}</span>
+                    <span>2★ {detail.rating_distribution.two_star_reviews}</span>
+                    <span>1★ {detail.rating_distribution.one_star_reviews}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-bold mb-1">Service-wise bookings</div>
+                  {detail.service_wise_booking_summary.length === 0 ? (
+                    <p className="text-gray-500">No services in this range.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1">
+                      {detail.service_wise_booking_summary.map((s) => (
+                        <li key={`${s.service_id}-${s.service_name}`} className="flex justify-between border-b border-gray-100 py-1">
+                          <span>{s.service_name}</span>
+                          <span className="font-mono">
+                            {s.completed_bookings}/{s.bookings ?? 0} · {money(s.gross_amount)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="font-bold mb-1">Top services</div>
+                  {detail.top_services.length === 0 ? (
+                    <p className="text-gray-500">No top services yet.</p>
+                  ) : (
+                    <ul>
+                      {detail.top_services.map((s) => (
+                        <li key={s.service_name} className="flex justify-between py-1">
+                          <span>{s.service_name}</span>
+                          <span className="font-mono">{s.completed_bookings} completed</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="font-bold mb-1">Recent appointments</div>
+                  <p className="text-[10px] text-gray-400 mb-1">Client first name only — no phone or email.</p>
+                  {detail.recent_appointments.length === 0 ? (
+                    <p className="text-gray-500">No recent appointments.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {detail.recent_appointments.map((a) => (
+                        <li key={a.booking_id} className="border border-gray-100 rounded-lg p-2">
+                          <div className="font-bold">{a.service_name || 'Service'} · {a.performance_date} {a.time_slot || ''}</div>
+                          <div className="text-gray-500">
+                            {publicCustomerLabel(a.customer_name)} · {a.status} · {a.payment_status} · {money(a.paid_amount)}
                           </div>
-                        ) : (
-                          st.commissionType === 'fixed'
-                            ? `₹${st.fixedCommissionAmount || 0}`
-                            : st.commissionType === 'both'
-                            ? `${st.commissionRate || 30}% + ₹${st.fixedCommissionAmount || 0}`
-                            : `${st.commissionRate || 30}%`
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3">
-                        {isEditing ? (
-                          <select
-                            value={editBasis}
-                            onChange={(e) => setEditBasis(e.target.value as any)}
-                            className="text-xs p-1 border rounded"
-                          >
-                            <option value="net">Net Revenue (After Discount)</option>
-                            <option value="gross">Gross Sales</option>
-                          </select>
-                        ) : (
-                          <span className="uppercase">{st.commissionBasis || 'NET'}</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => setEditingStaffId(null)}
-                              className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-bold"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => handleSaveCommission(st.id)}
-                              disabled={isSavingCommission}
-                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold"
-                              id={`save-commission-btn-${st.id}`}
-                            >
-                              {isSavingCommission ? 'Saving...' : 'Save'}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setEditingStaffId(st.id);
-                              setEditRate(st.commissionRate || 30);
-                              setEditFixed(st.fixedCommissionAmount || 0);
-                              setEditType((st.commissionType as any) || 'percentage');
-                              setEditBasis((st.commissionBasis as any) || 'net');
-                            }}
-                            className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-xs font-bold cursor-pointer transition-colors"
-                            id={`configure-commission-btn-${st.id}`}
-                          >
-                            Configure
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* STAFF DETAIL DRAWER / OVERLAY MODAL */}
-      {selectedStaffDetail && (
-        <StaffDetailDrawer
-          staff={selectedStaffDetail}
-          services={services}
-          onClose={() => setSelectedStaffDetail(null)}
-          onOpenCommissionConfig={(staffId) => {
-            setSelectedStaffDetail(null);
-            setActiveSubTab('commission');
-            setEditingStaffId(staffId);
-          }}
-        />
-      )}
-
-      {/* MARK AS PAID MODAL */}
-      {selectedStaffForPayout && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 relative space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-emerald-100 text-emerald-800">
-                  <span className="material-symbols-outlined text-lg">payments</span>
-                </span>
-                <div>
-                  <h3 className="font-display font-bold text-base text-gray-900">
-                    Record Staff Payout Receipt
-                  </h3>
-                  <span className="text-xs text-gray-500 font-mono">
-                    {selectedStaffForPayout.staffName} • Period {selectedPeriod}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedStaffForPayout(null)}
-                className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"
-              >
-                <span className="material-symbols-outlined text-xl">close</span>
-              </button>
-            </div>
-
-            {/* PAYOUT BREAKDOWN PREVIEW */}
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2 text-xs font-mono">
-              <div className="flex justify-between text-gray-600">
-                <span>Gross Completed Sales:</span>
-                <span className="font-bold text-gray-900">₹{selectedStaffForPayout.grossSales.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>Calculated Base Commission ({selectedStaffForPayout.commissionRate}%):</span>
-                <span className="font-bold text-gray-900">₹{selectedStaffForPayout.calculatedCommission.toLocaleString('en-IN')}</span>
-              </div>
-
-              {/* BONUS & DEDUCTIONS INPUTS */}
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-200">
-                <div>
-                  <label className="text-[10px] font-bold text-emerald-800 block mb-1">
-                    + Performance Bonus (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={payoutBonusInput}
-                    onChange={(e) => setPayoutBonusInput(Number(e.target.value))}
-                    className="w-full p-2 text-xs border border-gray-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-emerald-700"
-                  />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-rose-800 block mb-1">
-                    - Deductions / Advance (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={payoutDeductionsInput}
-                    onChange={(e) => setPayoutDeductionsInput(Number(e.target.value))}
-                    className="w-full p-2 text-xs border border-gray-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-rose-500 font-bold text-rose-700"
-                  />
+                  <div className="font-bold mb-1">Daily bookings</div>
+                  {detailDaily.length === 0 ? (
+                    <p className="text-gray-500">No daily rows in this range.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1 font-mono">
+                      {detailDaily.map((d) => (
+                        <li key={d.performance_date} className="flex justify-between border-b border-gray-100 py-1">
+                          <span>{d.performance_date}</span>
+                          <span>
+                            {d.bookings} booked · {d.completed_bookings} done · {money(d.paid_amount)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="font-bold mb-1">Last 7 days</div>
+                  {detail.last_7_days && 'overall_rank' in detail.last_7_days ? (
+                    <div className="font-mono text-gray-700">
+                      Rank #{String((detail.last_7_days as StaffLast7DaysRow).overall_rank)} · completed{' '}
+                      {String((detail.last_7_days as StaffLast7DaysRow).completed_booking_count_7d)} · paid{' '}
+                      {money(asFiniteSafe((detail.last_7_days as StaffLast7DaysRow).paid_amount_7d))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500">No 7-day snapshot.</p>
+                  )}
                 </div>
               </div>
-
-              <div className="flex justify-between items-center text-sm font-bold pt-2 border-t border-gray-300 text-gray-900">
-                <span>Net Payable Amount:</span>
-                <span className="text-base text-emerald-700 font-extrabold">
-                  ₹{(selectedStaffForPayout.calculatedCommission + payoutBonusInput - payoutDeductionsInput).toLocaleString('en-IN')}
-                </span>
-              </div>
-            </div>
-
-            {/* PAYMENT METHOD & DETAILS FORM */}
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-gray-700 block mb-1">Payment Transfer Method</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['Bank Transfer', 'UPI', 'Cash', 'Cheque'] as PayoutPaymentMethod[]).map((method) => (
-                    <button
-                      key={method}
-                      type="button"
-                      onClick={() => setPayoutMethod(method)}
-                      className={`p-2 rounded-xl text-center font-bold border transition-all cursor-pointer ${
-                        payoutMethod === method
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                          : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      {method}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-700 block mb-1">
-                  Transaction Reference / UTR Number
-                </label>
-                <input
-                  type="text"
-                  value={payoutReference}
-                  onChange={(e) => setPayoutReference(e.target.value)}
-                  placeholder="e.g. UTR-928341 or Bank Check #029"
-                  className="w-full p-2.5 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-700 block mb-1">Payment Notes (Optional)</label>
-                <textarea
-                  value={payoutNotes}
-                  onChange={(e) => setPayoutNotes(e.target.value)}
-                  placeholder="e.g. Paid via HDFC NetBanking on 8th Sep"
-                  className="w-full p-2.5 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-emerald-500 text-xs h-16 resize-none"
-                />
-              </div>
-            </div>
-
-            {/* MODAL ACTIONS */}
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => handleConfirmMarkPaid('Pending')}
-                disabled={isSubmittingPayout}
-                className="px-3 py-2 text-xs text-rose-700 hover:underline font-bold"
-              >
-                Reset to Pending
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedStaffForPayout(null)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleConfirmMarkPaid('Paid')}
-                  disabled={isSubmittingPayout}
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-1.5"
-                  id="confirm-mark-paid-modal-btn"
-                >
-                  <span className="material-symbols-outlined text-sm">task_alt</span>
-                  <span>{isSubmittingPayout ? 'Saving...' : 'Authorize & Mark as Paid'}</span>
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 };
+
+function asFiniteSafe(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="p-2 rounded-lg bg-gray-50 border border-gray-100">
+      <div className="text-[10px] text-gray-500 font-mono-caps">{label}</div>
+      <div className="font-bold text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+function LeaderCard({
+  title,
+  rows,
+  improvedId,
+  previous7Map,
+  currencySymbol,
+  variant,
+}: {
+  title: string;
+  rows: StaffLast7DaysRow[];
+  improvedId: string | null;
+  previous7Map: Record<string, { completed_bookings: number; average_rating: number; paid_amount: number }>;
+  currencySymbol: string;
+  variant: 'bookings' | 'payments' | 'reviews';
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+      <h3 className="font-display font-bold text-base mb-3">{title}</h3>
+      {rows.length === 0 ? (
+        <EmptyBlock title="No staff data" body="Nothing to rank." />
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {rows.slice(0, 8).map((row) => {
+            const badges = leaderBadgesFor(row, { mostImprovedStaffId: improvedId });
+            const prev = previous7Map[row.staff_id];
+            const growth = bookingGrowthPercent(row.completed_booking_count_7d, prev?.completed_bookings ?? 0);
+            const trend = ratingTrend(row.average_rating_7d, prev?.average_rating ?? 0);
+            const rank =
+              variant === 'bookings' ? row.booking_rank : variant === 'payments' ? row.payment_rank : row.review_rank;
+            return (
+              <li key={row.staff_id} className="flex items-start gap-2">
+                <span className="font-mono font-extrabold text-gray-400 w-6">#{rank}</span>
+                <Photo url={row.staff_photo} name={row.staff_name} size={32} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate">{row.staff_name}</div>
+                  <div className="flex flex-wrap gap-1 my-1">
+                    {badges.map((b) => (
+                      <Badge key={b} label={b} />
+                    ))}
+                  </div>
+                  {variant === 'bookings' && (
+                    <div className="text-[11px] text-gray-600 font-mono">
+                      Completed {row.completed_booking_count_7d} · Total {row.booking_count_7d} · Growth {formatPercent(growth)}
+                    </div>
+                  )}
+                  {variant === 'payments' && (
+                    <div className="text-[11px] text-gray-600 font-mono">
+                      Paid {formatInr(row.paid_amount_7d, currencySymbol)} · Net {formatInr(row.net_amount_7d, currencySymbol)} · Comm{' '}
+                      {formatInr(row.commission_amount_7d, currencySymbol)} · Salon {formatInr(row.salon_amount_7d, currencySymbol)}
+                    </div>
+                  )}
+                  {variant === 'reviews' && (
+                    <div className="text-[11px] text-gray-600 font-mono">
+                      Reviews {row.review_count_7d} · Avg {formatRating(row.average_rating_7d)} · Trend {trend >= 0 ? '+' : ''}
+                      {trend.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export default StaffPerformanceDashboard;

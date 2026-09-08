@@ -80,7 +80,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => setCurrentView('dashboard')}
             className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'dashboard'
+              currentView === 'dashboard' || currentView === 'staffPerformance' || currentView === 'staffCommission'
                 ? 'bg-[#C20E5A] text-white shadow-sm'
                 : 'text-on-surface-variant hover:text-[#C20E5A]'
             }`}

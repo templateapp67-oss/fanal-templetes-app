@@ -16,13 +16,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
-export const OWNER_STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
-
-/** True when the path is the owner staff performance dashboard route. */
-export function isOwnerStaffPerformancePath(pathname: string): boolean {
-  const norm = normalizePath(pathname).toLowerCase();
-  return norm === OWNER_STAFF_PERFORMANCE_PATH || norm === '/owner/dashboard';
-}
+export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
+export const STAFF_COMMISSION_PATH = '/owner/dashboard/staff-performance/commission';
+export const OWNER_STAFF_PERFORMANCE_PATH = STAFF_PERFORMANCE_PATH;
 
 // ---------------------------------------------------------------------------
 // Customer App (`/app/...`)
@@ -135,6 +131,21 @@ export function normalizePath(pathname: string): string {
 /** True when the path is the customer's "My Bookings" page. */
 export function isMyBookingsPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === MY_BOOKINGS_PATH;
+}
+
+/** True when the path is the owner-only Staff Performance dashboard. */
+export function isStaffPerformancePath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === STAFF_PERFORMANCE_PATH;
+}
+
+/** Alias used by the main-line staff dashboard route. */
+export function isOwnerStaffPerformancePath(pathname: string): boolean {
+  return isStaffPerformancePath(pathname);
+}
+
+/** True when the path is the owner-only Staff Commission settings + payouts page. */
+export function isStaffCommissionPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === STAFF_COMMISSION_PATH;
 }
 
 /** Canonical URL for one booking's detail page. */

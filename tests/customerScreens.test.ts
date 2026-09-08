@@ -119,6 +119,7 @@ test('a customer app path is recognised, and an owner path never is', () => {
   assert.equal(isCustomerAppPath('/app/salon/glow'), true);
   assert.equal(isCustomerAppPath('/'), false);
   assert.equal(isCustomerAppPath('/customer/bookings'), false, 'the owner booking page is not the customer app');
+  assert.equal(isCustomerAppPath('/owner/dashboard/staff-performance'), false, 'staff performance is owner-only');
   assert.equal(isCustomerAppPath('/applications'), false, 'a prefix match would hijack unrelated routes');
 
   assert.equal(matchCustomerRoute('/app').section, 'home');
