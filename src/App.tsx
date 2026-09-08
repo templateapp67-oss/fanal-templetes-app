@@ -42,8 +42,10 @@ import {
   isCustomerAppPath,
   isMyBookingsPath,
   isStaffPerformancePath,
+  isStaffCommissionPath,
   MY_BOOKINGS_PATH,
   STAFF_PERFORMANCE_PATH,
+  STAFF_COMMISSION_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
@@ -51,6 +53,7 @@ import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
 import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
+import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -244,12 +247,18 @@ export default function App() {
       setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
       return;
     }
+    if (isStaffCommissionPath(path)) {
+      setCurrentViewState((view) => (view === 'staffCommission' ? view : 'staffCommission'));
+      return;
+    }
     if (isStaffPerformancePath(path)) {
       setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
       return;
     }
     setCurrentViewState((view) =>
-      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' ? 'landing' : view
+      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission'
+        ? 'landing'
+        : view
     );
   }, [path]);
 
@@ -1547,6 +1556,7 @@ export default function App() {
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
           onNavigateToStaffPerformance={() => setCurrentView('staffPerformance')}
+          onNavigateToStaffCommission={() => setCurrentView('staffCommission')}
         />
       )}
 
@@ -1555,6 +1565,19 @@ export default function App() {
           user={user}
           onRequireAuth={openBookingAuth}
           onBackToDashboard={() => setCurrentView('dashboard')}
+          onOpenCommission={() => setCurrentView('staffCommission')}
+          primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          currencySymbol={profile.currency || '₹'}
+          salonName={profile.businessName}
+        />
+      )}
+
+      {currentView === 'staffCommission' && (
+        <StaffCommissionDashboard
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onBackToDashboard={() => setCurrentView('dashboard')}
+          onOpenStaffPerformance={() => setCurrentView('staffPerformance')}
           primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
           currencySymbol={profile.currency || '₹'}
           salonName={profile.businessName}

@@ -41,6 +41,7 @@ interface SaaSDashboardProps {
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
   onNavigateToStaffPerformance?: () => void;
+  onNavigateToStaffCommission?: () => void;
 }
 
 type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
@@ -64,6 +65,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   isAuthenticated = true,
   onRequireAuth,
   onNavigateToStaffPerformance,
+  onNavigateToStaffCommission,
 }) => {
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
@@ -508,28 +510,55 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
-            {onNavigateToStaffPerformance && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isAuthenticated) {
-                    onRequireAuth?.('login');
-                    return;
-                  }
-                  onNavigateToStaffPerformance();
-                }}
-                className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs text-left hover:border-gray-300 cursor-pointer"
-                id="overview-open-staff-performance"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-bold font-mono-caps text-gray-500">Staff Performance</div>
-                    <div className="font-display font-bold text-lg mt-1">Bookings, payments, commission & reviews</div>
-                    <p className="text-xs text-gray-500 mt-1">Owner-only analytics from secure RPCs.</p>
-                  </div>
-                  <span className="material-symbols-outlined">monitoring</span>
-                </div>
-              </button>
+            {(onNavigateToStaffPerformance || onNavigateToStaffCommission) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {onNavigateToStaffPerformance && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        onRequireAuth?.('login');
+                        return;
+                      }
+                      onNavigateToStaffPerformance();
+                    }}
+                    className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs text-left hover:border-gray-300 cursor-pointer"
+                    id="overview-open-staff-performance"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold font-mono-caps text-gray-500">Staff Performance</div>
+                        <div className="font-display font-bold text-lg mt-1">Bookings, payments, commission & reviews</div>
+                        <p className="text-xs text-gray-500 mt-1">Owner-only analytics from secure RPCs.</p>
+                      </div>
+                      <span className="material-symbols-outlined">monitoring</span>
+                    </div>
+                  </button>
+                )}
+                {onNavigateToStaffCommission && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        onRequireAuth?.('login');
+                        return;
+                      }
+                      onNavigateToStaffCommission();
+                    }}
+                    className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs text-left hover:border-gray-300 cursor-pointer"
+                    id="overview-open-staff-commission"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold font-mono-caps text-gray-500">Staff Commission</div>
+                        <div className="font-display font-bold text-lg mt-1">Settings, pending payouts & paid history</div>
+                        <p className="text-xs text-gray-500 mt-1">Owner-only. Rates are versioned; payouts go through RPCs.</p>
+                      </div>
+                      <span className="material-symbols-outlined">account_balance_wallet</span>
+                    </div>
+                  </button>
+                )}
+              </div>
             )}
 
             {/* DATA VISUALIZATION: TOP CLIENTS LOYALTY TIER DISTRIBUTION BAR CHART */}

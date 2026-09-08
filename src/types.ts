@@ -10,6 +10,7 @@ export type AppView =
   | 'preview'
   | 'dashboard'
   | 'staffPerformance'
+  | 'staffCommission'
   | 'bookings'
   | 'bookingDetail';
 

@@ -86,6 +86,7 @@ export interface StaffPerformanceDashboardProps {
   user: { id?: string } | null;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
   onBackToDashboard?: () => void;
+  onOpenCommission?: () => void;
   primaryAccentColor?: string;
   currencySymbol?: string;
   salonName?: string;
@@ -320,6 +321,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   user,
   onRequireAuth,
   onBackToDashboard,
+  onOpenCommission,
   primaryAccentColor = '#C20E5A',
   currencySymbol = '₹',
   salonName,

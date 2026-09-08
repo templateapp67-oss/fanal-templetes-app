@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
+export const STAFF_COMMISSION_PATH = '/owner/dashboard/staff-performance/commission';
 
 // ---------------------------------------------------------------------------
 // Customer App (`/app/...`)
@@ -134,6 +135,11 @@ export function isMyBookingsPath(pathname: string): boolean {
 /** True when the path is the owner-only Staff Performance dashboard. */
 export function isStaffPerformancePath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === STAFF_PERFORMANCE_PATH;
+}
+
+/** True when the path is the owner-only Staff Commission settings + payouts page. */
+export function isStaffCommissionPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === STAFF_COMMISSION_PATH;
 }
 
 /** Canonical URL for one booking's detail page. */
