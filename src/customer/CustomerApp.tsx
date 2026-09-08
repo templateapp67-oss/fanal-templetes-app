@@ -18,7 +18,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bell, CalendarDays, Compass, LogOut, Sparkles, User, Wallet } from 'lucide-react';
+import { Bell, CalendarDays, Compass, LogOut, QrCode, Sparkles, User, Wallet } from 'lucide-react';
 import { customerPath, matchCustomerRoute, normalizePath, type CustomerSection } from '../lib/router';
 import { currentCustomerUser, customerBackendConnected, getSalon, invalidateCustomerData } from '../lib/customer/api';
 import { readLocation } from '../lib/customer/deviceStore';
@@ -30,6 +30,7 @@ import { HomeScreen, SalonScreen, type SalonTab } from './screens/Discover';
 import { BookingFlow } from './screens/Book';
 import { BookingsScreen } from './screens/Bookings';
 import { RewardsScreen } from './screens/Rewards';
+import { PassScreen } from './screens/Pass';
 import { ActivityScreen } from './screens/Activity';
 import { LocationScreen, ProfileScreen } from './screens/Me';
 import { SettingsScreen } from './screens/Settings';
@@ -52,13 +53,14 @@ export interface CustomerAppProps {
 const NAV: Array<{ section: CustomerSection; label: string; icon: React.ReactNode }> = [
   { section: 'home', label: 'Explore', icon: <Compass className="w-5 h-5" /> },
   { section: 'bookings', label: 'Bookings', icon: <CalendarDays className="w-5 h-5" /> },
+  { section: 'pass', label: 'Salon pass', icon: <QrCode className="w-5 h-5" /> },
   { section: 'wallet', label: 'Rewards', icon: <Wallet className="w-5 h-5" /> },
   { section: 'notifications', label: 'Activity', icon: <Bell className="w-5 h-5" /> },
   { section: 'profile', label: 'Profile', icon: <User className="w-5 h-5" /> },
 ];
 
 /** Screens that are meaningless without an account (booking is the whole point). */
-const PRIVATE: CustomerSection[] = ['bookings', 'booking', 'profile', 'settings', 'wallet', 'qr', 'membership', 'referral', 'notifications', 'favourites', 'reviews', 'offers'];
+const PRIVATE: CustomerSection[] = ['bookings', 'booking', 'profile', 'settings', 'wallet', 'qr', 'pass', 'membership', 'referral', 'notifications', 'favourites', 'reviews', 'offers'];
 
 export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accentHex: tenantAccentHex = '', tenantSubdomain = '', tenantName = '' }) => {
   const route = useMemo(() => matchCustomerRoute(path), [path]);
@@ -306,6 +308,16 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
             onRequireAuth={() => requireAuth(customerPath('bookings'))}
           />
         );
+      case 'pass':
+        return (
+          <PassScreen
+            userId={session?.id}
+            email={session?.email}
+            accentHex={accentHex}
+            refreshToken={refreshToken}
+            onRequireAuth={() => requireAuth(customerPath('pass'))}
+          />
+        );
       case 'wallet':
       case 'qr':
       case 'membership':
@@ -441,7 +453,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
       </div>
 
       <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur" aria-label="Customer app sections">
-        <div className="max-w-2xl mx-auto grid grid-cols-5">
+        <div className="max-w-3xl mx-auto grid grid-cols-6">
           {NAV.map((item) => {
             const active =
               item.section === route.section ||

@@ -39,6 +39,7 @@ export type CustomerSection =
   | 'favourites'
   | 'wallet'
   | 'qr'
+  | 'pass'
   | 'membership'
   | 'referral'
   | 'notifications'
@@ -78,6 +79,8 @@ const CUSTOMER_SECTIONS: Record<string, CustomerSection> = {
   wallet: 'wallet',
   rewards: 'wallet',
   qr: 'qr',
+  pass: 'pass',
+  salonpass: 'pass',
   membership: 'membership',
   referral: 'referral',
   referrals: 'referral',

@@ -41,7 +41,8 @@ import {
   createQrConfirmHandler,
   createQrVerifyHandler,
 } from '../server/customerRoutes';
-import { pickProfileUpdates } from '../server/customerRoutes';
+import { pickProfileUpdates, createPassHandler } from '../server/customerRoutes';
+import { passCodeFor } from '../src/lib/customer/checkin';
 import { normalizeGatewayPayment, signMockPayment, _resetPaymentOrderCache } from '../server/razorpay';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
@@ -1234,4 +1235,32 @@ test('membership status is the salon’s program switch, with no invented expiry
   assert.equal(membership.active, false, 'the salon switched the program off; the app must not present it as live');
   assert.equal(membership.startDate, '2026-01-05', 'the client row is the only start date this schema has');
   assert.equal(membership.endDate, null, 'no expiry column exists, so none is shown');
+});
+
+// ---------------------------------------------------------------------------
+// Salon pass — GET /api/customer/me/pass
+// ---------------------------------------------------------------------------
+test('the salon pass is derived from the verified auth id and needs no storage', async () => {
+  const { deps } = makeDeps({});
+  const res = makeRes();
+  await createPassHandler(deps)(
+    { body: {}, params: {}, query: {} },
+    res
+  );
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.ok(res.body.success, 'pass answers success');
+  const code = res.body.data?.code as string;
+  assert.match(code, /^FANAL-[A-Za-z0-9_-]+$/, 'code shape FANAL-<payload>');
+  assert.equal(res.body.data.code, passCodeFor(ME), 'the code is the deterministic code of the verified id');
+});
+
+test('the salon pass is refused without a verified identity', async () => {
+  const { deps } = makeDeps({});
+  const res = makeRes();
+  await createPassHandler({ ...deps, ...unauthenticated })(
+    { body: {}, params: {}, query: {} },
+    res
+  );
+  assert.equal(res.statusCode, 401, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'auth_required');
 });

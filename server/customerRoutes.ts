@@ -30,6 +30,7 @@
 // ============================================================================
 
 import type { BookingAuthResult } from './bookingAuth';
+import { passCodeFor } from '../src/lib/customer/checkin';
 import { isUuidLike, sanitizeBookingRow } from './bookingOps';
 import { isValidIsoDate } from './bookingCreate';
 import {
@@ -2797,6 +2798,32 @@ async function loadTransactionsForWallets(
   return Array.isArray(data) ? data : [];
 }
 
+
+// ---------------------------------------------------------------------------
+// Salon pass — the deterministic check-in code the customer shows at the salon
+// ---------------------------------------------------------------------------
+export function createPassHandler(deps: CustomerRoutesDeps) {
+  return async function salonPass(req: any, res: any): Promise<void> {
+    const requestId = newRequestId('custpass');
+    const deadlineAt = res.locals?.requestDeadlineAt;
+    try {
+      const user = await requireAuth(deps, res, requestId, deadlineAt);
+      if (!user) return;
+      // The code is derived from the verified auth id (reversible, see
+      // checkin.ts), so there is nothing to store or look up here — and no
+      // user_qr_codes row that could go stale.
+      const code = passCodeFor(user.id);
+      if (!code) {
+        return void answer(res, 400, { success: false, code: 'invalid_identity', requestId, error: 'Could not build a pass code for this account.' });
+      }
+      ok(res, deps, requestId, { code });
+    } catch (err: any) {
+      console.error(`[Customer] (${requestId}) Salon pass threw:`, err?.stack || err);
+      sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your salon pass could not be loaded.' });
+    }
+  };
+}
+
 export function createRewardsHandler(deps: CustomerRoutesDeps) {
   return async function rewards(req: any, res: any): Promise<void> {
     const requestId = newRequestId('custrw');
@@ -3696,6 +3723,7 @@ export function registerCustomerRoutes(
     ['/api/customer/me/profile', 'get', createProfileReadHandler(deps)],
     ['/api/customer/me/profile', 'post', createProfileWriteHandler(deps)],
     ['/api/customer/me/location', 'post', createLocationWriteHandler(deps)],
+    ['/api/customer/me/pass', 'get', createPassHandler(deps)],
     ['/api/customer/me/bookings', 'get', createMyBookingsHandler(deps)],
     ['/api/customer/me/bookings/:id', 'get', createMyBookingDetailHandler(deps)],
     ['/api/customer/me/bookings/cancel', 'post', createCancelHandler(deps)],

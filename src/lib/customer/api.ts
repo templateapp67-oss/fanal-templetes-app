@@ -799,6 +799,18 @@ export function listMyMemberships(): Promise<CustomerResult<Membership[]>> {
   });
 }
 
+/** Salon-pass payload: the deterministic check-in code for this customer. */
+export interface CustomerPass {
+  code: string;
+}
+
+export function getMyPass(): Promise<CustomerResult<CustomerPass | null>> {
+  return customerRequest<CustomerPass | null>('/api/customer/me/pass', {
+    requireAuth: true,
+    empty: null,
+  });
+}
+
 export function listMyReferrals(): Promise<CustomerResult<{ code: string; link: string; items: Referral[] }>> {
   return customerRequest('/api/customer/me/referrals', {
     requireAuth: true,
