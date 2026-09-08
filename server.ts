@@ -20,6 +20,7 @@ import {
   createNotificationsReadHandler,
   type BookingRoutesDeps,
 } from "./server/bookingRoutes";
+import { registerCustomerRoutes } from "./server/customerRoutes";
 import {
   createMyBookingsListHandler,
   createMyBookingDetailHandler,
@@ -546,6 +547,30 @@ async function startServer() {
   app.post("/api/bookings/update", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingUpdateHandler(bookingRouteDeps)));
   app.get("/api/notifications", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createNotificationsListHandler(bookingRouteDeps)));
   app.post("/api/notifications/read", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createNotificationsReadHandler(bookingRouteDeps)));
+  // ==========================================================================
+  // CUSTOMER APP — /api/customer/* (Nexora SalonOS Customer App)
+  // --------------------------------------------------------------------------
+  // Every customer screen reads through these routes: the existing RLS is
+  // owner-scoped, so this is where customer scoping is enforced (identity from
+  // the verified bearer token, never from a query parameter). Shared with the
+  // serverless entrypoint via server/customerRoutes.ts so the two never drift.
+  // ==========================================================================
+  registerCustomerRoutes(
+    app,
+    {
+      db,
+      isMock: bookingHandlerIsMock,
+      hasAdminClient: !!admin,
+      authenticateUser: (req, deadlineAt) => authenticateBookingRequest(req, deadlineAt, allowMockBookingAuth),
+      getMockBookings: () => mockBookings,
+      getMockNotifications: () => mockNotifications,
+      addMockNotifications: (rows) => { mockNotifications.push(...rows); },
+      resolveOwnerEmail,
+    },
+    asyncRoute,
+    withRequestTimeout
+  );
+
 
   // ==========================================================================
   // BOOKING CREATE — POST /api/bookings/create

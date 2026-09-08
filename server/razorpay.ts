@@ -239,6 +239,46 @@ export interface RazorpayClient {
   mode: RazorpayGatewayMode;
   createOrder(input: CreateOrderInput, deadlineAt?: number): Promise<RazorpayOrder>;
   verifyPaymentSignature(input: { orderId: string; paymentId: string; signature: string }): boolean;
+  /**
+   * Ask the gateway what it knows about a payment. This is the only way a
+   * server-side process can credit a reward on evidence rather than on a claim:
+   * the customer's browser cannot make this call, because it needs the secret.
+   * `null` means the gateway has no such payment (or this mode keeps no payment
+   * records, which is true of the mock client).
+   */
+  fetchPayment?(paymentId: string, deadlineAt?: number): Promise<RazorpayPayment | null>;
+}
+
+/** The fields a reward decision needs, in rupees — gateway amounts are paise. */
+export interface RazorpayPayment {
+  id: string;
+  orderId: string;
+  amountRupees: number;
+  amountPaidRupees: number;
+  status: string;
+  currency: string;
+  captured: boolean;
+  method: string;
+}
+
+export function toRupees(paise: unknown): number {
+  const value = Number(paise);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) / 100 : 0;
+}
+
+export function normalizeGatewayPayment(payload: any): RazorpayPayment | null {
+  if (!payload || typeof payload !== 'object' || !payload.id) return null;
+  const status = String(payload.status || '').toLowerCase();
+  return {
+    id: String(payload.id),
+    orderId: String(payload.order_id || ''),
+    amountRupees: toRupees(payload.amount),
+    amountPaidRupees: toRupees(payload.amount_paid ?? payload.amount),
+    status,
+    currency: String(payload.currency || 'INR'),
+    captured: status === 'captured',
+    method: String(payload.method || ''),
+  };
 }
 
 /** Shared by the real and the mock client: Razorpay refuses anything below ₹1.00. */
@@ -302,6 +342,12 @@ function createMockRazorpayClient(env: EnvLike): RazorpayClient {
     },
     verifyPaymentSignature({ orderId, paymentId, signature }) {
       return verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
+    },
+    // A mock payment never existed anywhere except this process, so there is
+    // nothing to look up. Returning null is what stops a mock deployment from
+    // ever self-crediting a reward.
+    async fetchPayment() {
+      return null;
     },
   };
 }
@@ -393,6 +439,44 @@ export function createRazorpayClient(env: EnvLike = process.env): RazorpayClient
 
     verifyPaymentSignature({ orderId, paymentId, signature }) {
       return verifyRazorpaySignature({ orderId, paymentId, signature, keySecret });
+    },
+
+    async fetchPayment(paymentId, deadlineAt?) {
+      const id = String(paymentId || '').trim();
+      if (!id) return null;
+      const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : REQUEST_TIMEOUT_MS;
+      if (remaining <= 0) {
+        const timeout: any = new Error('The payment gateway request exceeded the server response deadline.');
+        timeout.code = 'razorpay_timeout';
+        throw timeout;
+      }
+      let response: Response;
+      try {
+        response = await fetch(`${RAZORPAY_API_BASE}/payments/${encodeURIComponent(id)}`, {
+          headers: { Authorization: authHeader },
+          signal: AbortSignal.timeout(Math.max(1, Math.min(REQUEST_TIMEOUT_MS, remaining))),
+        });
+      } catch (networkError: any) {
+        const timedOut = networkError?.name === 'TimeoutError' || networkError?.name === 'AbortError';
+        const error: any = timedOut
+          ? new Error('Razorpay did not answer before the server response deadline.')
+          : new Error(`Could not reach Razorpay (${networkError?.message || 'network error'}).`);
+        error.code = timedOut ? 'razorpay_timeout' : 'razorpay_unreachable';
+        throw error;
+      }
+      if (response.status === 404) return null;
+      const raw = await response.text();
+      let payload: any = null;
+      try {
+        payload = raw ? JSON.parse(raw) : null;
+      } catch {
+        // non-JSON error page
+      }
+      if (!response.ok) {
+        const description = payload?.error?.description || payload?.message || raw?.slice(0, 300) || 'Unknown Razorpay error';
+        throw new Error(`Razorpay payment lookup failed [HTTP ${response.status}]: ${description}`);
+      }
+      return normalizeGatewayPayment(payload);
     },
   };
 }

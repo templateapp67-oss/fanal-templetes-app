@@ -11,7 +11,9 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "check:razorpay": "node scripts/check-razorpay.mjs"
+    "check:razorpay": "node scripts/check-razorpay.mjs",
+    "verify": "node --import tsx scripts/verify-supabase-connection.mjs",
+    "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
