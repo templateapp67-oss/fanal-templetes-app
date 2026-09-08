@@ -36,11 +36,13 @@ import {
   createSalonListHandler,
   createSlotsHandler,
   createBookingAdvanceHandler,
+  createPaymentConfigHandler,
+  createPaymentOrderHandler,
   createQrConfirmHandler,
   createQrVerifyHandler,
 } from '../server/customerRoutes';
 import { pickProfileUpdates } from '../server/customerRoutes';
-import { normalizeGatewayPayment } from '../server/razorpay';
+import { normalizeGatewayPayment, signMockPayment, _resetPaymentOrderCache } from '../server/razorpay';
 
 const OWNER = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -283,6 +285,39 @@ function makeDeps(overrides: Record<string, any> = {}) {
 
 const unauthenticated = {
   authenticateUser: async () => ({ ok: false, code: 'auth_required', error: 'Please sign in.' }),
+};
+
+async function withEnvAsync<T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
+  const previous: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(vars)) {
+    previous[key] = process.env[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+const MOCK_GATEWAY_ENV = {
+  RAZORPAY_KEY_ID: undefined,
+  RAZORPAY_KEY_SECRET: undefined,
+  VITE_RAZORPAY_KEY_ID: undefined,
+  RAZORPAY_SECRET: undefined,
+  RAZORPAY_MOCK_MODE: undefined,
+  VERCEL_ENV: undefined,
+  NODE_ENV: 'test',
+};
+
+const DISABLED_GATEWAY_ENV = {
+  ...MOCK_GATEWAY_ENV,
+  NODE_ENV: 'production',
+  RAZORPAY_MOCK_MODE: 'false',
 };
 
 // ---------------------------------------------------------------------------
@@ -665,6 +700,178 @@ test('a deposit cannot be recorded while the database is not configured', async 
   await createBookingAdvanceHandler(deps)({ params: { id: 'b1' }, body: { razorpay_order_id: 'order_x', razorpay_payment_id: 'pay_x', razorpay_signature: 'sig' }, query: {} }, res);
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.code, 'supabase_not_configured');
+});
+
+const depositSalonBody = {
+  salonId: OWNER,
+  date: '2026-09-30',
+  time: '11:00',
+  serviceIds: [SALON_SERVICE_ID],
+  staffId: STYLIST_ID,
+  customerName: 'Ananya',
+  customerPhone: '+91 98765 00000',
+  bookingType: 'salon',
+  bookingRef: 'NX-JPR-53682',
+  receipt: 'NX-JPR-53682',
+  totalAmount: 1200,
+  amount: 240,
+  depositPercent: 20,
+};
+
+test('a deposit salon refuses to create a booking without a verified payment', async () => {
+  const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+  const { deps } = makeDeps({ db });
+  const res = makeRes();
+  await createBookingCreateHandler(deps)(
+    { params: {}, query: {}, body: { ...depositSalonBody, advance_paid_amount: 240 } },
+    res
+  );
+  assert.equal(res.statusCode, 402, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'payment_required');
+  assert.equal(res.body.depositDue, 240);
+  assert.equal(db.calls.some((call) => call.table === 'bookings' && call.op === 'insert'), false, 'no unpaid row is invented');
+});
+
+test('a deposit salon creates a confirmed booking only after the gateway HMAC verifies', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const { deps } = makeDeps({ db });
+    const signed = signMockPayment('order_mock_ABCDEFGHIJKLMN');
+    const res = makeRes();
+    await createBookingCreateHandler(deps)(
+      {
+        params: {},
+        query: {},
+        body: {
+          ...depositSalonBody,
+          payment: { ...signed, amount: 240, depositPercent: 20 },
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    const inserted = db.calls.find((call) => call.table === 'bookings' && call.op === 'insert');
+    assert.ok(inserted, 'the paid booking is written');
+    assert.equal(inserted!.body.advance_paid_amount, 240);
+    assert.equal(inserted!.body.payment_status, 'paid_deposit');
+    assert.equal(inserted!.body.status, 'confirmed');
+    assert.equal(inserted!.body.payment_id, signed.razorpay_payment_id);
+    assert.equal(res.body.data.depositDue, 0);
+    assert.equal(res.body.data.paymentHandoff, 'razorpay_advance');
+  });
+});
+
+test('a forged gateway signature never creates the appointment', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const { deps } = makeDeps({ db });
+    const res = makeRes();
+    await createBookingCreateHandler(deps)(
+      {
+        params: {},
+        query: {},
+        body: {
+          ...depositSalonBody,
+          payment: {
+            razorpay_order_id: 'order_mock_ABCDEFGHIJKLMN',
+            razorpay_payment_id: 'pay_mock_forged',
+            razorpay_signature: 'deadbeef',
+            amount: 240,
+          },
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 400, JSON.stringify(res.body));
+    assert.equal(res.body.code, 'payment_unverified');
+    assert.equal(db.calls.some((call) => call.table === 'bookings' && call.op === 'insert'), false);
+  });
+});
+
+test('the same captured payment_id is idempotent — a second create returns the existing row', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    const signed = signMockPayment('order_mock_ABCDEFGHIJKLMN');
+    const db = bookingTables({
+      profile: { require_deposit: true, deposit_percentage: 20 },
+      bookings: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11',
+          owner_id: OWNER,
+          user_id: ME,
+          booking_date: '2026-09-30',
+          time_slot: '11:00',
+          status: 'confirmed',
+          payment_status: 'paid_deposit',
+          payment_id: signed.razorpay_payment_id,
+          total_amount: 1200,
+          advance_paid_amount: 240,
+          customer_name: 'Ananya',
+          metadata: { booking_ref: 'NX-JPR-53682' },
+        },
+      ],
+    });
+    const { deps } = makeDeps({ db });
+    const res = makeRes();
+    await createBookingCreateHandler(deps)(
+      {
+        params: {},
+        query: {},
+        body: { ...depositSalonBody, payment: { ...signed, amount: 240 } },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.written.bookings, 0);
+    assert.match(res.body.notice || '', /already created/i);
+    assert.equal(
+      db.calls.filter((call) => call.table === 'bookings' && call.op === 'insert').length,
+      0,
+      'the captured payment must not mint a second row'
+    );
+  });
+});
+
+test('GET /api/customer/payments/config is never HTTP 500 when keys are missing', async () => {
+  await withEnvAsync(DISABLED_GATEWAY_ENV, async () => {
+    const { deps } = makeDeps();
+    const res = makeRes();
+    await createPaymentConfigHandler(deps)({ params: {}, query: {}, headers: {} }, res);
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.configured, false);
+    assert.equal(res.body.data.configured, false);
+    assert.equal(res.body.keyId, null);
+    assert.notEqual(res.statusCode, 500);
+
+    const anon = makeDeps(unauthenticated);
+    const denied = makeRes();
+    await createPaymentConfigHandler(anon.deps)({ params: {}, query: {}, headers: {} }, denied);
+    assert.equal(denied.statusCode, 401);
+    assert.notEqual(denied.statusCode, 500);
+    assert.equal(anon.db.calls.length, 0);
+  });
+});
+
+test('POST /api/customer/payments/order reuses the unpaid order for the same NX-JPR-53682 draft', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    _resetPaymentOrderCache();
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const { deps } = makeDeps({ db });
+    const handler = createPaymentOrderHandler(deps);
+    const first = makeRes();
+    await handler({ params: {}, query: {}, body: depositSalonBody }, first);
+    assert.equal(first.statusCode, 200, JSON.stringify(first.body));
+    assert.ok(first.body.order?.id);
+    assert.equal(first.body.order.receipt, 'NX-JPR-53682');
+    assert.equal(first.body.deposit.rupees, 240);
+
+    const second = makeRes();
+    await handler({ params: {}, query: {}, body: depositSalonBody }, second);
+    assert.equal(second.statusCode, 200, JSON.stringify(second.body));
+    assert.equal(second.body.order.id, first.body.order.id, 'retry must not mint a second chargeable order');
+    assert.equal(second.body.reused, true);
+    _resetPaymentOrderCache();
+  });
 });
 
 // ---------------------------------------------------------------------------

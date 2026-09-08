@@ -21,6 +21,7 @@
 // ============================================================================
 
 import { getBookingAccessToken } from '../bookingApi';
+import { payAdvanceWithRazorpay, type RazorpayOutcome } from '../razorpayCheckout';
 import { isMockSupabase, supabase, supabaseConfig } from '../supabaseClient';
 import { CUSTOMER_SCHEMA_MAP, entityMap } from './schema';
 import {
@@ -320,9 +321,135 @@ export function normalizeCustomerErrorMessage(result: {
       return 'We could not reach the salon right now. Check your connection and try again.';
     case 'timeout':
       return 'The salon took too long to answer. Nothing was saved — please try again.';
+    case 'payment_required':
+      return result.error || 'This salon requires an online deposit before the appointment is created. Nothing was saved.';
+    case 'payment_unverified':
+      return result.error || 'We could not verify your payment with the gateway. No appointment was created.';
+    case 'razorpay_not_configured':
+    case 'payments_disabled':
+      return result.error || 'Online payment is not configured on this server. No appointment was created.';
+    case 'payment_amount_mismatch':
+      return result.error || 'The amount shown does not match the live menu. Refresh and try again.';
     default:
       return result.error || result.notice || 'The request did not go through. Nothing was saved.';
   }
+}
+
+export type CustomerPaymentUiState = 'ready' | 'processing' | 'successful' | 'failed' | 'unavailable';
+
+export interface CustomerPaymentConfig {
+  configured: boolean;
+  keyId: string | null;
+  mode: 'live' | 'test' | 'mock' | 'disabled';
+  mock: boolean;
+  depositPercent: number;
+  issues?: string[];
+  notice?: string;
+  code?: string;
+}
+
+export function getPaymentConfig(): Promise<CustomerResult<CustomerPaymentConfig>> {
+  return customerRequest<CustomerPaymentConfig>('/api/customer/payments/config', {
+    requireAuth: true,
+    empty: {
+      configured: false,
+      keyId: null,
+      mode: 'disabled',
+      mock: false,
+      depositPercent: 25,
+      issues: ['Secure payment service is not configured on this server.'],
+    },
+  });
+}
+
+export function cityCodeFromName(city?: string | null): string {
+  const value = String(city || '').toUpperCase();
+  if (value.includes('JAIPUR')) return 'JPR';
+  if (value.includes('BENGALURU') || value.includes('BANGALORE')) return 'BLR';
+  if (value.includes('MUMBAI')) return 'BOM';
+  if (value.includes('DELHI')) return 'DEL';
+  if (value.includes('HYDERABAD')) return 'HYD';
+  if (value.includes('CHENNAI')) return 'MAA';
+  if (value.includes('PUNE')) return 'PNQ';
+  return 'IND';
+}
+
+/** Reuse NX-JPR-53682 (and any NX-XXX-#####) across retries so the salon sees one draft. */
+export function nextBookingRef(city?: string | null, existing?: string | null): string {
+  if (existing && /^NX-[A-Z]{3}-\d{5}$/.test(existing.trim())) return existing.trim();
+  return `NX-${cityCodeFromName(city)}-${Math.floor(10000 + Math.random() * 90000)}`;
+}
+
+export function paymentUiFromOutcome(outcome: RazorpayOutcome | null, busy: boolean): CustomerPaymentUiState {
+  if (busy) return 'processing';
+  if (!outcome) return 'ready';
+  if (outcome.status === 'paid') return 'successful';
+  if (outcome.status === 'unavailable') return 'unavailable';
+  return 'failed';
+}
+
+export interface PayBookingOnlineInput {
+  salonId: string;
+  date: string;
+  time: string;
+  serviceIds: string[];
+  staffId?: string;
+  bookingType?: 'salon' | 'home';
+  homeAddress?: string;
+  notes?: string;
+  referralCode?: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  totalAmount: number;
+  depositPercent: number;
+  amount: number;
+  receipt: string;
+  description: string;
+  salonName: string;
+  themeColor?: string;
+}
+
+/**
+ * Authenticated Customer App checkout: config → validated order → gateway →
+ * server-side signature verify. Never reports paid unless `/verify` accepted
+ * the HMAC. Book.tsx must call this instead of `fetch()`.
+ */
+export async function payBookingOnline(input: PayBookingOnlineInput): Promise<RazorpayOutcome> {
+  const session = await currentCustomerUser();
+  const accessToken = await getBookingAccessToken(session);
+  return payAdvanceWithRazorpay({
+    totalAmount: input.totalAmount,
+    depositPercent: input.depositPercent,
+    amount: input.amount,
+    receipt: input.receipt,
+    description: input.description,
+    customer: {
+      name: input.customerName || 'Customer',
+      email: input.customerEmail,
+      contact: input.customerPhone,
+    },
+    salonName: input.salonName,
+    themeColor: input.themeColor,
+    notes: { booking_ref: input.receipt, salon_id: input.salonId },
+    accessToken,
+    configUrl: '/api/customer/payments/config',
+    orderUrl: '/api/customer/payments/order',
+    extraOrderBody: {
+      salonId: input.salonId,
+      date: input.date,
+      time: input.time,
+      serviceIds: input.serviceIds,
+      staffId: input.staffId,
+      bookingType: input.bookingType,
+      homeAddress: input.homeAddress,
+      notes: input.notes,
+      referralCode: input.referralCode,
+      customerName: input.customerName,
+      customerPhone: input.customerPhone,
+      bookingRef: input.receipt,
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -398,8 +525,17 @@ export interface CreateBookingInput {
   homeAddress?: string;
   notes?: string;
   referralCode?: string;
+  customerName?: string;
+  customerPhone?: string;
+  /** Draft reference (NX-JPR-53682) reused across payment retries. */
+  bookingRef?: string;
   /** Payment: the deposit path already lives in /api/bookings + Razorpay. */
   payDeposit?: boolean;
+  /**
+   * Verified gateway triple. Required when the salon collects a deposit —
+   * the server will not insert a booking until this HMAC verifies.
+   */
+  payment?: BookingAdvancePayment;
 }
 
 export interface CreatedBooking {

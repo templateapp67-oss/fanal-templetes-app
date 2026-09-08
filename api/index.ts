@@ -572,7 +572,7 @@ app.post(
 // (simulated payments, same order → verify → booking pipeline); /mock-pay
 // answers 404 in every other mode.
 // ============================================================================
-app.get("/api/payments/razorpay/config", handleRazorpayConfig);
+app.get("/api/payments/razorpay/config", asyncRoute(handleRazorpayConfig));
 app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayOrder));
 app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
 app.post("/api/payments/razorpay/mock-pay", asyncRoute(handleMockRazorpayPayment));

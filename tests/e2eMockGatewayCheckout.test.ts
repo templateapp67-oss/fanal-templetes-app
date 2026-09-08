@@ -12,7 +12,7 @@
 //   POST /api/payments/razorpay/verify      → verified
 //   POST /api/bookings/create { payment }   → paid_deposit booking, paymentMode=mock
 //
-// plus the failure → "Retry Payment" path (new order for the same draft) and
+// plus the failure → "Retry Payment" path (same unpaid order for the same draft) and
 // the guard that a forged triple never becomes a paid booking.
 //
 // The env is forced BEFORE api/index.ts is imported so this file is
@@ -192,7 +192,7 @@ test('full checkout: order (₹87 = 8700 paise) → mock-pay → verify → paid
   assert.equal(created.body.data.metadata.service_addons, 'Head Massage');
 });
 
-test('retry path: a simulated decline leaves nothing booked; the retry uses a NEW order for the same draft and succeeds', async (t) => {
+test('retry path: a simulated decline leaves nothing booked; the retry reuses the unpaid order for the same draft and succeeds', async (t) => {
   skipUnlessMock(t);
   const ref = 'NX-BLR-88002';
   const before = await request('GET', '/api/bookings');
@@ -208,10 +208,11 @@ test('retry path: a simulated decline leaves nothing booked; the retry uses a NE
   const mid = await request('GET', '/api/bookings');
   assert.equal((mid.body.data || []).length, countBefore, 'a declined payment must not create an appointment');
 
-  // attempt 2 — "Retry Payment": same draft (same receipt / total), new order
+  // attempt 2 — "Retry Payment": same draft (same receipt / total), unpaid order reused
   const order2 = await request('POST', '/api/payments/razorpay/order', { totalAmount: 348, receipt: ref });
   assert.equal(order2.status, 200, order2.text);
-  assert.notEqual(order2.body.order.id, order1.body.order.id);
+  assert.equal(order2.body.order.id, order1.body.order.id, 'retry must not mint a second chargeable order');
+  assert.equal(order2.body.reused, true);
   assert.equal(order2.body.order.amount, order1.body.order.amount, 'the retry charges the identical deposit');
   assert.equal(order2.body.order.receipt, ref);
 
