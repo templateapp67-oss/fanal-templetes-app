@@ -659,3 +659,38 @@ test('a booking with no usable mobile number is not used to look up a tier', asy
   assert.equal(res.body.data.loyalty.tier, 'bronze');
   assert.ok(!seen.includes('clients'), 'no client lookup for an unusable number');
 });
+
+test('normalized schema retries with the verified customer id after missing user_id', async () => {
+  const seen: any[] = [];
+  let column = '';
+  const chain: any = {
+    select: () => chain,
+    eq: (name: string, value: string) => { column = name; seen.push({ column: name, value }); return chain; },
+    order: () => chain,
+    limit: async () => column === 'user_id'
+      ? { data: null, error: { code: '42703', message: 'column bookings.user_id does not exist' } }
+      : { data: [{ id: BOOKING_ID, customer_user_id: ME }], error: null },
+  };
+  const { deps } = makeDeps({ deps: { isMock: false, hasAdminClient: true, db: { from: () => chain } } });
+  const res = makeRes();
+  await createMyBookingsListHandler(deps as any)({ query: { user_id: OTHER } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.data[0].customer_user_id, ME);
+  assert.deepEqual(seen, [{ column: 'user_id', value: ME }, { column: 'customer_user_id', value: ME }]);
+});
+
+test('normalized customer ownership cannot be overridden by legacy metadata', () => {
+  assert.equal(bookingBelongsTo({ customer_user_id: ME }, ME), true);
+  assert.equal(bookingBelongsTo({ customer_user_id: OTHER, user_id: ME, metadata: { user_id: ME } }, ME), false);
+});
+
+test('unrelated schema errors do not trigger a customer-column retry', async () => {
+  let calls = 0;
+  const chain: any = { select: () => chain, eq: () => chain, order: () => chain,
+    limit: async () => { calls++; return { data: null, error: { code: '42703', message: 'column bookings.created_at does not exist' } }; } };
+  const { deps } = makeDeps({ deps: { isMock: false, hasAdminClient: true, db: { from: () => chain } } });
+  const res = makeRes();
+  await createMyBookingsListHandler(deps as any)({ query: {} }, res);
+  assert.equal(calls, 1);
+  assert.equal(res.statusCode, 503);
+});
