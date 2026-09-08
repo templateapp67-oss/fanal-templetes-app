@@ -1751,7 +1751,7 @@ export function createPaymentOrderHandler(deps: CustomerRoutesDeps) {
       if (!user) return;
       const body = req.body || {};
       const intent = await prepareCustomerBookingIntent(deps, user, body, deadlineAt, requestId);
-      if (!intent.ok) return void failIntent(res, requestId, intent);
+      if (intent.ok === false) return void failIntent(res, requestId, intent);
       if (intent.deposit <= 0) {
         return void answer(res, 409, {
           success: false,
@@ -1954,7 +1954,7 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
       }
 
       const intent = await prepareCustomerBookingIntent(deps, user, body, deadlineAt, requestId);
-      if (!intent.ok) return void failIntent(res, requestId, intent);
+      if (intent.ok === false) return void failIntent(res, requestId, intent);
 
       const {
         ownerUid,
