@@ -23,6 +23,8 @@ export interface CustomerProfile {
   city: string;
   /** `profiles.address_line2`: the customer's locality, or the salon's line 2. */
   area: string;
+  /** `profiles.date_of_birth` (YYYY-MM-DD). Drives the annual birthday bonus at salon check-in. */
+  dateOfBirth?: string;
   address: string;
   /** `profiles.owner_photo_url`. Only writable on a row that is not a salon. */
   avatarUrl: string;

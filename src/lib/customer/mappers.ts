@@ -195,6 +195,7 @@ export function toCustomerProfile(row: any): CustomerProfile {
     // refuses it on a salon row. Read is fine; the guard is on the way in.
     area: str(row?.address_line2),
     address: str(row?.full_address),
+    dateOfBirth: typeof row?.date_of_birth === 'string' ? row.date_of_birth.slice(0, 10) : undefined,
     avatarUrl: str(row?.owner_photo_url),
     postalCode: str(row?.postal_code),
     state: str(row?.state),

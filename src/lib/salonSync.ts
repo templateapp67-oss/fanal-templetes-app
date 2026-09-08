@@ -165,6 +165,8 @@ export function toLoyaltyConfigDbRow(config: LoyaltyConfig, ownerId: string) {
     program_enabled: config.programEnabled,
     points_per_visit: config.pointsPerVisit,
     points_per_hundred_spent: config.pointsPerHundredSpent,
+    birthday_bonus_points: config.birthdayBonusPoints ?? 250,
+    referral_bonus_points: config.referralBonusPoints ?? 100,
     tier_thresholds: config.tierThresholds,
     tier_multipliers: config.tierMultipliers,
   };

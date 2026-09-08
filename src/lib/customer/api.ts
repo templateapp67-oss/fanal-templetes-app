@@ -472,6 +472,8 @@ export function saveMyProfile(input: {
   postalCode?: string;
   state?: string;
   landmark?: string;
+  /** YYYY-MM-DD; empty string clears it. Used for the annual birthday bonus. */
+  dateOfBirth?: string;
   latitude?: number | null;
   longitude?: number | null;
 }): Promise<CustomerResult<CustomerProfile | null>> {

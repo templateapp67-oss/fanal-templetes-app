@@ -150,6 +150,7 @@ const CUSTOMER_PROFILE_COLUMNS = [
   'postal_code',
   'state',
   'landmark',
+  'date_of_birth',
 ] as const;
 
 const CUSTOMER_GEO_COLUMNS = ['latitude', 'longitude'] as const;
@@ -1112,8 +1113,25 @@ export function pickProfileUpdates(body: any): { updates: Record<string, any>; d
     postalCode: 'postal_code',
     state: 'state',
     landmark: 'landmark',
+    dateOfBirth: 'date_of_birth',
   };
+  // `date_of_birth` is a real date column, not free text: validated before it
+  // reaches the database, and an empty value clears it (never stores '').
+  if ('dateOfBirth' in (body || {})) {
+    const raw = body.dateOfBirth;
+    const text = String(raw ?? '').trim();
+    if (raw === null || text === '') {
+      updates.date_of_birth = null;
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || !Number.isFinite(Date.parse(`${text}T00:00:00.000Z`))) {
+      dropped.push('dateOfBirth');
+    } else if (text > new Date().toISOString().slice(0, 10)) {
+      dropped.push('dateOfBirth');
+    } else {
+      updates.date_of_birth = text;
+    }
+  }
   for (const [key, column] of Object.entries(map)) {
+    if (key === 'dateOfBirth') continue; // handled above with real validation
     if (!(key in (body || {}))) continue;
     const value = body[key];
     if (value === null || value === undefined) continue;
