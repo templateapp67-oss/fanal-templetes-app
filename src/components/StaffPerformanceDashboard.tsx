@@ -21,11 +21,13 @@ import {
   formatInr,
   formatPercent,
   formatRating,
+  STAFF_FILTER_DEBOUNCE_MS,
   lastSevenCivilDays,
   leaderBadgesFor,
   mostImprovedStaffId,
   paginateRows,
   percentChange,
+  previousPeriod,
   publicCustomerLabel,
   ratingTrend,
   resolveDateRange,
@@ -329,6 +331,11 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     () => resolveDateRange(preset, { customFrom, customTo }),
     [preset, customFrom, customTo]
   );
+  const [debouncedRange, setDebouncedRange] = useState<DateRange>(range);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedRange(range), STAFF_FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [range.from, range.to, range.preset]);
 
   const [staffFilter, setStaffFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -395,39 +402,16 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     }
 
     salonIdRef.current = owner.context.salonId;
-    const staffId = staffFilter === 'all' ? null : staffFilter;
     const seven = lastSevenCivilDays();
-    // Previous 7 civil days relative to the rolling last-7 window.
-    const prev7from = (() => {
-      const { from } = seven;
-      const d = new Date(`${from}T00:00:00`);
-      d.setDate(d.getDate() - 7);
-      return toIsoDate(d);
-    })();
-    const prev7to = (() => {
-      const { from } = seven;
-      const d = new Date(`${from}T00:00:00`);
-      d.setDate(d.getDate() - 1);
-      return toIsoDate(d);
-    })();
-
-    const prevRange = (() => {
-      const fromDate = new Date(`${range.from}T00:00:00`);
-      const toDate = new Date(`${range.to}T00:00:00`);
-      const days = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
-      const prevTo = new Date(fromDate);
-      prevTo.setDate(prevTo.getDate() - 1);
-      const prevFrom = new Date(prevTo);
-      prevFrom.setDate(prevFrom.getDate() - (days - 1));
-      return { from: toIsoDate(prevFrom), to: toIsoDate(prevTo) };
-    })();
+    const prev7 = previousPeriod(seven.from, seven.to);
+    const prevRange = previousPeriod(debouncedRange.from, debouncedRange.to);
 
     const [current, previous, last7, previous7, daily7] = await Promise.all([
-      fetchStaffPerformance(owner.context.salonId, range.from, range.to, staffId),
-      fetchStaffPerformance(owner.context.salonId, prevRange.from, prevRange.to, staffId),
+      fetchStaffPerformance(owner.context.salonId, debouncedRange.from, debouncedRange.to, null),
+      fetchStaffPerformance(owner.context.salonId, prevRange.from, prevRange.to, null),
       fetchStaffLast7Days(owner.context.salonId),
-      fetchStaffPerformance(owner.context.salonId, prev7from, prev7to, null),
-      fetchStaffDailyPerformance(owner.context.salonId, seven.from, seven.to, staffId),
+      fetchStaffPerformance(owner.context.salonId, prev7.from, prev7.to, null),
+      fetchStaffDailyPerformance(owner.context.salonId, seven.from, seven.to, null),
     ]);
     if (ticket !== inflight.current) return;
 
@@ -452,7 +436,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
       daily7: daily7.ok ? daily7.rows : [],
     });
     setLoading(false);
-  }, [user, range.from, range.to, staffFilter, clearDashboard]);
+  }, [user, debouncedRange.from, debouncedRange.to, clearDashboard]);
 
   useEffect(() => {
     void load();
@@ -473,20 +457,33 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     setPage(1);
   }, [search, staffFilter, sortKey, sortDir, range.from, range.to]);
 
+  useEffect(() => {
+    if (!detailOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDetailOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailOpen]);
+
   const ranks = useMemo(() => {
     const map: Record<string, number> = {};
     for (const row of bundle?.last7 || []) map[row.staff_id] = row.overall_rank;
     return map;
   }, [bundle]);
 
+  const staffIdFilter = staffFilter === 'all' ? null : staffFilter;
+
   const visibleRows = useMemo(() => {
-    const filtered = filterStaffRows(bundle?.rows || [], { query: search });
+    const filtered = filterStaffRows(bundle?.rows || [], { query: search, staffId: staffIdFilter });
     return sortStaffRows(filtered, sortKey, sortDir, ranks);
-  }, [bundle, search, sortKey, sortDir, ranks]);
+  }, [bundle, search, staffIdFilter, sortKey, sortDir, ranks]);
 
   const paged = paginateRows<StaffPerformanceSummaryRow>(visibleRows, page, PAGE_SIZE);
-  const totals: SalonTotals = bundle ? aggregateSalonTotals(bundle.rows) : emptyTotals();
-  const prevTotals: SalonTotals = bundle ? aggregateSalonTotals(bundle.previousRows) : emptyTotals();
+  const totals: SalonTotals = bundle ? aggregateSalonTotals(visibleRows) : emptyTotals();
+  const prevTotals: SalonTotals = bundle
+    ? aggregateSalonTotals(filterStaffRows(bundle.previousRows, { staffId: staffIdFilter }))
+    : emptyTotals();
 
   const previous7Map = useMemo(() => {
     const map: Record<string, { completed_bookings: number; average_rating: number; paid_amount: number }> = {};
@@ -570,16 +567,21 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
 
   const money = (n: number) => formatInr(n, currencySymbol);
   const staffOptions = bundle?.rows || [];
+  const chartRows = visibleRows;
 
-  const bookingBars = chartStaffBars(bundle?.rows || [], 'total_bookings');
-  const revenueBars = chartStaffBars(bundle?.rows || [], 'net_amount');
-  const commissionBars = chartStaffBars(bundle?.rows || [], 'commission_amount');
-  const discountBars = chartStaffBars(bundle?.rows || [], 'discount_amount');
-  const reviewBars = chartStaffBars(bundle?.rows || [], 'review_count');
-  const ratingBars = chartStaffBars(bundle?.rows || [], 'average_rating');
+  const bookingBars = chartStaffBars(chartRows, 'total_bookings');
+  const revenueBars = chartStaffBars(chartRows, 'net_amount');
+  const commissionBars = chartStaffBars(chartRows, 'commission_amount');
+  const discountBars = chartStaffBars(chartRows, 'discount_amount');
+  const reviewBars = chartStaffBars(chartRows, 'review_count');
+  const ratingBars = chartStaffBars(chartRows, 'average_rating');
   const seven = lastSevenCivilDays();
-  const dailyBookings = dailySeries(bundle?.daily7 || [], seven.from, seven.to, 'bookings');
-  const dailyPaid = dailySeries(bundle?.daily7 || [], seven.from, seven.to, 'paid_amount');
+  const dailySource =
+    staffFilter === 'all'
+      ? bundle?.daily7 || []
+      : (bundle?.daily7 || []).filter((row) => row.staff_id === staffFilter);
+  const dailyBookings = dailySeries(dailySource, seven.from, seven.to, 'bookings');
+  const dailyPaid = dailySeries(dailySource, seven.from, seven.to, 'paid_amount');
 
   const kpis = [
     { key: 'bookings', label: 'Total Bookings', value: String(totals.total_bookings), current: totals.total_bookings, previous: prevTotals.total_bookings, icon: 'event_available' },
@@ -587,7 +589,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     { key: 'payments', label: 'Total Payments', value: money(totals.paid_amount), current: totals.paid_amount, previous: prevTotals.paid_amount, icon: 'payments', money: true },
     { key: 'discounts', label: 'Total Discounts', value: money(totals.discount_amount), current: totals.discount_amount, previous: prevTotals.discount_amount, icon: 'sell', money: true },
     { key: 'commission', label: 'Total Commission', value: money(totals.commission_amount), current: totals.commission_amount, previous: prevTotals.commission_amount, icon: 'account_balance_wallet', money: true },
-    { key: 'net', label: 'Salon Net Revenue', value: money(totals.net_amount), current: totals.net_amount, previous: prevTotals.net_amount, icon: 'storefront', money: true },
+    { key: 'net', label: 'Salon Net Revenue', value: money(totals.salon_amount), current: totals.salon_amount, previous: prevTotals.salon_amount, icon: 'storefront', money: true },
     { key: 'reviews', label: 'Total Reviews', value: String(totals.review_count), current: totals.review_count, previous: prevTotals.review_count, icon: 'reviews' },
     { key: 'rating', label: 'Average Rating', value: formatRating(totals.average_rating), current: totals.average_rating, previous: prevTotals.average_rating, icon: 'star' },
   ];
@@ -792,7 +794,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
                             <div className="flex items-center gap-2">
                               <Photo url={row.staff_photo} name={row.staff_name} />
                               <div>
-                                <div className="font-bold text-gray-900">{row.staff_name}</div>
+                                <div className="font-bold text-gray-900 max-w-[160px] truncate" title={row.staff_name}>{row.staff_name}</div>
                                 <div className="text-[10px] text-gray-500">{row.staff_role || '—'}</div>
                               </div>
                             </div>
@@ -886,7 +888,9 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
 
         <div>
           <h2 className="font-display font-bold text-lg mb-3">Last 7 days leaderboard</h2>
-          {!loading && last7filtered.length === 0 ? (
+          {loading ? (
+            <div className="h-40 bg-white border rounded-2xl animate-pulse" data-testid="leaderboard-skeleton" />
+          ) : !loading && last7filtered.length === 0 ? (
             <EmptyBlock title="No staff data" body="The 7-day leaderboard appears once staff exist." />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -962,7 +966,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
                 <div className="flex items-center gap-3">
                   <Photo url={detail.staff_profile.staff_photo} name={detail.staff_profile.staff_name} size={56} />
                   <div>
-                    <div className="font-bold text-base">{detail.staff_profile.staff_name}</div>
+                    <div className="font-bold text-base max-w-[240px] truncate" title={detail.staff_profile.staff_name}>{detail.staff_profile.staff_name}</div>
                     <div className="text-gray-500">{detail.staff_profile.staff_role || '—'}</div>
                   </div>
                 </div>

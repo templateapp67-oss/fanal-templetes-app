@@ -6,8 +6,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { StaffPerformanceDashboard } from '../src/components/StaffPerformanceDashboard';
 import { parseStaffDetail } from '../src/lib/staffPerformanceApi';
 import {
+  STAFF_FILTER_DEBOUNCE_MS,
   STAFF_PERFORMANCE_PATH as CONTRACT_PATH,
   STAFF_PERFORMANCE_RPCS,
+  STAFF_RPC_TIMEOUT_MS,
   aggregateSalonTotals,
   bookingGrowthPercent,
   chartStaffBars,
@@ -126,6 +128,7 @@ test('salon totals sum RPC rows and never invent cancelled revenue', () => {
   assert.equal(totals.paid_amount, 2350);
   assert.equal(totals.net_amount, 3000);
   assert.equal(totals.commission_amount, 890);
+  assert.equal(totals.salon_amount, 0);
   assert.equal(totals.review_count, 2);
   assert.equal(totals.average_rating, 5);
 });
@@ -220,10 +223,13 @@ test('error classifier maps owner-only and missing RPC failures', () => {
   assert.equal(classifyStaffPerformanceError({ message: 'JWT expired' }).code, 'session_expired');
   assert.equal(classifyStaffPerformanceError({ code: 'PGRST202', message: 'function get_owner_staff_performance does not exist' }).code, 'rpc_unavailable');
   assert.equal(classifyStaffPerformanceError({ message: 'row-level security' }).code, 'database_error');
+  assert.equal(classifyStaffPerformanceError({ code: '57014', message: 'Staff performance query timed out' }).code, 'database_error');
+  assert.equal(classifyStaffPerformanceError({ code: '42501', message: 'permission denied for staff' }).retryable, false);
 });
 
 test('currency formatting and customer privacy label', () => {
-  assert.equal(formatInr(2200), '₹2,200');
+  assert.equal(formatInr(2200), '₹2,200.00');
+  assert.equal(formatInr(690.5), '₹690.50');
   assert.equal(publicCustomerLabel('Priya Sharma'), 'Priya');
   assert.equal(publicCustomerLabel(''), 'Client');
   assert.equal(percentChange(10, 5), 100);
@@ -321,6 +327,13 @@ test('the dashboard talks to Phase 2 RPCs and never logs row payloads', () => {
   assert.ok(ui.includes('publicCustomerLabel'));
   assert.ok(ui.includes('get_owner_staff_export') === false, 'export goes through the API module');
   assert.ok(api.includes('get_owner_staff_export'));
+  assert.equal(api.includes("rpc('calculate_staff_commission'"), false);
+  assert.ok(api.includes('STAFF_RPC_TIMEOUT_MS'));
+  assert.ok(ui.includes('STAFF_FILTER_DEBOUNCE_MS'));
+  assert.ok(ui.includes('previousPeriod'));
+  assert.ok(ui.includes('Escape'));
+  assert.equal(STAFF_FILTER_DEBOUNCE_MS >= 250 && STAFF_FILTER_DEBOUNCE_MS <= 500, true);
+  assert.equal(STAFF_RPC_TIMEOUT_MS >= 8000, true);
 });
 
 test('App.tsx mounts the page on the owner route', () => {

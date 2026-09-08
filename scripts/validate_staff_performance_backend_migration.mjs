@@ -564,6 +564,58 @@ await asUser(OWNER_A, 'authenticated', async () => {
   else pass('owner session still authorised after refresh');
 });
 
+console.log('\\n== extra commission / refund / ranking cases ==');
+await db.exec(`
+  insert into public.bookings (
+    id, owner_id, user_id, customer_name, service_id, service_name,
+    booking_date, time_slot, total_amount, advance_paid_amount,
+    status, payment_status, payment_id, metadata
+  ) values
+    -- fully discounted completed (Ananya) → net 0, commission 0 extra
+    ('b0000000-0000-4000-8000-00000000000b', '${OWNER_A}', '${CUSTOMER}', 'Priya',
+     null, 'Comp', '${d(0)}', '18:00', 500, 0, 'completed', 'paid_full', 'pay_free',
+     '{"staff_id":"${STAFF_1}","discount_amount":500}'),
+    -- refunded completed (Ananya) → paid 0
+    ('b0000000-0000-4000-8000-00000000000c', '${OWNER_A}', '${CUSTOMER}', 'Priya',
+     null, 'Refund cut', '${d(0)}', '19:00', 300, 300, 'completed', 'refunded', 'pay_ref',
+     '{"staff_id":"${STAFF_1}"}'),
+    -- second fixed-commission completed booking (Rohan) → +200 not +0
+    ('b0000000-0000-4000-8000-00000000000d', '${OWNER_A}', '${CUSTOMER}', 'Priya',
+     null, 'Beard', '${d(-1)}', '09:30', 400, 400, 'completed', 'paid_full', 'pay_3',
+     '{"staff_id":"${STAFF_2}"}')
+`);
+
+await asUser(OWNER_A, 'authenticated', async () => {
+  const res = await q(`select * from public.get_owner_staff_performance('${OWNER_A}', null, null, null)`);
+  const by = Object.fromEntries(res.rows.map((r) => [r.staff_id, r]));
+  const a = by[STAFF_1];
+  const r = by[STAFF_2];
+  if (!a || !r) fail('extra cases staff present', 'missing');
+  else {
+    if (num(a.net_amount) !== 2300) fail('fully discounted adds 0 net', a.net_amount);
+    else pass('fully discounted booking does not change net');
+    if (num(a.commission_amount) !== 690) fail('zero-net booking adds 0 commission', a.commission_amount);
+    else pass('fully discounted booking commission stays 690');
+    if (num(a.paid_amount) !== 2700) fail('refunded payment excluded; fully-discounted paid_full counted once', a.paid_amount);
+    else pass('refunded payment is not collected (paid=2700 = 2200 + 500 comp)');
+    if (Number(r.completed_bookings) !== 2) fail('Rohan second completed booking', r.completed_bookings);
+    else pass('Rohan completed_bookings = 2 after extra booking');
+    if (num(r.commission_amount) !== 400) fail('fixed commission is per completed booking', r.commission_amount);
+    else pass('fixed commission summed per completed booking = 400');
+  }
+
+  const ranks = await q(`select staff_name, booking_rank, overall_rank from public.get_owner_staff_last_7_days('${OWNER_A}') order by staff_name`);
+  const names = ranks.rows.map((row) => row.staff_name);
+  if (new Set(names).size !== names.length) fail('deterministic unique staff in 7d', names.join(','));
+  else pass('7-day ranking is deterministic (one row per staff)');
+});
+
+{
+  const idx = await q(`select indexname from pg_indexes where schemaname='public' and indexname in ('idx_bookings_owner_booking_date','idx_bookings_payment_id')`);
+  if (idx.rows.length < 1) fail('booking performance indexes', JSON.stringify(idx.rows));
+  else pass('booking owner/date index present');
+}
+
 if (!pass3) fail('idempotent third pass', 'migration failed after fixtures');
 else pass('migration re-run after fixtures is a no-op');
 

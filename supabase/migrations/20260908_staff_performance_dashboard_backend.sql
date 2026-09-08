@@ -389,6 +389,25 @@ create index if not exists idx_staff_performance_daily_date
 create index if not exists idx_staff_performance_daily_created
   on public.staff_performance_daily (created_at);
 
+do $$
+begin
+  if public.staff_dashboard_has_rel('bookings')
+     and public.staff_dashboard_has_col('bookings', 'owner_id')
+     and public.staff_dashboard_has_col('bookings', 'booking_date') then
+    execute 'create index if not exists idx_bookings_owner_booking_date on public.bookings (owner_id, booking_date)';
+  end if;
+  if public.staff_dashboard_has_rel('bookings')
+     and public.staff_dashboard_has_col('bookings', 'payment_id') then
+    execute 'create index if not exists idx_bookings_payment_id on public.bookings (payment_id)';
+  end if;
+  if public.staff_dashboard_has_rel('appointments')
+     and public.staff_dashboard_has_col('appointments', 'owner_id')
+     and public.staff_dashboard_has_col('appointments', 'date') then
+    execute 'create index if not exists idx_appointments_owner_date on public.appointments (owner_id, date)';
+  end if;
+end;
+$$;
+
 create table if not exists public.staff_performance_audit (
   id                 uuid primary key default gen_random_uuid(),
   salon_id           uuid not null,
@@ -952,7 +971,7 @@ begin
             else 0
           end
         ) as paid_amount,
-        (%4$s in ('completed', 'complete', 'done')) as is_completed,
+        (%4$s in ('completed', 'complete', 'done') and %5$s not in ('refunded')) as is_completed,
         (%4$s in ('cancelled', 'canceled')) as is_cancelled,
         (%4$s in ('pending', 'requested')) as is_pending,
         (%4$s in ('confirmed', 'accepted', 'in_progress', 'reschedule_proposed', 'reschedule_requested')) as is_confirmed,
@@ -1369,6 +1388,18 @@ begin
       public.staff_dashboard_money(sum(f.net_amount) filter (where f.is_completed)) as net_amount
     from facts f
     group by f.staff_id
+  ),
+  comm_agg as (
+    select
+      f.staff_id,
+      public.staff_dashboard_money(sum(c.commission_amount)) as commission_amount,
+      public.staff_dashboard_money(sum(c.salon_amount)) as salon_amount
+    from facts f
+    cross join lateral public.calculate_staff_commission(
+      target_salon_id, f.staff_id, f.gross_amount, f.discount_amount
+    ) c
+    where f.is_completed
+    group by f.staff_id
   )
   select
     s.staff_id,
@@ -1385,20 +1416,8 @@ begin
     coalesce(b.net_amount, 0),
     coalesce(p.paid_amount, 0),
     coalesce(cs.commission_rate, 0),
-    coalesce((
-      select c.commission_amount
-      from public.calculate_staff_commission(
-        target_salon_id, s.staff_id,
-        coalesce(b.gross_amount, 0), coalesce(b.discount_amount, 0)
-      ) c
-    ), 0),
-    coalesce((
-      select c.salon_amount
-      from public.calculate_staff_commission(
-        target_salon_id, s.staff_id,
-        coalesce(b.gross_amount, 0), coalesce(b.discount_amount, 0)
-      ) c
-    ), 0),
+    coalesce(cm.commission_amount, 0),
+    coalesce(cm.salon_amount, 0),
     coalesce(rv.review_count, 0),
     coalesce(rv.average_rating, 0),
     coalesce(rv.five_star_reviews, 0),
@@ -1409,6 +1428,7 @@ begin
   from staff_set s
   left join book_agg b on b.staff_id = s.staff_id
   left join paid_agg p on p.staff_id = s.staff_id
+  left join comm_agg cm on cm.staff_id = s.staff_id
   left join review_agg rv on rv.staff_id = s.staff_id
   left join public.staff_commission_settings cs
     on cs.salon_id = target_salon_id and cs.staff_id = s.staff_id
@@ -1597,6 +1617,19 @@ begin
       coalesce(round(avg(f.review_rating) filter (where f.review_rating is not null and f.review_rating >= 1)::numeric, 2), 0) as average_rating
     from facts f
     group by 1, 2
+  ),
+  comm_agg as (
+    select
+      f.staff_id,
+      f.performance_date,
+      public.staff_dashboard_money(sum(c.commission_amount)) as commission_amount,
+      public.staff_dashboard_money(sum(c.salon_amount)) as salon_amount
+    from facts f
+    cross join lateral public.calculate_staff_commission(
+      target_salon_id, f.staff_id, f.gross_amount, f.discount_amount
+    ) c
+    where f.is_completed
+    group by f.staff_id, f.performance_date
   )
   select
     b.performance_date,
@@ -1608,19 +1641,14 @@ begin
     coalesce(b.discount_amount, 0),
     coalesce(b.net_amount, 0),
     coalesce(p.paid_amount, 0),
-    coalesce((
-      select c.commission_amount
-      from public.calculate_staff_commission(target_salon_id, b.staff_id, coalesce(b.gross_amount, 0), coalesce(b.discount_amount, 0)) c
-    ), 0),
-    coalesce((
-      select c.salon_amount
-      from public.calculate_staff_commission(target_salon_id, b.staff_id, coalesce(b.gross_amount, 0), coalesce(b.discount_amount, 0)) c
-    ), 0),
+    coalesce(cm.commission_amount, 0),
+    coalesce(cm.salon_amount, 0),
     b.reviews,
     b.average_rating
   from book_agg b
   left join roster r on r.staff_id = b.staff_id
   left join paid_agg p on p.staff_id = b.staff_id and p.performance_date = b.performance_date
+  left join comm_agg cm on cm.staff_id = b.staff_id and cm.performance_date = b.performance_date
   order by b.performance_date, coalesce(r.staff_name, 'Former staff');
 end;
 $$;
@@ -1937,20 +1965,28 @@ begin
     from facts f
     group by f.staff_id, f.performance_date
   ),
+  comm_agg as (
+    select
+      f.staff_id,
+      f.performance_date,
+      public.staff_dashboard_money(sum(c.commission_amount)) as commission_amount,
+      public.staff_dashboard_money(sum(c.salon_amount)) as salon_amount
+    from facts f
+    cross join lateral public.calculate_staff_commission(
+      target_salon_id, f.staff_id, f.gross_amount, f.discount_amount
+    ) c
+    where f.is_completed
+    group by f.staff_id, f.performance_date
+  ),
   calc as (
     select
       b.*,
       coalesce(p.paid_amount, 0) as paid_amount,
-      coalesce((
-        select c.commission_amount
-        from public.calculate_staff_commission(target_salon_id, b.staff_id, b.gross_amount, b.discount_amount) c
-      ), 0) as commission_amount,
-      coalesce((
-        select c.salon_amount
-        from public.calculate_staff_commission(target_salon_id, b.staff_id, b.gross_amount, b.discount_amount) c
-      ), 0) as salon_amount
+      coalesce(cm.commission_amount, 0) as commission_amount,
+      coalesce(cm.salon_amount, 0) as salon_amount
     from book_agg b
     left join paid_agg p on p.staff_id = b.staff_id
+    left join comm_agg cm on cm.staff_id = b.staff_id and cm.performance_date = b.performance_date
   ),
   upserted as (
     insert into public.staff_performance_daily (
@@ -2058,7 +2094,6 @@ declare
   f record;
   exposed text[] := array[
     'is_staff_dashboard_owner',
-    'calculate_staff_commission',
     'get_owner_staff_performance',
     'get_owner_staff_last_7_days',
     'get_owner_staff_daily_performance',

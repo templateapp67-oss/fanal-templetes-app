@@ -1,6 +1,7 @@
 import { supabase, isMockSupabase } from './supabaseClient';
 import {
   STAFF_PERFORMANCE_ERROR_COPY,
+  STAFF_RPC_TIMEOUT_MS,
   classifyStaffPerformanceError,
   csvFromExportRows,
   normalizeDailyRow,
@@ -17,6 +18,25 @@ import {
   type StaffServiceSummary,
   asFiniteNumber,
 } from './staffPerformance';
+
+async function withRpcTimeout(
+  work: any,
+  ms = STAFF_RPC_TIMEOUT_MS
+): Promise<{ data: any; error: any }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject({ code: '57014', message: 'Staff performance query timed out' });
+    }, ms);
+  });
+  try {
+    return (await Promise.race([Promise.resolve(work), timeout])) as { data: any; error: any };
+  } catch (err) {
+    return { data: null, error: err };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export interface OwnerSalonContext {
   salonId: string;
@@ -46,11 +66,11 @@ export async function resolveOwnerSalon(): Promise<
     return { ok: false, error: { code: 'rpc_unavailable', message: STAFF_PERFORMANCE_ERROR_COPY.rpc_unavailable, retryable: true } };
   }
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await withRpcTimeout(supabase.auth.getSession());
   if (sessionError) {
     return { ok: false, error: rpcError(sessionError) };
   }
-  const user = sessionData.session?.user;
+  const user = sessionData?.session?.user;
   if (!user?.id) {
     return {
       ok: false,
@@ -58,11 +78,9 @@ export async function resolveOwnerSalon(): Promise<
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('id', user.id)
-    .maybeSingle();
+  const { data: profile, error: profileError } = await withRpcTimeout(
+    supabase.from('profiles').select('id').eq('id', user.id).maybeSingle()
+  );
 
   if (profileError) {
     const classified = rpcError(profileError);
@@ -78,9 +96,11 @@ export async function resolveOwnerSalon(): Promise<
     };
   }
 
-  const { data: isOwner, error: ownerError } = await supabase.rpc('is_staff_dashboard_owner', {
-    target_salon_id: profile.id,
-  });
+  const { data: isOwner, error: ownerError } = await withRpcTimeout(
+    supabase.rpc('is_staff_dashboard_owner', {
+      target_salon_id: profile.id,
+    })
+  );
   if (ownerError) {
     return { ok: false, error: rpcError(ownerError) };
   }
@@ -100,12 +120,14 @@ export async function fetchStaffPerformance(
   to: string,
   staffId?: string | null
 ): Promise<{ ok: true; rows: StaffPerformanceSummaryRow[] } | { ok: false; error: StaffPerformanceError }> {
-  const { data, error } = await supabase.rpc('get_owner_staff_performance', {
-    target_salon_id: salonId,
-    from_date: from,
-    to_date: to,
-    target_staff_id: staffId || null,
-  });
+  const { data, error } = await withRpcTimeout(
+    supabase.rpc('get_owner_staff_performance', {
+      target_salon_id: salonId,
+      from_date: from,
+      to_date: to,
+      target_staff_id: staffId || null,
+    })
+  );
   if (error) return { ok: false, error: rpcError(error) };
   const rows = Array.isArray(data) ? data.map((row) => normalizeSummaryRow(row as Record<string, unknown>)) : [];
   return { ok: true, rows };
@@ -114,9 +136,11 @@ export async function fetchStaffPerformance(
 export async function fetchStaffLast7Days(
   salonId: string
 ): Promise<{ ok: true; rows: StaffLast7DaysRow[] } | { ok: false; error: StaffPerformanceError }> {
-  const { data, error } = await supabase.rpc('get_owner_staff_last_7_days', {
-    target_salon_id: salonId,
-  });
+  const { data, error } = await withRpcTimeout(
+    supabase.rpc('get_owner_staff_last_7_days', {
+      target_salon_id: salonId,
+    })
+  );
   if (error) return { ok: false, error: rpcError(error) };
   const rows = Array.isArray(data) ? data.map((row) => normalizeLast7Row(row as Record<string, unknown>)) : [];
   return { ok: true, rows };
@@ -128,12 +152,14 @@ export async function fetchStaffDailyPerformance(
   to: string,
   staffId?: string | null
 ): Promise<{ ok: true; rows: StaffDailyPerformanceRow[] } | { ok: false; error: StaffPerformanceError }> {
-  const { data, error } = await supabase.rpc('get_owner_staff_daily_performance', {
-    target_salon_id: salonId,
-    from_date: from,
-    to_date: to,
-    target_staff_id: staffId || null,
-  });
+  const { data, error } = await withRpcTimeout(
+    supabase.rpc('get_owner_staff_daily_performance', {
+      target_salon_id: salonId,
+      from_date: from,
+      to_date: to,
+      target_staff_id: staffId || null,
+    })
+  );
   if (error) return { ok: false, error: rpcError(error) };
   const rows = Array.isArray(data) ? data.map((row) => normalizeDailyRow(row as Record<string, unknown>)) : [];
   return { ok: true, rows };
@@ -233,12 +259,14 @@ export async function fetchStaffDetail(
   from: string,
   to: string
 ): Promise<{ ok: true; detail: StaffDetailPayload } | { ok: false; error: StaffPerformanceError }> {
-  const { data, error } = await supabase.rpc('get_owner_staff_detail', {
-    target_salon_id: salonId,
-    target_staff_id: staffId,
-    from_date: from,
-    to_date: to,
-  });
+  const { data, error } = await withRpcTimeout(
+    supabase.rpc('get_owner_staff_detail', {
+      target_salon_id: salonId,
+      target_staff_id: staffId,
+      from_date: from,
+      to_date: to,
+    })
+  );
   if (error) return { ok: false, error: rpcError(error) };
   return { ok: true, detail: parseStaffDetail(data) };
 }
@@ -249,12 +277,14 @@ export async function fetchStaffExport(
   to: string,
   staffId?: string | null
 ): Promise<{ ok: true; rows: StaffExportRow[]; csv: string } | { ok: false; error: StaffPerformanceError }> {
-  const { data, error } = await supabase.rpc('get_owner_staff_export', {
-    target_salon_id: salonId,
-    from_date: from,
-    to_date: to,
-    target_staff_id: staffId || null,
-  });
+  const { data, error } = await withRpcTimeout(
+    supabase.rpc('get_owner_staff_export', {
+      target_salon_id: salonId,
+      from_date: from,
+      to_date: to,
+      target_staff_id: staffId || null,
+    })
+  );
   if (error) {
     const classified = rpcError(error);
     return {

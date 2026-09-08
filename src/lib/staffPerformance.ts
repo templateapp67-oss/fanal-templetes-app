@@ -30,6 +30,12 @@ export const STAFF_PERFORMANCE_TABLES = [
 
 export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
 
+/** Date-filter RPC debounce. Search is client-side and does not hit the network. */
+export const STAFF_FILTER_DEBOUNCE_MS = 300;
+
+/** Abort a hung PostgREST call so the dashboard can show a retryable error. */
+export const STAFF_RPC_TIMEOUT_MS = 15000;
+
 export type StaffCommissionType = 'percentage' | 'fixed' | 'none';
 
 export type StaffDatePreset = 'today' | 'last_7' | 'last_30' | 'this_month' | 'custom';
@@ -222,6 +228,7 @@ export interface SalonTotals {
   discount_amount: number;
   commission_amount: number;
   net_amount: number;
+  salon_amount: number;
   review_count: number;
   average_rating: number;
 }
@@ -351,7 +358,7 @@ export function formatInr(amount: unknown, currencySymbol = '₹'): string {
   const n = asFiniteNumber(amount, 0);
   return `${currencySymbol}${n.toLocaleString('en-IN', {
     maximumFractionDigits: 2,
-    minimumFractionDigits: n % 1 === 0 ? 0 : 2,
+    minimumFractionDigits: 2,
   })}`;
 }
 
@@ -418,6 +425,9 @@ export function classifyStaffPerformanceError(err: unknown): StaffPerformanceErr
     raw.status === 403
   ) {
     return { code: 'owner_access_denied', message: STAFF_PERFORMANCE_ERROR_COPY.owner_access_denied, retryable: false };
+  }
+  if (blob.includes('timed out') || blob.includes('timeout') || raw.code === '57014') {
+    return { code: 'database_error', message: STAFF_PERFORMANCE_ERROR_COPY.database_error, retryable: true };
   }
   if (
     blob.includes('function') && (blob.includes('does not exist') || blob.includes('not found') || blob.includes('pgrst202'))
@@ -527,6 +537,7 @@ export function aggregateSalonTotals(rows: StaffPerformanceSummaryRow[]): SalonT
   const discount_amount = rows.reduce((s, r) => s + r.discount_amount, 0);
   const commission_amount = rows.reduce((s, r) => s + r.commission_amount, 0);
   const net_amount = rows.reduce((s, r) => s + r.net_amount, 0);
+  const salon_amount = rows.reduce((s, r) => s + r.salon_amount, 0);
   const review_count = rows.reduce((s, r) => s + r.review_count, 0);
   const ratingWeight = rows.reduce((s, r) => s + r.average_rating * r.review_count, 0);
   return {
@@ -536,6 +547,7 @@ export function aggregateSalonTotals(rows: StaffPerformanceSummaryRow[]): SalonT
     discount_amount,
     commission_amount,
     net_amount,
+    salon_amount,
     review_count,
     average_rating: review_count > 0 ? Math.round((ratingWeight / review_count) * 100) / 100 : 0,
   };
@@ -717,6 +729,7 @@ export function emptyTotals(): SalonTotals {
     discount_amount: 0,
     commission_amount: 0,
     net_amount: 0,
+    salon_amount: 0,
     review_count: 0,
     average_rating: 0,
   };
