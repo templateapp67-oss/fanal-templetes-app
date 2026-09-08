@@ -121,7 +121,37 @@ export function loadRazorpayCheckoutScript(): Promise<boolean> {
   return scriptPromise;
 }
 
-export async function fetchRazorpayConfig(fetchImpl: typeof fetch = fetch): Promise<RazorpayConfigResponse> {
+export interface RazorpayFetchOptions {
+  fetchImpl?: typeof fetch;
+  /** Short-lived customer session token. Never a secret key. */
+  accessToken?: string;
+  configUrl?: string;
+  orderUrl?: string;
+  /** Extra fields merged into the order POST (salon, slot, services, …). */
+  extraOrderBody?: Record<string, unknown>;
+}
+
+function paymentHeaders(accessToken?: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  };
+}
+
+/** Customer App envelopes wrap the payload in `data`; Razorpay routes put it at the top. */
+function unwrapPaymentJson(json: any): any {
+  if (!json || typeof json !== 'object') return json;
+  const nested = json.data;
+  if (nested && typeof nested === 'object' && ('configured' in nested || 'order' in nested || 'keyId' in nested)) {
+    return { ...json, ...nested };
+  }
+  return json;
+}
+
+export async function fetchRazorpayConfig(
+  fetchImpl: typeof fetch = fetch,
+  options: RazorpayFetchOptions = {}
+): Promise<RazorpayConfigResponse> {
   const unavailable = (issues: string[]): RazorpayConfigResponse => ({
     configured: false,
     keyId: null,
@@ -130,13 +160,27 @@ export async function fetchRazorpayConfig(fetchImpl: typeof fetch = fetch): Prom
     depositPercent: DEFAULT_DEPOSIT_PERCENT,
     issues,
   });
+  const impl = options.fetchImpl || fetchImpl;
   try {
-    const res = await fetchImpl('/api/payments/razorpay/config');
-    if (!res.ok) return unavailable([`Config endpoint returned HTTP ${res.status}`]);
-    const json = await res.json();
+    const res = await impl(options.configUrl || '/api/payments/razorpay/config', {
+      method: 'GET',
+      headers: paymentHeaders(options.accessToken),
+    });
+    const json = unwrapPaymentJson(await res.json().catch(() => null));
+    if (!res.ok) {
+      if (Array.isArray(json?.issues) && json.issues.length) return unavailable(json.issues.map(String));
+      if (res.status >= 500) {
+        return unavailable(['Secure payment service is temporarily unavailable. No appointment was created.']);
+      }
+      return unavailable([json?.error || `Config endpoint returned HTTP ${res.status}`]);
+    }
     const configured = !!json?.configured;
     const mode: PaymentGatewayMode =
-      json?.mode === 'live' || json?.mode === 'test' || json?.mode === 'mock' ? json.mode : configured ? 'test' : 'disabled';
+      json?.mode === 'live' || json?.mode === 'test' || json?.mode === 'mock' || json?.mode === 'disabled'
+        ? json.mode
+        : configured
+          ? 'test'
+          : 'disabled';
     return {
       configured,
       keyId: json?.keyId ?? null,
@@ -184,6 +228,12 @@ export interface AdvancePaymentInput {
   mockOutcome?: 'success' | 'failure';
   /** Test seam. */
   fetchImpl?: typeof fetch;
+  /** Short-lived customer session token. Never a secret key. */
+  accessToken?: string;
+  configUrl?: string;
+  orderUrl?: string;
+  /** Extra fields merged into the order POST (salon, slot, services, …). */
+  extraOrderBody?: Record<string, unknown>;
 }
 
 export interface CreateAdvanceOrderResult {
@@ -208,9 +258,9 @@ export async function createAdvanceOrder(
   const expected = computeAdvanceDeposit(input.totalAmount, percent);
   const shown = Number.isFinite(input.amount) && (input.amount as number) > 0 ? (input.amount as number) : expected.rupees;
   try {
-    const res = await fetchImpl('/api/payments/razorpay/order', {
+    const res = await fetchImpl(input.orderUrl || '/api/payments/razorpay/order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: paymentHeaders(input.accessToken),
       body: JSON.stringify({
         totalAmount: input.totalAmount,
         depositPercent: percent,
@@ -218,9 +268,10 @@ export async function createAdvanceOrder(
         currency: 'INR',
         receipt: input.receipt,
         notes: { ...(input.notes || {}), salon: input.salonName, customer: input.customer.name },
+        ...(input.extraOrderBody || {}),
       }),
     });
-    const json = await res.json().catch(() => null);
+    const json = unwrapPaymentJson(await res.json().catch(() => null));
     if (!res.ok || !json?.success || !json?.order?.id) {
       const reason = json?.error || `Order request failed (HTTP ${res.status}).`;
       // "not configured" / "unreachable" are salon-side gaps, not customer
@@ -278,7 +329,7 @@ export async function verifyAdvancePayment(
         razorpay_signature: triple.signature,
       }),
     });
-    const json = await res.json().catch(() => null);
+    const json = unwrapPaymentJson(await res.json().catch(() => null));
     if (!res.ok || !json?.verified) {
       return { verified: false, mode: 'disabled', reason: json?.error || 'Payment verification failed. Please contact the salon.' };
     }
@@ -404,9 +455,9 @@ async function payWithCheckoutPopup(
 
 /**
  * Run the full advance-token payment. Never throws. Safe to call again with
- * the same input — that is exactly what "Retry Payment" does: a NEW order is
- * created for the same draft (Razorpay orders are single-use once a payment
- * attempt has failed or the window was closed).
+ * the same input — that is exactly what "Retry Payment" does. The server
+ * reuses an unpaid order when the same receipt is posted, so a retry cannot
+ * mint a second chargeable order for the same draft.
  */
 export async function payAdvanceWithRazorpay(input: AdvancePaymentInput): Promise<RazorpayOutcome> {
   const fetchImpl = input.fetchImpl || fetch;
@@ -416,8 +467,13 @@ export async function payAdvanceWithRazorpay(input: AdvancePaymentInput): Promis
     return unavailableOutcome('No advance amount is payable for this booking.');
   }
 
-  // 1 — which gateway is live?
-  const config = await fetchRazorpayConfig(fetchImpl);
+  // 1 — which gateway is live? Missing config is `configured: false` (HTTP 200),
+  // never a fake "paid" outcome. A 5xx is treated as unavailable too.
+  const config = await fetchRazorpayConfig(fetchImpl, {
+    fetchImpl,
+    accessToken: input.accessToken,
+    configUrl: input.configUrl,
+  });
   if (!config.configured || !config.keyId) {
     return unavailableOutcome(config.issues?.join(' ') || 'Razorpay is not configured on the server.', 'razorpay_not_configured');
   }

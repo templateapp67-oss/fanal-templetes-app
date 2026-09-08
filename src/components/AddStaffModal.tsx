@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
-  Upload, 
   Sparkles, 
   Copy, 
   Check, 
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Stylist, SalonService, StaffAccessRole, StaffStatus, DaySchedule } from '../types';
+import { StylistAvatarUpload } from './StylistAvatarUpload';
 
 interface AddStaffModalProps {
   isOpen: boolean;
@@ -91,8 +91,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   primaryAccentColor = '#900C3F',
   services = []
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   // Form States
   const [selectedPhoto, setSelectedPhoto] = useState<string>(PRESET_AVATARS[0]);
   const [customPhotoUrl, setCustomPhotoUrl] = useState<string>(PRESET_AVATARS[0]);
@@ -137,30 +135,15 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     { day: 'Sunday', enabled: true, fromTime: '10:00 AM', toTime: '04:00 PM' }
   ]);
 
-  // Photo Handlers
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setUploadedPreviewUrl(url);
-      setSelectedPhoto(url);
-    }
-  };
-
   const handleRemoveUploadedPhoto = () => {
-    if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(uploadedPreviewUrl);
-    }
     setUploadedPreviewUrl(null);
     setSelectedPhoto(PRESET_AVATARS[0]);
+    setCustomPhotoUrl(PRESET_AVATARS[0]);
   };
 
   const handleSelectPreset = (url: string) => {
     setSelectedPhoto(url);
     setCustomPhotoUrl(url);
-    if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(uploadedPreviewUrl);
-    }
     setUploadedPreviewUrl(null);
   };
 
@@ -168,15 +151,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     setCustomPhotoUrl(url);
     setSelectedPhoto(url);
   };
-
-  // Clean up any active Blob URL on component unmount
-  useEffect(() => {
-    return () => {
-      if (uploadedPreviewUrl && uploadedPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(uploadedPreviewUrl);
-      }
-    };
-  }, [uploadedPreviewUrl]);
 
   // Software Permissions Modal Dialog
   const [showPermissionsModal, setShowPermissionsModal] = useState<boolean>(false);
@@ -348,116 +322,62 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               STAFF PHOTO
             </label>
 
-            <span className="block text-xs text-gray-600 mb-2.5">
-              {uploadedPreviewUrl ? 'Custom Photo Uploaded' : 'Select Preset Avatar or Upload Photo'}
-            </span>
-
-            {/* Hidden file input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept="image/png,image/jpeg,image/webp,image/jpg"
-              className="hidden"
+            <StylistAvatarUpload
+              value={selectedPhoto}
+              onChange={(url) => {
+                setSelectedPhoto(url);
+                setCustomPhotoUrl(url.startsWith('data:') ? '' : url);
+                setUploadedPreviewUrl(url.startsWith('data:') ? url : null);
+              }}
+              accentHex={primaryAccentColor}
+              fallbackUrl={PRESET_AVATARS[0]}
+              showHeading={false}
             />
 
             {uploadedPreviewUrl ? (
-              /* Custom Uploaded Photo Preview State */
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 p-3 rounded-xl border border-gray-200 bg-gray-50/70">
-                <div className="relative w-12 h-12 rounded-full overflow-hidden ring-2 ring-[#900C3F] ring-offset-2 shadow-sm shrink-0">
-                  <img
-                    src={uploadedPreviewUrl}
-                    alt="Uploaded Staff Avatar"
-                    className="w-full h-full object-cover"
-                  />
-                  <span className="absolute inset-0 bg-black/20 flex items-center justify-center text-white">
-                    <Check className="w-4 h-4 stroke-[3]" />
-                  </span>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-900">Custom Uploaded Photo</span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      Active
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-500 truncate mt-0.5">
-                    Preview generated from local device
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 w-full sm:w-auto mt-1 sm:mt-0">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-1.5 rounded-lg border border-gray-300 hover:border-gray-400 bg-white text-gray-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-gray-500" />
-                    <span>Change</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleRemoveUploadedPhoto}
-                    className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 text-xs font-medium transition-colors cursor-pointer"
-                  >
-                    Choose Presets
-                  </button>
-                </div>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-emerald-700">Custom photo fitted to 1:1 frame</span>
+                <button
+                  type="button"
+                  onClick={handleRemoveUploadedPhoto}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 text-xs font-medium cursor-pointer"
+                >
+                  Choose Presets
+                </button>
               </div>
             ) : (
-              /* Preset Avatars Selection Row */
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                {/* 6 Circular Avatar Presets (40x40px) */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {PRESET_AVATARS.map((url, idx) => {
-                    const isSelected = selectedPhoto === url;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleSelectPreset(url)}
-                        className={`relative w-10 h-10 rounded-full overflow-hidden transition-all cursor-pointer ${
-                          isSelected
-                            ? 'ring-2 ring-[#900C3F] ring-offset-2 scale-105 shadow-sm'
-                            : 'opacity-70 hover:opacity-100 hover:scale-105'
-                        }`}
-                      >
-                        <img
-                          src={url}
-                          alt={`Preset ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                        {isSelected && (
-                          <span className="absolute inset-0 bg-black/25 flex items-center justify-center text-white">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-
-                  {/* Upload Photo Button */}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="h-10 px-3.5 rounded-lg border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 text-xs font-medium flex items-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4 text-gray-500" />
-                    <span>Upload Photo</span>
-                  </button>
-                </div>
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                {PRESET_AVATARS.map((url, idx) => {
+                  const isSelected = selectedPhoto === url;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSelectPreset(url)}
+                      className={`relative w-10 h-10 rounded-full overflow-hidden transition-all cursor-pointer ${
+                        isSelected
+                          ? 'ring-2 ring-[#900C3F] ring-offset-2 scale-105 shadow-sm'
+                          : 'opacity-70 hover:opacity-100 hover:scale-105'
+                      }`}
+                    >
+                      <img src={url} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
+                      {isSelected && (
+                        <span className="absolute inset-0 bg-black/25 flex items-center justify-center text-white">
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
-            {/* Photo URL Input */}
             <div className="mt-3">
               <input
                 type="text"
                 value={customPhotoUrl}
                 onChange={(e) => handleCustomPhotoChange(e.target.value)}
-                placeholder="https://images.unsplash.com/photo-1618077360395-f3068be8e001?q=80&w=200&auto=format&fit=crop"
+                placeholder="Or paste a photo URL"
                 className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-300 text-gray-600 font-mono focus:outline-none focus:ring-2 focus:ring-[#900C3F] focus:border-transparent bg-gray-50/50 truncate"
               />
             </div>

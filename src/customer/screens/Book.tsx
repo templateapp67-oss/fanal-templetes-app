@@ -8,11 +8,10 @@
 // with a retry, because a booking made on invented data is worse than no
 // booking.
 //
-// The write is a single call to `POST /api/customer/bookings/create`, which
-// inserts the booking, writes its service lines, re-reads the stored row and
-// returns a fresh availability grid. Payment is a separate, later step (see
-// `payAdvanceWithRazorpay`) so a slow gateway can never leave a half-written
-// booking.
+// When the salon requires a deposit, checkout is pay-first: the gateway
+// signature is verified on the server and only then is the booking inserted.
+// Failed / unavailable payment never creates an appointment. The draft
+// reference (NX-JPR-53682) is reused on retry.
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -38,15 +37,21 @@ import {
   fetchSlotWindow,
   getMyBooking,
   getMyProfile,
+  getPaymentConfig,
   getSalon,
   listSalonServices,
   listSalonStaff,
+  nextBookingRef,
   normalizeCustomerErrorMessage,
   payBookingAdvance,
+  payBookingOnline,
+  paymentUiFromOutcome,
+  type CustomerPaymentUiState,
 } from '../../lib/customer/api';
 import { computeAdvanceDeposit } from '../../lib/advanceDeposit';
 import { payAdvanceWithRazorpay } from '../../lib/razorpayCheckout';
 import type { RazorpayOutcome } from '../../lib/razorpayCheckout';
+import { loadBookingDraft, saveBookingDraft, clearBookingDraft, buildBookingDraft } from '../../lib/bookingDraft';
 import { toIsoDate, todayIsoDate } from '../../lib/customer/schema';
 import {
   Button,
@@ -119,7 +124,14 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const [bookingType, setBookingType] = useState<'salon' | 'home'>('salon');
   const [form, setForm] = useState({ customerName: '', customerPhone: '', homeAddress: '', notes: '', referralCode: referralCodeFromLink });
   const [created, setCreated] = useState<{ booking: CustomerBooking; written: { bookings: number; serviceLines: number; notifications: number }; serviceLinesCount: number; depositDue: number; depositPercent: number } | null>(null);
-  const [payState, setPayState] = useState<{ busy: boolean; error: string; notice: string; outcome: RazorpayOutcome | null }>({ busy: false, error: '', notice: '', outcome: null });
+  const [payState, setPayState] = useState<{
+    busy: boolean;
+    error: string;
+    notice: string;
+    outcome: RazorpayOutcome | null;
+    ui: CustomerPaymentUiState;
+  }>({ busy: false, error: '', notice: '', outcome: null, ui: 'ready' });
+  const [draftRef, setDraftRef] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -204,6 +216,13 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     setBookingType(salon.homeServiceEnabled ? bookingType : 'salon');
   }, [salon]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Resume an unpaid draft for this salon (same NX-JPR-##### across retries).
+  useEffect(() => {
+    if (!salon) return;
+    const found = loadBookingDraft({ salon: { ownerId: salon.id, name: salon.name } });
+    if (found?.id) setDraftRef(found.id);
+  }, [salon]);
+
   const chosen = useMemo(() => services.filter((service) => serviceIds.includes(service.id)), [services, serviceIds]);
   const durationMinutes = chosen.reduce((total, service) => total + Number(service.durationMinutes || 0), 0);
   const subtotal = chosen.reduce((total, service) => total + Number(service.price || 0), 0);
@@ -213,6 +232,38 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     [subtotal, depositPercent]
   );
   const currency = salon?.currency || '₹';
+
+  // Probe the authenticated payment config on the confirm step so the UI can
+  // show Payment ready vs Payment service unavailable before the customer pays.
+  useEffect(() => {
+    if (step !== 'confirm' || deposit.rupees <= 0 || !userId) return;
+    let cancelled = false;
+    setPayState((prev) => ({ ...prev, busy: false, ui: prev.outcome ? paymentUiFromOutcome(prev.outcome, false) : 'processing' }));
+    void getPaymentConfig().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setPayState((prev) => ({
+          ...prev,
+          ui: 'unavailable',
+          error: '',
+          notice: result.error || 'Online payment could not be reached. No appointment was created.',
+        }));
+        return;
+      }
+      const configured = result.data?.configured && result.data?.keyId;
+      setPayState((prev) => ({
+        ...prev,
+        ui: configured ? (prev.outcome ? paymentUiFromOutcome(prev.outcome, false) : 'ready') : 'unavailable',
+        notice: configured
+          ? result.data?.notice || ''
+          : (result.data?.issues || []).join(' ') || 'Secure payment service is not configured. No appointment was created.',
+        error: '',
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, deposit.rupees, userId]);
 
   // A stylist can only be booked for what they are assigned to. When the owner
   // has assigned nothing, everybody is treated as able to do everything —
@@ -301,21 +352,118 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     }
     setSubmitting(true);
     setSubmitError('');
+    const chosenStaffId = staffId || (selectedSlotStaff[0]?.staffId ?? '');
+    const receipt = nextBookingRef(salon?.city, draftRef);
+    setDraftRef(receipt);
+    const chosenService = chosen[0];
+    if (chosenService) {
+      saveBookingDraft(
+        buildBookingDraft({
+          id: receipt,
+          salon: { ownerId: salon?.id, businessName: salon?.name || '', city: salon?.city, currency },
+          service: { id: chosenService.id, name: chosenService.name, price: chosenService.price, durationMinutes: chosenService.durationMinutes },
+          upgrades: chosen.slice(1).map((service) => ({ id: service.id, name: service.name, price: service.price, durationMinutes: service.durationMinutes })),
+          stylist: { id: chosenStaffId, name: selectedStaffName || 'Anyone available' },
+          date,
+          time,
+          bookingType,
+          homeAddress: bookingType === 'home' ? form.homeAddress : '',
+          customer: { name: form.customerName, phone: form.customerPhone, email: email || null, notes: form.notes },
+          paymentMethod: deposit.rupees > 0 ? 'pay_advance_token' : 'pay_at_salon',
+          depositPercent,
+        })
+      );
+    }
+
+    let payment:
+      | {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+          amount: number;
+          depositPercent: number;
+        }
+      | undefined;
+
+    if (deposit.rupees > 0) {
+      setPayState({ busy: true, error: '', notice: '', outcome: null, ui: 'processing' });
+      const outcome = await payBookingOnline({
+        salonId,
+        date,
+        time,
+        serviceIds,
+        staffId: chosenStaffId,
+        bookingType,
+        homeAddress: bookingType === 'home' ? form.homeAddress : '',
+        notes: form.notes,
+        referralCode: form.referralCode,
+        customerName: form.customerName,
+        customerPhone: form.customerPhone,
+        customerEmail: email || undefined,
+        totalAmount: subtotal,
+        depositPercent,
+        amount: deposit.rupees,
+        receipt,
+        description: `${salon?.name || 'Salon'} — ${depositPercent}% deposit for ${chosen.map((service) => service.name).join(' + ')}`,
+        salonName: salon?.name || 'Nexora salon',
+        themeColor: accentHex,
+      });
+      if (outcome.status !== 'paid' || !outcome.paymentId || !outcome.signature) {
+        setSubmitting(false);
+        const ui = paymentUiFromOutcome(outcome, false);
+        setPayState({
+          busy: false,
+          error: outcome.status === 'failed' ? outcome.reason : '',
+          notice:
+            outcome.status === 'dismissed'
+              ? 'You closed the payment window. Nothing was charged and no appointment was created — retry with the same draft.'
+              : outcome.reason || 'Online payment is not available right now. No appointment was created.',
+          outcome,
+          ui,
+        });
+        setSubmitError(
+          ui === 'unavailable'
+            ? `Online payment unavailable — ${outcome.reason || 'secure payment service is not configured'}. No appointment was created.`
+            : outcome.reason || 'Payment failed. No appointment was created.'
+        );
+        return;
+      }
+      payment = {
+        razorpay_order_id: outcome.orderId || '',
+        razorpay_payment_id: outcome.paymentId,
+        razorpay_signature: outcome.signature,
+        amount: outcome.amount,
+        depositPercent,
+      };
+      setPayState({ busy: false, error: '', notice: '', outcome, ui: 'successful' });
+    }
+
     const result = await createBooking({
       salonId,
       date,
       time,
       serviceIds,
-      staffId: staffId || (selectedSlotStaff[0]?.staffId ?? ''),
+      staffId: chosenStaffId,
       bookingType,
       homeAddress: bookingType === 'home' ? form.homeAddress : '',
       notes: form.notes,
       referralCode: form.referralCode,
+      customerName: form.customerName,
+      customerPhone: form.customerPhone,
+      bookingRef: receipt,
+      payment,
     });
     setSubmitting(false);
     if (!result.ok) {
       const message = normalizeCustomerErrorMessage(result);
       setSubmitError(message);
+      if (payment) {
+        setPayState((prev) => ({
+          ...prev,
+          ui: 'failed',
+          error: `Your payment went through (ref ${payment.razorpay_payment_id}) but the booking could not be saved. Show this reference to the salon — you will not be charged twice.`,
+        }));
+      }
       // A taken slot must disappear from the grid immediately, not stay green.
       slotsState.reload();
       return;
@@ -325,11 +473,12 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       setSubmitError('The booking was accepted but no record came back. Check your bookings list before trying again.');
       return;
     }
+    clearBookingDraft();
     setCreated({
       booking: payload.booking,
       written: payload.written,
       serviceLinesCount: payload.serviceLines?.length ?? 0,
-      depositDue: payload.depositDue ?? deposit.rupees,
+      depositDue: payload.depositDue ?? (payment ? 0 : deposit.rupees),
       depositPercent: payload.depositPercent ?? depositPercent,
     });
     setStep('done');
@@ -343,7 +492,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
    */
   async function payDepositNow() {
     if (!created?.booking) return;
-    setPayState({ busy: true, error: '', notice: '', outcome: null });
+    setPayState({ busy: true, error: '', notice: '', outcome: null, ui: 'processing' });
     const outcome = await payAdvanceWithRazorpay({
       totalAmount: created.booking.totalAmount || subtotal,
       depositPercent: created.depositPercent || depositPercent,
@@ -367,6 +516,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
             ? 'You closed the payment window. The booking is saved and pending — pay at the salon, or try again.'
             : outcome.reason || 'Online payment is not available right now. Pay at the salon instead.',
         outcome,
+        ui: paymentUiFromOutcome(outcome, false),
       });
       return;
     }
@@ -383,6 +533,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
         error: recorded.error || 'The payment went through but the booking could not be updated. Show this to the salon.',
         notice: '',
         outcome,
+        ui: 'failed',
       });
       return;
     }
@@ -621,6 +772,30 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
             </div>
           ) : null}
 
+          {deposit.rupees > 0 ? (
+            <div className={`${CARD_CLASS} p-4`} data-payment-state={payState.ui}>
+              <p className="text-sm font-bold text-slate-900">
+                {payState.ui === 'ready' ? 'Payment ready' : null}
+                {payState.ui === 'processing' ? 'Payment processing' : null}
+                {payState.ui === 'successful' ? 'Payment successful' : null}
+                {payState.ui === 'failed' ? 'Payment failed' : null}
+                {payState.ui === 'unavailable' ? 'Payment service unavailable' : null}
+              </p>
+              <p className={`text-xs mt-1 ${MUTED_CLASS}`}>
+                {payState.ui === 'ready'
+                  ? `Pay ${money(deposit.rupees, currency)} now. The appointment is created only after the gateway verifies the deposit. Draft ${draftRef || 'NX-JPR-53682'} is reused if you retry.`
+                  : payState.ui === 'processing'
+                    ? 'Opening the secure payment window. Do not close this page.'
+                    : payState.ui === 'successful'
+                      ? 'Deposit verified. Saving the appointment…'
+                      : payState.notice || payState.error || 'Nothing was charged and no appointment was created. Retry uses the same draft.'}
+              </p>
+              {payState.error && payState.ui !== 'failed' ? (
+                <p className="text-xs font-semibold text-rose-600 mt-2">{payState.error}</p>
+              ) : null}
+            </div>
+          ) : null}
+
         </div>
       ) : null}
 
@@ -685,7 +860,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                   setServiceIds([]);
                   setTime('');
                   setStaffId('');
-                  setPayState({ busy: false, error: '', notice: '', outcome: null });
+                  setPayState({ busy: false, error: '', notice: '', outcome: null, ui: 'ready' });
                   setStep('services');
                 }}
               >
@@ -700,9 +875,26 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
         <div className="flex items-center justify-between gap-3">
           <p className={`text-xs ${submitError ? 'font-semibold text-rose-600' : MUTED_CLASS}`}>{submitError || (step === 'confirm' && !userId ? 'Sign in to finish booking.' : '')}</p>
           {step === 'confirm' ? (
-            <Button onClick={submit} busy={submitting} disabled={!userId} accentHex={accentHex}>
-              {submitting ? 'Saving…' : userId ? 'Confirm booking' : 'Sign in to confirm'}
-              {submitting ? null : <ArrowRight className="w-4 h-4" />}
+            <Button
+              onClick={submit}
+              busy={submitting || payState.busy}
+              disabled={!userId || payState.ui === 'processing'}
+              accentHex={accentHex}
+            >
+              {submitting || payState.busy
+                ? deposit.rupees > 0
+                  ? 'Opening payment…'
+                  : 'Saving…'
+                : !userId
+                  ? 'Sign in to confirm'
+                  : deposit.rupees > 0
+                    ? payState.ui === 'unavailable'
+                      ? 'Retry payment'
+                      : payState.ui === 'failed'
+                        ? 'Retry payment'
+                        : `Pay ${money(deposit.rupees, currency)} & confirm`
+                    : 'Confirm booking'}
+              {submitting || payState.busy ? null : <ArrowRight className="w-4 h-4" />}
             </Button>
           ) : (
             <Button onClick={next} disabled={!gate.ok} accentHex={accentHex}>

@@ -32,6 +32,7 @@ import { SettingsScreen } from '../src/customer/screens/Settings';
 import { RewardsScreen } from '../src/customer/screens/Rewards';
 import { matchCustomerRoute, customerPath, isCustomerAppPath, normalizePath } from '../src/lib/router';
 import { CUSTOMER_FLOW_ORDER } from '../src/lib/customer/schema';
+import { nextBookingRef, paymentUiFromOutcome } from '../src/lib/customer/api';
 
 const noop = () => {};
 
@@ -150,6 +151,24 @@ test('settings offers only what this schema can actually store', () => {
   for (const fake of ['Push notifications', 'Email preferences', 'Dark mode', 'Change password']) {
     assert.equal(html.includes(fake), false, `settings advertised "${fake}", which this schema cannot store`);
   }
+});
+
+test('Book.tsx exposes payment states, reuses NX-JPR-53682, and never calls fetch itself', () => {
+  const source = readFileSync('src/customer/screens/Book.tsx', 'utf8');
+  for (const label of ['Payment ready', 'Payment processing', 'Payment successful', 'Payment failed', 'Payment service unavailable']) {
+    assert.ok(source.includes(label), `Book.tsx must show "${label}"`);
+  }
+  assert.ok(source.includes('NX-JPR-53682'), 'retries keep the same draft reference');
+  assert.ok(source.includes('payBookingOnline'), 'checkout goes through src/lib/customer/api.ts');
+  assert.ok(source.includes('getPaymentConfig'));
+  assert.equal(/\bfetch\(/.test(source), false, 'Book.tsx must not call fetch()');
+  assert.equal(nextBookingRef('Jaipur', 'NX-JPR-53682'), 'NX-JPR-53682');
+  assert.match(nextBookingRef('Jaipur'), /^NX-JPR-\d{5}$/);
+  assert.equal(paymentUiFromOutcome(null, true), 'processing');
+  assert.equal(paymentUiFromOutcome(null, false), 'ready');
+  assert.equal(paymentUiFromOutcome({ status: 'paid', reason: '', retryable: false, amount: 1, mode: 'test' }, false), 'successful');
+  assert.equal(paymentUiFromOutcome({ status: 'unavailable', reason: 'x', retryable: true, amount: 0, mode: 'disabled' }, false), 'unavailable');
+  assert.equal(paymentUiFromOutcome({ status: 'failed', reason: 'x', retryable: true, amount: 0, mode: 'test' }, false), 'failed');
 });
 
 test('the salon accent falls back to the product default for an unknown palette key', () => {

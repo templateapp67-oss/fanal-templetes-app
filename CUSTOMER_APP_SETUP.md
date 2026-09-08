@@ -197,7 +197,8 @@ backing table, row counts, and the gap list, straight from
 
 ## 7. Booking, deposits and money
 
-`POST /api/customer/bookings/create` is one unit of work:
+When the salon does **not** require a deposit, `POST /api/customer/bookings/create`
+is one unit of work:
 
 1. slot re-checked (`slotIsTaken`, both `HH:MM` and `HH:MM:00` spellings of the
    free-text `time_slot`)
@@ -210,14 +211,33 @@ backing table, row counts, and the gap list, straight from
 5. notifications for customer and salon are best-effort: a failed insert never
    undoes an accepted booking
 
-Payment is deliberately a **second** request (`POST /api/customer/me/bookings/:id/advance`)
-because a gateway round-trip can outlive a request. The signature is re-verified
-server-side, the deposit amount is **recomputed from the stored booking**
-(`metadata.deposit_policy` percentage × `total_amount`) and a client-claimed
-amount that disagrees is refused with `payment_amount_mismatch` rather than
-recorded. If the money was captured but the row could not be updated, the answer
-is `success: true` + `needsSalonAttention: true` and a `notice` — never a silent
-loss of a paid deposit.
+When the salon **does** require a deposit, checkout is **pay-first**. Nothing is
+inserted until the gateway HMAC verifies:
+
+1. `GET /api/customer/payments/config` (authenticated) returns HTTP **200** with
+   `configured: true|false`. Missing keys are never HTTP 500, and the secret
+   never leaves the server.
+2. `POST /api/customer/payments/order` validates the signed-in customer, salon,
+   services, amount, staff, date, time and slot against **live rows**, then
+   creates (or **reuses**) a Razorpay order. The same draft receipt
+   (`NX-JPR-53682`) returns the same unpaid `order.id`.
+3. The browser opens Razorpay Checkout (or the mock gateway). A failed,
+   dismissed or unavailable payment creates **no appointment**.
+4. `POST /api/customer/bookings/create` with the verified
+   `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }` triple
+   inserts `advance_paid_amount = deposit`, `payment_status: 'paid_deposit'`,
+   `status: 'confirmed'`. Missing payment answers **402** `payment_required`.
+   A forged signature answers `payment_unverified`. The same `payment_id` is
+   idempotent — a retry returns the existing row.
+
+`POST /api/customer/me/bookings/:id/advance` remains for leftover pending rows
+(pay-at-salon salons). The signature is re-verified server-side, the deposit
+amount is **recomputed from the stored booking** (`metadata.deposit_policy`
+percentage × `total_amount`) and a client-claimed amount that disagrees is
+refused with `payment_amount_mismatch` rather than recorded. If the money was
+captured but the row could not be updated, the answer is `success: true` +
+`needsSalonAttention: true` and a `notice` — never a silent loss of a paid
+deposit. The Customer App never marks a booking paid from the browser.
 
 **QR rewards cannot credit themselves.** `POST /api/customer/me/qr-payments/confirm`
 writes a `loyalty_point_transactions` row with `points_change = 0` and an "awaiting
@@ -252,7 +272,8 @@ half-written booking.
 | `auth_required` | 401 | Sign in first — nothing was changed |
 | `invalid_request` / `invalid_date` | 400 | The request body is not usable as given |
 | `payment_reference_required` | 400 | No gateway reference, so the payment cannot be verified — nothing recorded |
-| `payment_unverified` | 400 | Gateway signature did not verify; the booking stays pending |
+| `payment_unverified` | 400 | Gateway signature did not verify; no appointment was created |
+| `payment_required` | 402 | This salon collects a deposit — pay first; nothing was saved |
 | `invalid_offer` | 400 | That reward cannot be redeemed here |
 | `unknown_service` | 422 | A chosen service is not offered by this salon |
 | `invalid_booking` | 422 | Missing/invalid customer fields (`fieldErrors` names each one) |

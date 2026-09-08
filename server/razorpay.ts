@@ -546,36 +546,172 @@ export function describeRazorpayGateway(env: EnvLike = process.env): RazorpayGat
 // ============================================================================
 
 /**
- * GET /api/payments/razorpay/config
- * Lets the browser learn the PUBLIC key id (never the secret) and which
- * gateway mode is active. In mock mode the browser opens the simulated
- * checkout; when disabled, the booking flow falls back to "pay at salon".
+ * Public, secret-free snapshot of the payment gateway. Used by both the
+ * Express config route and the authenticated Customer App config route so a
+ * missing key is reported as `configured: false` instead of crashing the
+ * process (which used to surface as HTTP 500 at checkout).
  */
-export function handleRazorpayConfig(_req: any, res: any): void {
+export function razorpayPublicConfig(env: EnvLike = process.env): {
+  configured: boolean;
+  mode: RazorpayGatewayMode;
+  mock: boolean;
+  keyId: string | null;
+  depositPercent: number;
+  issues?: string[];
+  notice?: string;
+  code?: string;
+} {
   try {
-    const mode = getRazorpayGatewayMode();
+    const mode = resolveRazorpayGatewayMode(env);
+    const issues = getRazorpayConfigIssues(env);
     if (mode === 'disabled') {
-      const issues = getRazorpayConfigIssues();
-      console.warn('[Razorpay] Not configured:', issues.join(' '));
-      return void res.json({ success: true, configured: false, mock: false, mode, keyId: null, issues });
+      return {
+        configured: false,
+        mock: false,
+        mode,
+        keyId: null,
+        depositPercent: DEFAULT_DEPOSIT_PERCENT,
+        issues,
+        code: 'razorpay_not_configured',
+      };
     }
     if (mode === 'mock') {
-      return void res.json({
-        success: true,
+      return {
         configured: true,
         mock: true,
         mode,
         keyId: MOCK_KEY_ID,
         depositPercent: DEFAULT_DEPOSIT_PERCENT,
-        notice: 'Mock payment gateway — payments are simulated and no money moves. Set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET to use Razorpay.',
-      });
+        issues: issues.length ? issues : undefined,
+        notice:
+          'Mock payment gateway — payments are simulated and no money moves. Set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET to use Razorpay.',
+      };
     }
-    const { keyId } = readRazorpayCredentials();
-    res.json({ success: true, configured: true, mock: false, mode, keyId, depositPercent: DEFAULT_DEPOSIT_PERCENT });
+    const { keyId } = readRazorpayCredentials(env);
+    return {
+      configured: true,
+      mock: false,
+      mode,
+      keyId,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
+    };
   } catch (err: any) {
-    console.error('[Razorpay] config endpoint error:', err?.stack || err?.message || err);
-    res.status(500).json({ success: false, configured: false, code: 'razorpay_config_error', error: 'Razorpay configuration is unavailable.' });
+    console.error('[Razorpay] Failed to resolve payment configuration (secrets not logged):', err?.message || err);
+    return {
+      configured: false,
+      mock: false,
+      mode: 'disabled',
+      keyId: null,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
+      code: 'razorpay_not_configured',
+      issues: ['Secure payment service is not configured on this server.'],
+    };
   }
+}
+
+/** Operator log line — key id prefix only, never the secret. */
+export function logRazorpayConfigSafely(config: ReturnType<typeof razorpayPublicConfig>, env: EnvLike = process.env): void {
+  const { keySecret } = readRazorpayCredentials(env);
+  const secretPresent = Boolean(keySecret) && !/^(your_|my_|xxx|<)/i.test(keySecret);
+  console.warn('[Razorpay] Config probe', {
+    mode: config.mode,
+    configured: config.configured,
+    mock: config.mock,
+    keyIdPrefix: config.keyId ? `${String(config.keyId).slice(0, 12)}…` : null,
+    secretPresent,
+    production: isProductionEnvironment(env),
+    mockModeFlag: readMockModeFlag(env) ?? 'auto',
+    issues: config.issues || [],
+  });
+}
+
+/**
+ * GET /api/payments/razorpay/config
+ * Lets the browser learn the PUBLIC key id (never the secret) and which
+ * gateway mode is active. Missing credentials are a *configuration* answer
+ * (`configured: false`, HTTP 200) — never HTTP 500. HTTP 500 here is what
+ * produced "Online payment unavailable (Config endpoint returned HTTP 500)".
+ */
+export function handleRazorpayConfig(_req: any, res: any): void {
+  try {
+    const config = razorpayPublicConfig();
+    if (!config.configured) logRazorpayConfigSafely(config);
+    // Always 200: a disabled gateway is a valid, reportable state.
+    return void res.status(200).json({ success: true, ...config });
+  } catch (err: any) {
+    console.error(
+      '[Razorpay] config endpoint error (returning configured=false, not HTTP 500):',
+      err?.stack || err?.message || err
+    );
+    res.status(200).json({
+      success: true,
+      configured: false,
+      mock: false,
+      mode: 'disabled',
+      keyId: null,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
+      code: 'razorpay_not_configured',
+      issues: ['Secure payment service is not configured on this server.'],
+    });
+  }
+}
+
+// ===========================================================================
+// Pending-order cache — same draft / receipt / amount reuses the unpaid order
+// so a Retry Payment cannot mint a second chargeable order (or a second booking).
+// Lives in-process; a serverless cold start simply creates a fresh order, which
+// Razorpay still treats as unpaid until captured.
+// ===========================================================================
+
+export interface CachedPaymentOrder {
+  order: RazorpayOrder;
+  keyId: string;
+  mode: RazorpayGatewayMode;
+  rupees: number;
+  paise: number;
+  percent: number | null;
+  fingerprint: string;
+  createdAt: number;
+}
+
+const ORDER_CACHE_TTL_MS = 15 * 60 * 1000;
+const orderCache = new Map<string, CachedPaymentOrder>();
+
+/** Stable id for "this customer, this slot, this amount" — never includes secrets. */
+export function fingerprintPaymentOrder(parts: Record<string, string | number | null | undefined>): string {
+  const canon = Object.keys(parts)
+    .sort()
+    .map((key) => `${key}=${parts[key] ?? ''}`)
+    .join('|');
+  return crypto.createHash('sha256').update(canon).digest('hex');
+}
+
+export function rememberPaymentOrder(
+  fingerprint: string,
+  cached: Omit<CachedPaymentOrder, 'fingerprint' | 'createdAt'>
+): CachedPaymentOrder {
+  const entry: CachedPaymentOrder = { ...cached, fingerprint, createdAt: Date.now() };
+  orderCache.set(fingerprint, entry);
+  return entry;
+}
+
+export function recallPaymentOrder(fingerprint: string): CachedPaymentOrder | null {
+  const hit = orderCache.get(fingerprint);
+  if (!hit) return null;
+  if (Date.now() - hit.createdAt > ORDER_CACHE_TTL_MS) {
+    orderCache.delete(fingerprint);
+    return null;
+  }
+  return hit;
+}
+
+export function consumePaymentOrder(fingerprint: string): void {
+  orderCache.delete(fingerprint);
+}
+
+/** Test seam — do not call from request handlers. */
+export function _resetPaymentOrderCache(): void {
+  orderCache.clear();
 }
 
 /**
@@ -686,6 +822,37 @@ export async function handleCreateRazorpayOrder(req: any, res: any): Promise<voi
       });
     }
 
+    const receiptKey = receipt ? String(receipt).slice(0, 40) : '';
+    const fingerprint = receiptKey
+      ? fingerprintPaymentOrder({
+          receipt: receiptKey,
+          rupees: amount.rupees,
+          paise: amount.paise,
+          percent: amount.percent ?? '',
+          mode: client.mode,
+        })
+      : '';
+    if (fingerprint) {
+      const cached = recallPaymentOrder(fingerprint);
+      if (cached) {
+        console.log(`[Razorpay] Reusing unpaid ${cached.mode} order ${cached.order.id} for receipt ${receiptKey}`);
+        return void res.json({
+          success: true,
+          reused: true,
+          mode: cached.mode,
+          mock: cached.mode === 'mock',
+          keyId: cached.keyId,
+          order: {
+            id: cached.order.id,
+            amount: cached.order.amount,
+            currency: cached.order.currency,
+            receipt: cached.order.receipt ?? null,
+          },
+          deposit: { rupees: cached.rupees, paise: cached.paise, percent: cached.percent },
+        });
+      }
+    }
+
     const order = await client.createOrder(
       {
         amount: amount.rupees,
@@ -700,6 +867,16 @@ export async function handleCreateRazorpayOrder(req: any, res: any): Promise<voi
       },
       res.locals?.requestDeadlineAt
     );
+    if (fingerprint) {
+      rememberPaymentOrder(fingerprint, {
+        order,
+        keyId: client.keyId,
+        mode: client.mode,
+        rupees: amount.rupees,
+        paise: order.amount,
+        percent: amount.percent,
+      });
+    }
     console.log(
       `[Razorpay] ${client.mode === 'mock' ? 'MOCK order' : 'Order'} created ${order.id} for ${order.currency} ${(order.amount / 100).toFixed(2)}` +
         (amount.percent !== null ? ` (${amount.percent}% of ₹${amount.total})` : '') +

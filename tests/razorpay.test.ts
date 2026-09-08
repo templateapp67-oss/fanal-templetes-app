@@ -19,6 +19,7 @@ import {
   signMockPayment,
   isMockOrderId,
   MOCK_KEY_ID,
+  _resetPaymentOrderCache,
 } from '../server/razorpay';
 import { computeAdvanceDeposit } from '../src/lib/advanceDeposit';
 
@@ -363,6 +364,26 @@ test('order endpoint answers 503 (not 500) when the gateway is disabled', async 
     assert.equal(res.statusCode, 503);
     assert.equal(res.body.code, 'razorpay_not_configured');
     assert.ok(Array.isArray(res.body.issues));
+  });
+});
+
+test('order endpoint reuses an unpaid order when the same receipt is retried', async () => {
+  await withEnvAsync(NO_KEYS_DEV, async () => {
+    _resetPaymentOrderCache();
+    const first = makeRes();
+    await handleCreateRazorpayOrder(
+      { body: { totalAmount: 348, depositPercent: 25, amount: 87, receipt: 'NX-JPR-53682' } },
+      first
+    );
+    assert.equal(first.statusCode, 200, JSON.stringify(first.body));
+    const second = makeRes();
+    await handleCreateRazorpayOrder(
+      { body: { totalAmount: 348, depositPercent: 25, amount: 87, receipt: 'NX-JPR-53682' } },
+      second
+    );
+    assert.equal(second.body.order.id, first.body.order.id);
+    assert.equal(second.body.reused, true);
+    _resetPaymentOrderCache();
   });
 });
 

@@ -32,7 +32,20 @@
 import type { BookingAuthResult } from './bookingAuth';
 import { isUuidLike, sanitizeBookingRow } from './bookingOps';
 import { isValidIsoDate } from './bookingCreate';
-import { createRazorpayClient, isMockOrderId, resolveSignatureSecret, verifyRazorpaySignature } from './razorpay';
+import {
+  createRazorpayClient,
+  isMockOrderId,
+  resolveSignatureSecret,
+  verifyRazorpaySignature,
+  razorpayPublicConfig,
+  logRazorpayConfigSafely,
+  fingerprintPaymentOrder,
+  rememberPaymentOrder,
+  recallPaymentOrder,
+  consumePaymentOrder,
+  resolveOrderAmount,
+  getRazorpayConfigIssues,
+} from './razorpay';
 import type { RazorpayPayment } from './razorpay';
 import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit';
 import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs';
@@ -1404,6 +1417,501 @@ async function bestEffortNotification(
 }
 
 // ---------------------------------------------------------------------------
+// Shared booking intent — salon, services, staff, slot, deposit, all from
+// live rows. Used by both the payment-order route and booking create so a
+// checkout cannot mint an order for a slot the salon does not actually hold.
+// ---------------------------------------------------------------------------
+type BookingIntentFailure = {
+  ok: false;
+  status: number;
+  code: string;
+  error: string;
+  retryable?: boolean;
+  fieldErrors?: string[];
+};
+
+type BookingIntent = {
+  ok: true;
+  user: { id: string; email?: string };
+  ownerUid: string;
+  salonRow: any;
+  chosen: any[];
+  staffRow: any | null;
+  duration: number;
+  subtotal: number;
+  requireDeposit: boolean;
+  depositPercentage: number;
+  deposit: number;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  serviceLines: any[];
+  metadata: Record<string, any>;
+  body: any;
+};
+
+async function prepareCustomerBookingIntent(
+  deps: CustomerRoutesDeps,
+  user: { id: string; email?: string },
+  body: any,
+  deadlineAt: number | undefined,
+  requestId: string
+): Promise<BookingIntent | BookingIntentFailure> {
+  const problems = validateCustomerBooking(body);
+  if (problems.length) {
+    return { ok: false, status: 422, code: 'invalid_booking', error: problems[0], fieldErrors: problems };
+  }
+
+  if (deps.isMock) {
+    return {
+      ok: false,
+      status: 503,
+      code: 'supabase_not_configured',
+      retryable: true,
+      error: 'Bookings need the connected Supabase database. Nothing was saved or charged.',
+    };
+  }
+
+  const salonResult = isUuidLike(String(body.salonId))
+    ? await runDb(() => deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('id', body.salonId).maybeSingle(), {
+        label: 'booking: salon',
+        timeoutMs: DEFAULT_DB_TIMEOUT_MS,
+        deadlineAt,
+      })
+    : await runDb(() => deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('subdomain', String(body.salonId).toLowerCase()).maybeSingle(), {
+        label: 'booking: salon by subdomain',
+        timeoutMs: DEFAULT_DB_TIMEOUT_MS,
+        deadlineAt,
+      });
+  const salonRow = salonResult.data;
+  if (salonResult.error) {
+    console.error(`[Customer] (${requestId}) Booking aborted (salon read failed):`, salonResult.error.message || salonResult.error);
+    return {
+      ok: false,
+      status: 502,
+      code: 'salon_unreadable',
+      error: 'We could not reach the salon to complete your booking. Nothing was charged.',
+      retryable: true,
+    };
+  }
+  if (!salonRow || !isSalonProfile(salonRow)) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'salon_not_published',
+      error: 'That salon is not accepting bookings right now.',
+    };
+  }
+  const ownerUid = String(salonRow.id);
+
+  const serviceIds: string[] = Array.isArray(body.serviceIds) ? body.serviceIds.map(String).filter(Boolean) : [];
+  const serviceResult = await runDb(
+    () => deps.db.from('services').select('id, name, price, duration_minutes, category').eq('owner_id', ownerUid).limit(400),
+    { label: 'booking: services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+  );
+  if (serviceResult.error) {
+    const safe = safeDatabaseError(serviceResult.error, 'The salon menu could not be read. Please try again.');
+    return { ok: false, status: safe.status, code: safe.code, error: safe.message, retryable: safe.retryable };
+  }
+  const menu: any[] = Array.isArray(serviceResult.data) ? serviceResult.data : [];
+  const byId = new Map(menu.map((row) => [String(row.id), row]));
+  const chosen = serviceIds.map((id) => byId.get(id)).filter(Boolean);
+  if (!chosen.length) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'unknown_service',
+      error: "None of the selected services are on this salon's menu any more. Please pick again.",
+    };
+  }
+
+  const staffId = String(body.staffId || '').trim();
+  let staffRow: any = null;
+  if (staffId) {
+    if (!isUuidLike(staffId)) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'staff_unavailable',
+        error: 'That stylist could not be recognised at this salon. Pick another, or choose "any available".',
+      };
+    }
+    const staffResult = await runDb(
+      () => deps.db.from('stylists').select('id, name, status, schedule').eq('id', staffId).eq('owner_id', ownerUid).maybeSingle(),
+      { label: 'booking: stylist', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+    );
+    if (staffResult.error) {
+      const safe = safeDatabaseError(staffResult.error, 'The stylist could not be verified.');
+      return { ok: false, status: safe.status, code: safe.code, error: safe.message, retryable: safe.retryable };
+    }
+    staffRow = staffResult.data;
+    if (!staffRow || String(staffRow.status) === 'Inactive') {
+      return {
+        ok: false,
+        status: 400,
+        code: 'staff_unavailable',
+        error: 'That stylist is not bookable at this salon any more. Pick another, or choose "any available".',
+      };
+    }
+  }
+
+  const clash = await slotIsTaken(deps, ownerUid, String(body.date), String(body.time), staffRow ? String(staffRow.id) : '', deadlineAt);
+  if (clash.error) {
+    const safe = safeDatabaseError(clash.error, 'Availability could not be checked. Please try again.');
+    return { ok: false, status: safe.status, code: safe.code, error: safe.message, retryable: safe.retryable };
+  }
+  if (clash.taken) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'slot_taken',
+      error: 'That time was just booked by someone else. Pick another slot — your details are still here.',
+      retryable: true,
+    };
+  }
+
+  const duration = chosen.reduce((total: number, row: any) => total + Number(row.duration_minutes ?? 30), 0);
+  const subtotal = chosen.reduce((total: number, row: any) => total + Number(row.price ?? 0), 0);
+  const requireDeposit = salonRow.require_deposit === true;
+  const depositPercentage = Math.min(100, Math.max(0, Number(salonRow.deposit_percentage ?? 20)));
+  const deposit = requireDeposit ? computeAdvanceDeposit(subtotal, depositPercentage).rupees : 0;
+
+  const profileResult = await runDb(
+    () => deps.db.from('profiles').select('full_name, phone_number, email, city').eq('id', user.id).maybeSingle(),
+    { label: 'booking: customer details', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+  );
+  const customerRow = profileResult.data || {};
+  const customerName = String(body.customerName || customerRow.full_name || 'Customer').trim().slice(0, 120) || 'Customer';
+  const customerPhone = String(body.customerPhone || customerRow.phone_number || '').trim();
+  const customerEmail = String(user.email || customerRow.email || '').trim();
+  const bookingRef = String(body.bookingRef || body.receipt || '').trim().slice(0, 40);
+
+  const serviceLines = chosen.map((row: any, index: number) => ({
+    id: `${ownerUid}-${index}`,
+    service_id: String(row.id),
+    name: String(row.name ?? ''),
+    price: Number(row.price ?? 0),
+    duration_minutes: Number(row.duration_minutes ?? 30),
+    staff_id: staffRow ? String(staffRow.id) : '',
+    staff_name: staffRow ? String(staffRow.name ?? '') : '',
+  }));
+
+  const metadata = {
+    source: 'customer_app',
+    services: serviceLines,
+    duration_minutes: duration,
+    staff_id: staffRow ? String(staffRow.id) : null,
+    staff_name: staffRow ? String(staffRow.name ?? '') : null,
+    referral_code: normalizeReferralCode(body.referralCode) || null,
+    user_id: user.id,
+    requested_slot: { date: String(body.date), time: String(body.time) },
+    deposit_policy: { require_deposit: requireDeposit, percentage: depositPercentage },
+    ...(bookingRef ? { booking_ref: bookingRef } : {}),
+  };
+
+  return {
+    ok: true,
+    user,
+    ownerUid,
+    salonRow,
+    chosen,
+    staffRow,
+    duration,
+    subtotal,
+    requireDeposit,
+    depositPercentage,
+    deposit,
+    customerName,
+    customerPhone,
+    customerEmail,
+    serviceLines,
+    metadata,
+    body,
+  };
+}
+
+function failIntent(res: any, requestId: string, intent: BookingIntentFailure): void {
+  answer(res, intent.status, {
+    success: false,
+    code: intent.code,
+    requestId,
+    error: intent.error,
+    ...(intent.retryable ? { retryable: true } : {}),
+    ...(intent.fieldErrors ? { fieldErrors: intent.fieldErrors } : {}),
+  });
+}
+
+function verifyPostedRazorpay(body: any): {
+  ok: boolean;
+  status?: number;
+  code?: string;
+  error?: string;
+  orderId?: string;
+  paymentId?: string;
+  signature?: string;
+  mode?: string;
+} {
+  const orderId = String(body?.razorpay_order_id ?? body?.orderId ?? '');
+  const paymentId = String(body?.razorpay_payment_id ?? body?.paymentId ?? '');
+  const signature = String(body?.razorpay_signature ?? body?.signature ?? '');
+  if (!orderId || !paymentId || !signature) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_reference_required',
+      error: 'The gateway reference is missing, so the payment cannot be verified — nothing was recorded.',
+    };
+  }
+  const { secret, mode } = resolveSignatureSecret();
+  if (!secret) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'payments_disabled',
+      error: 'Online payments are not enabled for this salon. Pay at the salon instead.',
+    };
+  }
+  if (mode !== 'mock' && isMockOrderId(orderId)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_unverified',
+      error: 'We could not verify your payment with the gateway. Nothing was recorded.',
+    };
+  }
+  const verified = verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
+  if (!verified) {
+    console.error('[Customer] Razorpay signature verification FAILED', { order: orderId, mode });
+    return {
+      ok: false,
+      status: 400,
+      code: 'payment_unverified',
+      error: 'We could not verify your payment with the gateway. Nothing was recorded.',
+    };
+  }
+  return { ok: true, orderId, paymentId, signature, mode };
+}
+
+/**
+ * GET /api/customer/payments/config
+ *
+ * Authenticated snapshot of the public key + gateway mode. Missing keys are
+ * `configured: false` with HTTP 200 — never HTTP 500. Secrets never leave
+ * the server.
+ */
+export function createPaymentConfigHandler(deps: CustomerRoutesDeps) {
+  return async function paymentConfig(_req: any, res: any): Promise<void> {
+    const requestId = newRequestId('custpaycfg');
+    const deadlineAt = res.locals?.requestDeadlineAt;
+    try {
+      const user = await requireAuth(deps, res, requestId, deadlineAt);
+      if (!user) return;
+      const config = razorpayPublicConfig();
+      if (!config.configured) logRazorpayConfigSafely(config);
+      // Dual shape: customer `data` envelope + Razorpay top-level fields so
+      // both `customerRequest` and `fetchRazorpayConfig` can read it.
+      if (responseAlreadyEnded(res)) return;
+      res.status(200).json({
+        success: true,
+        requestId,
+        ...config,
+        data: config,
+        mapped: mappingSummary(),
+      });
+    } catch (err: any) {
+      console.error(`[Customer] (${requestId}) Payment config error (returning configured=false, not HTTP 500):`, err?.message || err);
+      const fallback = {
+        configured: false,
+        mock: false,
+        mode: 'disabled' as const,
+        keyId: null,
+        depositPercent: DEFAULT_DEPOSIT_PERCENT,
+        code: 'razorpay_not_configured',
+        issues: ['Secure payment service is not configured on this server.'],
+      };
+      if (responseAlreadyEnded(res)) return;
+      res.status(200).json({ success: true, requestId, ...fallback, data: fallback });
+    }
+  };
+}
+
+/**
+ * POST /api/customer/payments/order
+ *
+ * Create (or reuse) a Razorpay order only after the signed-in customer, salon,
+ * services, amount, staff, date, time and slot have all been validated against
+ * live rows. Never invents a paid booking.
+ */
+export function createPaymentOrderHandler(deps: CustomerRoutesDeps) {
+  return async function paymentOrder(req: any, res: any): Promise<void> {
+    const requestId = newRequestId('custpayord');
+    const deadlineAt = res.locals?.requestDeadlineAt;
+    try {
+      const user = await requireAuth(deps, res, requestId, deadlineAt);
+      if (!user) return;
+      const body = req.body || {};
+      const intent = await prepareCustomerBookingIntent(deps, user, body, deadlineAt, requestId);
+      if (!intent.ok) return void failIntent(res, requestId, intent);
+      if (intent.deposit <= 0) {
+        return void answer(res, 409, {
+          success: false,
+          code: 'no_deposit_due',
+          requestId,
+          error: 'This salon does not require an online deposit for the selected services.',
+        });
+      }
+
+      const claimedTotal = Number(body.totalAmount);
+      if (Number.isFinite(claimedTotal) && Math.abs(claimedTotal - intent.subtotal) > 1) {
+        return void answer(res, 400, {
+          success: false,
+          code: 'amount_mismatch',
+          requestId,
+          error: `The total shown (₹${claimedTotal}) does not match this salon's live menu (₹${intent.subtotal}). Refresh and try again.`,
+        });
+      }
+
+      const amount = resolveOrderAmount({
+        totalAmount: intent.subtotal,
+        depositPercent: intent.depositPercentage,
+        amount: body.amount,
+      });
+      if (!amount.ok) {
+        return void answer(res, amount.status || 400, { success: false, code: amount.code, requestId, error: amount.error });
+      }
+      if (Math.abs(amount.rupees - intent.deposit) > 0.5) {
+        return void answer(res, 400, {
+          success: false,
+          code: 'amount_mismatch',
+          requestId,
+          error: `The advance shown does not match ${intent.depositPercentage}% of ₹${intent.subtotal} (₹${intent.deposit}).`,
+        });
+      }
+
+      const client = createRazorpayClient();
+      if (!client) {
+        const issues = getRazorpayConfigIssues();
+        console.error('[Customer] Payment order requested but the gateway is disabled:', issues.join(' '));
+        return void answer(res, 503, {
+          success: false,
+          code: 'razorpay_not_configured',
+          requestId,
+          retryable: true,
+          error: 'Online payment is temporarily unavailable (payment gateway not configured). No appointment was created.',
+          issues,
+        });
+      }
+
+      const receipt = String(body.receipt || body.bookingRef || '').slice(0, 40);
+      const fingerprint = fingerprintPaymentOrder({
+        customer: user.id,
+        salon: intent.ownerUid,
+        services: intent.chosen.map((row: any) => String(row.id)).sort().join(','),
+        date: String(body.date),
+        time: String(body.time),
+        staff: intent.staffRow ? String(intent.staffRow.id) : '',
+        rupees: amount.rupees,
+        receipt,
+        mode: client.mode,
+      });
+      const cached = recallPaymentOrder(fingerprint);
+      if (cached) {
+        console.log(`[Customer] (${requestId}) Reusing unpaid order ${cached.order.id} for ${receipt || 'draft'}`);
+        return void res.status(200).json({
+          success: true,
+          requestId,
+          reused: true,
+          mode: cached.mode,
+          mock: cached.mode === 'mock',
+          keyId: cached.keyId,
+          order: {
+            id: cached.order.id,
+            amount: cached.order.amount,
+            currency: cached.order.currency,
+            receipt: cached.order.receipt ?? null,
+          },
+          deposit: { rupees: cached.rupees, paise: cached.paise, percent: cached.percent },
+          data: {
+            order: {
+              id: cached.order.id,
+              amount: cached.order.amount,
+              currency: cached.order.currency,
+              receipt: cached.order.receipt ?? null,
+            },
+            deposit: { rupees: cached.rupees, paise: cached.paise, percent: cached.percent },
+            mode: cached.mode,
+            keyId: cached.keyId,
+            mock: cached.mode === 'mock',
+          },
+        });
+      }
+
+      const order = await client.createOrder(
+        {
+          amount: amount.rupees,
+          currency: 'INR',
+          receipt,
+          notes: {
+            booking_ref: receipt,
+            salon_id: intent.ownerUid,
+            customer_id: user.id,
+            slot: `${body.date} ${body.time}`,
+            total_amount: intent.subtotal,
+            deposit_percent: intent.depositPercentage,
+            advance_amount: amount.rupees,
+          },
+        },
+        deadlineAt
+      );
+      rememberPaymentOrder(fingerprint, {
+        order,
+        keyId: client.keyId,
+        mode: client.mode,
+        rupees: amount.rupees,
+        paise: order.amount,
+        percent: amount.percent,
+      });
+      console.log(`[Customer] (${requestId}) ${client.mode} order ${order.id} for ₹${amount.rupees} (receipt ${receipt || 'none'})`);
+      res.status(200).json({
+        success: true,
+        requestId,
+        mode: client.mode,
+        mock: client.mode === 'mock',
+        keyId: client.keyId,
+        order: { id: order.id, amount: order.amount, currency: order.currency, receipt: order.receipt ?? null },
+        deposit: { rupees: amount.rupees, paise: order.amount, percent: amount.percent },
+        data: {
+          order: { id: order.id, amount: order.amount, currency: order.currency, receipt: order.receipt ?? null },
+          deposit: { rupees: amount.rupees, paise: order.amount, percent: amount.percent },
+          mode: client.mode,
+          keyId: client.keyId,
+          mock: client.mode === 'mock',
+        },
+      });
+    } catch (err: any) {
+      console.error(`[Customer] (${requestId}) Payment order failed:`, err?.stack || err?.message || err);
+      const timeout = err?.code === 'razorpay_timeout';
+      const unreachable = err?.code === 'razorpay_unreachable';
+      const tooSmall = /at least ₹1/.test(String(err?.message || ''));
+      if (tooSmall) {
+        return void answer(res, 400, { success: false, code: 'invalid_amount', requestId, error: err.message });
+      }
+      answer(res, timeout ? 504 : unreachable ? 503 : 502, {
+        success: false,
+        code: timeout ? 'request_timeout' : unreachable ? 'razorpay_unreachable' : 'razorpay_order_failed',
+        requestId,
+        retryable: true,
+        error: timeout
+          ? 'The payment gateway took too long to respond. No payment was charged — please try again.'
+          : unreachable
+            ? 'Online payment is temporarily unreachable from the server. No appointment was created.'
+            : 'The payment gateway could not start the order. No payment was charged — please try again.',
+      });
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/customer/bookings/create — the transactional booking
 // ---------------------------------------------------------------------------
 export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
@@ -1415,155 +1923,123 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
       if (!user) return;
       const body = req.body || {};
 
-      const problems = validateCustomerBooking(body);
-      if (problems.length) {
-        return void answer(res, 422, { success: false, code: 'invalid_booking', requestId, error: problems[0], fieldErrors: problems });
-      }
-
-      if (deps.isMock) {
-        return void answer(res, 503, {
-          success: false,
-          code: 'supabase_not_configured',
-          requestId,
-          retryable: true,
-          error: 'Bookings need the connected Supabase database. Nothing was saved or charged.',
-        });
-      }
-
-      // --- 1. the salon, from its published profile row --------------------
-      const salonResult = isUuidLike(String(body.salonId))
-        ? await runDb(() => deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('id', body.salonId).maybeSingle(), {
-            label: 'booking: salon',
-            timeoutMs: DEFAULT_DB_TIMEOUT_MS,
-            deadlineAt,
-          })
-        : await runDb(() => deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('subdomain', String(body.salonId).toLowerCase()).maybeSingle(), {
-            label: 'booking: salon by subdomain',
-            timeoutMs: DEFAULT_DB_TIMEOUT_MS,
-            deadlineAt,
-          });
-      const salonRow = salonResult.data;
-      if (salonResult.error) {
-        console.error(`[Customer] (${requestId}) Booking aborted (salon read failed):`, salonResult.error.message || salonResult.error);
-        return void answer(res, 502, {
-          success: false,
-          code: 'salon_unreadable',
-          requestId,
-          error: 'We could not reach the salon to complete your booking. Nothing was charged.',
-          retryable: true,
-        });
-      }
-      if (!salonRow || !isSalonProfile(salonRow)) {
-        return void answer(res, 422, {
-          success: false,
-          code: 'salon_not_published',
-          requestId,
-          error: 'That salon is not accepting bookings right now.',
-        });
-      }
-      const ownerUid = String(salonRow.id);
-
-      // --- 2. services, priced from the salon's own menu -------------------
-      const serviceIds: string[] = Array.isArray(body.serviceIds) ? body.serviceIds.map(String).filter(Boolean) : [];
-      const serviceResult = await runDb(
-        () => deps.db.from('services').select('id, name, price, duration_minutes, category').eq('owner_id', ownerUid).limit(400),
-        { label: 'booking: services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-      );
-      if (serviceResult.error) return void fail(res, requestId, serviceResult.error, 'The salon menu could not be read. Please try again.');
-      const menu: any[] = Array.isArray(serviceResult.data) ? serviceResult.data : [];
-      const byId = new Map(menu.map((row) => [String(row.id), row]));
-      const chosen = serviceIds.map((id) => byId.get(id)).filter(Boolean);
-      if (!chosen.length) {
-        return void answer(res, 422, {
-          success: false,
-          code: 'unknown_service',
-          requestId,
-          error: "None of the selected services are on this salon's menu any more. Please pick again.",
-        });
-      }
-
-      // --- 3. stylist + a live collision check before writing --------------
-      const staffId = String(body.staffId || '').trim();
-      let staffRow: any = null;
-      if (staffId) {
-        if (!isUuidLike(staffId)) {
-          return void answer(res, 400, {
-            success: false,
-            code: 'staff_unavailable',
-            requestId,
-            error: 'That stylist could not be recognised at this salon. Pick another, or choose "any available".',
-          });
-        }
-        const staffResult = await runDb(
-          () => deps.db.from('stylists').select('id, name, status, schedule').eq('id', staffId).eq('owner_id', ownerUid).maybeSingle(),
-          { label: 'booking: stylist', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+      // Same captured payment → same booking, even if that row now holds the slot.
+      const postedEarly = body.payment && typeof body.payment === 'object' ? body.payment : body;
+      const claimedPaymentId = String(postedEarly?.razorpay_payment_id ?? postedEarly?.paymentId ?? '').trim();
+      if (claimedPaymentId && !deps.isMock) {
+        const existingPaid = await runDb(
+          () => deps.db.from('bookings').select('*').eq('payment_id', claimedPaymentId).maybeSingle(),
+          { label: 'booking: payment idempotency (early)', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
         );
-        if (staffResult.error) return void fail(res, requestId, staffResult.error, 'The stylist could not be verified.');
-        staffRow = staffResult.data;
-        // An id that resolves to nobody, or to a stylist the salon has switched
-        // off, is NOT quietly turned into "anyone available": the customer chose a
-        // person, so the refusal has to say that person cannot be booked.
-        if (!staffRow || String(staffRow.status) === 'Inactive') {
-          return void answer(res, 400, {
-            success: false,
-            code: 'staff_unavailable',
-            requestId,
-            error: 'That stylist is not bookable at this salon any more. Pick another, or choose "any available".',
-          });
+        const existingRow = existingPaid.data;
+        if (existingRow && String(existingRow.user_id ?? '') === user.id) {
+          const salon = await runDb(
+            () => deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('id', existingRow.owner_id).maybeSingle(),
+            { label: 'booking: salon for paid replay', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+          );
+          const snapshot = await collectSlots(deps, String(existingRow.owner_id), String(existingRow.booking_date), [], '', deadlineAt);
+          return void ok(res, deps, requestId, {
+            booking: toCustomerBooking(existingRow, { salon: salon.data }),
+            serviceLines: toBookingServiceLines(existingRow),
+            written: { bookings: 0, serviceLines: 0, notifications: 0 },
+            slots: snapshot.slots,
+            depositDue: 0,
+            depositPercent: Number(jsonValue(existingRow, 'deposit_policy')?.percentage) || 0,
+            requireDeposit: true,
+            salon: salon.data ? toCustomerSalon(salon.data) : undefined,
+            referral: { code: jsonValue(existingRow, 'referral_code') || '', credited: false },
+            paymentHandoff: 'razorpay_advance',
+          }, { notice: 'This payment already created your booking — nothing was charged again.' });
         }
       }
 
-      const clash = await slotIsTaken(deps, ownerUid, String(body.date), String(body.time), staffRow ? String(staffRow.id) : '', deadlineAt);
-      if (clash.error) return void fail(res, requestId, clash.error, 'Availability could not be checked. Please try again.');
-      if (clash.taken) {
-        return void answer(res, 409, {
-          success: false,
-          code: 'slot_taken',
-          requestId,
-          error: 'That time was just booked by someone else. Pick another slot — your details are still here.',
-          retryable: true,
-        });
+      const intent = await prepareCustomerBookingIntent(deps, user, body, deadlineAt, requestId);
+      if (!intent.ok) return void failIntent(res, requestId, intent);
+
+      const {
+        ownerUid,
+        salonRow,
+        staffRow,
+        subtotal,
+        requireDeposit,
+        depositPercentage,
+        deposit,
+        customerName,
+        customerPhone,
+        customerEmail,
+        serviceLines,
+      } = intent;
+      let metadata = intent.metadata;
+
+      // Deposit salons: the booking is created only after the gateway signature
+      // verifies. A client cannot skip this by posting `advance_paid_amount`.
+      let paidAdvance = 0;
+      let paymentId: string | null = null;
+      let paymentMode: string | null = null;
+      if (deposit > 0) {
+        const posted = body.payment && typeof body.payment === 'object' ? body.payment : body;
+        const verified = verifyPostedRazorpay(posted);
+        if (!verified.ok) {
+          if (!posted?.razorpay_payment_id && !posted?.paymentId) {
+            return void answer(res, 402, {
+              success: false,
+              code: 'payment_required',
+              requestId,
+              error: 'This salon requires an online deposit before the appointment is created. Nothing was saved.',
+              depositDue: deposit,
+              depositPercent: depositPercentage,
+            });
+          }
+          return void answer(res, verified.status || 400, {
+            success: false,
+            code: verified.code,
+            requestId,
+            error: verified.error,
+          });
+        }
+        const claimed = Number(posted.amount);
+        if (Number.isFinite(claimed) && Math.abs(claimed - deposit) > 1) {
+          return void answer(res, 409, {
+            success: false,
+            code: 'payment_amount_mismatch',
+            requestId,
+            error: `The order was for ₹${Math.round(claimed)} but this booking's deposit is ₹${deposit}. Nothing was recorded.`,
+          });
+        }
+        paidAdvance = deposit;
+        paymentId = verified.paymentId || null;
+        paymentMode = verified.mode || null;
+        metadata = {
+          ...metadata,
+          deposit_paid_at: new Date((deps.now ?? Date.now)()).toISOString(),
+          payment_gateway_mode: paymentMode,
+          razorpay_order_id: verified.orderId,
+        };
+
+        // Idempotency: the same captured payment must not create a second row.
+        if (paymentId) {
+          const existing = await runDb(
+            () => deps.db.from('bookings').select('*').eq('payment_id', paymentId).maybeSingle(),
+            { label: 'booking: payment idempotency', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+          );
+          const existingRow = existing.data;
+          if (existingRow && String(existingRow.user_id ?? '') === user.id) {
+            const snapshot = await collectSlots(deps, ownerUid, String(body.date), [], '', deadlineAt);
+            return void ok(res, deps, requestId, {
+              booking: toCustomerBooking(existingRow, { salon: salonRow }),
+              serviceLines: toBookingServiceLines(existingRow),
+              written: { bookings: 0, serviceLines: 0, notifications: 0 },
+              slots: snapshot.slots,
+              depositDue: 0,
+              depositPercent: depositPercentage,
+              requireDeposit,
+              salon: toCustomerSalon(salonRow),
+              referral: { code: metadata.referral_code || '', credited: false },
+              paymentHandoff: 'razorpay_advance',
+            }, { notice: 'This payment already created your booking — nothing was charged again.' });
+          }
+        }
       }
-
-      const duration = chosen.reduce((total: number, row: any) => total + Number(row.duration_minutes ?? 30), 0);
-      const subtotal = chosen.reduce((total: number, row: any) => total + Number(row.price ?? 0), 0);
-      const requireDeposit = salonRow.require_deposit === true;
-      const depositPercentage = Math.min(100, Math.max(0, Number(salonRow.deposit_percentage ?? 20)));
-      // Same helper the client uses for the button label and the server uses when
-      // it records the payment, so ₹87 on screen is ₹87 at the gateway is ₹87 on
-      // the booking — that agreement is why this arithmetic lives in src/lib.
-      const deposit = requireDeposit ? computeAdvanceDeposit(subtotal, depositPercentage).rupees : 0;
-
-      const profileResult = await runDb(
-        () => deps.db.from('profiles').select('full_name, phone_number, email, city').eq('id', user.id).maybeSingle(),
-        { label: 'booking: customer details', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
-      );
-      const customerRow = profileResult.data || {};
-      const customerName = String(body.customerName || customerRow.full_name || 'Customer').trim().slice(0, 120) || 'Customer';
-      const customerPhone = String(body.customerPhone || customerRow.phone_number || '').trim();
-      const customerEmail = String(user.email || customerRow.email || '').trim();
-
-      const serviceLines = chosen.map((row: any, index: number) => ({
-        id: `${ownerUid}-${index}`,
-        service_id: String(row.id),
-        name: String(row.name ?? ''),
-        price: Number(row.price ?? 0),
-        duration_minutes: Number(row.duration_minutes ?? 30),
-        staff_id: staffRow ? String(staffRow.id) : '',
-        staff_name: staffRow ? String(staffRow.name ?? '') : '',
-      }));
-
-      const metadata = {
-        source: 'customer_app',
-        services: serviceLines,
-        duration_minutes: duration,
-        staff_id: staffRow ? String(staffRow.id) : null,
-        staff_name: staffRow ? String(staffRow.name ?? '') : null,
-        referral_code: normalizeReferralCode(body.referralCode) || null,
-        user_id: user.id,
-        requested_slot: { date: String(body.date), time: String(body.time) },
-        deposit_policy: { require_deposit: requireDeposit, percentage: depositPercentage },
-      };
 
       // --- 4. create the booking (parent) ---------------------------------
       const parentRow = sanitizeBookingRow({
@@ -1577,11 +2053,10 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
         booking_date: String(body.date),
         time_slot: normalizeClock(body.time),
         total_amount: subtotal,
-        // `advance_paid_amount` is only ever written by the payment verifier,
-        // so the customer app starts at 0 and hands off to the Razorpay path.
-        advance_paid_amount: 0,
-        status: 'pending',
-        payment_status: deposit > 0 ? 'pending' : 'pay_at_salon',
+        advance_paid_amount: paidAdvance,
+        status: paidAdvance > 0 ? 'confirmed' : 'pending',
+        payment_status: paidAdvance > 0 ? 'paid_deposit' : deposit > 0 ? 'pending' : 'pay_at_salon',
+        payment_id: paymentId,
         booking_type: body.bookingType === 'home' ? 'home' : 'salon',
         home_address: body.bookingType === 'home' ? String(body.homeAddress || '').slice(0, 300) : null,
         notes: String(body.notes || '').slice(0, 1000) || null,
@@ -1711,17 +2186,32 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
 
       // --- 7. return the fresh availability grid so the slot disappears ------
       const snapshot = await collectSlots(deps, ownerUid, String(body.date), [], '', deadlineAt);
+      if (paidAdvance > 0) {
+        consumePaymentOrder(
+          fingerprintPaymentOrder({
+            customer: user.id,
+            salon: ownerUid,
+            services: intent.chosen.map((row: any) => String(row.id)).sort().join(','),
+            date: String(body.date),
+            time: String(body.time),
+            staff: staffRow ? String(staffRow.id) : '',
+            rupees: paidAdvance,
+            receipt: String(body.receipt || body.bookingRef || '').slice(0, 40),
+            mode: paymentMode || '',
+          })
+        );
+      }
       ok(res, deps, requestId, {
         booking: toCustomerBooking(stored, { salon: salonRow }),
         serviceLines: toBookingServiceLines(stored),
         written: { bookings: 1, serviceLines: serviceLines.length, notifications: notificationsWritten },
         slots: snapshot.slots,
-        depositDue: deposit,
+        depositDue: paidAdvance > 0 ? 0 : deposit,
         depositPercent: depositPercentage,
         requireDeposit,
         salon: toCustomerSalon(salonRow),
         referral: { code: metadata.referral_code || '', credited: false },
-        paymentHandoff: deposit > 0 ? 'razorpay_advance' : 'pay_at_salon',
+        paymentHandoff: paidAdvance > 0 ? 'razorpay_advance' : deposit > 0 ? 'razorpay_advance' : 'pay_at_salon',
       });
     } catch (err: any) {
       console.error(`[Customer] (${requestId}) Booking create threw:`, err?.stack || err);
@@ -1889,16 +2379,12 @@ export function createRescheduleHandler(deps: CustomerRoutesDeps) {
 }
 
 /**
- * Complete the deposit for a booking that already exists.
- *
- * The customer app books first and pays second — the only order that works when
- * the booking is created through this API, because the gateway round-trip
- * (order → checkout → callback) can outlive a request and the money needs a
- * booking to attach to. `src/lib/bookingApi.ts:294` states the rule this
- * follows: a booking is only ever marked paid when the gateway says so. So the
- * signature is re-verified HERE, and the amount stored is the one *this server*
- * recomputes from the booking total and the deposit percentage — never whatever
- * the client claims it paid.
+ * Complete the deposit for a booking that already exists (pay-at-salon salons,
+ * or a leftover pending row). Deposit salons now collect payment *before*
+ * insert (`createBookingCreateHandler`); this route remains for bookings that
+ * were saved unpaid. The signature is re-verified HERE, and the amount stored
+ * is the one *this server* recomputes from the booking total and the deposit
+ * percentage — never whatever the client claims it paid.
  */
 export function createBookingAdvanceHandler(deps: CustomerRoutesDeps) {
   return async function bookingAdvance(req: any, res: any): Promise<void> {
@@ -3196,6 +3682,8 @@ export function registerCustomerRoutes(
     ['/api/customer/me/bookings/:id', 'get', createMyBookingDetailHandler(deps)],
     ['/api/customer/me/bookings/cancel', 'post', createCancelHandler(deps)],
     ['/api/customer/me/bookings/reschedule', 'post', createRescheduleHandler(deps)],
+    ['/api/customer/payments/config', 'get', createPaymentConfigHandler(deps)],
+    ['/api/customer/payments/order', 'post', createPaymentOrderHandler(deps)],
     ['/api/customer/bookings/create', 'post', createBookingCreateHandler(deps)],
     ['/api/customer/me/bookings/:id/advance', 'post', createBookingAdvanceHandler(deps)],
     ['/api/customer/me/reviews', 'get', createReviewListHandler(deps)],

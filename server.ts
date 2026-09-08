@@ -609,7 +609,7 @@ async function startServer() {
   // Credentials come from RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET in .env; with
   // none present outside production the mock gateway takes over.
   // ==========================================================================
-  app.get("/api/payments/razorpay/config", handleRazorpayConfig);
+  app.get("/api/payments/razorpay/config", asyncRoute(handleRazorpayConfig));
   app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayOrder));
   app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
   app.post("/api/payments/razorpay/mock-pay", asyncRoute(handleMockRazorpayPayment));
