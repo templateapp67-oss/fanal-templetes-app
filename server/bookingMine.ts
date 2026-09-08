@@ -23,19 +23,19 @@
 // never disagree with what the page promised.
 // ============================================================================
 
-import type { BookingAuthResult } from './bookingAuth';
-import { isUuidLike } from './bookingOps';
-import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs';
-import type { LoyaltyTerms } from '../src/lib/bookingDetail';
-import { describeBookingStatus } from '../src/lib/bookingStatus';
+import type { BookingAuthResult } from './bookingAuth.js';
+import { isUuidLike } from './bookingOps.js';
+import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs.js';
+import type { LoyaltyTerms } from '../src/lib/bookingDetail.js';
+import { describeBookingStatus } from '../src/lib/bookingStatus.js';
 import {
   runDb,
   newRequestId,
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
-} from './dbGuard';
-import { safeDatabaseError, sendSafeError } from './safeError';
+} from './dbGuard.js';
+import { safeDatabaseError, sendSafeError } from './safeError.js';
 
 export interface BookingMineDeps {
   db: any;
@@ -95,6 +95,9 @@ function requireAdminClient(deps: BookingMineDeps, res: any, requestId: string):
  */
 export function bookingBelongsTo(row: any, userId: string): boolean {
   if (!row || typeof row !== 'object' || !userId) return false;
+  // The normalized booking schema stores the authenticated customer here.
+  // When present, it is authoritative over legacy metadata.
+  if (row.customer_user_id != null) return String(row.customer_user_id) === userId;
   if (String(row.user_id ?? '') === userId) return true;
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
   return String(metadata.user_id ?? '') === userId;
@@ -167,16 +170,23 @@ export function createMyBookingsListHandler(deps: BookingMineDeps) {
       if (deps.isMock) {
         rows = deps.getMockBookings().filter((row) => bookingBelongsTo(row, userId));
       } else {
-        const { data, error } = await runDb(
+        const listForCustomer = (column: 'user_id' | 'customer_user_id') => runDb(
           () =>
             deps.db
               .from('bookings')
               .select('*')
-              .eq('user_id', userId)
+              .eq(column, userId)
               .order('created_at', { ascending: false })
               .limit(200),
           { label: `my bookings (${requestId})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
         );
+        let { data, error } = await listForCustomer('user_id');
+        // Retry only the known legacy-column mismatch. Every query remains
+        // scoped to the verified caller; never retry without an ownership filter.
+        if (['42703', 'PGRST204'].includes(String(error?.code)) &&
+            /\buser_id\b/i.test(String(error?.message))) {
+          ({ data, error } = await listForCustomer('customer_user_id'));
+        }
         if (error) {
           console.error(`[MyBookings] (${requestId}) List failed:`, error.message || error);
           const safe = safeDatabaseError(error, 'Your bookings could not be loaded.');

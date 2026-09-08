@@ -29,10 +29,10 @@
 // answering, so a screen never renders a value the database did not confirm.
 // ============================================================================
 
-import type { BookingAuthResult } from './bookingAuth';
-import { passCodeFor } from '../src/lib/customer/checkin';
-import { isUuidLike, sanitizeBookingRow } from './bookingOps';
-import { isValidIsoDate } from './bookingCreate';
+import type { BookingAuthResult } from './bookingAuth.js';
+import { passCodeFor } from '../src/lib/customer/checkin.js';
+import { isUuidLike, sanitizeBookingRow } from './bookingOps.js';
+import { isValidIsoDate } from './bookingCreate.js';
 import {
   createRazorpayClient,
   isMockOrderId,
@@ -46,10 +46,10 @@ import {
   consumePaymentOrder,
   resolveOrderAmount,
   getRazorpayConfigIssues,
-} from './razorpay';
-import type { RazorpayPayment } from './razorpay';
-import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit';
-import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs';
+} from './razorpay.js';
+import type { RazorpayPayment } from './razorpay.js';
+import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit.js';
+import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs.js';
 import {
   buildSlotGrid,
   dayWindowFor,
@@ -60,7 +60,7 @@ import {
   normalizeClock,
   referralCodeFor,
   CUSTOMER_SCHEMA_MAP,
-} from '../src/lib/customer/schema';
+} from '../src/lib/customer/schema.js';
 import {
   deriveFavourites,
   deriveReferrals,
@@ -86,7 +86,7 @@ import {
   qrLedgerDescription,
   QR_PAYMENT_TYPE,
   QR_STATE_BELOW_MINIMUM,
-} from '../src/lib/customer/mappers';
+} from '../src/lib/customer/mappers.js';
 import {
   runDb,
   withDbTimeout,
@@ -94,8 +94,8 @@ import {
   responseAlreadyEnded,
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
-} from './dbGuard';
-import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError';
+} from './dbGuard.js';
+import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError.js';
 
 export interface CustomerRoutesDeps {
   db: any;

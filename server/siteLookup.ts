@@ -4,9 +4,9 @@
 // ============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SalonProfile, SalonService, Stylist } from '../src/types';
-import { runDb, DEFAULT_DB_TIMEOUT_MS } from './dbGuard';
-import { isMissingColumnError, isMissingTableError } from './safeError';
+import type { SalonProfile, SalonService, Stylist } from '../src/types.js';
+import { runDb, DEFAULT_DB_TIMEOUT_MS } from './dbGuard.js';
+import { isMissingColumnError, isMissingTableError } from './safeError.js';
 
 export const DEMO_SUBDOMAINS = new Set([
   'arts-by-uma',

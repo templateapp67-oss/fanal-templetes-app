@@ -24,8 +24,8 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { runDb, DEFAULT_DB_TIMEOUT_MS, LOOKUP_DB_TIMEOUT_MS, responseAlreadyEnded } from './dbGuard';
-import { sendSafeError, isMissingTableError } from './safeError';
+import { runDb, DEFAULT_DB_TIMEOUT_MS, LOOKUP_DB_TIMEOUT_MS, responseAlreadyEnded } from './dbGuard.js';
+import { sendSafeError, isMissingTableError } from './safeError.js';
 
 /** Events we act on. Anything else is acknowledged and ignored. */
 export const HANDLED_EVENTS = new Set([

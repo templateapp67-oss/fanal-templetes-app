@@ -1,15 +1,15 @@
 // Loads process env > .env > .env.development (see server/env.ts).
-import "../server/env";
+import "../server/env.js";
 import express from "express";
 import { GoogleGenAI } from "@google/genai";
-import { supabase, isMockSupabase, getSupabaseAdmin, supabaseConfig } from "../src/lib/supabaseClient";
-import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant";
-import { SalonProfile, SalonService, Stylist } from "../src/types";
-import { nexoraCors } from "../server/cors";
-import { handleWebsiteSave } from "../server/websiteSave";
-import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata";
-import { createBookingHandler } from "../server/bookingCreate";
-import { authenticateBookingRequest } from "../server/bookingAuth";
+import { supabase, isMockSupabase, getSupabaseAdmin, supabaseConfig } from "../src/lib/supabaseClient.js";
+import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant.js";
+import { SalonProfile, SalonService, Stylist } from "../src/types.js";
+import { nexoraCors } from "../server/cors.js";
+import { handleWebsiteSave } from "../server/websiteSave.js";
+import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata.js";
+import { createBookingHandler } from "../server/bookingCreate.js";
+import { authenticateBookingRequest } from "../server/bookingAuth.js";
 import {
   createBookingsListHandler,
   createBookingGetHandler,
@@ -17,37 +17,37 @@ import {
   createNotificationsListHandler,
   createNotificationsReadHandler,
   type BookingRoutesDeps,
-} from "../server/bookingRoutes";
-import { createBookingCheckinHandler } from "../server/bookingCheckin";
-import { registerCustomerRoutes } from "../server/customerRoutes";
-import { registerStaffPerformanceRoutes } from "../server/staffPerformanceRoutes";
+} from "../server/bookingRoutes.js";
+import { createBookingCheckinHandler } from "../server/bookingCheckin.js";
+import { registerCustomerRoutes } from "../server/customerRoutes.js";
+import { registerStaffPerformanceRoutes } from "../server/staffPerformanceRoutes.js";
 import {
   createMyBookingsListHandler,
   createMyBookingDetailHandler,
   createCancelMyBookingHandler,
   createReviewMyBookingHandler,
   type BookingMineDeps,
-} from "../server/bookingMine";
-import { createHealthHandler } from "../server/health";
+} from "../server/bookingMine.js";
+import { createHealthHandler } from "../server/health.js";
 import {
   withRequestTimeout,
   API_REQUEST_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
   DEFAULT_DB_TIMEOUT_MS,
   runDb,
-} from "../server/dbGuard";
-import { installProcessGuards } from "../server/processGuards";
-import { asyncRoute, normalizeApiRequestUrl } from "../server/expressSafety";
-import { safeDatabaseError, sendSafeError } from "../server/safeError";
-import { lookupSalon } from "../server/siteLookup";
+} from "../server/dbGuard.js";
+import { installProcessGuards } from "../server/processGuards.js";
+import { asyncRoute, normalizeApiRequestUrl } from "../server/expressSafety.js";
+import { safeDatabaseError, sendSafeError } from "../server/safeError.js";
+import { lookupSalon } from "../server/siteLookup.js";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
   handleVerifyRazorpayPayment,
   handleMockRazorpayPayment,
   describeRazorpayGateway,
-} from "../server/razorpay";
-import { createRazorpayWebhookHandler, isWebhookConfigured } from "../server/razorpayWebhook";
+} from "../server/razorpay.js";
+import { createRazorpayWebhookHandler, isWebhookConfigured } from "../server/razorpayWebhook.js";
 
 // Log (instead of silently dying on) stray async faults.
 installProcessGuards("api/index.ts");

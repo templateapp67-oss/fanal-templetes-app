@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
+    "setup:env": "node scripts/setup-env.mjs",
     "check:razorpay": "node scripts/check-razorpay.mjs",
     "verify": "node --import tsx scripts/verify-supabase-connection.mjs",
     "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs",

@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
-import { getYouTubeDetails, type YouTubeDetails } from '../src/utils/youtube';
+import { getYouTubeDetails, type YouTubeDetails } from '../src/utils/youtube.js';
 import {
   createYouTubeMetadata,
   mergeYouTubeMetadata,
   withOptionalYouTubeMetadata,
   YOUTUBE_METADATA_TIMEOUT_MS,
   type YouTubeMetadata,
-} from '../src/utils/youtubeMetadata';
+} from '../src/utils/youtubeMetadata.js';
 
 interface ServerYouTubeMetadata extends YouTubeMetadata {
   source: 'local_fallback' | 'youtube_data_api' | 'oembed_fallback';

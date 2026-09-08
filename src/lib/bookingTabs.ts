@@ -17,8 +17,8 @@ import {
   describeBookingStatus,
   type BookingStatus,
   type DisplayBookingStatus,
-} from './bookingStatus';
-import { SALON_UTC_OFFSET_MINUTES, toUtcTimestamp } from './bookingConfirmation';
+} from './bookingStatus.js';
+import { SALON_UTC_OFFSET_MINUTES, toUtcTimestamp } from './bookingConfirmation.js';
 
 export type BookingTabId = 'upcoming' | 'completed' | 'cancelled';
 

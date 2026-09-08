@@ -35,7 +35,7 @@
 // The service-role key is read server-side only (supabaseClient.getSupabaseAdmin)
 // and never shipped to the browser bundle.
 // ============================================================================
-import { isMockSupabase, getSupabaseAdmin, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../src/lib/supabaseClient";
+import { isMockSupabase, getSupabaseAdmin, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../src/lib/supabaseClient.js";
 import {
   toProfileRow,
   toServiceDbRow,
@@ -43,14 +43,14 @@ import {
   toLoyaltyConfigDbRow,
   toRewardDbRow,
   SALON_SYNC_TABLES,
-} from "../src/lib/salonSync";
-import { isUuid } from "../src/lib/autoSave";
-import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from "../src/types";
+} from "../src/lib/salonSync.js";
+import { isUuid } from "../src/lib/autoSave.js";
+import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from "../src/types.js";
 import {
   runDb,
   DEFAULT_DB_TIMEOUT_MS,
   responseAlreadyEnded,
-} from './dbGuard';
+} from './dbGuard.js';
 
 export interface WebsiteSaveDeps {
   /** In-memory salon registry used when Supabase is not configured (mock mode). */

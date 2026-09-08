@@ -10,3 +10,4 @@ coverage/
 # Supabase CLI local artifacts
 supabase/.temp/
 supabase/.branches/
+.vercel

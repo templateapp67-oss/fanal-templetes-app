@@ -7,7 +7,7 @@
 // makes serverless failures look like HTML FUNCTION_INVOCATION_FAILED pages.
 // ============================================================================
 
-import { isTransientDbError } from './dbGuard';
+import { isTransientDbError } from './dbGuard.js';
 
 export interface SafeErrorInfo {
   status: number;

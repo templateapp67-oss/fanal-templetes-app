@@ -13,9 +13,9 @@
 //     *pending* booking are promised, not granted.
 // ============================================================================
 
-import { describeBookingStatus, type DisplayBookingStatus } from './bookingStatus';
-import { buildDirectionsUrl } from './bookingConfirmation';
-import { canCancelBooking, canReview, type CancelDecision } from './bookingTabs';
+import { describeBookingStatus, type DisplayBookingStatus } from './bookingStatus.js';
+import { buildDirectionsUrl } from './bookingConfirmation.js';
+import { canCancelBooking, canReview, type CancelDecision } from './bookingTabs.js';
 
 // ---------------------------------------------------------------------------
 // Loyalty points
