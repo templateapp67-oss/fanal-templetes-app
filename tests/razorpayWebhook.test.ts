@@ -324,6 +324,27 @@ test('refunds zero the advance and flip the status', async () => {
   });
 });
 
+test('normalized bookings use paid_amount instead of the absent legacy advance column', async () => {
+  await withSecret(SECRET, async () => {
+    const store = makeDb({
+      bookings: [{ id: 'bk-normalized', payment_id: BOOKING_REF, payment_status: 'pending', paid_amount: 0 }],
+    });
+    const handler = createRazorpayWebhookHandler(deps({ db: store.db }));
+    const capture = makeRes();
+    await handler(signedRequest(paymentCaptured()), capture);
+    assert.equal(capture.statusCode, 200);
+    assert.deepEqual(store.updates[0].changes, {
+      payment_status: 'paid_deposit', payment_id: 'pay_RkAbc123456789', paid_amount: 188,
+    });
+    const refund = makeRes();
+    await handler(signedRequest({ event: 'refund.processed', payload: {
+      refund: { entity: { payment_id: 'pay_RkAbc123456789', amount: 18800 } },
+    } }), refund);
+    assert.equal(refund.statusCode, 200);
+    assert.deepEqual(store.updates[1].changes, { payment_status: 'refunded', paid_amount: 0 });
+  });
+});
+
 test('mock mode updates the in-memory booking without a database', async () => {
   await withSecret(SECRET, async () => {
     const bookings = [{ id: 'mock-1', payment_id: BOOKING_REF, payment_status: 'pending', customer_name: 'Riya' }];

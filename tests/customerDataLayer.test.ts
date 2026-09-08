@@ -594,7 +594,7 @@ test('no customer file imports mock data or queries Supabase directly', () => {
     assert.equal(/from '\.\.\/mockData'|from '\.\/mockData'|INITIAL_(SALON|SERVICES|STYLISTS|APPOINTMENTS|CLIENTS)/.test(source), false, `${file} still uses mock data`);
     // Screens must go through src/lib/customer/api.ts; only that file (and the
     // auth screen, which needs the session) may touch the client.
-    if (!file.includes('/lib/customer/') && !file.endsWith('Auth.tsx')) {
+    if (!file.replace(/\\/g, '/').includes('/lib/customer/') && !file.endsWith('Auth.tsx')) {
       assert.equal(/from '\.\.\/\.\.\/lib\/supabaseClient'|supabase\.from\(/.test(source), false, `${file} reads Supabase directly, skipping the API’s scoping`);
       assert.equal(/\bfetch\(\s*['"`]\/api\//.test(source), false, `${file} calls fetch instead of the customer API wrapper`);
     }

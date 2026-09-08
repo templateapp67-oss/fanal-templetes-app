@@ -292,9 +292,15 @@ async function applyWebhookToBooking(
   const changes: Record<string, any> = { payment_status: facts.nextPaymentStatus };
   if (facts.nextPaymentStatus === 'paid_deposit') {
     if (facts.paymentId) changes.payment_id = facts.paymentId;
-    if (facts.amount !== null) changes.advance_paid_amount = facts.amount;
+    if (facts.amount !== null) {
+      // Normalized bookings store rupees in paid_amount. Older installations
+      // use advance_paid_amount; never send a column absent from the loaded row.
+      changes[Object.hasOwn(booking, 'paid_amount') ? 'paid_amount' : 'advance_paid_amount'] = facts.amount;
+    }
   }
-  if (facts.nextPaymentStatus === 'refunded') changes.advance_paid_amount = 0;
+  if (facts.nextPaymentStatus === 'refunded') {
+    changes[Object.hasOwn(booking, 'paid_amount') ? 'paid_amount' : 'advance_paid_amount'] = 0;
+  }
 
   const updateResult = await runDb(
     () => deps.db.from('bookings').update(changes).eq('id', booking.id),
