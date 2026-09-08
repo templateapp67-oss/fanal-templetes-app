@@ -13,7 +13,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "check:razorpay": "node scripts/check-razorpay.mjs",
     "verify": "node --import tsx scripts/verify-supabase-connection.mjs",
-    "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs"
+    "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs",
+    "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
