@@ -2099,7 +2099,7 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
             error: 'You already have a booking for that salon, date and time.',
           });
         }
-        return void fail(res, requestId, insertResult.error, 'Your booking could not be saved. Nothing was charged.');
+        return void fail(res, requestId, insertResult.error, 'Your booking could not be saved. If you completed payment, keep your payment receipt and contact the salon before paying again.');
       }
       const booking = insertResult.data;
 
@@ -2241,7 +2241,7 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
       });
     } catch (err: any) {
       console.error(`[Customer] (${requestId}) Booking create threw:`, err?.stack || err);
-      sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your booking could not be saved. Nothing was charged.' });
+      sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Your booking could not be saved. If you completed payment, keep your payment receipt and contact the salon before paying again.' });
     }
   };
 }

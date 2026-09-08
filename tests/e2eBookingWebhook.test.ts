@@ -35,9 +35,10 @@ let mode: string = 'mock';
  * being resolvable, so skip them there (the wiring they exercise is identical
  * to the mock store path in server/razorpayWebhook.ts).
  */
-function skipUnlessMock(t: TestContext): void {
-  if (mode === 'mock') return;
+function skipUnlessMock(t: TestContext): boolean {
+  if (mode === 'mock') return false;
   t.skip(`requires mock mode (app reports mode="${mode}")`);
+  return true;
 }
 
 /**
@@ -47,10 +48,11 @@ function skipUnlessMock(t: TestContext): void {
  * and the app runs its built-in mock gateway — these assertions cannot be
  * exercised there, so skip them instead of failing the suite.
  */
-function skipUnlessRealRazorpay(t: TestContext): void {
+function skipUnlessRealRazorpay(t: TestContext): boolean {
   const key = String(process.env.RAZORPAY_KEY_ID || '').trim();
-  if (/^rzp_(test|live)_/.test(key) && currentWebhookSecret()) return;
+  if (/^rzp_(test|live)_/.test(key) && currentWebhookSecret()) return false;
   t.skip('requires Razorpay test/live keys + webhook secret in the environment');
+  return true;
 }
 
 /** Minimal, otherwise-valid booking used by most scenarios. */
@@ -148,7 +150,7 @@ test('the serverless entrypoint also handles a rewrite that strips the /api pref
 });
 
 test('POST /api/bookings/create rejects an unauthenticated caller before payment or persistence', async (t) => {
-  skipUnlessMock(t);
+  if (skipUnlessMock(t)) return;
   const before = await request('GET', '/api/bookings');
   const r = await request(
     'POST',
@@ -171,7 +173,7 @@ test('POST /api/bookings/create rejects an unauthenticated caller before payment
 });
 
 test('POST /api/bookings/create stores an authenticated booking (no owner id sent)', async (t) => {
-  skipUnlessMock(t);
+  if (skipUnlessMock(t)) return;
   const r = await request('POST', '/api/bookings/create', {
     booking: VALID_BOOKING,
     notifications: [{ user_email: 'owner@salon.com', title: 'New booking', message: 'A guest booked.' }],
@@ -186,7 +188,7 @@ test('POST /api/bookings/create stores an authenticated booking (no owner id sen
 });
 
 test('POST /api/bookings/create accepts a booking missing every optional field', async (t) => {
-  skipUnlessMock(t);
+  if (skipUnlessMock(t)) return;
   // Only the required fields; no email, no payment, no notification payload.
   const minimal = {
     customer_name: 'Ankit',
@@ -248,7 +250,7 @@ test('POST /api/payments/razorpay/order rejects an invalid amount with HTTP 400'
 test('POST /api/payments/razorpay/order initializes an order with the gateway', async (t) => {
   // The outbound api.razorpay.com interception below only fires when real
   // credentials are configured; the built-in mock gateway never calls out.
-  skipUnlessRealRazorpay(t);
+  if (skipUnlessRealRazorpay(t)) return;
   const originalFetch = globalThis.fetch;
   try {
     // Intercept ONLY the outbound Razorpay call so the test never touches the
@@ -302,7 +304,7 @@ test('webhook rejects a forged signature with HTTP 400 and never 500', async (t)
   // Without a configured webhook secret the handler correctly answers 503
   // (webhook_not_configured) rather than guessing — the 400 assertion below
   // only applies when a real secret is present.
-  skipUnlessRealRazorpay(t);
+  if (skipUnlessRealRazorpay(t)) return;
   const payload = {
     entity: 'event',
     event: 'payment.captured',
@@ -315,7 +317,7 @@ test('webhook rejects a forged signature with HTTP 400 and never 500', async (t)
 });
 
 test('webhook rejects a request with no signature header', async (t) => {
-  skipUnlessRealRazorpay(t);
+  if (skipUnlessRealRazorpay(t)) return;
   const payload = { entity: 'event', event: 'payment.captured', payload: { payment: { entity: { id: 'pay_1' } } } };
   const { raw } = signRazorpayWebhook(payload, currentWebhookSecret() || 'x');
   const r = await requestRaw('/api/payments/razorpay/webhook', raw);
@@ -323,7 +325,7 @@ test('webhook rejects a request with no signature header', async (t) => {
 });
 
 test('webhook accepts a genuine HMAC over the RAW bytes and updates the booking', async (t) => {
-  skipUnlessMock(t);
+  if (skipUnlessMock(t)) return;
   const secret = currentWebhookSecret();
   if (!secret) return; // cannot verify signatures without a configured secret
 
@@ -366,7 +368,7 @@ test('webhook accepts a genuine HMAC over the RAW bytes and updates the booking'
 });
 
 test('webhook delivery is idempotent on real HTTP', async (t) => {
-  skipUnlessMock(t);
+  if (skipUnlessMock(t)) return;
   const secret = currentWebhookSecret();
   if (!secret) return;
 
@@ -402,7 +404,7 @@ test('webhook delivery is idempotent on real HTTP', async (t) => {
 });
 
 test('webhook payment.failed flips a matching booking to failed', async (t) => {
-  skipUnlessMock(t);
+  if (skipUnlessMock(t)) return;
   const secret = currentWebhookSecret();
   if (!secret) return;
 

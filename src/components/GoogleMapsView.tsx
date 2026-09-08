@@ -21,10 +21,7 @@ interface GoogleMapsViewProps {
   accentColor?: string;
 }
 
-// Fallback Google Maps API Key for prototyping / testing if env var is unset
-const MAPS_API_KEY =
-  (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) ||
-  'AIzaSyD-TEST_DEMO_KEY';
+const MAPS_API_KEY = String(import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || '').trim();
 
 export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   latitude = 19.076,
@@ -63,6 +60,19 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   )}`;
 
   const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${markerPos.lat},${markerPos.lng}`;
+
+  if (!MAPS_API_KEY) {
+    return (
+      <div style={{ minHeight: height }} className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
+        <MapPin aria-hidden="true" className="h-6 w-6 text-rose-600" />
+        <p className="font-semibold">{title}</p>
+        <p className="text-sm text-slate-600">{address}</p>
+        <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 underline">
+          Get directions in Google Maps
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full relative rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50">

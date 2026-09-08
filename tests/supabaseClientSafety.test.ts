@@ -19,14 +19,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Import supabaseClient in a clean child process with a specific environment. */
 function importWithEnv(env: Record<string, string>): { ok: boolean; output: string } {
   const script = `
-    import('${path.join(repoRoot, 'src/lib/supabaseClient.ts').replace(/\\/g, '/')}')
+    import(${JSON.stringify(pathToFileURL(path.join(repoRoot, 'src/lib/supabaseClient.ts')).href)})
       .then((m) => {
         console.log(JSON.stringify({
           imported: true,
