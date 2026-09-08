@@ -301,6 +301,10 @@ test('a signed-in owner sees the Staff Performance shell before RPCs return', ()
   assert.ok(html.includes('Last 7 Days'));
   assert.ok(html.includes('CSV Export'));
   assert.ok(html.includes('Refresh'));
+  assert.ok(html.includes('Today'));
+  assert.ok(html.includes('Last 30 Days'));
+  assert.ok(html.includes('This Month'));
+  assert.ok(html.includes('All Staff'));
   assert.ok(html.includes('kpi-skeleton') || html.includes('Total Bookings'));
 });
 

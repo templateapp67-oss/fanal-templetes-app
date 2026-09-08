@@ -350,6 +350,8 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<StaffPerformanceError | null>(null);
   const [detail, setDetail] = useState<StaffDetailPayload | null>(null);
+  const [detailDaily, setDetailDaily] = useState<StaffDailyPerformanceRow[]>([]);
+  const detailStaffIdRef = useRef<string | null>(null);
 
   const inflight = useRef(0);
   const salonIdRef = useRef<string | null>(null);
@@ -357,8 +359,10 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   const clearDashboard = useCallback(() => {
     setBundle(null);
     setDetail(null);
+    setDetailDaily([]);
     setDetailOpen(false);
     salonIdRef.current = null;
+    detailStaffIdRef.current = null;
   }, []);
 
   const load = useCallback(async () => {
@@ -537,17 +541,23 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
 
   const openDetail = async (staffId: string) => {
     if (!salonIdRef.current) return;
+    detailStaffIdRef.current = staffId;
     setDetailOpen(true);
     setDetail(null);
+    setDetailDaily([]);
     setDetailError(null);
     setDetailLoading(true);
-    const result = await fetchStaffDetail(salonIdRef.current, staffId, range.from, range.to);
+    const [result, daily] = await Promise.all([
+      fetchStaffDetail(salonIdRef.current, staffId, range.from, range.to),
+      fetchStaffDailyPerformance(salonIdRef.current, range.from, range.to, staffId),
+    ]);
     setDetailLoading(false);
     if (isRpcFail(result)) {
       setDetailError(result.error);
       return;
     }
     setDetail(result.detail);
+    setDetailDaily(isRpcFail(daily) ? [] : daily.rows.filter((row) => row.staff_id === staffId));
   };
 
   if (fatal) {
@@ -938,7 +948,15 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
               </button>
             </div>
             {detailLoading && <div className="h-40 bg-gray-50 animate-pulse rounded-xl" data-testid="detail-skeleton" />}
-            {detailError && <ErrorBlock error={detailError} onRetry={() => detail && void openDetail(detail.staff_profile.staff_id)} />}
+            {detailError && (
+              <ErrorBlock
+                error={detailError}
+                onRetry={() => {
+                  const id = detailStaffIdRef.current || detail?.staff_profile.staff_id;
+                  if (id) void openDetail(id);
+                }}
+              />
+            )}
             {detail && !detailLoading && (
               <div className="flex flex-col gap-4 text-xs">
                 <div className="flex items-center gap-3">
@@ -1019,6 +1037,23 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
                           <div className="text-gray-500">
                             {publicCustomerLabel(a.customer_name)} · {a.status} · {a.payment_status} · {money(a.paid_amount)}
                           </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="font-bold mb-1">Daily bookings</div>
+                  {detailDaily.length === 0 ? (
+                    <p className="text-gray-500">No daily rows in this range.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1 font-mono">
+                      {detailDaily.map((d) => (
+                        <li key={d.performance_date} className="flex justify-between border-b border-gray-100 py-1">
+                          <span>{d.performance_date}</span>
+                          <span>
+                            {d.bookings} booked · {d.completed_bookings} done · {money(d.paid_amount)}
+                          </span>
                         </li>
                       ))}
                     </ul>
