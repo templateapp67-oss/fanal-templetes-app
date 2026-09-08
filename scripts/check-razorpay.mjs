@@ -7,6 +7,9 @@
 //   2. whether they are well-formed (test vs live),
 //   3. whether Razorpay accepts them (creates + reads back a ₹1 test order),
 //   4. whether the HMAC signature check works.
+// When no keys are present it explains which gateway the server will run
+// instead (the built-in MOCK gateway in development, DISABLED in production)
+// so "payments are not configured" is never a surprise.
 // The secret is never printed in full.
 // ============================================================================
 
@@ -35,14 +38,48 @@ const webhookSecret = clean(process.env.RAZORPAY_WEBHOOK_SECRET || process.env.R
 const appUrl = clean(process.env.APP_URL) || 'https://fanal-templetes-app.vercel.app';
 const mask = (v) => (v ? `${v.slice(0, 6)}${'*'.repeat(Math.max(0, v.length - 10))}${v.slice(-4)}` : '(empty)');
 
+// Mirrors server/razorpay.ts → resolveRazorpayGatewayMode()
+const mockFlagRaw = clean(process.env.RAZORPAY_MOCK_MODE).toLowerCase();
+const mockFlag = ['1', 'true', 'yes', 'on', 'mock'].includes(mockFlagRaw)
+  ? true
+  : ['0', 'false', 'no', 'off'].includes(mockFlagRaw)
+    ? false
+    : undefined;
+const isProduction =
+  clean(process.env.NODE_ENV).toLowerCase() === 'production' ||
+  clean(process.env.VERCEL_ENV).toLowerCase() === 'production';
+
 console.log('\n— Razorpay configuration ————————————————————————————');
 console.log(`  loaded from      : ${sources.length ? sources.join(', ') : 'process environment only'}`);
 console.log(`  RAZORPAY_KEY_ID  : ${keyId || '(missing)'}`);
 console.log(`  RAZORPAY_KEY_SECRET: ${mask(keySecret)}`);
+console.log(`  RAZORPAY_MOCK_MODE : ${mockFlagRaw || '(unset → auto)'}`);
+console.log(`  runtime          : ${isProduction ? 'PRODUCTION' : 'development / test'}`);
+
+if (mockFlag === true) {
+  console.log('\n⚠ RAZORPAY_MOCK_MODE=true — the server will run the built-in MOCK gateway even though');
+  console.log('  keys may be present. Every "payment" is simulated; no money moves. Unset it to go real.');
+  if (isProduction) {
+    console.error('✖ …and this is a PRODUCTION runtime. Unset RAZORPAY_MOCK_MODE before taking bookings.');
+    process.exit(1);
+  }
+}
 
 if (!keyId || !keySecret) {
-  console.error('\n✖ Missing credentials. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env');
-  process.exit(1);
+  const missing = [!keyId && 'RAZORPAY_KEY_ID', !keySecret && 'RAZORPAY_KEY_SECRET'].filter(Boolean).join(' and ');
+  if (mockFlag === false || isProduction) {
+    console.error(`\n✖ ${missing} missing → online payment is DISABLED.`);
+    console.error('  Checkout will answer 503 razorpay_not_configured and the modal will offer "pay at the salon".');
+    console.error('  Add the keys to .env (or the hosting dashboard). Test keys: dashboard.razorpay.com → Settings → API Keys.');
+    process.exit(1);
+  }
+  console.log(`\n⚠ ${missing} missing → the server will run the built-in MOCK payment gateway.`);
+  console.log('  • Orders are created as order_mock_… with the real 25 % deposit in paise (₹87 → 8700).');
+  console.log('  • Customers see a simulated payment sheet (no checkout.js, no money) and the same');
+  console.log('    HMAC signature verification runs before the booking is written.');
+  console.log('  • The confirmation pass is labelled "simulated". Never used on production runtimes.');
+  console.log('  Add real TEST keys to .env to exercise Razorpay Checkout for real.\n');
+  process.exit(0);
 }
 if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(keyId)) {
   console.error(`\n✖ RAZORPAY_KEY_ID "${keyId}" is malformed — expected rzp_test_… or rzp_live_….`);

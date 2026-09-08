@@ -40,7 +40,8 @@ import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
   handleVerifyRazorpayPayment,
-  getRazorpayConfigIssues,
+  handleMockRazorpayPayment,
+  describeRazorpayGateway,
 } from "../server/razorpay";
 import { createRazorpayWebhookHandler, isWebhookConfigured } from "../server/razorpayWebhook";
 
@@ -106,17 +107,15 @@ if (!isMockSupabase && !admin) {
 // logs at boot instead of at the customer's checkout click.
 // ---------------------------------------------------------------------------
 {
-  const razorpayIssues = getRazorpayConfigIssues();
-  if (razorpayIssues.length === 0) {
-    const keyId = (process.env.RAZORPAY_KEY_ID || '').trim().replace(/^['"]|['"]$/g, '');
-    console.log(`[Razorpay] Gateway ready (${keyId.startsWith('rzp_live_') ? 'LIVE' : 'TEST'} key ${keyId.slice(0, 12)}…).`);
+  // Modes: live / test (real keys), mock (no keys, non-production runtime —
+  // payments are simulated end-to-end), disabled (no keys in production).
+  const gateway = describeRazorpayGateway();
+  if (gateway.mode === 'live' || gateway.mode === 'test') {
+    console.log(`[Razorpay] ${gateway.summary}`);
   } else {
-    console.warn(
-      '[Razorpay] Online payments are DISABLED — ' +
-        razorpayIssues.join(' ') +
-        ' Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env to enable checkout.'
-    );
+    console.warn(`[Razorpay] ${gateway.summary}`);
   }
+  for (const warning of gateway.warnings) console.warn(`[Razorpay] WARNING: ${warning}`);
 
   if (isWebhookConfigured()) {
     console.log('[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).');
@@ -544,11 +543,15 @@ app.post(
 
 // ============================================================================
 // PAYMENTS — Razorpay (advance token checkout)
-// RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are read from the environment.
+// RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are read from the environment. With no
+// credentials outside a production runtime the MOCK gateway takes over
+// (simulated payments, same order → verify → booking pipeline); /mock-pay
+// answers 404 in every other mode.
 // ============================================================================
 app.get("/api/payments/razorpay/config", handleRazorpayConfig);
 app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayOrder));
 app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
+app.post("/api/payments/razorpay/mock-pay", asyncRoute(handleMockRazorpayPayment));
 
 // Server-to-server callback from Razorpay, signed with RAZORPAY_WEBHOOK_SECRET.
 app.post(

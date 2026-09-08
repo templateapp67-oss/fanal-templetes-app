@@ -484,9 +484,13 @@ test('an unverified payment claim cannot mark a booking paid when the gateway is
   const previous = {
     id: process.env.RAZORPAY_KEY_ID,
     secret: process.env.RAZORPAY_KEY_SECRET,
+    mock: process.env.RAZORPAY_MOCK_MODE,
   };
   delete process.env.RAZORPAY_KEY_ID;
   delete process.env.RAZORPAY_KEY_SECRET;
+  // No keys + mock explicitly off = the gateway is DISABLED (what a
+  // production deployment without credentials looks like).
+  process.env.RAZORPAY_MOCK_MODE = 'false';
   try {
     const stored: any[] = [];
     const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
@@ -510,7 +514,106 @@ test('an unverified payment claim cannot mark a booking paid when the gateway is
     else process.env.RAZORPAY_KEY_ID = previous.id;
     if (previous.secret === undefined) delete process.env.RAZORPAY_KEY_SECRET;
     else process.env.RAZORPAY_KEY_SECRET = previous.secret;
+    if (previous.mock === undefined) delete process.env.RAZORPAY_MOCK_MODE;
+    else process.env.RAZORPAY_MOCK_MODE = previous.mock;
   }
+});
+
+/** Run `fn` with RAZORPAY_* overridden, restoring the previous values after. */
+async function withRazorpayEnv<T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
+  const previous: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(vars)) {
+    previous[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of Object.entries(previous)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+const NO_KEYS_MOCK_ENV = {
+  RAZORPAY_KEY_ID: undefined,
+  RAZORPAY_KEY_SECRET: undefined,
+  VITE_RAZORPAY_KEY_ID: undefined,
+  RAZORPAY_MOCK_MODE: undefined,
+  RAZORPAY_MOCK_SECRET: undefined,
+  NODE_ENV: 'test',
+  VERCEL_ENV: undefined,
+};
+
+test('mock gateway (no keys, non-production): a forged payment claim is rejected, nothing stored', async () => {
+  await withRazorpayEnv(NO_KEYS_MOCK_ENV, async () => {
+    const stored: any[] = [];
+    const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
+    const res = makeRes();
+    await handler(
+      {
+        body: {
+          booking: { ...VALID_BOOKING, payment_status: 'paid_deposit', advance_paid_amount: 188 },
+          payment: { razorpay_order_id: 'order_mock_AAAAAAAAAAAAAA', razorpay_payment_id: 'pay_mock_forged', razorpay_signature: 'forged' },
+        },
+        headers: {},
+      },
+      res
+    );
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.code, 'payment_unverified');
+    assert.equal(stored.length, 0);
+  });
+});
+
+test('mock gateway: a payment signed by /mock-pay verifies and marks the booking paid_deposit (paymentMode=mock)', async () => {
+  await withRazorpayEnv(NO_KEYS_MOCK_ENV, async () => {
+    const { createMockOrder, signMockPayment } = await import('../server/razorpay');
+    const order = createMockOrder({ amount: 87, receipt: 'NX-BLR-10001' });
+    assert.equal(order.amount, 8700, '₹87 must become 8700 paise');
+    const signed = signMockPayment(order.id);
+
+    const stored: any[] = [];
+    const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
+    const res = makeRes();
+    await handler(
+      {
+        body: {
+          booking: { ...VALID_BOOKING, total_amount: 348, advance_paid_amount: 87, payment_status: 'pending', payment_id: 'NX-BLR-10001' },
+          payment: signed,
+        },
+        headers: {},
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.paymentVerified, true);
+    assert.equal(res.body.paymentMode, 'mock');
+    assert.equal(stored[0].payment_status, 'paid_deposit');
+    assert.equal(stored[0].advance_paid_amount, 87);
+    assert.equal(stored[0].payment_id, signed.razorpay_payment_id);
+  });
+});
+
+test('a mock-signed payment is refused once real Razorpay keys are configured', async () => {
+  await withRazorpayEnv(
+    { ...NO_KEYS_MOCK_ENV, RAZORPAY_KEY_ID: 'rzp_test_TIzKly1Z2NMnum', RAZORPAY_KEY_SECRET: 'test_secret_value_123' },
+    async () => {
+      const { createMockOrder, signMockPayment } = await import('../server/razorpay');
+      const order = createMockOrder({ amount: 87 });
+      const signed = signMockPayment(order.id);
+      const stored: any[] = [];
+      const handler = createBookingHandler(baseDeps({ isMock: true, addMockBooking: (r: any) => stored.push(r) }));
+      const res = makeRes();
+      await handler({ body: { booking: VALID_BOOKING, payment: signed }, headers: {} }, res);
+      assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'payment_unverified');
+      assert.equal(stored.length, 0);
+    }
+  );
 });
 
 test('a genuine Razorpay payment marks the booking as paid_deposit', async () => {
