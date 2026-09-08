@@ -1153,6 +1153,38 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
 
             <div className="flex flex-col gap-2">
               
+              {/* Promotional Top Announcement Banner */}
+              <div className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/50 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <span>Promotional Header Banner</span>
+                      <span className="text-[9px] font-mono-caps bg-amber-200 text-amber-950 font-bold px-1.5 py-0.2 rounded-md">Promo</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500">Discount codes, festival sale bar</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentEnabled = profile.promotionalBanner?.enabled !== false;
+                      setProfile((prev) => ({
+                        ...prev,
+                        promotionalBanner: {
+                          ...(prev.promotionalBanner || { text: '✨ Special Festive Offer: Get Flat 20% OFF!' }),
+                          enabled: !currentEnabled,
+                        }
+                      }));
+                      showToast(!currentEnabled ? 'Promotional header banner enabled' : 'Promotional header banner hidden');
+                    }}
+                    className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                      profile.promotionalBanner?.enabled !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'
+                    }`}
+                  >
+                    {profile.promotionalBanner?.enabled !== false ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
               <div className="p-2.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between">
                 <div>
                   <div className="font-bold text-slate-900">Sticky Top Header</div>

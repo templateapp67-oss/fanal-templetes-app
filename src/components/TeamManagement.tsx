@@ -19,11 +19,13 @@ import {
   Clock,
   EyeOff,
   Percent,
-  Layers
+  Layers,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AddStaffModal } from './AddStaffModal';
 import { StylistAvatarUpload } from './StylistAvatarUpload';
+import { GuestModeBanner } from './GuestModeBanner';
 
 interface TeamManagementProps {
   stylists: Stylist[];
@@ -31,6 +33,8 @@ interface TeamManagementProps {
   primaryAccentColor: string;
   services?: SalonService[];
   onNavigateToPreview?: () => void;
+  isAuthenticated?: boolean;
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
 // Curated high quality avatar presets for Indian salon specialists
@@ -88,7 +92,9 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   setStylists,
   primaryAccentColor,
   services = [],
-  onNavigateToPreview
+  onNavigateToPreview,
+  isAuthenticated = true,
+  onRequireAuth
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSpecialtyFilter, setSelectedSpecialtyFilter] = useState<string>('all');
@@ -123,6 +129,10 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   };
 
   const handleOpenAddModal = () => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setFormData({
       name: '',
       role: 'Senior Hair Stylist',
@@ -135,6 +145,10 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   };
 
   const handleOpenEditModal = (st: Stylist) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setEditingStylist(st);
     setFormData({
       name: st.name,
@@ -179,6 +193,10 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   };
 
   const handleSaveNewStaffMember = (newStaff: Stylist) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setStylists((prev) => [...prev, newStaff]);
     setIsAddModalOpen(false);
     showNotification(`Specialist "${newStaff.name}" (${newStaff.role}) successfully onboarded!`);
@@ -186,6 +204,10 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
 
   const handleSaveEditStylist = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     if (!editingStylist || !formData.name.trim()) return;
 
     const updated: Stylist = {
@@ -203,6 +225,10 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   };
 
   const handleDeleteStylist = (id: string) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     const st = stylists.find((s) => s.id === id);
     setStylists((prev) => prev.filter((s) => s.id !== id));
     setDeletingStylistId(null);
@@ -231,6 +257,15 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col gap-6">
       
+      {/* Guest Mode Read-Only Banner */}
+      {!isAuthenticated && (
+        <GuestModeBanner
+          title="Team Management (Guest Preview)"
+          description="You are viewing the salon specialists in guest preview mode. Log in or create an account to onboard, edit, or remove staff members."
+          onRequireAuth={onRequireAuth}
+        />
+      )}
+
       {/* Toast Notification */}
       <AnimatePresence>
         {notification && (
@@ -288,8 +323,9 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
             className="text-xs font-bold px-4 py-2.5 rounded-xl text-white flex items-center gap-2 shadow-sm transition-all hover:opacity-95 active:scale-[0.98] cursor-pointer"
             style={{ backgroundColor: primaryAccentColor }}
             id="add-new-stylist-btn"
+            title={!isAuthenticated ? 'Log in to add new stylist' : 'Add New Stylist'}
           >
-            <UserPlus className="w-4 h-4" />
+            {!isAuthenticated ? <Lock className="w-3.5 h-3.5" /> : <UserPlus className="w-4 h-4" />}
             <span>Add New Stylist</span>
           </button>
         </div>
@@ -478,15 +514,21 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
                   <button
                     onClick={() => handleOpenEditModal(st)}
                     className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors cursor-pointer"
-                    title="Edit Stylist Details"
+                    title={!isAuthenticated ? 'Log in to edit stylist' : 'Edit Stylist Details'}
                   >
-                    <Edit3 className="w-4 h-4" />
+                    {!isAuthenticated ? <Lock className="w-3.5 h-3.5 text-gray-400" /> : <Edit3 className="w-4 h-4" />}
                   </button>
 
                   <button
-                    onClick={() => setDeletingStylistId(st.id)}
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        onRequireAuth?.('login');
+                        return;
+                      }
+                      setDeletingStylistId(st.id);
+                    }}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                    title="Delete Stylist"
+                    title={!isAuthenticated ? 'Log in to remove stylist' : 'Delete Stylist'}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

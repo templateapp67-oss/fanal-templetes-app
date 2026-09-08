@@ -16,9 +16,11 @@ import {
   AlertCircle,
   TrendingUp,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GuestModeBanner } from './GuestModeBanner';
 
 interface ServiceManagementProps {
   services: SalonService[];
@@ -26,6 +28,8 @@ interface ServiceManagementProps {
   primaryAccentColor: string;
   profile?: SalonProfile;
   onNavigateToPreview?: () => void;
+  isAuthenticated?: boolean;
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
 const COMMON_CATEGORIES = [
@@ -47,6 +51,8 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   primaryAccentColor,
   profile,
   onNavigateToPreview,
+  isAuthenticated = true,
+  onRequireAuth,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
@@ -74,6 +80,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   };
 
   const handleOpenAdd = () => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setEditingServiceId(null);
     setFormName('');
     setFormCategory('Precision Cuts');
@@ -88,6 +98,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   };
 
   const handleOpenEdit = (srv: SalonService) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setEditingServiceId(srv.id);
     setFormName(srv.name);
     if (COMMON_CATEGORIES.includes(srv.category)) {
@@ -108,6 +122,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
   const handleSaveService = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     if (!formName.trim()) {
       setFormError('Service name is required.');
       return;
@@ -165,6 +183,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   };
 
   const handleDelete = (id: string, name: string) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     if (window.confirm(`Are you sure you want to remove "${name}" from your service catalog?`)) {
       setServices((prev) => prev.filter((s) => s.id !== id));
       showToast(`Deleted service "${name}".`);
@@ -173,6 +195,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
   const handleToggleShowDuration = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setServices((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
@@ -193,6 +219,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
   const handleTogglePopular = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setServices((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
@@ -218,6 +248,15 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
   return (
     <div className="flex flex-col gap-6" id="services-management-section">
+      {/* Guest Mode Read-Only Banner */}
+      {!isAuthenticated && (
+        <GuestModeBanner
+          title="Services & Catalog (Guest Preview)"
+          description="You are viewing the salon service menu in guest preview mode. Log in or create an account to add new services, edit rates, or adjust duration visibility."
+          onRequireAuth={onRequireAuth}
+        />
+      )}
+
       {/* Toast Notice */}
       <AnimatePresence>
         {feedbackNotice && (
@@ -271,8 +310,10 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
               onClick={handleOpenAdd}
               className="px-4 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer shadow-xs hover:opacity-95"
               style={{ backgroundColor: primaryAccentColor }}
+              title={!isAuthenticated ? 'Log in to add service' : 'Add New Service'}
+              id="add-new-service-btn"
             >
-              <Plus className="w-4 h-4" />
+              {!isAuthenticated ? <Lock className="w-3.5 h-3.5" /> : <Plus className="w-4 h-4" />}
               <span>Add New Service</span>
             </button>
           </div>
@@ -512,9 +553,9 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                         type="button"
                         onClick={() => handleOpenEdit(srv)}
                         className="p-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
-                        title="Edit Service Details"
+                        title={!isAuthenticated ? 'Log in to edit service' : 'Edit Service Details'}
                       >
-                        <Edit3 className="w-3.5 h-3.5 text-gray-500" />
+                        {!isAuthenticated ? <Lock className="w-3.5 h-3.5 text-gray-400" /> : <Edit3 className="w-3.5 h-3.5 text-gray-500" />}
                         <span>Edit</span>
                       </button>
 
@@ -522,7 +563,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                         type="button"
                         onClick={() => handleDelete(srv.id, srv.name)}
                         className="p-1.5 text-xs font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
-                        title="Delete Service"
+                        title={!isAuthenticated ? 'Log in to remove service' : 'Delete Service'}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

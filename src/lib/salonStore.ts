@@ -79,22 +79,66 @@ export function getSubdomainUrl(profile: SalonProfile): string {
   return `https://${sub}.nexora.in`;
 }
 
+export interface AuthenticatedProfileState {
+  salonName?: string;
+  businessName?: string;
+  phoneNumber?: string;
+  phone?: string;
+  city?: string;
+  ownerName?: string;
+  fullName?: string;
+  email?: string;
+  address?: string;
+  fullAddress?: string;
+  postalCode?: string;
+  subdomain?: string;
+}
+
+const AUTH_PROFILE_STORAGE_KEY = 'nexora_auth_profile_state';
+
+export function getStoredAuthenticatedProfile(): AuthenticatedProfileState | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(AUTH_PROFILE_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAuthenticatedProfile(profile: Partial<AuthenticatedProfileState> | null) {
+  try {
+    if (typeof window === 'undefined') return;
+    if (!profile) {
+      localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+      return;
+    }
+    const current = getStoredAuthenticatedProfile() || {};
+    const merged = { ...current, ...profile };
+    localStorage.setItem(AUTH_PROFILE_STORAGE_KEY, JSON.stringify(merged));
+  } catch {
+    // ignore quota/storage issues
+  }
+}
+
 /**
  * Merge a new category template into the current profile WITHOUT clobbering
- * the owner's own input (salon name, phone, city, address, services, etc.).
- *
- * Fields the user has customised (i.e. differ from the previous template's
- * defaults) are preserved; untouched defaults roll over to the new template.
+ * the owner's own input (salon name, phone, city, address, services, etc.),
+ * AND automatically fetching & populating salon name, mobile, and city from
+ * the user's authenticated profile state whenever any template is selected.
  */
 export function mergeTemplatePreservingUserData(
   prev: SalonProfile,
   nextTmplId: BusinessTypeId,
-  prevTmplId?: BusinessTypeId
+  prevTmplId?: BusinessTypeId,
+  authProfileOverride?: Partial<AuthenticatedProfileState> | null
 ): SalonProfile {
   const tmpl = CATEGORY_TEMPLATES[nextTmplId];
   if (!tmpl) return prev;
 
   const prevTmpl = prevTmplId ? CATEGORY_TEMPLATES[prevTmplId] : undefined;
+  const auth = authProfileOverride || getStoredAuthenticatedProfile();
 
   // A value is "customised" when the current value is non-empty AND differs
   // from what the previous template's default was.
@@ -102,15 +146,60 @@ export function mergeTemplatePreservingUserData(
     value: string | undefined,
     prevDefault: string | undefined
   ) => {
-    if (value && value !== prevDefault) return value;
+    if (value && value.trim() && value !== prevDefault) return value.trim();
     return undefined;
   };
 
   const wasCustomized = (value: string | undefined, prevDefault: string | undefined) =>
-    !!value && value !== prevDefault;
+    Boolean(value && value.trim() && value !== prevDefault);
 
-  // Business copy / contact: customised values stick around, otherwise the new
-  // template's defaults are adopted.
+  // Authenticated profile values have priority for auto-population onto selected templates:
+  const authSalonName = (auth?.salonName || auth?.businessName || '').trim();
+  const authPhone = (auth?.phoneNumber || auth?.phone || '').trim();
+  const authCity = (auth?.city || '').trim();
+  const authOwnerName = (auth?.ownerName || auth?.fullName || '').trim();
+  const authAddress = (auth?.fullAddress || auth?.address || '').trim();
+
+  // Business Name:
+  // 1. Customized value if user explicitly changed it
+  // 2. Authenticated user's registered salon name
+  // 3. Current business name if already valid and not prev template's title
+  // 4. New template title
+  const resolvedBusinessName =
+    keepIfCustomized(prev.businessName, prevTmpl?.title) ||
+    authSalonName ||
+    (prev.businessName && prev.businessName !== prevTmpl?.title ? prev.businessName : tmpl.title);
+
+  // Phone / Mobile:
+  const resolvedPhone =
+    keepIfCustomized(prev.phone, prevTmpl?.phone) ||
+    authPhone ||
+    (prev.phone && prev.phone !== prevTmpl?.phone ? prev.phone : tmpl.phone);
+
+  // City:
+  const resolvedCity =
+    keepIfCustomized(prev.city, prevTmpl?.defaultCity) ||
+    authCity ||
+    (prev.city && prev.city !== prevTmpl?.defaultCity ? prev.city : tmpl.defaultCity);
+
+  // Owner Name:
+  const resolvedOwnerName =
+    keepIfCustomized(prev.ownerName, prevTmpl?.ownerName) ||
+    authOwnerName ||
+    (prev.ownerName && prev.ownerName !== prevTmpl?.ownerName ? prev.ownerName : tmpl.ownerName);
+
+  // Address:
+  const resolvedAddress =
+    keepIfCustomized(prev.address, prevTmpl?.defaultAddress) ||
+    authAddress ||
+    tmpl.defaultAddress;
+
+  // WhatsApp:
+  const resolvedWhatsapp =
+    keepIfCustomized(prev.whatsapp, prevTmpl?.whatsapp) ||
+    authPhone ||
+    tmpl.whatsapp;
+
   const nextProfile: SalonProfile = {
     ...prev,
     businessType: tmpl.id,
@@ -118,30 +207,24 @@ export function mergeTemplatePreservingUserData(
     themeAccentKey: DEFAULT_CATEGORY_ACCENTS[tmpl.id] as AccentPaletteKey,
     customAccentColor: undefined,
     currency: '₹',
-    businessName:
-      keepIfCustomized(prev.businessName, prevTmpl?.title) || tmpl.title,
-    ownerName:
-      keepIfCustomized(prev.ownerName, prevTmpl?.ownerName) || tmpl.ownerName,
+    businessName: resolvedBusinessName,
+    ownerName: resolvedOwnerName,
     ownerRole:
       keepIfCustomized(prev.ownerRole, prevTmpl?.ownerRole) || tmpl.ownerRole,
-    phone: keepIfCustomized(prev.phone, prevTmpl?.phone) || tmpl.phone,
-    whatsapp:
-      keepIfCustomized(prev.whatsapp, prevTmpl?.whatsapp) || tmpl.whatsapp,
+    phone: resolvedPhone,
+    whatsapp: resolvedWhatsapp,
     tagline:
       keepIfCustomized(prev.tagline, prevTmpl?.tagline) || tmpl.tagline,
     about: keepIfCustomized(prev.about, prevTmpl?.about) || tmpl.about,
-    address:
-      keepIfCustomized(prev.address, prevTmpl?.defaultAddress) ||
-      tmpl.defaultAddress,
-    city: keepIfCustomized(prev.city, prevTmpl?.defaultCity) || tmpl.defaultCity,
+    address: resolvedAddress,
+    city: resolvedCity,
     postalCode:
       keepIfCustomized(prev.postalCode, prevTmpl?.defaultPostalCode) ||
+      auth?.postalCode ||
       tmpl.defaultPostalCode,
     instagramHandle:
       keepIfCustomized(prev.instagramHandle, prevTmpl?.instagramHandle) ||
       tmpl.instagramHandle,
-    // Images only roll over when the owner uploaded a custom (data URL) image,
-    // otherwise the new template's curated photo is used.
     ownerPhotoUrl: wasCustomized(prev.ownerPhotoUrl, prevTmpl?.ownerPhotoUrl)
       ? prev.ownerPhotoUrl
       : tmpl.ownerPhotoUrl,
@@ -149,10 +232,7 @@ export function mergeTemplatePreservingUserData(
       prev.coverImageUrl?.startsWith('data:') || prev.coverImageUrl === prevTmpl?.coverImageUrl
         ? prev.coverImageUrl
         : tmpl.coverImageUrl,
-    // Always regenerate the subdomain from the (possibly preserved) salon name.
-    subdomain: slugifySalonName(
-      keepIfCustomized(prev.businessName, prevTmpl?.title) || tmpl.title
-    ),
+    subdomain: slugifySalonName(resolvedBusinessName),
   };
 
   return nextProfile;

@@ -23,6 +23,9 @@ import {
   ArrowRight,
   Sparkles,
   RotateCcw,
+  Instagram,
+  Facebook,
+  Share2,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
@@ -30,6 +33,9 @@ import { slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
+import { GuestModeBanner } from './GuestModeBanner';
+import { TikTokIcon } from './TikTokIcon';
+import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 
 interface WebsiteEditorProps {
   profile: SalonProfile;
@@ -46,6 +52,8 @@ interface WebsiteEditorProps {
   onSave: () => Promise<boolean>;
   onBackToDashboard: () => void;
   showToast?: (message: string, type?: 'success' | 'error') => void;
+  isAuthenticated?: boolean;
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
 const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
@@ -64,6 +72,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   onSave,
   onBackToDashboard,
   showToast,
+  isAuthenticated = true,
+  onRequireAuth,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
@@ -145,6 +155,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   return (
     <div className="min-h-screen pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col gap-6">
+        {!isAuthenticated && (
+          <GuestModeBanner
+            title="Website Editor (Guest Preview)"
+            description="You are editing this salon website in guest preview mode. Changes are kept temporarily on this device. Sign in or create an account to permanently sync with the cloud and activate your public salon URL."
+            onRequireAuth={onRequireAuth}
+          />
+        )}
+
         {/* ===== Top sticky save bar ===== */}
         <div className="sticky top-20 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -404,7 +422,133 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
-        {/* ===== 3. SERVICES & PRICING ===== */}
+        {/* ===== 3. SOCIAL MEDIA (INSTAGRAM, FACEBOOK, TIKTOK) ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6" id="website-editor-social-media-section">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Share2 className="w-4 h-4 text-[#C20E5A]" />
+              <h2 className="font-display font-bold text-base">Social Media</h2>
+            </div>
+            <span className="bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full">
+              Website Header
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">
+            Links for Instagram, Facebook, and TikTok will appear directly in your website header so visitors can follow and discover your portfolio.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Instagram */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-pink-300 transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white flex items-center justify-center text-[10px]">
+                    <Instagram className="w-3 h-3" />
+                  </span>
+                  <span>Instagram</span>
+                </label>
+                {profile.instagramHandle && (
+                  <a
+                    href={formatInstagramUrl(profile.instagramHandle)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-bold text-pink-600 hover:text-pink-800 hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Test</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              <input
+                type="text"
+                value={profile.instagramHandle || ''}
+                onChange={(e) => upd({ instagramHandle: e.target.value })}
+                placeholder="e.g. @arts_by_uma or url"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+              />
+              <div className="text-[10px] text-gray-400 mt-1">
+                {profile.instagramHandle ? displaySocialHandle(profile.instagramHandle) : 'Add handle or URL'}
+              </div>
+            </div>
+
+            {/* Facebook */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-blue-300 transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded bg-blue-600 text-white flex items-center justify-center text-[10px]">
+                    <Facebook className="w-3 h-3" />
+                  </span>
+                  <span>Facebook</span>
+                </label>
+                {profile.facebookPage && (
+                  <a
+                    href={formatFacebookUrl(profile.facebookPage)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Test</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              <input
+                type="text"
+                value={profile.facebookPage || ''}
+                onChange={(e) => upd({ facebookPage: e.target.value })}
+                placeholder="e.g. https://facebook.com/salon"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+              />
+              <div className="text-[10px] text-gray-400 mt-1">
+                {profile.facebookPage ? displaySocialHandle(profile.facebookPage, '') : 'Add page URL'}
+              </div>
+            </div>
+
+            {/* TikTok */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-slate-800 transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded bg-slate-900 text-cyan-300 flex items-center justify-center text-[10px]">
+                    <TikTokIcon className="w-3 h-3" />
+                  </span>
+                  <span>TikTok</span>
+                </label>
+                {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) && (
+                  <a
+                    href={formatTikTokUrl(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-bold text-slate-900 hover:text-cyan-600 hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Test</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              <input
+                type="text"
+                value={profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  upd({
+                    tiktokProfile: val,
+                    tiktokHandle: val,
+                    tiktokUrl: val,
+                  });
+                }}
+                placeholder="e.g. @artsbyuma or url"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+              />
+              <div className="text-[10px] text-gray-400 mt-1">
+                {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)
+                  ? displaySocialHandle(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)
+                  : 'Add handle or URL'}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ===== 4. SERVICES & PRICING ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">

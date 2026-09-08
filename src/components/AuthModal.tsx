@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import { setStoredAuthenticatedProfile } from '../lib/salonStore';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -51,9 +52,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           email: email,
           user_metadata: {
             full_name: fullName || (isCustomer ? 'Mock Customer' : 'Mock Owner'),
-            ...(isCustomer ? {} : { salon_name: salonName || 'Mock Salon' }),
+            ...(isCustomer ? {} : { salon_name: salonName || 'Arts By Uma' }),
+            ...(isCustomer ? {} : { phone_number: phoneNumber || '+91 98450 77654' }),
+            ...(isCustomer ? {} : { city: city || 'Bengaluru, Karnataka' }),
           }
         };
+        if (!isCustomer) {
+          setStoredAuthenticatedProfile({
+            salonName: salonName || 'Arts By Uma',
+            phone: phoneNumber || '+91 98450 77654',
+            city: city || 'Bengaluru, Karnataka',
+            ownerName: fullName || 'Uma',
+            email: email,
+          });
+        }
         onSuccess(mockUser);
         onClose();
         setLoading(false);
@@ -80,10 +92,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (signUpError) throw signUpError;
         
         if (data.user) {
-          // `profiles` is the salon-owner/tenant table. Do not create a fake
-          // owner profile for a customer account: owner resolution on the
-          // server must remain independent from the authenticated booker.
           if (!isCustomer) {
+            setStoredAuthenticatedProfile({
+              salonName: salonName || (data.user.user_metadata?.salon_name as string),
+              phone: phoneNumber || (data.user.user_metadata?.phone_number as string),
+              city: city || (data.user.user_metadata?.city as string),
+              ownerName: fullName || (data.user.user_metadata?.full_name as string),
+              email: email,
+            });
+
             const { error: profileError } = await supabase
               .from('profiles')
               .upsert({
@@ -118,6 +135,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         if (signInError) throw signInError;
         if (data.user) {
+          const uMeta = data.user.user_metadata || {};
+          if (!isCustomer && (uMeta.salon_name || uMeta.phone_number || uMeta.city)) {
+            setStoredAuthenticatedProfile({
+              salonName: uMeta.salon_name,
+              phone: uMeta.phone_number,
+              city: uMeta.city,
+              ownerName: uMeta.full_name,
+              email: data.user.email,
+            });
+          }
           onSuccess(data.user);
           onClose();
         }

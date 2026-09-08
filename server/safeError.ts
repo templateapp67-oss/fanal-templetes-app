@@ -42,6 +42,25 @@ export function isMissingTableError(error: any, table?: string): boolean {
   return false;
 }
 
+/**
+ * Detect when a Supabase / PostgREST query failed because a column does not exist.
+ */
+export function isMissingColumnError(error: any, column?: string): boolean {
+  if (!error) return false;
+  const msg = String(error?.message ?? error ?? '').toLowerCase();
+  const code = String(error?.code ?? '').toUpperCase();
+  // Postgres 42703: undefined_column
+  // PostgREST PGRST204: column not found in schema cache
+  if (code === '42703' || code === 'PGRST204') return true;
+  if (msg.includes('column') && (msg.includes('does not exist') || msg.includes('schema cache'))) {
+    if (column) {
+      return msg.includes(column.toLowerCase());
+    }
+    return true;
+  }
+  return false;
+}
+
 function errorCode(error: any): string {
   return typeof error?.code === 'string' && error.code.trim() ? error.code.trim() : 'unexpected_error';
 }

@@ -48,6 +48,8 @@ import {
 import { createRazorpayWebhookHandler, isWebhookConfigured } from "./server/razorpayWebhook";
 import { asyncRoute } from "./server/expressSafety";
 import { safeDatabaseError, sendSafeError } from "./server/safeError";
+import { lookupSalon } from "./server/siteLookup";
+import { handleReengageClients } from "./server/geminiReengagement";
 
 // Log (instead of silently dying on) stray async faults.
 installProcessGuards("server.ts");
@@ -308,67 +310,18 @@ async function startServer() {
     if (!tenant) return { host, tenant: null, salon: null };
 
     try {
-      if (isMockSupabase) {
-        // Mock mode: read from the in-memory registry so the demo still works.
-        const registryKey = tenant.customDomain || tenant.subdomain;
-        const salon =
-          mockSalons[registryKey] || (DEMO_SUBDOMAINS.has(registryKey) ? artsByUmaSalon : null);
-        if (salon) {
-          return { host, tenant, salon: { ...salon, customDomain: tenant.customDomain || salon.customDomain } };
-        }
-        return { host, tenant, salon: null };
-      }
-
-      // Live mode: match on subdomain OR custom_domain.
-      const query = tenant.subdomain
-        ? { column: 'subdomain', value: tenant.subdomain }
-        : { column: 'custom_domain', value: tenant.customDomain };
-
-      const profileResult = await runDb(
-        () => db.from('profiles').select('*').eq(query.column, query.value).maybeSingle(),
-        { label: `site profile lookup by ${query.column}`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      const identifier = tenant.customDomain || tenant.subdomain;
+      const isCustom = Boolean(tenant.customDomain);
+      const { found, salon, error } = await lookupSalon(
+        { db, isMockSupabase, mockSalons },
+        identifier,
+        isCustom,
+        deadlineAt
       );
-      const profileRow = profileResult.data;
-      const error = profileResult.error;
 
       if (error) {
-        // A real DB failure must NOT be reported as "salon not found" — the
-        // /api/site handler turns this into a JSON 500 so the SPA can log it.
-        console.error(`[Site lookup] profiles query failed for ${query.column}="${query.value}":`, error);
         return { host, tenant, salon: null, error };
       }
-      if (!profileRow) {
-        // Fallback for demo subdomains
-        if (tenant.subdomain === 'arts-by-uma' || tenant.subdomain === 'artsbyuma') {
-          return { host, tenant, salon: artsByUmaSalon };
-        }
-        return { host, tenant, salon: null };
-      }
-
-      const ownerId = profileRow.id;
-      const [servicesResult, stylistsResult] = await Promise.all([
-        runDb(
-          () => db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'site services lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-        runDb(
-          () => db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'site stylists lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-      ]);
-      if (servicesResult.error || stylistsResult.error) {
-        const error = servicesResult.error || stylistsResult.error;
-        console.error(`[Site lookup] catalogue query failed for owner ${ownerId}:`, error);
-        return { host, tenant, salon: null, error };
-      }
-      const serviceRows = servicesResult.data;
-      const stylistRows = stylistsResult.data;
-
-      const salon = {
-        profile: mapProfileRow(profileRow),
-        services: (serviceRows || []).map(mapServiceRow),
-        stylists: (stylistRows || []).map(mapStylistRow),
-      };
       return { host, tenant, salon };
     } catch (err) {
       console.error('Failed to resolve tenant salon:', err);
@@ -410,68 +363,16 @@ async function startServer() {
     const sub = String(req.params.subdomain || '').toLowerCase();
     const deadlineAt = res.locals?.requestDeadlineAt;
     try {
-      if (isMockSupabase) {
-        const salon = mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? artsByUmaSalon : null);
-        return res.json({
-          found: !!salon,
-          isTenant: true,
-          tenant: { subdomain: sub, customDomain: null },
-          salon,
-          baseDomain: BASE_DOMAIN,
-        });
-      }
-
-      // Live mode. Wrapped in try/catch so a database read failure returns a
-      // JSON 500 instead of an unhandled async rejection — Express 4 cannot
-      // route rejected promises to the error middleware, so these used to
-      // crash the request (Vercel: generic 500/HTML error page).
-      const profileResult = await runDb(
-        () => db.from('profiles').select('*').eq('subdomain', sub).maybeSingle(),
-        { label: 'site subdomain profile lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      const { found, salon, error } = await lookupSalon(
+        { db, isMockSupabase, mockSalons },
+        sub,
+        false,
+        deadlineAt
       );
-      const profileRow = profileResult.data;
-      const profileError = profileResult.error;
 
-      if (profileError) {
-        console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, profileError);
-        const safe = safeDatabaseError(profileError, 'Database read failed while loading this site.');
-        return res.status(safe.status).json({
-          success: false,
-          found: false,
-          code: safe.code,
-          error: safe.message,
-          ...(safe.retryable ? { retryable: true } : {}),
-        });
-      }
-
-      if (!profileRow) {
-        if (DEMO_SUBDOMAINS.has(sub)) {
-          return res.json({ found: true, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon: artsByUmaSalon, baseDomain: BASE_DOMAIN });
-        }
-        // 200 + found:false — the SPA treats this as "not published", and
-        // distinguishes it from transport/HTTP failures (which return null).
-        return res.json({ found: false, isTenant: true, tenant: { subdomain: sub, customDomain: null }, salon: null, baseDomain: BASE_DOMAIN });
-      }
-
-      const ownerId = profileRow.id;
-      const [servicesResult, stylistsResult] = await Promise.all([
-        runDb(
-          () => db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'site subdomain services lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-        runDb(
-          () => db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'site subdomain stylists lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-      ]);
-      const serviceRows = servicesResult.data;
-      const stylistRows = stylistsResult.data;
-      const servicesError = servicesResult.error;
-      const stylistsError = stylistsResult.error;
-      const catalogueError = servicesError || stylistsError;
-      if (catalogueError) {
-        console.error(`[Site lookup] Failed to read catalogue for subdomain "${sub}":`, catalogueError);
-        const safe = safeDatabaseError(catalogueError, 'Database read failed while loading this site.');
+      if (error) {
+        console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, error);
+        const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
         return res.status(safe.status).json({
           success: false,
           found: false,
@@ -482,14 +383,10 @@ async function startServer() {
       }
 
       return res.json({
-        found: true,
+        found: !!salon,
         isTenant: true,
         tenant: { subdomain: sub, customDomain: null },
-        salon: {
-          profile: mapProfileRow(profileRow),
-          services: (serviceRows || []).map(mapServiceRow),
-          stylists: (stylistRows || []).map(mapStylistRow),
-        },
+        salon: salon || null,
         baseDomain: BASE_DOMAIN,
       });
     } catch (err: any) {
@@ -644,7 +541,14 @@ async function startServer() {
         });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
       const prompt = `Write a high-converting tagline (max 10 words) and a compelling salon story/about bio (2-3 sentences) for a beauty business with the following details:
 Salon Name: ${businessName}
 Category: ${businessType}
@@ -656,7 +560,7 @@ Return strictly valid JSON in this format:
 {"tagline": "...", "bio": "..."}`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json'
@@ -670,8 +574,7 @@ Return strictly valid JSON in this format:
       } else {
         throw new Error('Empty AI response');
       }
-    } catch (err) {
-      console.warn('Gemini generation error:', err);
+    } catch {
       return res.json({
         tagline: `Redefining beauty & relaxation in a luxury space.`,
         bio: `Welcome to ${req.body.businessName || 'our studio'}. Our passionate team offers bespoke salon treatments designed to accentuate your unique natural style.`
@@ -762,7 +665,14 @@ Return strictly valid JSON in this format:
         });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
 
       const prompt = `You are an elite beauty salon social media marketing copywriter. Create promotional copy for a salon service with these details:
 Salon: ${businessName}
@@ -780,7 +690,7 @@ Return strictly JSON with the following keys:
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json'
@@ -792,8 +702,7 @@ Return strictly JSON with the following keys:
         return res.json(JSON.parse(text));
       }
       throw new Error("Empty copy response");
-    } catch (err) {
-      console.warn("Copy generation error:", err);
+    } catch {
       return res.json({
         whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${req.body.serviceName || 'our signature treatment'}* at *${req.body.businessName || 'our salon'}*.\n\n🎉 *Special Deal*: ${req.body.offer || 'Exclusive Discount This Week'}\n💰 *Price*: ₹${req.body.price || 'Special Rate'}\n\n📲 Book your appointment now!`,
         instagramCaption: `✨ Elevate your everyday glow! ✨\n\nBook your *${req.body.serviceName || 'treatment'}* today at ${req.body.businessName || 'our studio'}.\n\n👇 Tap link in bio to book your appointment!\n\n#Salon #Beauty #SelfCare #SalonDeals`,
@@ -802,6 +711,10 @@ Return strictly JSON with the following keys:
       });
     }
   }));
+
+  // Gemini AI Inactive Client Re-engagement Analysis & Personalized Offers
+  app.post("/api/ai/re-engage-clients", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleReengageClients));
+
 
 
   // -------------------------------------------------------------------------

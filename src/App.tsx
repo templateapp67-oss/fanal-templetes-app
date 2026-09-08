@@ -19,6 +19,9 @@ import {
   mergeTemplateStylists,
   getSiteUrl,
   ONBOARDING_COMPLETED_KEY,
+  getStoredAuthenticatedProfile,
+  setStoredAuthenticatedProfile,
+  AuthenticatedProfileState,
 } from './lib/salonStore';
 import {
   AUTOSAVE_DEBOUNCE_MS,
@@ -619,6 +622,20 @@ export default function App() {
             error
           );
           return;
+        }
+
+        const authState: AuthenticatedProfileState = {
+          salonName: data?.salon_name || meta.salon_name,
+          phone: data?.phone_number || meta.phone_number,
+          city: data?.city || meta.city,
+          ownerName: data?.full_name || meta.full_name,
+          email: data?.email || user.email,
+          address: data?.full_address,
+          postalCode: data?.postal_code,
+          subdomain: data?.subdomain,
+        };
+        if (authState.salonName || authState.phone || authState.city) {
+          setStoredAuthenticatedProfile(authState);
         }
 
         if (!data) {
@@ -1232,8 +1249,9 @@ export default function App() {
     if (!tmpl) return;
 
     const prevTmplId = previousTemplateIdRef.current;
+    const authProfile = getStoredAuthenticatedProfile();
 
-    setProfile((prev) => mergeTemplatePreservingUserData(prev, catId, prevTmplId));
+    setProfile((prev) => mergeTemplatePreservingUserData(prev, catId, prevTmplId, authProfile));
     setServices((prev) => mergeTemplateServices(prev, catId, prevTmplId));
     setStylists((prev) => mergeTemplateStylists(prev, catId, prevTmplId));
     setSelectedTemplateId(catId);
@@ -1473,6 +1491,8 @@ export default function App() {
           onSave={handleSaveNow}
           onBackToDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}
+          isAuthenticated={!!user}
+          onRequireAuth={openBookingAuth}
         />
       )}
 
@@ -1515,6 +1535,8 @@ export default function App() {
             setCurrentView('wizard');
           }}
           siteUrl={getSiteUrl(profile)}
+          isAuthenticated={!!user}
+          onRequireAuth={openBookingAuth}
         />
       )}
 

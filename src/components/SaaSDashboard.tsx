@@ -15,6 +15,12 @@ import { getSiteUrl } from '../lib/salonStore';
 
 import { BookingManager } from './BookingManager';
 import { BookingStatusBadge } from './BookingStatusBadge';
+import { GuestModeBanner } from './GuestModeBanner';
+import { AIClientReengagement } from './AIClientReengagement';
+import { PromotionalBannerConfigSection } from './PromotionalBannerConfigSection';
+import { BackupManagerModal } from './BackupManagerModal';
+import { TikTokIcon } from './TikTokIcon';
+import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 
 interface SaaSDashboardProps {
   profile: SalonProfile;
@@ -32,9 +38,11 @@ interface SaaSDashboardProps {
   onNavigateToPreview?: () => void;
   onNavigateToEditor?: () => void;
   siteUrl?: string;
+  isAuthenticated?: boolean;
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
-type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'marketing' | 'social_connectivity' | 'appearance' | 'website';
+type TabType = 'overview' | 'calendar' | 'services' | 'team' | 'clients' | 'loyalty' | 'reengagement' | 'marketing' | 'promobanner' | 'social_connectivity' | 'appearance' | 'website';
 
 export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   profile,
@@ -52,12 +60,15 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   onNavigateToPreview,
   onNavigateToEditor,
   siteUrl,
+  isAuthenticated = true,
+  onRequireAuth,
 }) => {
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
   const setLoyaltyConfig = externalSetLoyaltyConfig || setInternalLoyaltyConfig;
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [dashboardTierClientSearch, setDashboardTierClientSearch] = useState<string>('');
   const [dashboardTierFilter, setDashboardTierFilter] = useState<string>('all');
   const [marketingSms, setMarketingSms] = useState<string>('');
@@ -166,10 +177,60 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     }, 1000);
   };
 
+  const handleDownloadAppointmentsCSV = () => {
+    if (!appointments || appointments.length === 0) {
+      alert("No appointments available to export.");
+      return;
+    }
+
+    const headers = [
+      'Appointment ID',
+      'Client Name',
+      'Client Phone',
+      'Service Name',
+      'Service Price (INR)',
+      'Stylist Name',
+      'Date',
+      'Time',
+      'Payment Status',
+      'Amount Paid (INR)',
+      'Status'
+    ];
+
+    const rows = appointments.map((apt) => [
+      `"${apt.id}"`,
+      `"${(apt.clientName || '').replace(/"/g, '""')}"`,
+      `"${(apt.clientPhone || '').replace(/"/g, '""')}"`,
+      `"${(apt.serviceName || '').replace(/"/g, '""')}"`,
+      apt.servicePrice || 0,
+      `"${(apt.stylistName || '').replace(/"/g, '""')}"`,
+      `"${apt.date || ''}"`,
+      `"${apt.time || ''}"`,
+      `"${apt.paymentStatus || ''}"`,
+      apt.amountPaid || 0,
+      `"${apt.status || ''}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `salon_appointments_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Loyalty points are awarded inside the `completed` branch only, so widening
   // the accepted statuses to the full lifecycle cannot grant points for a
   // no-show or a cancellation.
   const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
     if (status === 'completed') {
       const apt = appointments.find((a) => a.id === id);
@@ -211,6 +272,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   };
 
   const handleSendCampaign = () => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setSmsSentNotice('Campaign dispatched successfully via WhatsApp & SMS to 42 clients across India!');
     setTimeout(() => {
       setSmsSentNotice('');
@@ -221,6 +286,17 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     <div className="min-h-screen pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
       <div className="max-w-[1240px] w-full px-4 sm:px-6">
         
+        {/* Guest Mode Read-Only Banner */}
+        {!isAuthenticated && (
+          <div className="mb-6">
+            <GuestModeBanner
+              title="Dashboard Demo / Guest Preview Mode"
+              description="You are exploring the salon management dashboard in read-only guest preview. Log in or create an owner account to unlock full editing, booking status changes, and staff management."
+              onRequireAuth={onRequireAuth}
+            />
+          </div>
+        )}
+
         {/* DASHBOARD HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 bg-white p-6 rounded-2xl border border-gray-200 shadow-xs">
           <div className="flex items-center gap-4">
@@ -271,7 +347,20 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsBackupModalOpen(true)}
+              className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 hover:border-slate-800 bg-white hover:bg-slate-50 text-slate-800 flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+              title="Download local JSON snapshot & backup"
+              id="dashboard-header-backup-btn"
+            >
+              <span className="material-symbols-outlined text-sm text-slate-700">cloud_download</span>
+              <span>Backup</span>
+              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-md">
+                JSON
+              </span>
+            </button>
+
             {onNavigateToPreview && (
               <button
                 onClick={onNavigateToPreview}
@@ -303,6 +392,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             { id: 'team', label: 'Team Management', icon: 'badge' },
             { id: 'clients', label: 'Clients CRM', icon: 'group' },
             { id: 'loyalty', label: 'Loyalty & Rewards', icon: 'military_tech' },
+            { id: 'reengagement', label: 'AI Re-Engagement', icon: 'psychology' },
+            { id: 'promobanner', label: 'Promo Banner', icon: 'campaign' },
             { id: 'marketing', label: 'Promo Studio', icon: 'photo_camera_back' },
             { id: 'social_connectivity', label: 'Social & Reels', icon: 'share' },
             { id: 'appearance', label: 'Appearance', icon: 'palette' },
@@ -322,6 +413,21 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               >
                 <span className="material-symbols-outlined text-lg">{tab.icon}</span>
                 <span>{tab.label}</span>
+                {tab.id === 'reengagement' && (
+                  <span className="bg-purple-100 text-purple-800 border border-purple-300 text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
+                    <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                    <span>AI</span>
+                  </span>
+                )}
+                {tab.id === 'promobanner' && (
+                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full border ${
+                    profile.promotionalBanner?.enabled !== false
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : 'bg-gray-100 text-gray-500 border-gray-200'
+                  }`}>
+                    {profile.promotionalBanner?.enabled !== false ? 'Active' : 'Off'}
+                  </span>
+                )}
                 {tab.id === 'loyalty' && (
                   <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full">
                     {loyaltyConfig.rewards.filter((r) => r.isActive).length} Perks
@@ -329,7 +435,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 )}
                 {tab.id === 'marketing' && (
                   <span className="bg-gradient-to-r from-pink-500 to-rose-500 text-white text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full">
-                    AI
+                    Creative
                   </span>
                 )}
                 {tab.id === 'team' && (
@@ -403,11 +509,63 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               onNavigateToLoyalty={() => setActiveTab('loyalty')}
             />
 
+            {/* GEMINI AI CLIENT RE-ENGAGEMENT PROACTIVE BANNER */}
+            <div className="bg-gradient-to-r from-purple-900 via-indigo-950 to-slate-900 rounded-2xl p-5 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center shrink-0 text-purple-300">
+                  <span className="material-symbols-outlined text-2xl">psychology</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-base text-white">
+                      Gemini Client Retention & Re-Engagement Intelligence
+                    </span>
+                    <span className="bg-purple-500/30 text-purple-200 border border-purple-400/40 text-[10px] font-mono-caps font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">auto_awesome</span>
+                      <span>AI Proactive Offer Engine</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-purple-200/80 mt-1 max-w-2xl">
+                    4+ inactive clients identified past their regular service cycle. Generate personalized promotional offers and WhatsApp comeback messages to recover ~₹38,000 in appointments.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveTab('reengagement')}
+                className="px-4 py-2.5 rounded-xl bg-white hover:bg-purple-50 text-purple-950 font-bold text-xs shadow-md flex items-center gap-2 shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+                id="overview-launch-reengagement-btn"
+              >
+                <span className="material-symbols-outlined text-sm text-purple-600">auto_awesome</span>
+                <span>Review AI Re-Engagement Offers</span>
+                <span className="material-symbols-outlined text-xs">arrow_forward</span>
+              </button>
+            </div>
+
             {/* Upcoming Appointments Table */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="font-display font-bold text-lg">Confirmed Indian Client Appointments</h2>
-                <span className="text-xs text-slate-500 font-mono">Currency: INR (₹)</span>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 border-b border-gray-100 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-display font-bold text-lg text-gray-900">Confirmed Client Appointments</h2>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                      {appointments.length} Records
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-500 font-mono">Currency: INR (₹)</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownloadAppointmentsCSV}
+                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    title="Download appointments list as CSV"
+                    id="download-appointments-csv-btn"
+                  >
+                    <span className="material-symbols-outlined text-sm">download</span>
+                    <span>Download CSV</span>
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -624,6 +782,43 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   })}
               </div>
             </div>
+
+            {/* SALON DATA SAFETY & BACKUP SNAPSHOT CARD */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-slate-700">
+              <div className="flex items-start gap-3.5">
+                <div 
+                  className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-md"
+                  style={{ backgroundColor: currentPrimaryColor }}
+                >
+                  <span className="material-symbols-outlined text-2xl">cloud_download</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-display font-bold text-base text-white">
+                      Salon Configuration &amp; Snapshot Backup
+                    </h3>
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full">
+                      Offline JSON
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5 max-w-xl">
+                    Save a full snapshot of your salon profile, {services.length} services, {stylists.length} stylists, and loyalty tiers as a downloadable <code className="font-mono text-emerald-400 bg-slate-950 px-1 py-0.5 rounded text-[11px]">.json</code> file.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsBackupModalOpen(true)}
+                  className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-transform hover:scale-[1.02]"
+                  id="overview-open-backup-btn"
+                >
+                  <span className="material-symbols-outlined text-base">download</span>
+                  <span>Trigger Backup Snapshot</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -633,6 +828,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             primaryAccentColor={currentPrimaryColor}
             ownerId={profile.ownerId}
             subdomain={profile.subdomain}
+            isAuthenticated={isAuthenticated}
+            onRequireAuth={onRequireAuth}
           />
         )}
 
@@ -644,6 +841,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             primaryAccentColor={currentPrimaryColor}
             profile={profile}
             onNavigateToPreview={onNavigateToPreview}
+            isAuthenticated={isAuthenticated}
+            onRequireAuth={onRequireAuth}
           />
         )}
 
@@ -655,6 +854,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             primaryAccentColor={currentPrimaryColor}
             services={services}
             onNavigateToPreview={onNavigateToPreview}
+            isAuthenticated={isAuthenticated}
+            onRequireAuth={onRequireAuth}
           />
         )}
 
@@ -671,14 +872,24 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 </p>
               </div>
 
-              <button
-                onClick={() => setActiveTab('loyalty')}
-                className="text-xs font-bold px-4 py-2 rounded-xl text-white shadow-xs flex items-center gap-1.5 cursor-pointer hover:opacity-95"
-                style={{ backgroundColor: currentPrimaryColor }}
-              >
-                <span className="material-symbols-outlined text-sm">military_tech</span>
-                <span>Open Loyalty & Rewards Hub</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setActiveTab('reengagement')}
+                  className="text-xs font-bold px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm text-purple-600">psychology</span>
+                  <span>AI Re-Engagement (Gemini)</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('loyalty')}
+                  className="text-xs font-bold px-4 py-2 rounded-xl text-white shadow-xs flex items-center gap-1.5 cursor-pointer hover:opacity-95 transition-opacity"
+                  style={{ backgroundColor: currentPrimaryColor }}
+                >
+                  <span className="material-symbols-outlined text-sm">military_tech</span>
+                  <span>Loyalty Hub</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -781,9 +992,90 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           />
         )}
 
+        {/* TAB CONTENT: AI CLIENT RETENTION & RE-ENGAGEMENT */}
+        {activeTab === 'reengagement' && (
+          <AIClientReengagement
+            clients={clients}
+            appointments={appointments}
+            services={services}
+            profile={profile}
+            primaryAccentColor={currentPrimaryColor}
+            isAuthenticated={isAuthenticated}
+            onRequireAuth={onRequireAuth}
+            onNavigateToPreview={onNavigateToPreview}
+          />
+        )}
+
+        {/* TAB CONTENT: PROMOTIONAL HEADER BANNER CONFIGURATION */}
+        {activeTab === 'promobanner' && (
+          <PromotionalBannerConfigSection
+            profile={profile}
+            setProfile={setProfile}
+            primaryAccentColor={currentPrimaryColor}
+            onNavigateToPreview={onNavigateToPreview}
+            isAuthenticated={isAuthenticated}
+            onRequireAuth={onRequireAuth}
+          />
+        )}
+
         {/* TAB CONTENT: PROMO STUDIO & AI MARKETING */}
         {activeTab === 'marketing' && (
           <div className="flex flex-col gap-6">
+            {/* Quick Promo Banner & Retention Jump Banners */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <span className="material-symbols-outlined text-xl">psychology</span>
+                  </span>
+                  <div>
+                    <div className="font-bold text-sm text-purple-950 flex items-center gap-1.5">
+                      <span>AI Re-Engagement Hub</span>
+                      <span className="bg-purple-200 text-purple-900 text-[9px] font-mono-caps font-bold px-1.5 py-0.2 rounded-full">
+                        AI
+                      </span>
+                    </div>
+                    <p className="text-xs text-purple-700 mt-0.5 line-clamp-1">
+                      Target overdue clients with 1-click WhatsApp offers.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveTab('reengagement')}
+                  className="px-3.5 py-2 rounded-xl bg-purple-900 hover:bg-purple-950 text-white font-bold text-xs shadow-xs flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                >
+                  <span>Open Hub</span>
+                </button>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl bg-amber-500 text-amber-950 flex items-center justify-center shrink-0 shadow-xs">
+                    <span className="material-symbols-outlined text-xl">campaign</span>
+                  </span>
+                  <div>
+                    <div className="font-bold text-sm text-amber-950 flex items-center gap-1.5">
+                      <span>Header Promo Banner</span>
+                      <span className="bg-amber-200 text-amber-950 text-[9px] font-mono-caps font-bold px-1.5 py-0.2 rounded-full">
+                        {profile.promotionalBanner?.enabled !== false ? 'Live' : 'Off'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-800/80 mt-0.5 line-clamp-1">
+                      Custom announcement, discount codes & CTA bar.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveTab('promobanner')}
+                  className="px-3.5 py-2 rounded-xl bg-amber-900 hover:bg-amber-950 text-white font-bold text-xs shadow-xs flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                >
+                  <span>Edit Banner</span>
+                </button>
+              </div>
+            </div>
+
             <PromoStudio
               profile={profile}
               services={services}
@@ -1308,7 +1600,205 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3">
+            {/* SOCIAL MEDIA LINKS SECTION */}
+            <div className="border-t border-gray-100 pt-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xl" style={{ color: currentPrimaryColor }}>share</span>
+                    <h3 className="font-display font-bold text-base text-gray-900">
+                      Social Media
+                    </h3>
+                    <span className="bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full">
+                      Displayed on Website Header
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Add your Instagram, Facebook, and TikTok links so clients can connect with your salon and explore your work directly from your website header.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4" id="salon-social-media-inputs">
+                {/* 1. INSTAGRAM */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-pink-300 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-md bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white flex items-center justify-center text-xs shadow-2xs">
+                        <span className="material-symbols-outlined text-[13px]">photo_camera</span>
+                      </span>
+                      <span>Instagram</span>
+                    </label>
+                    {profile.instagramHandle && (
+                      <a
+                        href={formatInstagramUrl(profile.instagramHandle)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-pink-600 hover:text-pink-800 hover:underline flex items-center gap-0.5"
+                        title="Open in Instagram"
+                      >
+                        <span>Test Link</span>
+                        <span className="material-symbols-outlined text-xs">open_in_new</span>
+                      </a>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={profile.instagramHandle || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, instagramHandle: e.target.value }))}
+                    placeholder="e.g. @arts_by_uma or url"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 outline-none font-mono"
+                    id="salon-info-instagram-input"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1.5 flex items-center justify-between">
+                    <span>Handle or profile link</span>
+                    {profile.instagramHandle && (
+                      <span className="text-pink-600 font-mono font-medium truncate max-w-[150px]">
+                        {displaySocialHandle(profile.instagramHandle)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. FACEBOOK */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-blue-300 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-md bg-blue-600 text-white flex items-center justify-center text-xs shadow-2xs font-bold">
+                        f
+                      </span>
+                      <span>Facebook</span>
+                    </label>
+                    {profile.facebookPage && (
+                      <a
+                        href={formatFacebookUrl(profile.facebookPage)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                        title="Open in Facebook"
+                      >
+                        <span>Test Link</span>
+                        <span className="material-symbols-outlined text-xs">open_in_new</span>
+                      </a>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={profile.facebookPage || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, facebookPage: e.target.value }))}
+                    placeholder="e.g. https://facebook.com/salon"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-mono"
+                    id="salon-info-facebook-input"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1.5 flex items-center justify-between">
+                    <span>Page URL or name</span>
+                    {profile.facebookPage && (
+                      <span className="text-blue-600 font-mono font-medium truncate max-w-[150px]">
+                        {displaySocialHandle(profile.facebookPage, '')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. TIKTOK */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-slate-800 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-md bg-slate-900 text-white flex items-center justify-center text-xs shadow-2xs">
+                        <TikTokIcon className="w-3.5 h-3.5 text-cyan-300" />
+                      </span>
+                      <span>TikTok</span>
+                    </label>
+                    {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) && (
+                      <a
+                        href={formatTikTokUrl(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-slate-900 hover:text-cyan-600 hover:underline flex items-center gap-0.5"
+                        title="Open in TikTok"
+                      >
+                        <span>Test Link</span>
+                        <span className="material-symbols-outlined text-xs">open_in_new</span>
+                      </a>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setProfile((prev) => ({ 
+                        ...prev, 
+                        tiktokProfile: val, 
+                        tiktokHandle: val, 
+                        tiktokUrl: val 
+                      }));
+                    }}
+                    placeholder="e.g. @artsbyuma or url"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-slate-900/20 focus:border-slate-900 outline-none font-mono"
+                    id="salon-info-tiktok-input"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1.5 flex items-center justify-between">
+                    <span>Handle or TikTok link</span>
+                    {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) && (
+                      <span className="text-slate-800 font-mono font-medium truncate max-w-[150px]">
+                        {displaySocialHandle(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* LIVE WEBSITE HEADER PREVIEW STRIP */}
+              <div className="mt-4 p-3.5 rounded-xl bg-slate-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div 
+                    className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-white text-xs shadow-2xs"
+                    style={{ backgroundColor: currentPrimaryColor }}
+                  >
+                    <span className="material-symbols-outlined text-sm">storefront</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block font-mono">Website Header Preview:</span>
+                    <span className="font-bold text-white text-xs">
+                      {profile.businessName || 'Salon Brand'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+                  <span className="text-[11px] text-slate-400 font-mono mr-1">Header Socials:</span>
+                  {profile.instagramHandle ? (
+                    <span 
+                      className="w-6 h-6 rounded-md bg-gradient-to-tr from-amber-500 to-pink-600 text-white flex items-center justify-center text-xs shadow-2xs"
+                      title={`Instagram: ${profile.instagramHandle}`}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">photo_camera</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 italic">No Instagram</span>
+                  )}
+                  {profile.facebookPage ? (
+                    <span 
+                      className="w-6 h-6 rounded-md bg-blue-600 text-white flex items-center justify-center text-xs shadow-2xs font-bold"
+                      title={`Facebook: ${profile.facebookPage}`}
+                    >
+                      f
+                    </span>
+                  ) : null}
+                  {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) ? (
+                    <span 
+                      className="w-6 h-6 rounded-md bg-slate-950 text-cyan-300 border border-slate-700 flex items-center justify-center text-xs shadow-2xs"
+                      title="TikTok Active"
+                    >
+                      <TikTokIcon className="w-3.5 h-3.5" />
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
                 onClick={onNavigateToEditor}
@@ -1327,11 +1817,20 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   <span>View Live Preview</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setIsBackupModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                title="Create a local offline JSON backup of your salon configuration"
+              >
+                <span className="material-symbols-outlined text-lg text-slate-700">cloud_download</span>
+                <span>Backup &amp; Snapshot</span>
+              </button>
             </div>
 
             <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
               <span className="font-medium">
-                ✓ All website details live in a single form. Every change is auto-saved &amp; synced to the live preview.
+                ✓ All website details and social links live in one place. Every change is auto-saved &amp; synced to the live website header.
               </span>
               <span className="font-mono text-[11px] font-bold bg-emerald-100 px-2 py-0.5 rounded">
                 Auto-Synced
@@ -1339,6 +1838,25 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             </div>
           </div>
         )}
+
+        {/* BACKUP & SNAPSHOT MANAGER MODAL */}
+        <BackupManagerModal
+          isOpen={isBackupModalOpen}
+          onClose={() => setIsBackupModalOpen(false)}
+          profile={profile}
+          setProfile={setProfile}
+          services={services}
+          setServices={setServices}
+          stylists={stylists}
+          setStylists={setStylists}
+          loyaltyConfig={loyaltyConfig}
+          setLoyaltyConfig={setLoyaltyConfig}
+          clients={clients}
+          setClients={setClients}
+          appointments={appointments}
+          setAppointments={setAppointments}
+          primaryAccentColor={currentPrimaryColor}
+        />
       </div>
     </div>
   );

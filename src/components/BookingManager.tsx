@@ -22,6 +22,8 @@ interface BookingManagerProps {
   ownerId?: string | null;
   /** Fallback scope when the owner id isn't known yet. */
   subdomain?: string | null;
+  isAuthenticated?: boolean;
+  onRequireAuth?: (mode?: 'login' | 'signup') => void;
 }
 
 /**
@@ -34,7 +36,13 @@ interface BookingManagerProps {
  * a failing endpoint. Now failures are shown, polling backs off while the API
  * is unhealthy, and status updates report whether they actually persisted.
  */
-export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: BookingManagerProps) => {
+export const BookingManager = ({
+  primaryAccentColor,
+  ownerId,
+  subdomain,
+  isAuthenticated = true,
+  onRequireAuth,
+}: BookingManagerProps) => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>('');
@@ -172,6 +180,10 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
   const hasPassInput = /^fanal[-\s]?[A-Za-z0-9_-]+$/i.test(String(passInput).trim().replace(/\s+/g, ''));
 
   const handleUpdateStatus = async (id: string, status: string, proposedDate?: string, proposedTime?: string) => {
+    if (!isAuthenticated) {
+      onRequireAuth?.('login');
+      return;
+    }
     setActionError('');
     setUpdatingId(id);
     try {
@@ -338,7 +350,17 @@ export const BookingManager = ({ primaryAccentColor, ownerId, subdomain }: Booki
                         <button disabled={updatingId === b.id} onClick={() => handleUpdateStatus(b.id, 'cancelled')} className="p-1.5 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 disabled:opacity-40" title="Reject">
                           <X className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setSelectedBooking(b)} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Suggest New Time">
+                        <button
+                          onClick={() => {
+                            if (!isAuthenticated) {
+                              onRequireAuth?.('login');
+                              return;
+                            }
+                            setSelectedBooking(b);
+                          }}
+                          className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                          title={!isAuthenticated ? 'Log in to suggest new time' : 'Suggest New Time'}
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
 

@@ -174,6 +174,29 @@ export interface HomeServiceConfig {
   radiusLimitKm: number;
 }
 
+export type PromoBannerTheme = 
+  | 'gradient_purple'
+  | 'royal_gold'
+  | 'rose_velvet'
+  | 'emerald_botanical'
+  | 'obsidian_glam'
+  | 'sunset_coral'
+  | 'custom';
+
+export interface PromotionalBannerConfig {
+  enabled: boolean;
+  text: string;
+  discountCode?: string;
+  badgeText?: string;
+  buttonText?: string;
+  buttonAction?: 'book' | 'copy';
+  themePreset?: PromoBannerTheme;
+  customBgColor?: string;
+  customTextColor?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 export interface SalonProfile {
   ownerId?: string;
   businessType: BusinessTypeId;
@@ -201,10 +224,13 @@ export interface SalonProfile {
   latitude?: number;
   longitude?: number;
   homeService?: HomeServiceConfig; // Added this
+  promotionalBanner?: PromotionalBannerConfig;
   instagramHandle: string;
   facebookPage?: string;
   youtubeChannel?: string;
   tiktokProfile?: string;
+  tiktokHandle?: string;
+  tiktokUrl?: string;
   googleBusinessUrl?: string;
   socialVideos?: SocialVideo[];
   requireDeposit: boolean;
@@ -359,3 +385,36 @@ export interface ClientRecord {
   pointHistory?: PointTransaction[];
   redeemedRewards?: RedeemedReward[];
 }
+
+export interface ReengagementRecommendation {
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail?: string;
+  daysInactive: number;
+  lastVisitDate: string;
+  lastServiceName: string;
+  lastStylistName: string;
+  suggestedServiceName: string;
+  discountOffer: string;
+  discountPercent?: number;
+  urgencyLevel: 'critical' | 'high' | 'medium';
+  urgencyReason: string;
+  churnRiskAnalysis: string;
+  personalizedWhatsApp: string;
+  personalizedSms: string;
+  loyaltyTier: LoyaltyTier;
+  estimatedRecoverableValue: number;
+}
+
+export interface ReengagementAnalysisResult {
+  totalInactiveCount: number;
+  potentialRecoverableRevenue: number;
+  averageInactiveDays: number;
+  campaignTheme: string;
+  topInsights: string[];
+  recommendations: ReengagementRecommendation[];
+  generatedAt: string;
+  modelUsed?: string;
+}
+
