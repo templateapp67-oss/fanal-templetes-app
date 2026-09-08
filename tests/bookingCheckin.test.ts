@@ -129,7 +129,6 @@ function makeDb(initial: Record<string, any[]>): FakeDb {
         return self;
       },
       then(resolve: any, reject?: any) {
-        if (process.env.DEBUG_DB) console.error('[fake-db] then', table, op, JSON.stringify(filters));
         try {
           const tableRows = rows[table] || [];
           let result: any;
@@ -351,7 +350,6 @@ test('live: check-in credits birthday + referral bonuses once, through the exist
     { body: { booking_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }, params: {}, query: { owner_id: OWNER } },
     res
   );
-  if (res.statusCode !== 200 && process.env.DEBUG_DB) console.error('[debug]', JSON.stringify(res.body), '\nCALLS:', JSON.stringify(db.calls, null, 1));
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   const credits = res.body.data.credits || [];
   assert.equal(credits.length, 2, JSON.stringify(credits));

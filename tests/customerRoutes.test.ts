@@ -1264,3 +1264,23 @@ test('the salon pass is refused without a verified identity', async () => {
   assert.equal(res.statusCode, 401, JSON.stringify(res.body));
   assert.equal(res.body.code, 'auth_required');
 });
+
+// ---------------------------------------------------------------------------
+// Date of birth — pickProfileUpdates (drives the birthday bonus rule)
+// ---------------------------------------------------------------------------
+test('dateOfBirth is a validated real-date column: stored, cleared, or refused', () => {
+  const stored = pickProfileUpdates({ dateOfBirth: '1990-09-08', fullName: 'Ananya' });
+  assert.equal(stored.updates.date_of_birth, '1990-09-08');
+  assert.equal(stored.updates.full_name, 'Ananya');
+  assert.deepEqual(stored.dropped, []);
+
+  const cleared = pickProfileUpdates({ dateOfBirth: '', fullName: 'Ananya' });
+  assert.equal(cleared.updates.date_of_birth, null, 'an empty string clears the date, it is never stored');
+
+  const bad = pickProfileUpdates({ dateOfBirth: '08/09/1990' });
+  assert.ok(bad.dropped.includes('dateOfBirth'), 'non-ISO dates are dropped, not stored');
+  assert.equal(bad.updates.date_of_birth, undefined);
+
+  const future = pickProfileUpdates({ dateOfBirth: new Date(Date.now() + 86400000 * 30).toISOString().slice(0, 10) });
+  assert.ok(future.dropped.includes('dateOfBirth'), 'a date in the future cannot be a date of birth');
+});
