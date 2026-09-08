@@ -8,7 +8,7 @@
 // and in production lives here.
 // ============================================================================
 
-import { bookingStatusLabel } from '../src/lib/bookingStatus';
+import { bookingStatusLabel } from '../src/lib/bookingStatus.js';
 
 /** Postgres `uuid`-shaped value (any version). */
 const UUID_RE =

@@ -14,13 +14,13 @@
 //   • saveViaWebsiteApi()  — POST /api/website/save fallback (service role)
 //   • runSalonSavePipeline() — client sync → API fallback → local draft
 //
-// NOTE: `import type { ... } from './salonSync'` is type-only (erased at
+// NOTE: `import type { ... } from './salonSync.js'` is type-only (erased at
 // compile time), so this module stays a leaf of the runtime dependency graph
 // even though the pipeline orchestrates salonSync.syncSalonToSupabase (the
 // actual function is injected by the caller — see SalonSavePipelineOptions).
 // ============================================================================
 
-import type { SalonSyncPayload, SalonSyncResult } from './salonSync';
+import type { SalonSyncPayload, SalonSyncResult } from './salonSync.js';
 
 /** Auto-save debounce delay. Kept inside the 1000–1500ms sweet spot so fast
  *  typing does not spam the API while edits still persist quickly. */

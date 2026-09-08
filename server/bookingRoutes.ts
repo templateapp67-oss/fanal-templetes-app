@@ -23,17 +23,17 @@
 // failed update, so the unread badge silently came back on the next poll.
 // ============================================================================
 
-import { applyBookingUpdate, buildStatusNotifications, isUuidLike } from './bookingOps';
-import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus';
-import { isValidIsoDate } from './bookingCreate';
+import { applyBookingUpdate, buildStatusNotifications, isUuidLike } from './bookingOps.js';
+import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus.js';
+import { isValidIsoDate } from './bookingCreate.js';
 import {
   runDb,
   newRequestId,
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
-} from './dbGuard';
-import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError';
+} from './dbGuard.js';
+import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError.js';
 
 export interface BookingRoutesDeps {
   db: any;

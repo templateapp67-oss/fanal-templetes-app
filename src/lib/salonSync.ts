@@ -31,8 +31,8 @@
 // ============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from '../types';
-import { toDbId, withRetry, describeError, isAuthLikeFailure } from './autoSave';
+import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from '../types.js';
+import { toDbId, withRetry, describeError, isAuthLikeFailure } from './autoSave.js';
 
 /** Namespaces keep the same logical id from colliding across tables. */
 export const SERVICE_ID_NAMESPACE = 'nexora-service';

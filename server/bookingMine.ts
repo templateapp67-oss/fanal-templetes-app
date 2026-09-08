@@ -23,19 +23,19 @@
 // never disagree with what the page promised.
 // ============================================================================
 
-import type { BookingAuthResult } from './bookingAuth';
-import { isUuidLike } from './bookingOps';
-import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs';
-import type { LoyaltyTerms } from '../src/lib/bookingDetail';
-import { describeBookingStatus } from '../src/lib/bookingStatus';
+import type { BookingAuthResult } from './bookingAuth.js';
+import { isUuidLike } from './bookingOps.js';
+import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs.js';
+import type { LoyaltyTerms } from '../src/lib/bookingDetail.js';
+import { describeBookingStatus } from '../src/lib/bookingStatus.js';
 import {
   runDb,
   newRequestId,
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
-} from './dbGuard';
-import { safeDatabaseError, sendSafeError } from './safeError';
+} from './dbGuard.js';
+import { safeDatabaseError, sendSafeError } from './safeError.js';
 
 export interface BookingMineDeps {
   db: any;

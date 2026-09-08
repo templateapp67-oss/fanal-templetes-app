@@ -22,7 +22,7 @@ import {
   isPersistableBookingStatus,
   bookingStatusHeadline,
   type DisplayBookingStatus,
-} from './bookingStatus';
+} from './bookingStatus.js';
 
 /**
  * Asia/Kolkata. India has no daylight saving, so a fixed offset is correct

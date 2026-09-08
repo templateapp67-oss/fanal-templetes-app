@@ -18,10 +18,10 @@ import {
   normalizeReferralCode,
   parseWindow,
   referralCodeFor,
-} from './schema';
+} from './schema.js';
 // Same helper the client's checkout button and the server's advance endpoint use,
 // so the amount shown, charged and recorded can never drift apart.
-import { computeAdvanceDeposit } from '../advanceDeposit';
+import { computeAdvanceDeposit } from '../advanceDeposit.js';
 import type { SalonGalleryItem,
   BookingServiceLine,
   CustomerBooking,
@@ -41,7 +41,7 @@ import type { SalonGalleryItem,
   RewardTransaction,
   RewardWallet,
   SlotWindow,
-} from './types';
+} from './types.js';
 
 const str = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : value === null || value === undefined ? '' : String(value).trim();

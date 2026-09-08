@@ -5,7 +5,7 @@
 // unhandled rejection (and, on a serverless host, FUNCTION_INVOCATION_FAILED).
 // ============================================================================
 
-import { responseAlreadyEnded } from './dbGuard';
+import { responseAlreadyEnded } from './dbGuard.js';
 
 export type ExpressHandler = (req: any, res: any, next?: any) => any;
 

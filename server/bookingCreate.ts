@@ -25,10 +25,10 @@
 // faults.
 // ============================================================================
 
-import { isUuidLike, sanitizeBookingRow, normalizeServiceLines, joinServiceLineNames } from './bookingOps';
-import { resolveSignatureSecret, verifyRazorpaySignature, isMockOrderId } from './razorpay';
-import { resolveTenantFromHost } from '../src/lib/tenant';
-import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus';
+import { isUuidLike, sanitizeBookingRow, normalizeServiceLines, joinServiceLineNames } from './bookingOps.js';
+import { resolveSignatureSecret, verifyRazorpaySignature, isMockOrderId } from './razorpay.js';
+import { resolveTenantFromHost } from '../src/lib/tenant.js';
+import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus.js';
 import {
   runDb,
   newRequestId,
@@ -36,9 +36,9 @@ import {
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
-} from './dbGuard';
-import type { BookingAuthResult, BookingAuthUser } from './bookingAuth';
-import { isMissingTableError } from './safeError';
+} from './dbGuard.js';
+import type { BookingAuthResult, BookingAuthUser } from './bookingAuth.js';
+import { isMissingTableError } from './safeError.js';
 
 // Shared with the client UI via src/lib/bookingStatus.ts, so the API and the
 // screens can never disagree about which statuses exist. This list used to be

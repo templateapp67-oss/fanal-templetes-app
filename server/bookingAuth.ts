@@ -8,7 +8,7 @@
 // never accepts that path and must have real Supabase credentials.
 // ============================================================================
 
-import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../src/lib/supabaseClient';
+import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../src/lib/supabaseClient.js';
 
 export interface BookingAuthUser {
   id: string;

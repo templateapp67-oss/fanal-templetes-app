@@ -13,10 +13,10 @@
 // Nothing secret is returned — keys are reported as booleans only.
 // ============================================================================
 
-import { runDb, LOOKUP_DB_TIMEOUT_MS } from './dbGuard';
-import { safeDatabaseError } from './safeError';
-import { describeRazorpayGateway } from './razorpay';
-import { isWebhookConfigured } from './razorpayWebhook';
+import { runDb, LOOKUP_DB_TIMEOUT_MS } from './dbGuard.js';
+import { safeDatabaseError } from './safeError.js';
+import { describeRazorpayGateway } from './razorpay.js';
+import { isWebhookConfigured } from './razorpayWebhook.js';
 
 export interface HealthDeps {
   db: any;

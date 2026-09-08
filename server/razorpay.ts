@@ -38,7 +38,7 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { computeAdvanceDeposit, rupeesToPaise, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit';
+import { computeAdvanceDeposit, rupeesToPaise, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit.js';
 
 const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
 const REQUEST_TIMEOUT_MS = 20_000;

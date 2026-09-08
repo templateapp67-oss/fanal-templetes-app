@@ -19,24 +19,24 @@
 // to write — credits are reported as `planned`, never as fabricated `credited`.
 // ============================================================================
 
-import type { BookingRoutesDeps } from './bookingRoutes';
+import type { BookingRoutesDeps } from './bookingRoutes.js';
 import {
   runDb,
   newRequestId,
   DEFAULT_DB_TIMEOUT_MS,
   LOOKUP_DB_TIMEOUT_MS,
   responseAlreadyEnded,
-} from './dbGuard';
-import { safeDatabaseError, sendSafeError } from './safeError';
-import { isUuidLike } from './bookingOps';
+} from './dbGuard.js';
+import { safeDatabaseError, sendSafeError } from './safeError.js';
+import { isUuidLike } from './bookingOps.js';
 import {
   normalizePassCode,
   passCodeUserId,
   checkinEligibility,
   isBirthdayVisit,
   planCheckInCredits,
-} from '../src/lib/customer/checkin';
-import { referralCodeFor, normalizeReferralCode } from '../src/lib/customer/schema';
+} from '../src/lib/customer/checkin.js';
+import { referralCodeFor, normalizeReferralCode } from '../src/lib/customer/schema.js';
 
 type CheckinDeps = BookingRoutesDeps & { now?: () => number };
 

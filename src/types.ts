@@ -1,4 +1,4 @@
-import type { BookingStatus } from './lib/bookingStatus';
+import type { BookingStatus } from './lib/bookingStatus.js';
 
 /**
  * `bookings` is the customer's "My Bookings" page, and the only view with a

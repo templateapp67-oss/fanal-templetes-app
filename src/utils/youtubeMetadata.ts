@@ -1,4 +1,4 @@
-import { buildYouTubeWatchUrl, getYouTubeDetails, type YouTubeDetails } from './youtube';
+import { buildYouTubeWatchUrl, getYouTubeDetails, type YouTubeDetails } from './youtube.js';
 
 export interface YouTubeMetadata extends YouTubeDetails {
   youtubeUrl: string;
