@@ -285,6 +285,54 @@ test('add-ons are listed under the primary service', () => {
   assert.deepEqual(view.services, ['Hair Spa', 'Head Massage', 'Deep Conditioning']);
 });
 
+test('structured metadata.services lines are listed as the services, not the joined scalar', () => {
+  const view = toBookingDetailView({
+    row: row({
+      service_name: 'Master Stylist Precision Cut + Signature Caramel Balayage',
+      metadata: {
+        stylist_name: 'Ananya',
+        services: [
+          { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+          { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+        ],
+      },
+    }),
+  });
+  assert.deepEqual(view.services, ['Master Stylist Precision Cut', 'Signature Caramel Balayage']);
+});
+
+test('structured lines win even when legacy add-ons exist on the same row', () => {
+  // Newer builds write both (lines + the legacy scalar snapshot); the lines are
+  // the source of truth, so the same treatment must not appear twice.
+  const view = toBookingDetailView({
+    row: row({
+      metadata: {
+        services: [
+          { service_id: 'hs-1', name: 'Master Stylist Precision Cut', price: 750, duration_minutes: 45 },
+          { service_id: 'hs-3', name: 'Signature Caramel Balayage', price: 5200, duration_minutes: 150 },
+        ],
+        service_addons: [
+          { name: 'Signature Caramel Balayage', price: 5200 },
+          { name: 'Head Massage', price: 300 },
+        ],
+      },
+    }),
+  });
+  assert.deepEqual(view.services, ['Master Stylist Precision Cut', 'Signature Caramel Balayage']);
+});
+
+test('structured lines with unusable entries fall back to the legacy read', () => {
+  const view = toBookingDetailView({
+    row: row({
+      metadata: {
+        services: [{ name: '  ' }, null, { service_id: 'hs-1' }],
+        service_addons: 'Head Massage',
+      },
+    }),
+  });
+  assert.deepEqual(view.services, ['Hair Spa', 'Head Massage']);
+});
+
 test('a booking with no service name still reads as something', () => {
   const view = toBookingDetailView({ row: row({ service_name: '' }) });
   assert.deepEqual(view.services, ['Appointment']);

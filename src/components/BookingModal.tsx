@@ -773,6 +773,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           customer_email: workingDraft.customer.email || undefined,
           service_id: workingDraft.service.id,
           service_name: workingDraft.service.name,
+          // Every treatment the customer picked, in click order, as structured
+          // lines (primary + extras + add-ons). `bookings` has one parent row,
+          // so the API persists these into `metadata.services` and rebuilds the
+          // parent `service_name` from them — the same line shape the customer
+          // app writes, which lets "My Bookings", the detail page and rebooking
+          // show every service instead of only the primary.
+          services: [workingDraft.service, ...workingDraft.upgrades].map((item) => ({
+            service_id: String(item.id ?? ''),
+            name: String(item.name ?? '').trim(),
+            price: Number(item.price) || 0,
+            duration_minutes: Number(item.durationMinutes) || 0,
+          })),
           // Persisted into the booking's metadata by the API. The customer's
           // "My Bookings" cards need these: `bookings` has no salon or
           // stylist column, so without them the card cannot say who or where.
@@ -780,8 +792,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           salon_name: workingDraft.salon.name,
           // `bookings` stores one service plus a total; checkout folds the
           // add-on prices in without itemising them. Sending them here is
-          // what lets the booking detail page list everything the customer
-          // actually picked.
+          // what lets older reads (and rows created before the structured
+          // `services` lines above existed) still list everything the
+          // customer actually picked.
           service_addons: workingDraft.upgrades.map((addon) => ({
             name: addon.name,
             price: addon.price,

@@ -25,7 +25,7 @@
 // faults.
 // ============================================================================
 
-import { isUuidLike, sanitizeBookingRow } from './bookingOps';
+import { isUuidLike, sanitizeBookingRow, normalizeServiceLines, joinServiceLineNames } from './bookingOps';
 import { resolveSignatureSecret, verifyRazorpaySignature, isMockOrderId } from './razorpay';
 import { resolveTenantFromHost } from '../src/lib/tenant';
 import { PERSISTABLE_BOOKING_STATUS_SET } from '../src/lib/bookingStatus';
@@ -117,8 +117,15 @@ export function validateBookingPayload(input: any): BookingValidationResult {
   if (customerEmail && !EMAIL_RE.test(customerEmail)) fail('customer_email', 'Email address looks invalid.');
 
   // --- service --------------------------------------------------------------
-  const serviceName = str(input.service_name);
-  if (!serviceName) fail('service_name', 'A service must be selected.');
+  // A booking may carry either a flat `service_name` (single-service flows,
+  // older builds) or the structured `services` lines the modal sends for every
+  // selection (see `normalizeServiceLines`). When lines are present they are
+  // authoritative: the parent `service_name` is rebuilt from their names so
+  // every list/detail screen shows the same joined label the customer app uses.
+  const serviceLines = normalizeServiceLines(input.services);
+  const derivedServiceName = serviceLines ? joinServiceLineNames(serviceLines) : '';
+  const rawServiceName = str(input.service_name);
+  if (!rawServiceName && !derivedServiceName) fail('service_name', 'A service must be selected.');
 
   // --- slot -----------------------------------------------------------------
   const bookingDate = str(input.booking_date);
@@ -153,8 +160,9 @@ export function validateBookingPayload(input: any): BookingValidationResult {
     customer_name: customerName,
     customer_phone: digits.length === 10 ? `+91${digits}` : rawPhone,
     customer_email: customerEmail || null,
-    service_id: input.service_id ?? null,
-    service_name: serviceName,
+    service_id:
+      (serviceLines?.[0]?.service_id || '') || str(input.service_id) || null,
+    service_name: derivedServiceName || rawServiceName,
     booking_date: bookingDate,
     time_slot: timeSlot,
     total_amount: Number(totalAmount.toFixed(2)),
@@ -174,14 +182,23 @@ export function validateBookingPayload(input: any): BookingValidationResult {
   const displayMetadata: Record<string, any> = {};
   if (str(input.stylist_name)) displayMetadata.stylist_name = str(input.stylist_name);
   if (str(input.salon_name)) displayMetadata.salon_name = str(input.salon_name);
+  // Structured multi-service lines. `metadata.services` is the one key
+  // `safeMetadataObject` keeps as an array (see bookingOps.ts) — every line is
+  // capped and re-normalized there, so this is not a nested-array passthrough.
+  if (serviceLines) {
+    displayMetadata.services = serviceLines;
+    const totalMinutes = serviceLines.reduce((sum, line) => sum + line.duration_minutes, 0);
+    if (totalMinutes > 0) displayMetadata.duration_minutes = totalMinutes;
+  }
   // Add-ons have no column of their own: checkout folds their price into
   // `total_amount` without itemising. Recording them is what lets the booking
   // detail page list every service the customer actually picked.
   //
   // Stored as ONE comma-separated string, not as an array: `safeMetadataObject`
   // in bookingOps.ts keeps only shallow JSON primitives and drops anything
-  // nested, so an array of add-on objects would vanish silently. Prices are not
-  // kept because the checkout total already includes them.
+  // nested (the sole exception is the structured `services` key above), so an
+  // array of add-on objects would vanish silently. Prices are not kept because
+  // the checkout total already includes them.
   if (Array.isArray(input.service_addons) && input.service_addons.length > 0) {
     const names = input.service_addons
       .map((addon: any) => (typeof addon === 'string' ? addon : String(addon?.name ?? '')))

@@ -42,9 +42,73 @@ const BOOKING_COLUMNS = new Set([
   'metadata',
 ]);
 
-export type BookingMetadata = Record<string, string | number | boolean | null>;
+/** One ordered line inside `bookings.metadata.services`. */
+export interface StructuredServiceLine {
+  service_id: string;
+  name: string;
+  price: number;
+  duration_minutes: number;
+}
+
+/**
+ * Metadata is shallow JSON primitives EXCEPT for the single documented
+ * structured key: `metadata.services`, the ordered multi-service lines every
+ * booking screen reads back through `toBookingServiceLines` /
+ * `toBookingDetailView`. `safeMetadataObject` keeps that key explicitly.
+ */
+export type BookingMetadata = Record<
+  string,
+  string | number | boolean | null | StructuredServiceLine[]
+>;
 
 const MAX_METADATA_VALUE_LENGTH = 500;
+/** Ceiling on how many service lines a booking may carry. */
+export const MAX_STRUCTURED_SERVICE_LINES = 20;
+/** Per-line name cap (display text only; the parent `service_name` has its own cap). */
+export const MAX_SERVICE_LINE_NAME_LENGTH = 160;
+/**
+ * Cap for the parent `service_name` rebuilt from the line names — the same
+ * convention the customer app uses (`server/customerRoutes.ts`), so the
+ * owner dashboard and booking cards see the same joined label either way.
+ */
+export const MAX_JOINED_SERVICE_NAME_LENGTH = 240;
+
+/**
+ * Normalize a caller-supplied `services` array into structured lines.
+ * Accepts both snake_case (the shape this repo writes) and camelCase /
+ * `unit_price` (the shape older integrations post), drops unusable entries,
+ * and caps every field so the JSONB write can never be a second unbounded
+ * request body. Returns null when the value is not a usable array.
+ */
+export function normalizeServiceLines(value: unknown): StructuredServiceLine[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const lines: StructuredServiceLine[] = [];
+  for (const raw of value.slice(0, MAX_STRUCTURED_SERVICE_LINES)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const o = raw as Record<string, unknown>;
+    const serviceId = String(o.service_id ?? o.serviceId ?? '').trim().slice(0, 80);
+    const name = String(o.name ?? o.service_name ?? '').trim().slice(0, MAX_SERVICE_LINE_NAME_LENGTH);
+    if (!name && !serviceId) continue;
+    const price = Number(o.price ?? o.unit_price ?? NaN);
+    const duration = Number(o.duration_minutes ?? o.durationMinutes ?? NaN);
+    lines.push({
+      service_id: serviceId,
+      name,
+      price: Number.isFinite(price) && price >= 0 ? Number(price.toFixed(2)) : 0,
+      duration_minutes: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : 0,
+    });
+  }
+  return lines.length > 0 ? lines : null;
+}
+
+/** "Cut + Balayage + Gel-X Nails" from structured lines, capped for the parent column. */
+export function joinServiceLineNames(lines: StructuredServiceLine[]): string {
+  return lines
+    .map((line) => line.name)
+    .filter(Boolean)
+    .join(' + ')
+    .slice(0, MAX_JOINED_SERVICE_NAME_LENGTH);
+}
 
 function safeMetadataString(value: unknown): string {
   if (typeof value === 'string') return value.slice(0, MAX_METADATA_VALUE_LENGTH);
@@ -63,9 +127,18 @@ function safeMetadataObject(value: unknown): BookingMetadata {
   const metadata: BookingMetadata = {};
   // Metadata is diagnostic context, not a second unbounded request body. Keep
   // only shallow JSON primitives so a malformed client object cannot make the
-  // Supabase JSONB insert fail or consume excessive memory.
+  // Supabase JSONB insert fail or consume excessive memory. The single
+  // deliberate exception is `metadata.services` — the structured multi-service
+  // lines (see `normalizeServiceLines`) — which every read path consumes.
+  // Every OTHER nested value (including arrays under any other key) is still
+  // dropped, so a caller cannot smuggle an arbitrary blob through.
   for (const [key, raw] of Object.entries(value as Record<string, unknown>).slice(0, 32)) {
     if (!/^[a-zA-Z0-9_.-]{1,80}$/.test(key)) continue;
+    if (key === 'services') {
+      const lines = normalizeServiceLines(raw);
+      if (lines) metadata.services = lines;
+      continue;
+    }
     if (raw === null || typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
       const primitive = raw as string | number | boolean | null;
       metadata[key] = typeof primitive === 'string' ? primitive.slice(0, MAX_METADATA_VALUE_LENGTH) : primitive;

@@ -315,6 +315,36 @@ async function handleCreate(body: any, caller: AuthenticatedCaller): Promise<Res
     }
   }
 
+  // Multi-service bookings keep their full ordered treatment list as structured
+  // `metadata.services` lines — the same shape the customer app writes — and the
+  // parent `service_name` is rebuilt from those names so list/detail screens and
+  // rebooking see every service, not just the primary one. Lines are capped and
+  // re-normalized here; this is the one structured key metadata may carry.
+  const normalizedLines: any[] = [];
+  const rawLines = Array.isArray(booking.services) ? booking.services : [];
+  for (const raw of rawLines.slice(0, 20)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const serviceId = String(raw.service_id ?? raw.serviceId ?? "").trim().slice(0, 80);
+    const name = String(raw.name ?? raw.service_name ?? "").trim().slice(0, 160);
+    if (!serviceId && !name) continue;
+    const price = Number(raw.price ?? raw.unit_price ?? NaN);
+    const minutes = Number(raw.duration_minutes ?? raw.durationMinutes ?? NaN);
+    normalizedLines.push({
+      service_id: serviceId,
+      name,
+      price: Number.isFinite(price) && price >= 0 ? Number(price.toFixed(2)) : 0,
+      duration_minutes: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes) : 0,
+    });
+  }
+  if (normalizedLines.length > 0) {
+    metadata.services = normalizedLines as any;
+    const totalMinutes = normalizedLines.reduce((total, line) => total + line.duration_minutes, 0);
+    if (totalMinutes > 0) metadata.duration_minutes = totalMinutes;
+  }
+  const derivedServiceName = normalizedLines.length > 0
+    ? normalizedLines.map((line) => line.name).filter(Boolean).join(" + ").slice(0, 240)
+    : "";
+
   // A verified customer token is necessary but not sufficient to trust a
   // browser payment claim. Re-check the Razorpay signature before owner lookup
   // or the booking insert, and reset unverified money fields to pending.
@@ -338,9 +368,9 @@ async function handleCreate(body: any, caller: AuthenticatedCaller): Promise<Res
     customer_name: booking.customer_name,
     customer_phone: booking.customer_phone || "",
     customer_email: booking.customer_email || "",
-    service_id: uuidOrNull(booking.service_id, metadata, "service_id"),
+    service_id: uuidOrNull(booking.service_id ?? normalizedLines[0]?.service_id, metadata, "service_id"),
     user_id: uuidOrNull(caller.id, metadata, "user_id"),
-    service_name: booking.service_name || "",
+    service_name: derivedServiceName || booking.service_name || "",
     booking_date: booking.booking_date || null,
     time_slot: booking.time_slot || "",
     total_amount: totalAmount,

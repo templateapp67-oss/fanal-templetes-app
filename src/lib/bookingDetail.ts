@@ -223,12 +223,30 @@ export function readServiceAddOns(value: unknown): string[] {
 }
 
 /**
+ * Names of the services stored as structured `metadata.services` lines — the
+ * ordered treatment list written by the customer app and by the site's booking
+ * modal (primary + extras + add-ons). Empty when the row predates lines or was
+ * written by a flow that only set scalar `service_name`.
+ */
+export function readStructuredServiceNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names: string[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const name = String((item as any)?.name ?? (item as any)?.service_name ?? '').trim();
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+/**
  * Map a booking row plus the salon/loyalty data the API attaches onto what the
  * detail page renders.
  *
- * Add-ons ride along in `metadata.service_addons` because `bookings` has a
- * single `service_name` column and the checkout folds add-on prices into the
- * total without itemising them.
+ * Multi-service bookings keep their full ordered list as structured lines in
+ * `metadata.services`; those names are listed when present. Rows written by
+ * older builds carry the extras in `metadata.service_addons` instead, so that
+ * legacy shape is still read as the fallback.
  */
 export function toBookingDetailView(input: {
   row: any;
@@ -243,8 +261,12 @@ export function toBookingDetailView(input: {
   const advancePaid = Number.isFinite(Number(source.advance_paid_amount)) ? Number(source.advance_paid_amount) : 0;
   const rating = Number(metadata.review_rating);
 
+  const structured = readStructuredServiceNames(metadata.services);
   const primary = String(source.service_name ?? '').trim();
-  const services = [primary, ...readServiceAddOns(metadata.service_addons)].filter(Boolean);
+  const services =
+    structured.length > 0
+      ? structured
+      : [primary, ...readServiceAddOns(metadata.service_addons)].filter(Boolean);
 
   const lat = coordOrNull(salon.latitude);
   const lng = coordOrNull(salon.longitude);
