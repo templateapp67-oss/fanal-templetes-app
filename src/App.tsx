@@ -320,6 +320,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [user, setUser] = useState<any>(() => {
+    if (!isMockSupabase) return null;
     try {
       const raw = localStorage.getItem('nexora_auth_user_v1');
       if (raw) return JSON.parse(raw);
