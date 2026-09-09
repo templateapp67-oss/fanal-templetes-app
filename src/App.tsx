@@ -940,13 +940,6 @@ export default function App() {
       const snapshot = snapshotOf(state);
       if (source === 'auto' && snapshot === lastPersistedSnapshotRef.current) {
         // Nothing actually changed — don't hammer localStorage/Supabase.
-        if (source === 'manual') {
-          setSaveStatus('saved');
-          setLastSavedAt(Date.now());
-          showToast(options?.message || 'Website details updated successfully!');
-          scheduleStatusReset();
-          return true;
-        }
         setSaveStatus((prev) => (prev === 'pending' ? 'idle' : prev));
         return true;
       }
