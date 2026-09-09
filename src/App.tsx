@@ -851,14 +851,24 @@ export default function App() {
             return false;
           }
 
+          const beforeRead = salonStateRef.current;
           const { data: saved, error } = await supabase.rpc('get_owner_editor_state');
           if (error) throw error;
           if (hydrationUserRef.current === userId) {
-            if (saved && !hasUnsavedEdits()) {
-              if (saved.profile) setProfile(prev => ({ ...prev, ...saved.profile, ownerId: userId }));
-              if (Array.isArray(saved.services)) setServices(saved.services);
-              if (Array.isArray(saved.stylists)) setStylists(saved.stylists);
-              if (saved.loyaltyConfig) setLoyaltyConfig(saved.loyaltyConfig);
+            if (saved) {
+              const current = salonStateRef.current;
+              const mergedProfile = { ...current.profile, ...saved.profile, ownerId: userId };
+              // Preserve only edits made while this read was in flight. Local
+              // startup defaults must never prevent the saved profile loading.
+              for (const key of Object.keys(current.profile)) {
+                if (JSON.stringify(current.profile[key]) !== JSON.stringify(beforeRead.profile[key])) mergedProfile[key] = current.profile[key];
+              }
+              const next = { ...current, profile: mergedProfile,
+                services: current.services !== beforeRead.services ? current.services : saved.services ?? current.services,
+                stylists: current.stylists !== beforeRead.stylists ? current.stylists : saved.stylists ?? current.stylists,
+                loyaltyConfig: current.loyaltyConfig !== beforeRead.loyaltyConfig ? current.loyaltyConfig : saved.loyaltyConfig ?? current.loyaltyConfig };
+              salonStateRef.current = next;
+              setProfile(next.profile); setServices(next.services); setStylists(next.stylists); setLoyaltyConfig(next.loyaltyConfig);
             }
             hydratedForUserRef.current = true;
             hydrationErrorRef.current = null;
@@ -946,6 +956,14 @@ export default function App() {
   const persistSalonState = useCallback(
     async (options?: { source?: 'auto' | 'manual'; message?: string }): Promise<boolean> => {
       const source = options?.source ?? 'manual';
+      if (salonStateRef.current.user && !isMockSupabase && !hydratedForUserRef.current) {
+        const loaded = await startHydration(salonStateRef.current.user.id);
+        if (!loaded || !hydratedForUserRef.current) {
+          setSaveStatus('error');
+          if (source === 'manual') showToast('Saved data could not be loaded. Save paused to protect your existing profile. Please retry.', 'error');
+          return false;
+        }
+      }
       const state = salonStateRef.current;
 
       // Coalesce auto-saves: if one is already running, remember to run again
