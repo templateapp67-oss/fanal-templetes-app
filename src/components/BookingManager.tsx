@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabaseClient';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Check,
@@ -67,7 +68,10 @@ export const BookingManager = ({
 
   const fetchBookings = useCallback(async () => {
     try {
-      const res = await fetch(`/api/bookings${scopeQuery}`);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/bookings${scopeQuery}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
       const text = await res.text();
       let json: any = null;
       try {
