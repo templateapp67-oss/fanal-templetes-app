@@ -1,3 +1,4 @@
+import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
@@ -319,6 +320,10 @@ export default function App() {
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [authStatus, setAuthStatus] = useState<RestoredAuthState['status']>(isMockSupabase ? 'ready' : 'restoring');
+  const authStatusRef = useRef(authStatus);
+  authStatusRef.current = authStatus;
+  const authRetryRef = useRef<() => void>(() => {});
   const [user, setUser] = useState<any>(() => {
     if (!isMockSupabase) return null;
     try {
@@ -613,21 +618,19 @@ export default function App() {
     previousTemplateIdRef.current = selectedTemplateId;
   }, [selectedTemplateId]);
 
-  // Auth State Listener
+  // The restored SDK session, not a cached user object, controls authentication.
   useEffect(() => {
-    if (isMockSupabase) {
-      return;
-    }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    if (isMockSupabase) return;
+    const observer = observeAuthSession(supabase.auth, (state) => {
+      setUser(state.user);
+      setAuthStatus(state.status);
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    authRetryRef.current = observer.retry;
+    window.addEventListener('online', observer.retry);
+    return () => {
+      observer.dispose();
+      window.removeEventListener('online', observer.retry);
+    };
   }, []);
 
   useEffect(() => {
@@ -839,7 +842,7 @@ export default function App() {
           const { data: sessionData, error: sessionLookupError } =
             await supabase.auth.getSession();
           if (sessionLookupError) {
-            console.warn('[AutoSave] Session lookup warning during hydration:', sessionLookupError);
+            throw sessionLookupError;
           }
           if (!sessionData.session?.user) {
             const message = 'no active Supabase session — please sign in again';
@@ -847,7 +850,7 @@ export default function App() {
               hydratedForUserRef.current = false;
               hydrationErrorRef.current = message;
               console.error('[AutoSave] Cloud hydration failed:', message);
-              setUser(null); // flip the header/auth UI back to signed-out
+              // Only the auth listener changes login state; a data read cannot log the user out.
             }
             return false;
           }
@@ -965,6 +968,7 @@ export default function App() {
           return false;
         }
       }
+      if (!isMockSupabase && authStatusRef.current !== 'ready') return false;
       const state = salonStateRef.current;
 
       // Coalesce auto-saves: if one is already running, remember to run again
@@ -1029,7 +1033,7 @@ export default function App() {
             const { data: sessionData, error: sessionLookupError } =
               await supabase.auth.getSession();
             if (sessionLookupError) {
-              console.warn('[AutoSave] Session lookup warning:', sessionLookupError);
+              throw sessionLookupError;
             }
             const sessionUser = sessionData?.session?.user ?? null;
             if (sessionUser) {
@@ -1042,7 +1046,7 @@ export default function App() {
               console.error(
                 '[AutoSave] No active Supabase session — saving as a local draft (SUCCESS (Local Draft)) instead of failing. Sign in again to resume cloud sync (local edits are already saved on this device).'
               );
-              setUser(null); // flip the header/auth UI back to signed-out
+              // Only the auth listener changes login state; a data read cannot log the user out.
             } else if (sessionUser.id !== liveOwnerId) {
               // Stale React state after an account switch — adopt the live
               // session identity and save as that owner (safe mode below
@@ -1487,6 +1491,16 @@ export default function App() {
         />
       </div>
     );
+  }
+
+  if (!isMockSupabase && !user && authStatus !== 'ready') {
+    return <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+      <div role="status" className="max-w-md rounded-2xl bg-white border border-slate-200 p-6">
+        <h1 className="text-lg font-bold">{authStatus === 'restoring' ? 'Restoring your session…' : 'Could not restore your login yet'}</h1>
+        <p className="my-3 text-sm">{authStatus === 'restoring' ? 'Loading your saved sign-in.' : 'Check your connection, then retry. Your saved profile has not been cleared.'}</p>
+        {authStatus === 'error' && <button type="button" onClick={() => authRetryRef.current()} className="rounded-lg bg-pink-700 px-4 py-2 text-white">Retry connection</button>}
+      </div>
+    </div>;
   }
 
   return (
