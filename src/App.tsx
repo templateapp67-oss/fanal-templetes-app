@@ -704,13 +704,13 @@ export default function App() {
               phone: data.phone_number || meta.phone_number || prev.phone,
               whatsapp: data.whatsapp || prev.whatsapp,
               email: data.email || user.email || prev.email,
-              ownerPhotoUrl: data.owner_photo_url || prev.ownerPhotoUrl,
+              ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || prev.ownerPhotoUrl,
               coverImageUrl: data.cover_image_url || prev.coverImageUrl,
               tagline: data.tagline || prev.tagline,
               about: data.about || prev.about,
               address: data.full_address || prev.address,
               city: data.city || meta.city || prev.city,
-              postalCode: data.postal_code || prev.postalCode,
+              postalCode: data.postal_code || data.pincode || prev.postalCode,
               landmark: data.landmark || prev.landmark,
               subdomain: data.subdomain || prev.subdomain,
               instagramHandle: data.instagram_handle || prev.instagramHandle,
@@ -1476,6 +1476,7 @@ export default function App() {
         onBuildWebsiteClick={handleBuildWebsiteClick}
         user={user}
         setUser={setUser}
+        onProfileSaved={(patch) => setProfile(prev => ({ ...prev, ...patch }))}
         profile={profile}
         openAuth={(mode) => {
           setAuthMode(mode);
