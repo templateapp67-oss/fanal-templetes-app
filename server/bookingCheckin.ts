@@ -1,3 +1,5 @@
+import { BackendError, ownerSalonIds, readDatabase, verifyBackendUser } from './backendContext.js';
+import { findAuthorizedBooking, NORMALIZED_BOOKING_SELECT, presentBooking } from './normalizedBookingAccess.js';
 // ============================================================================
 // Owner check-in — POST /api/bookings/check-in
 // ----------------------------------------------------------------------------
@@ -261,6 +263,39 @@ export function createBookingCheckinHandler(deps: CheckinDeps) {
           });
         }
         return;
+      }
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        const { user } = await verifyBackendUser(deps.db, req);
+        const now = new Date(deps.now ? deps.now() : Date.now());
+        const localDay = (row: any) => new Intl.DateTimeFormat('en-CA', { timeZone: row.salon?.timezone || 'Asia/Kolkata' }).format(now);
+        let row: any;
+        if (req.body?.booking_id) {
+          row = (await findAuthorizedBooking(deps.db, user.id, String(req.body.booking_id), true)).row;
+        } else {
+          const customerId = passCodeUserId(req.body?.code);
+          if (!isUuidLike(customerId || '')) throw new BackendError(400, 'A valid salon pass or booking id is required.');
+          const salons = await ownerSalonIds(deps.db, user.id);
+          if (!salons.length) throw new BackendError(403, 'No active salon membership was found.');
+          const candidates = await readDatabase(() => deps.db.from('bookings').select(NORMALIZED_BOOKING_SELECT)
+            .in('salon_id', salons).eq('customer_user_id', customerId)
+            .gte('appointment_start', new Date(now.getTime()-86400000).toISOString())
+            .lte('appointment_start', new Date(now.getTime()+86400000).toISOString()));
+          const today = (candidates || []).filter((r: any) => presentBooking(r).booking_date === localDay(r) && ['pending','confirmed','checked_in'].includes(r.status));
+          if (today.length !== 1) throw new BackendError(409, today.length ? 'Multiple visits found. Select the booking to check in.' : 'No open visit was found for today.');
+          row = today[0];
+        }
+        if (presentBooking(row).booking_date !== localDay(row)) throw new BackendError(409, 'Check-in is available on the appointment date.');
+        const duplicate = row.status === 'checked_in';
+        if (!duplicate) {
+          if (!['pending','confirmed'].includes(row.status)) throw new BackendError(409, 'This booking is not open for check-in.');
+          const updated = await readDatabase(() => deps.db.from('bookings').update({ status: 'checked_in', checked_in_at: now.toISOString(), updated_at: now.toISOString() })
+            .eq('id', row.id).eq('salon_id', row.salon_id).eq('status', row.status).select('id').maybeSingle());
+          if (!updated) throw new BackendError(409, 'Booking changed. Refresh and try again.');
+          row = { ...row, status: 'checked_in', checked_in_at: now.toISOString() };
+        }
+        return void res.json({ success: true, requestId, duplicate, data: { booking: presentBooking(row, true), credits: [] },
+          notice: 'Check-in recorded. Automatic birthday and referral credits are not connected to this booking service yet.' });
       }
 
       const nowMs = deps.now ? deps.now() : Date.now();
@@ -592,6 +627,7 @@ export function createBookingCheckinHandler(deps: CheckinDeps) {
     } catch (err: any) {
       console.error(`[Bookings] (${requestId}) Check-in threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
+      if (err instanceof BackendError) return void res.status(err.status).json({ success: false, requestId, code: err.code, error: err.message });
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'Check-in failed.' });
     }
   };

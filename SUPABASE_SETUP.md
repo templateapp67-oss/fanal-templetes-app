@@ -1,6 +1,25 @@
-# Nexora Salon OS — Complete Supabase Backend
+# Supabase backend setup
 
-This repo ships a **complete, runnable Supabase backend** for Nexora Salon OS:
+## Existing production database
+
+The app at https://fanal-templetes-app.vercel.app uses project **qwaehqsmodekbgvnaavz**. Its schema is normalized: `profiles` holds account identity; `salons`, `organization_members`, `services`, `staff`, `booking_items` and `notifications` hold salon data. A salon's `owner_id` can be null; use verified organization membership.
+
+Do not apply the legacy bootstrap below or blindly run every historical migration against this existing project. Historical scripts target different schema generations.
+
+Apply `supabase/migrations/20260909142000_normalized_owner_workspace.sql` in SQL Editor as a database administrator. The user reported successful execution on 2026-09-09; live schema introspection subsequently confirmed `nexora_save_owner_workspace` exists. This is not a signed-in save/refresh verification.
+
+The migration requires the existing `nexora_owner_salon_ids()`, `sync_owner_contact(jsonb)`, and normalized tables. It saves editor state, contact, services, staff assignments and schedules in one transaction; validates ownership; preserves historical catalogue rows; and removes only conflicting booking foreign keys to the old `salon_staff` table while retaining the canonical `staff` foreign key. It does not disable RLS or grant anonymous writes.
+
+Server routes require SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY. Browser configuration uses only VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Never expose a service role key in VITE variables.
+
+Verification: `npm run typecheck`, `npm test`, and `npm run build`. The PGlite migration tests cover atomic rollback and tenant isolation using a local fixture. Backend HTTP tests use synthetic credentials, not a real user session.
+
+Remaining integration limits: home-visit booking creation, automatic birthday/referral credits, and staff performance RPCs need separate normalized integration and live validation. Customer booking details explicitly report unavailable loyalty terms. Do not describe these features or a real-account refresh test as complete without testing them. Payment capture also requires configured Razorpay credentials and existing payment RPC grants.
+
+## Legacy bootstrap reference (not for the existing project)
+
+
+The historical bootstrap below describes the older owner_id schema:
 
 - ✅ Full database schema (multi-tenant, scoped to the salon owner)
 - ✅ Row Level Security (RLS) on every table

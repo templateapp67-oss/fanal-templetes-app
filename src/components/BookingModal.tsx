@@ -788,6 +788,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           // Persisted into the booking's metadata by the API. The customer's
           // "My Bookings" cards need these: `bookings` has no salon or
           // stylist column, so without them the card cannot say who or where.
+          staff_id: workingDraft.stylist.id === ANY_SPECIALIST.id ? undefined : workingDraft.stylist.id,
           stylist_name: workingDraft.stylist.name,
           salon_name: workingDraft.salon.name,
           // `bookings` stores one service plus a total; checkout folds the

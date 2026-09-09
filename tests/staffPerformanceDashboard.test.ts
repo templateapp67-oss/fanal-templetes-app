@@ -25,7 +25,7 @@ test('GET /api/owner/staff-performance/summary rejects unauthorized requests wit
   }
 });
 
-test('POST /api/owner/staff-performance/commission rejects request with missing staffId', async () => {
+test('POST /api/owner/staff-performance/commission rejects a spoofed owner header before validating fields', async () => {
   const app = createTestApp();
   const server = app.listen(0);
   const port = (server.address() as any).port;
@@ -39,15 +39,15 @@ test('POST /api/owner/staff-performance/commission rejects request with missing 
       },
       body: JSON.stringify({ commissionRate: 25 }),
     });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 401);
     const body = await res.json();
-    assert.match(body.error, /Missing required staffId/i);
+    assert.match(body.error, /Unauthorized/i);
   } finally {
     server.close();
   }
 });
 
-test('GET /api/owner/staff-performance/summary succeeds with owner credentials header', async () => {
+test('GET /api/owner/staff-performance/summary rejects an owner id header without a verified token', async () => {
   const app = createTestApp();
   const server = app.listen(0);
   const port = (server.address() as any).port;
@@ -58,9 +58,9 @@ test('GET /api/owner/staff-performance/summary succeeds with owner credentials h
         'x-owner-id': '11111111-1111-4111-8111-111111111111',
       },
     });
-    assert.ok(res.status === 200 || res.status === 500);
+    assert.equal(res.status, 401);
     const body = await res.json();
-    assert.ok(Array.isArray(body.data) || body.error);
+    assert.match(body.error, /Unauthorized/i);
   } finally {
     server.close();
   }

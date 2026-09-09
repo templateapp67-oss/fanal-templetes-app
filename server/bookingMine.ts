@@ -1,3 +1,5 @@
+import { BackendError, databaseForToken, readDatabase } from './backendContext.js';
+import { NORMALIZED_BOOKING_SELECT, presentBooking, listNormalizedCustomerBookings } from './normalizedBookingAccess.js';
 // ============================================================================
 // Customer-facing booking endpoints: "My Bookings".
 //
@@ -38,6 +40,7 @@ import {
 import { safeDatabaseError, sendSafeError } from './safeError.js';
 
 export interface BookingMineDeps {
+  normalizedBookings?: boolean;
   db: any;
   isMock: boolean;
   hasAdminClient?: boolean;
@@ -165,6 +168,10 @@ export function createMyBookingsListHandler(deps: BookingMineDeps) {
         return;
       }
       const userId = auth.user.id;
+      if (!deps.isMock && deps.normalizedBookings) {
+        const rows = await listNormalizedCustomerBookings(deps.db, userId);
+        return void res.json({ success: true, mode: 'live', requestId, data: rows });
+      }
 
       let rows: any[];
       if (deps.isMock) {
@@ -213,6 +220,7 @@ export function createMyBookingsListHandler(deps: BookingMineDeps) {
     } catch (err: any) {
       console.error(`[MyBookings] (${requestId}) List threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
+      if (err instanceof BackendError) return answer(res, err.status, { success: false, code: err.code, requestId, error: err.message });
       sendSafeError(res, err, {
         requestId,
         context: 'database',
@@ -321,6 +329,14 @@ export function createCancelMyBookingHandler(deps: BookingMineDeps) {
         return;
       }
 
+      if (!deps.isMock && deps.normalizedBookings) {
+        const row = await readCustomerBooking(deps.db, auth.user.id, req.body?.id);
+        const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+        const cancelled = await readDatabase(() => databaseForToken(token).rpc('cancel_customer_booking', { p_booking_id: row.id, p_reason: String(req.body?.reason || 'Customer cancellation').slice(0,500) }));
+        if (!cancelled) return answer(res, 409, { success: false, code: 'not_cancellable', requestId, error: 'This booking could not be cancelled.' });
+        return answer(res, 200, { success: true, requestId, data: presentBooking(await readCustomerBooking(deps.db, auth.user.id, row.id)) });
+      }
+
       const existing = await loadOwnedBooking(deps, res, requestId, req.body?.id, auth.user.id, deadlineAt);
       if (!existing || responseAlreadyEnded(res)) return;
 
@@ -386,6 +402,7 @@ export function createCancelMyBookingHandler(deps: BookingMineDeps) {
     } catch (err: any) {
       console.error(`[MyBookings] (${requestId}) Cancel threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
+      if (err instanceof BackendError) return answer(res, err.status, { success: false, code: err.code, requestId, error: err.message });
       sendSafeError(res, err, {
         requestId,
         context: 'database',
@@ -409,6 +426,19 @@ export function createReviewMyBookingHandler(deps: BookingMineDeps) {
       if (!auth.ok) {
         authFailure(res, requestId, auth);
         return;
+      }
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        const row = await readCustomerBooking(deps.db, auth.user.id, req.body?.id);
+        const validation = validateReview({ status: row.status, rating: req.body?.rating, text: req.body?.text });
+        if (!validation.ok) return answer(res, 422, { success: false, code: 'invalid_review', requestId, error: validation.error });
+        const review = await readDatabase(() => deps.db.from('reviews').upsert({
+          booking_id: row.id, salon_id: row.salon_id, customer_user_id: auth.user.id,
+          salon_customer_id: row.salon_customer_id, author: row.customer?.name || '',
+          rating: validation.rating, review_text: validation.text.slice(0, MAX_REVIEW_LENGTH),
+          is_verified_booking: true, updated_at: new Date().toISOString(),
+        }, { onConflict: 'booking_id' }).select('rating,review_text,updated_at').single());
+        return answer(res, 200, { success: true, requestId, data: { ...presentBooking(row), metadata: { review_rating: review.rating, review_text: review.review_text, reviewed_at: review.updated_at } } });
       }
 
       const existing = await loadOwnedBooking(deps, res, requestId, req.body?.id, auth.user.id, deadlineAt);
@@ -480,6 +510,7 @@ export function createReviewMyBookingHandler(deps: BookingMineDeps) {
     } catch (err: any) {
       console.error(`[MyBookings] (${requestId}) Review threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
+      if (err instanceof BackendError) return answer(res, err.status, { success: false, code: err.code, requestId, error: err.message });
       sendSafeError(res, err, {
         requestId,
         context: 'database',
@@ -679,6 +710,12 @@ export function createMyBookingDetailHandler(deps: BookingMineDeps) {
       }
 
       const id = String(req.params?.id ?? '').trim();
+      if (!deps.isMock && deps.normalizedBookings) {
+        const row = await readCustomerBooking(deps.db, auth.user.id, id);
+        const booking = presentBooking(row);
+        return answer(res, 200, { success: true, mode: 'live', requestId,
+          data: { booking, salon: booking.salon, loyalty: null, loyaltyUnavailable: true } });
+      }
       // Same ownership gate as cancel and review: another customer's booking is
       // reported as not-found rather than forbidden.
       const booking = await loadOwnedBooking(deps, res, requestId, id, auth.user.id, deadlineAt);
@@ -697,6 +734,7 @@ export function createMyBookingDetailHandler(deps: BookingMineDeps) {
     } catch (err: any) {
       console.error(`[MyBookings] (${requestId}) Detail threw:`, err?.stack || err);
       if (responseAlreadyEnded(res)) return;
+      if (err instanceof BackendError) return answer(res, err.status, { success: false, code: err.code, requestId, error: err.message });
       sendSafeError(res, err, {
         requestId,
         context: 'database',
@@ -708,3 +746,10 @@ export function createMyBookingDetailHandler(deps: BookingMineDeps) {
 
 /** Re-exported so the client can describe a status without a second import. */
 export { describeBookingStatus };
+
+async function readCustomerBooking(db: any, actor: string, id: unknown) {
+  if (!isUuidLike(String(id || ''))) throw new BackendError(400, 'A valid booking id is required.');
+  const row = await readDatabase(() => db.from('bookings').select(NORMALIZED_BOOKING_SELECT).eq('id', String(id)).eq('customer_user_id', actor).maybeSingle());
+  if (!row) throw new BackendError(404, 'Booking not found.', 'not_found');
+  return row;
+}

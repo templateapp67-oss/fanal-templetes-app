@@ -21,7 +21,9 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { test, before, after } from 'node:test';
 import type { TestContext } from 'node:test';
-import app from '../api/index';
+// Keep this mock HTTP suite isolated from a developer's local .env file.
+for (const key of ['SUPABASE_URL','VITE_SUPABASE_URL','SUPABASE_ANON_KEY','VITE_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_SERVICE_KEY']) process.env[key] = key.endsWith('URL') ? 'https://placeholder-project.supabase.co' : 'placeholder';
+const app = (await import('../api/index')).default;
 
 let server: http.Server;
 let base: string;

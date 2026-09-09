@@ -400,6 +400,7 @@ const bookingRouteDeps: BookingRoutesDeps = {
 // "/api/bookings/:id" so Express does not read "mine" as a booking id.
 // ==========================================================================
 const bookingMineDeps: BookingMineDeps = {
+    normalizedBookings: true,
   db,
   isMock: bookingHandlerIsMock,
   hasAdminClient: !!admin,
@@ -459,6 +460,7 @@ app.post(
   // replies with its own un-parseable HTML error page.
   withRequestTimeout(API_REQUEST_TIMEOUT_MS, 'Saving your booking took too long. Nothing was charged — please try again.'),
   asyncRoute(createBookingHandler({
+    normalizedBookings: true,
     db,
     isMock: bookingHandlerIsMock,
     hasAdminClient: !!admin,

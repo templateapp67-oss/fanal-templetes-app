@@ -155,7 +155,7 @@ test('live mode + token of a DIFFERENT owner → 401 (owner_id must match token)
   assert.equal(restCalls.length, 0, 'owner A rows must never be upserted by owner B');
 });
 
-test('live mode + caller is really owner_id → 200, service-role upsert performed', async () => {
+test('live mode + caller is really owner_id → 200, caller-authorized workspace transaction performed', async () => {
   restCalls.length = 0;
   authCalls.length = 0;
   const res = await postSave(savePayload(OWNER_A), { Authorization: `Bearer owner-a-token` });
@@ -171,9 +171,10 @@ test('live mode + caller is really owner_id → 200, service-role upsert perform
 
   // And the write went through PostgREST with the service-role apikey.
   assert.ok(restCalls.length >= 1, 'profile upsert must reach PostgREST');
-  assert.ok(restCalls.some((c) => c.path.startsWith('/rest/v1/profiles')));
+  assert.equal(restCalls.length, 1);
+  assert.equal(restCalls[0].path, '/rest/v1/rpc/save_owner_editor_state');
   for (const c of restCalls) {
-    assert.equal(c.apikey, SERVICE_KEY, 'every write must use the service-role key');
+    assert.equal(c.apikey, ANON_KEY, 'RPC authorization uses the caller token and public apikey');
   }
 });
 

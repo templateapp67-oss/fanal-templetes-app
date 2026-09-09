@@ -396,7 +396,7 @@ test('/api/website/save rejects missing essential fields (subdomain, owner_id) w
   assert.match(badUuid.body.error, /uuid/);
 });
 
-test('live mode: /api/website/save upserts every table with the service-role key', async () => {
+test('live mode: /api/website/save uses one caller-authorized workspace transaction', async () => {
   assert.equal(isMockSupabase, false, 'this test file must run in live mode');
   const admin = getSupabaseAdmin();
   assert.ok(admin, 'the admin (service role) client must exist');
@@ -425,39 +425,16 @@ test('live mode: /api/website/save upserts every table with the service-role key
     assert.equal(res.body.success, true);
     assert.equal(typeof res.body.timestamp, 'number');
 
-    // Every upsert must have gone through the REST API with the SERVICE ROLE
-    // key — that is what safely bypasses RLS from the server.
-    const upserts = fetchCalls.filter((c) => c.init?.method === 'POST' && String(c.url).includes('/rest/v1/'));
-    const tables = upserts.map((c) => {
-      const m = String(c.url).match(/rest\/v1\/([a-z_]+)/);
-      return m?.[1];
-    });
-    assert.ok(tables.includes('profiles'), `profiles must be upserted (got ${tables.join(', ')})`);
-    assert.ok(tables.includes('services'));
-    assert.ok(tables.includes('stylists'));
-    assert.ok(tables.includes('loyalty_config'));
-
-    for (const call of upserts) {
-      const headers = call.init?.headers as any;
-      const getHeader = (name: string): string => {
-        if (!headers) return '';
-        if (typeof headers.get === 'function') return String(headers.get(name) ?? '');
-        const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
-        return key ? String(headers[key]) : '';
-      };
-      assert.equal(
-        getHeader('authorization'),
-        'Bearer service-role-test-key',
-        'must use SUPABASE_SERVICE_ROLE_KEY'
-      );
-      assert.equal(
-        getHeader('apikey'),
-        'service-role-test-key',
-        'the apikey header must carry the service role key'
-      );
-      // Upsert semantics — the Prefer header must request merge resolution.
-      assert.match(getHeader('prefer'), /resolution=merge-duplicates/);
-    }
+    const writes = fetchCalls.filter(c => c.init?.method === 'POST' && c.url.includes('/rest/v1/'));
+    assert.equal(writes.length, 1);
+    assert.ok(writes[0].url.endsWith('/rpc/save_owner_editor_state'));
+    const headers = new Headers(writes[0].init.headers);
+    assert.equal(headers.get('authorization'), `Bearer ${OWNER_TEST_TOKEN}`);
+    assert.equal(headers.get('apikey'), 'anon-test-key');
+    const payload = JSON.parse(writes[0].init.body);
+    assert.deepEqual(payload.p_state.profile, PAYLOAD.profile);
+    assert.deepEqual(payload.p_state.services, PAYLOAD.services);
+    assert.deepEqual(payload.p_state.stylists, PAYLOAD.stylists);
 
     // The token verification hit /auth/v1/user with the SERVICE-ROLE apikey
     // (never the anon key), using the caller's own access token.
@@ -475,12 +452,6 @@ test('live mode: /api/website/save upserts every table with the service-role key
       assert.equal(getHeader('authorization'), `Bearer ${OWNER_TEST_TOKEN}`);
     }
 
-    // The profiles row carries the validated essential fields.
-    const profileCall = upserts.find((c) => String(c.url).includes('/rest/v1/profiles'));
-    const profileBody = JSON.parse(String(profileCall.init.body));
-    assert.equal(profileBody.id, OWNER_ID);
-    assert.equal(profileBody.subdomain, 'arts-by-uma');
-
     // Mock registry must NOT be touched in live mode.
     assert.deepEqual(mockSalons, {});
   } finally {
@@ -488,7 +459,7 @@ test('live mode: /api/website/save upserts every table with the service-role key
   }
 });
 
-test('live mode: a failed upsert returns 500 { error: "Failed to persist site state" }', async () => {
+test('live mode: a failed workspace transaction returns retryable failure without success', async () => {
   const originalFetch = (globalThis as any).fetch;
   (globalThis as any).fetch = (async (url: string) => {
     if (String(url).includes('/auth/v1/user')) {
@@ -507,8 +478,9 @@ test('live mode: a failed upsert returns 500 { error: "Failed to persist site st
     const handler = handleWebsiteSave({ mockSalons: {} });
     const res = fakeRes();
     await handler({ body: { salonData: PAYLOAD }, headers: OWNER_AUTH_HEADERS }, res);
-    assert.equal(res.statusCode, 500);
-    assert.deepEqual(res.body, { error: 'Failed to persist site state' });
+    assert.equal(res.statusCode, 503);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.code, 'workspace_save_failed');
   } finally {
     (globalThis as any).fetch = originalFetch;
   }

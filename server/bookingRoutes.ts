@@ -1,3 +1,6 @@
+import { readNormalizedBooking, updateNormalizedBooking } from './normalizedBookingAccess.js';
+import { normalizedNotifications } from './normalizedNotifications.js';
+import { BackendError } from './backendContext.js';
 import { loadOwnerBookings } from './ownerBookings.js';
 // ============================================================================
 // Shared read/update routes for bookings + notifications.
@@ -213,6 +216,11 @@ export function createBookingGetHandler(deps: BookingRoutesDeps) {
     const deadlineAt = res.locals?.requestDeadlineAt;
     const id = String(req.params?.id || '').trim();
     try {
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        try { return void res.json(await readNormalizedBooking(deps.db, req)); }
+        catch (error) { if (error instanceof BackendError) return void res.status(error.status).json({ success: false, code: error.code, error: error.message }); throw error; }
+      }
       if (rejectMissingAdminClient(deps, res, requestId)) return;
       if (!id) {
         if (responseAlreadyEnded(res)) return;
@@ -275,6 +283,11 @@ export function createBookingUpdateHandler(deps: BookingRoutesDeps) {
   return async function updateBooking(req: any, res: any): Promise<void> {
     const requestId = newRequestId('bkup');
     try {
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        try { return void res.json(await updateNormalizedBooking(deps.db, req)); }
+        catch (error) { if (error instanceof BackendError) return void res.status(error.status).json({ success: false, code: error.code, error: error.message }); throw error; }
+      }
       if (rejectMissingAdminClient(deps, res, requestId)) return;
       const deadlineAt = res.locals?.requestDeadlineAt;
       const { id, status, proposed_date, proposed_time_slot } = req.body ?? {};
@@ -433,6 +446,11 @@ export function createNotificationsListHandler(deps: BookingRoutesDeps) {
     const deadlineAt = res.locals?.requestDeadlineAt;
     const email = typeof req.query?.email === 'string' ? req.query.email.trim() : '';
     try {
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        try { return void res.json(await normalizedNotifications(deps.db, req, false)); }
+        catch (error) { if (error instanceof BackendError) return void res.status(error.status).json({ success: false, code: error.code, error: error.message }); throw error; }
+      }
       if (rejectMissingAdminClient(deps, res, requestId)) return;
       if (!email) {
         return void res
@@ -518,6 +536,11 @@ export function createNotificationsReadHandler(deps: BookingRoutesDeps) {
     const deadlineAt = res.locals?.requestDeadlineAt;
     const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
     try {
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        try { return void res.json(await normalizedNotifications(deps.db, req, true)); }
+        catch (error) { if (error instanceof BackendError) return void res.status(error.status).json({ success: false, code: error.code, error: error.message }); throw error; }
+      }
       if (rejectMissingAdminClient(deps, res, requestId)) return;
       if (!email) {
         return void res
