@@ -8,7 +8,7 @@ import { supabase, isMockSupabase, getSupabaseAdmin, supabaseConfig } from "./sr
 import { resolveTenantFromHost, isTenantHost, BASE_DOMAIN } from "./src/lib/tenant";
 import { SalonProfile, SalonService, Stylist } from "./src/types";
 import { nexoraCors } from "./server/cors";
-import { handleWebsiteSave } from "./server/websiteSave";
+import { handleWebsiteSave, handleGetSalonState } from "./server/websiteSave";
 import { handleFetchYouTubeMetadata } from "./server/youtubeMetadata";
 import { createBookingHandler } from "./server/bookingCreate";
 import { authenticateBookingRequest } from "./server/bookingAuth";
@@ -814,15 +814,10 @@ Return strictly JSON with the following keys:
   app.post("/api/fetch-youtube-meta", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleFetchYouTubeMetadata));
 
   // --------------------------------------------------------------------------
-  // OWNER SAVE FALLBACK — POST /api/website/save
-  // The editor's auto-save pipeline (src/lib/autoSave.ts) POSTs the full
-  // salon state here when the direct Supabase client sync fails (network /
-  // auth / RLS). The shared handler (server/websiteSave.ts) persists it with
-  // the Supabase ADMIN service-role client (SUPABASE_SERVICE_ROLE_KEY), which
-  // safely bypasses RLS. Validates essential fields (subdomain, owner_id),
-  // upserts inside a try/catch, and answers:
-  //   200 { success: true, timestamp } | 500 { error: "Failed to persist site state" }
+  // OWNER SAVE & SALON STATE HYDRATION
   // --------------------------------------------------------------------------
+  app.get("/api/salon/state", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleGetSalonState({ mockSalons })));
+  app.post("/api/salon/save", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleWebsiteSave({ mockSalons })));
   app.post("/api/website/save", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleWebsiteSave({ mockSalons })));
 
   // JSON 404 for unmatched /api/* routes (registered after all routes above).

@@ -14,6 +14,7 @@ import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress, calculateTierProgress } from '../loyaltyData';
 import { getSiteUrl } from '../lib/salonStore';
 
+import { AppointmentsCalendarView } from './AppointmentsCalendarView';
 import { BookingManager } from './BookingManager';
 import { BookingStatusBadge } from './BookingStatusBadge';
 import { AIClientReengagement } from './AIClientReengagement';
@@ -72,6 +73,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   const setLoyaltyConfig = externalSetLoyaltyConfig || setInternalLoyaltyConfig;
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [appointmentsSubTab, setAppointmentsSubTab] = useState<'calendar' | 'live_bookings'>('calendar');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [dashboardTierClientSearch, setDashboardTierClientSearch] = useState<string>('');
   const [dashboardTierFilter, setDashboardTierFilter] = useState<string>('all');
@@ -623,6 +625,18 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => {
+                      setAppointmentsSubTab('calendar');
+                      setActiveTab('calendar');
+                    }}
+                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    title="Open Full Visual Calendar"
+                    id="overview-open-calendar-btn"
+                  >
+                    <span className="material-symbols-outlined text-sm">calendar_month</span>
+                    <span>Calendar Schedule</span>
+                  </button>
+                  <button
                     onClick={handleDownloadAppointmentsCSV}
                     className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                     title="Download appointments list as CSV"
@@ -888,15 +902,67 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB CONTENT: APPOINTMENTS */}
+        {/* TAB CONTENT: APPOINTMENTS & CALENDAR */}
         {activeTab === 'calendar' && (
-          <BookingManager
-            primaryAccentColor={currentPrimaryColor}
-            ownerId={profile.ownerId}
-            subdomain={profile.subdomain}
-            isAuthenticated={isAuthenticated}
-            onRequireAuth={onRequireAuth}
-          />
+          <div className="flex flex-col gap-6" id="dashboard-appointments-section">
+            {/* Sub-tab Navigation */}
+            <div className="flex items-center justify-between flex-wrap gap-3 pb-2">
+              <div className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setAppointmentsSubTab('calendar')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
+                    appointmentsSubTab === 'calendar'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  id="tab-calendar-view"
+                >
+                  <span className="material-symbols-outlined text-base">calendar_month</span>
+                  <span>Calendar & Daily Schedule</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppointmentsSubTab('live_bookings')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
+                    appointmentsSubTab === 'live_bookings'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  id="tab-live-bookings"
+                >
+                  <span className="material-symbols-outlined text-base">qr_code_scanner</span>
+                  <span>Live Requests & Pass Check-in</span>
+                </button>
+              </div>
+
+              <div className="text-xs text-slate-500 font-medium">
+                {appointmentsSubTab === 'calendar' ? (
+                  <span>Visually manage appointments, staff schedules, and daily slots</span>
+                ) : (
+                  <span>Incoming web booking requests & customer QR pass check-in</span>
+                )}
+              </div>
+            </div>
+
+            {appointmentsSubTab === 'calendar' ? (
+              <AppointmentsCalendarView
+                appointments={appointments}
+                setAppointments={setAppointments}
+                services={services}
+                stylists={stylists}
+                primaryAccentColor={currentPrimaryColor}
+              />
+            ) : (
+              <BookingManager
+                primaryAccentColor={currentPrimaryColor}
+                ownerId={profile.ownerId}
+                subdomain={profile.subdomain}
+                isAuthenticated={isAuthenticated}
+                onRequireAuth={onRequireAuth}
+              />
+            )}
+          </div>
         )}
 
         {/* TAB CONTENT: SERVICES */}

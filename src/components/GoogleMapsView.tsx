@@ -67,21 +67,73 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     }
   };
 
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    `${title} ${address}`
-  )}`;
+  // Clean title & address for optimal Google Maps query
+  const cleanAddress = (address || '').trim();
+  const cleanTitle = (title || '').trim();
 
-  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${markerPos.lat},${markerPos.lng}`;
+  // Search query: prioritize full business name and address for accurate location matching
+  const searchQuery = cleanAddress
+    ? (cleanAddress.toLowerCase().includes(cleanTitle.toLowerCase())
+        ? cleanAddress
+        : `${cleanTitle ? `${cleanTitle}, ` : ''}${cleanAddress}`)
+    : (cleanTitle || `${markerPos.lat},${markerPos.lng}`);
+
+  // Maps URL to search & show location directly on Google Maps
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(searchQuery)}`;
+
+  // Directions destination: use clean address for high-accuracy local navigation in India
+  const isDefaultCoords = Math.abs(markerPos.lat - 19.076) < 0.001 && Math.abs(markerPos.lng - 72.8777) < 0.001;
+  const destinationParam = cleanAddress && isDefaultCoords ? searchQuery : `${markerPos.lat},${markerPos.lng}`;
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinationParam)}`;
 
   if (!MAPS_API_KEY) {
     return (
-      <div style={{ minHeight: height }} className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
-        <MapPin aria-hidden="true" className="h-6 w-6 text-rose-600" />
-        <p className="font-semibold">{title}</p>
-        <p className="text-sm text-slate-600">{address}</p>
-        <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 underline">
-          Get directions in Google Maps
+      <div
+        style={{ minHeight: height }}
+        className="group relative flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center transition-all hover:bg-slate-100/70 hover:border-slate-300"
+      >
+        <a
+          href={mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col items-center gap-2 text-inherit no-underline group/link cursor-pointer"
+          title="Click to view location in Google Maps"
+        >
+          <div className="w-11 h-11 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shadow-xs group-hover/link:scale-110 group-hover/link:bg-rose-100 transition-all">
+            <MapPin aria-hidden="true" className="h-6 w-6" />
+          </div>
+          <p className="font-semibold text-base text-slate-900 group-hover/link:text-blue-600 transition-colors">
+            {title}
+          </p>
+          <p className="text-sm text-slate-700 max-w-md group-hover/link:text-blue-600 transition-colors flex items-center justify-center gap-1.5 font-medium px-3 py-1 rounded-lg hover:bg-white/80 border border-transparent hover:border-slate-200">
+            <span>{address}</span>
+            <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover/link:opacity-100 shrink-0 text-blue-600" />
+          </p>
         </a>
+
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+          <a
+            href={directionsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 underline underline-offset-2 hover:underline-offset-4 transition-all"
+            title="Get directions in Google Maps"
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span>Get directions in Google Maps</span>
+          </a>
+          <span className="text-slate-300">•</span>
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-blue-600 transition-colors"
+            title="Open in Google Maps"
+          >
+            <ExternalLink className="w-3 h-3" />
+            <span>Open in Maps</span>
+          </a>
+        </div>
       </div>
     );
   }
@@ -124,9 +176,15 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
                     <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                     <span>{title}</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-tight mb-1.5">
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-slate-700 hover:text-blue-600 hover:underline leading-tight mb-1.5 block font-medium"
+                    title="Open address in Google Maps"
+                  >
                     {address}
-                  </p>
+                  </a>
                   <div className="text-[9px] font-mono text-slate-500 bg-slate-50 border border-slate-100 px-1.5 py-1 rounded-md mb-2 flex flex-col gap-0.5">
                     <span className="font-bold uppercase text-[8px] text-slate-400">Exact Coordinates</span>
                     <span>Lat: {markerPos.lat.toFixed(6)}</span>
