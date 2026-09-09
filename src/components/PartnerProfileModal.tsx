@@ -1,3 +1,4 @@
+import { readPartnerProfile } from '../lib/readPartnerProfile';
 import React, { useEffect, useRef, useState } from 'react';
 import type { SalonProfile } from '../types';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
@@ -27,7 +28,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     setLoading(true); setError('');
     (async () => {
       if (isMockSupabase) throw new Error('Connect Supabase and sign in to save your profile.');
-      const { data, error } = await supabase.rpc('get_partner_profile');
+      const { data, error } = await readPartnerProfile(profile.ownerId);
       if (error) throw error;
       // Shared fields come from the live editor, including unsaved Contact &
       // Location changes. Fetch only private fields, never overwrite those edits.
@@ -37,7 +38,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
       }
     })().catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, [loadAttempt]);
+  }, [loadAttempt, profile.ownerId]);
   useEffect(() => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

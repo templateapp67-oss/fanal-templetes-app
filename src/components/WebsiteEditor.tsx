@@ -1,3 +1,4 @@
+import { readPartnerProfile } from '../lib/readPartnerProfile';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { isPartnerProfileComplete } from '../lib/profileCompletion';
 import { PartnerProfileModal } from './PartnerProfileModal';
@@ -88,7 +89,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     let active = true;
     setProfileCompletion('loading');
     if (isMockSupabase || !profile.ownerId) { setProfileCompletion('incomplete'); return; }
-    Promise.resolve(supabase.rpc('get_partner_profile')).then(({ data, error }) => {
+    readPartnerProfile(profile.ownerId).then(({ data, error }) => {
       if (active) setProfileCompletion(error ? 'error' : isPartnerProfileComplete(data) ? 'complete' : 'incomplete');
     }).catch(() => { if (active) setProfileCompletion('error'); });
     return () => { active = false; };
