@@ -1,3 +1,4 @@
+import { PartnerProfileModal } from './PartnerProfileModal';
 import React, { useRef, useState } from 'react';
 import {
   Save,
@@ -78,6 +79,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   isAuthenticated = true,
   onRequireAuth,
 }) => {
+  const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -360,60 +362,17 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <div className="flex items-center gap-2 mb-1">
             <UserRound className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
+            <button type="button" onClick={() => setContactDetailsOpen(true)} className="mt-2 text-sm font-semibold text-pink-700 underline">Complete contact & profile details</button>
+            {contactDetailsOpen && <PartnerProfileModal editable profile={profile} onSaved={upd} onClose={() => setContactDetailsOpen(false)} />}
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
             How customers reach, call, WhatsApp or find your physical salon.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Phone Number <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={profile.phone}
-                  onChange={(e) => upd({ phone: e.target.value })}
-                  placeholder="+91 98765 43210"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                WhatsApp Number
-              </label>
-              <div className="relative">
-                <MessageSquare className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={profile.whatsapp}
-                  onChange={(e) => upd({ whatsapp: e.target.value })}
-                  placeholder="+91 98765 43210"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-gray-400 shrink-0 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="email"
-                  value={profile.email}
-                  onChange={(e) => upd({ email: e.target.value })}
-                  placeholder="hello@miraki.com"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                />
-              </div>
-            </div>
-
+            {([['Phone', profile.phone], ['WhatsApp', profile.whatsapp], ['Contact Email', profile.email], ['City', profile.city], ['PIN Code', profile.postalCode], ['Area / Locality', profile.areaLocality]] as const).map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 p-3"><p className="text-xs text-slate-500">{label}</p><p className="text-sm mt-1 break-words">{value || 'Not provided'}</p></div>
+            ))}
             <div className="md:col-span-2 space-y-4">
               <GooglePlacesAutocompleteInput
                 value={profile.address}
@@ -428,6 +387,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                     longitude: lng,
                     city: comps?.city || profile.city,
                     postalCode: comps?.pincode || profile.postalCode,
+                    state: comps?.state || profile.state,
+                    areaLocality: comps?.area || profile.areaLocality,
                   });
                 }}
                 onCoordinatesUpdate={(lat, lng) => {

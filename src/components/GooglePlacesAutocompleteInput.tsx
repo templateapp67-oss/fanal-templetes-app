@@ -12,6 +12,7 @@ export interface AddressComponents {
   state?: string;
   pincode?: string;
   country?: string;
+  area?: string;
 }
 
 interface GooglePlacesAutocompleteInputProps {
@@ -167,6 +168,8 @@ const AutocompleteInputInner: React.FC<GooglePlacesAutocompleteInputProps> = ({
               parsedComponents.state = comp.long_name;
             } else if (comp.types.includes('postal_code')) {
               parsedComponents.pincode = comp.long_name;
+            } else if (comp.types.includes('sublocality_level_1') || comp.types.includes('sublocality')) {
+              parsedComponents.area = comp.long_name;
             } else if (comp.types.includes('country')) {
               parsedComponents.country = comp.long_name;
             }
