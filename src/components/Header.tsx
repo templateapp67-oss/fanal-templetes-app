@@ -151,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
-      {profileOpen && <PartnerProfileModal profile={profile} onSaved={onProfileSaved} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && <PartnerProfileModal editable profile={profile} onSaved={onProfileSaved} onClose={() => setProfileOpen(false)} />}
     </header>
   );
 };

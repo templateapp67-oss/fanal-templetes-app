@@ -1,3 +1,5 @@
+import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import { isPartnerProfileComplete } from '../lib/profileCompletion';
 import { PartnerProfileModal } from './PartnerProfileModal';
 import React, { useRef, useState } from 'react';
 import {
@@ -80,6 +82,17 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   onRequireAuth,
 }) => {
   const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
+  const [profileCompletion, setProfileCompletion] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading');
+  const [completionRetry, setCompletionRetry] = useState(0);
+  React.useEffect(() => {
+    let active = true;
+    setProfileCompletion('loading');
+    if (isMockSupabase || !profile.ownerId) { setProfileCompletion('incomplete'); return; }
+    Promise.resolve(supabase.rpc('get_partner_profile')).then(({ data, error }) => {
+      if (active) setProfileCompletion(error ? 'error' : isPartnerProfileComplete(data) ? 'complete' : 'incomplete');
+    }).catch(() => { if (active) setProfileCompletion('error'); });
+    return () => { active = false; };
+  }, [profile.ownerId, completionRetry]);
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -362,8 +375,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <div className="flex items-center gap-2 mb-1">
             <UserRound className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
-            <button type="button" onClick={() => setContactDetailsOpen(true)} className="mt-2 text-sm font-semibold text-pink-700 underline">Complete contact & profile details</button>
-            {contactDetailsOpen && <PartnerProfileModal editable profile={profile} onSaved={upd} onClose={() => setContactDetailsOpen(false)} />}
+            <div className="text-sm">
+              {profileCompletion === 'incomplete' && <button type="button" onClick={() => setContactDetailsOpen(true)} className="mt-2 font-semibold text-pink-700 underline">Complete profile · DOB & photo upload</button>}
+              {profileCompletion === 'complete' && <span className="text-emerald-700">Profile saved. Edit from Profile Settings.</span>}
+              {profileCompletion === 'loading' && <span role="status">Loading saved profile…</span>}
+              {profileCompletion === 'error' && <button type="button" onClick={() => setCompletionRetry(v => v + 1)} className="text-red-700 underline">Could not load profile status. Retry</button>}
+            </div>
+            {contactDetailsOpen && <PartnerProfileModal editable profile={profile} onSaved={patch => { upd(patch); setProfileCompletion('complete'); }} onClose={() => setContactDetailsOpen(false)} />}
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
             How customers reach, call, WhatsApp or find your physical salon.
@@ -880,3 +898,4 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     </div>
   );
 };
+
