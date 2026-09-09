@@ -221,6 +221,8 @@ export interface SalonProfile {
   phone: string;
   whatsapp: string;
   email: string;
+  dob?: string;
+  whatsappNotificationsEnabled?: boolean;
   tagline: string;
   about: string;
   ownerPhotoUrl: string;

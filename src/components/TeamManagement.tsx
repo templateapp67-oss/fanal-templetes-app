@@ -256,15 +256,6 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col gap-6">
-      
-      {/* Guest Mode Read-Only Banner */}
-      {!isAuthenticated && (
-        <GuestModeBanner
-          title="Team Management (Guest Preview)"
-          description="You are viewing the salon specialists in guest preview mode. Log in or create an account to onboard, edit, or remove staff members."
-          onRequireAuth={onRequireAuth}
-        />
-      )}
 
       {/* Toast Notification */}
       <AnimatePresence>

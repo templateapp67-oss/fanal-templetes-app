@@ -52,6 +52,7 @@ import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../u
 import { TestimonialModal } from './ClientTestimonials';
 import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
+import { getServiceIcon } from './ServiceManagement';
 import {
   buildYouTubeEmbedUrl,
   buildYouTubeShortsUrl,
@@ -1775,40 +1776,54 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className={`font-extrabold text-base md:text-lg leading-snug ${
-                          isDarkCanvas ? 'text-white' : 'text-slate-900'
-                        }`}>
-                          <InlineEditable
-                            value={srv.name}
-                            onSave={(val) => handleUpdateServiceName(srv.id, String(val))}
-                            isEditingActive={isEditMode}
-                            label="Service Name"
-                          />
-                        </h3>
-                        {srv.popular && (
-                          <span 
-                            className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-lg border border-white/20 shadow-2xs shrink-0 tracking-wider uppercase"
-                            style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
-                          >
-                            POPULAR
-                          </span>
-                        )}
+                  <div className="flex items-start gap-4 justify-between">
+                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                      {/* Service Icon Container */}
+                      <div 
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${
+                          isDarkCanvas
+                            ? 'bg-neutral-800/50 border-neutral-700/60 text-white'
+                            : 'bg-slate-50 border-slate-100'
+                        }`}
+                        style={{ color: activeAccent.primaryHex }}
+                      >
+                        {React.createElement(getServiceIcon(srv.icon), { className: "w-6 h-6 shrink-0" })}
                       </div>
 
-                      <p className={`text-xs mt-1.5 leading-relaxed font-medium ${
-                        isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'
-                      }`}>
-                        <InlineEditable
-                          value={srv.description}
-                          onSave={(val) => handleUpdateServiceDesc(srv.id, String(val))}
-                          isEditingActive={isEditMode}
-                          type="textarea"
-                          label="Service Description"
-                        />
-                      </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className={`font-extrabold text-base md:text-lg leading-snug ${
+                            isDarkCanvas ? 'text-white' : 'text-slate-900'
+                          }`}>
+                            <InlineEditable
+                              value={srv.name}
+                              onSave={(val) => handleUpdateServiceName(srv.id, String(val))}
+                              isEditingActive={isEditMode}
+                              label="Service Name"
+                            />
+                          </h3>
+                          {srv.popular && (
+                            <span 
+                              className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-lg border border-white/20 shadow-2xs shrink-0 tracking-wider uppercase"
+                              style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
+                            >
+                              POPULAR
+                            </span>
+                          )}
+                        </div>
+
+                        <p className={`text-xs mt-1.5 leading-relaxed font-medium ${
+                          isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'
+                        }`}>
+                          <InlineEditable
+                            value={srv.description}
+                            onSave={(val) => handleUpdateServiceDesc(srv.id, String(val))}
+                            isEditingActive={isEditMode}
+                            type="textarea"
+                            label="Service Description"
+                          />
+                        </p>
+                      </div>
                     </div>
 
                     {/* Price & Duration Elegant Badge System */}

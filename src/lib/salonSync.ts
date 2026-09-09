@@ -83,6 +83,7 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     email: profile.email,
     phone_number: profile.phone,
     whatsapp: profile.whatsapp,
+    whatsapp_notifications_enabled: profile.whatsappNotificationsEnabled ?? true,
     owner_role: profile.ownerRole,
     owner_photo_url: profile.ownerPhotoUrl,
     cover_image_url: profile.coverImageUrl,

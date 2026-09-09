@@ -17,10 +17,53 @@ import {
   TrendingUp,
   Layers,
   HelpCircle,
-  Lock
+  Lock,
+  Scissors,
+  Flower2,
+  Heart,
+  Brush,
+  Droplet,
+  Crown,
+  Gem,
+  Flame,
+  Smile,
+  Shield,
+  Wand2,
+  Sparkle,
+  Paintbrush,
+  Feather,
+  Coffee,
+  Star,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GuestModeBanner } from './GuestModeBanner';
+
+export const ICON_LIBRARY = [
+  { name: 'Scissors', component: Scissors, label: 'Haircut & Trim' },
+  { name: 'Sparkles', component: Sparkles, label: 'Facial & Glow' },
+  { name: 'Flower2', component: Flower2, label: 'Spa & Massage' },
+  { name: 'Heart', component: Heart, label: 'Therapy & Wellness' },
+  { name: 'Brush', component: Brush, label: 'Makeup & Nails' },
+  { name: 'Droplet', component: Droplet, label: 'Hair Spa & Wash' },
+  { name: 'Crown', component: Crown, label: 'Bridal & Premium' },
+  { name: 'Gem', component: Gem, label: 'Luxury Package' },
+  { name: 'Flame', component: Flame, label: 'Hot Stone & Warm' },
+  { name: 'Smile', component: Smile, label: 'Consultation' },
+  { name: 'Shield', component: Shield, label: 'Skin Care & Clinic' },
+  { name: 'Wand2', component: Wand2, label: 'Styling & Treat' },
+  { name: 'Sparkle', component: Sparkle, label: 'Waxing & Thread' },
+  { name: 'Paintbrush', component: Paintbrush, label: 'Nail Art' },
+  { name: 'Feather', component: Feather, label: 'Light Touch' },
+  { name: 'Coffee', component: Coffee, label: 'Add-on & Refresh' },
+  { name: 'Star', component: Star, label: 'Special' },
+  { name: 'Activity', component: Activity, label: 'Body Care' },
+];
+
+export const getServiceIcon = (iconName: string) => {
+  const found = ICON_LIBRARY.find(i => i.name.toLowerCase() === iconName?.toLowerCase());
+  return found ? found.component : Scissors;
+};
 
 interface ServiceManagementProps {
   services: SalonService[];
@@ -69,6 +112,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   const [formDescription, setFormDescription] = useState<string>('');
   const [formPopular, setFormPopular] = useState<boolean>(false);
   const [formShowDuration, setFormShowDuration] = useState<boolean>(true);
+  const [formIcon, setFormIcon] = useState<string>('Scissors');
   const [formError, setFormError] = useState<string>('');
 
   // Extract all distinct categories
@@ -93,6 +137,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormDescription('');
     setFormPopular(false);
     setFormShowDuration(true);
+    setFormIcon('Scissors');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -116,6 +161,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormDescription(srv.description || '');
     setFormPopular(!!srv.popular);
     setFormShowDuration(srv.showDuration !== false);
+    setFormIcon(srv.icon || 'Scissors');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -157,6 +203,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                 description: formDescription.trim(),
                 popular: formPopular,
                 showDuration: formShowDuration,
+                icon: formIcon,
               }
             : s
         )
@@ -171,7 +218,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         durationMinutes: Number(formDuration),
         price: Number(formPrice),
         description: formDescription.trim(),
-        icon: 'spa',
+        icon: formIcon,
         popular: formPopular,
         showDuration: formShowDuration,
       };
@@ -248,14 +295,6 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
   return (
     <div className="flex flex-col gap-6" id="services-management-section">
-      {/* Guest Mode Read-Only Banner */}
-      {!isAuthenticated && (
-        <GuestModeBanner
-          title="Services & Catalog (Guest Preview)"
-          description="You are viewing the salon service menu in guest preview mode. Log in or create an account to add new services, edit rates, or adjust duration visibility."
-          onRequireAuth={onRequireAuth}
-        />
-      )}
 
       {/* Toast Notice */}
       <AnimatePresence>
@@ -442,23 +481,36 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                 >
                   <div>
                     {/* Top line: Name & Pricing */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-extrabold text-sm text-slate-900">{srv.name}</h4>
-                          {srv.popular && (
-                            <span 
-                              className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-md shadow-2xs border border-white/20"
-                              style={{ backgroundColor: primaryAccentColor, color: 'var(--accent-text-color, #ffffff)' }}
-                            >
-                              POPULAR
-                            </span>
-                          )}
+                    <div className="flex items-start gap-3 justify-between">
+                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                        {/* Service Icon Box */}
+                        <div 
+                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs border"
+                          style={{ 
+                            backgroundColor: `${primaryAccentColor}0d`, 
+                            borderColor: `${primaryAccentColor}22`,
+                            color: primaryAccentColor
+                          }}
+                        >
+                          {React.createElement(getServiceIcon(srv.icon), { className: "w-5 h-5" })}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-extrabold text-sm text-slate-900">{srv.name}</h4>
+                            {srv.popular && (
+                              <span 
+                                className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-md shadow-2xs border border-white/20"
+                                style={{ backgroundColor: primaryAccentColor, color: 'var(--accent-text-color, #ffffff)' }}
+                              >
+                                POPULAR
+                              </span>
+                            )}
+                          </div>
 
-                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md inline-block mt-1">
-                          {srv.category}
-                        </span>
+                          <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md inline-block mt-1">
+                            {srv.category}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="text-right shrink-0">
@@ -665,6 +717,37 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                       className="w-full mt-2 px-3.5 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent"
                     />
                   )}
+                </div>
+
+                {/* Service Icon Picker */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                    Service Icon <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-6 gap-1.5 p-2.5 bg-gray-50 rounded-xl border border-gray-200">
+                    {ICON_LIBRARY.map((item) => {
+                      const IconComponent = item.component;
+                      const isSelected = formIcon === item.name;
+                      return (
+                        <button
+                          key={item.name}
+                          type="button"
+                          onClick={() => setFormIcon(item.name)}
+                          className={`p-1.5 rounded-lg flex flex-col items-center justify-center transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-white text-slate-900 ring-2 ring-slate-900/10 border border-slate-300 shadow-2xs'
+                              : 'bg-white hover:bg-gray-100 text-gray-500 border border-gray-100 hover:text-gray-900'
+                          }`}
+                          title={item.label}
+                        >
+                          <IconComponent className="w-4 h-4 shrink-0" />
+                          <span className="text-[8px] font-bold mt-1 truncate max-w-full text-gray-400">
+                            {item.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Price & Duration Row */}

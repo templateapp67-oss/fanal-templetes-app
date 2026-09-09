@@ -11,6 +11,7 @@ import { WebsiteEditor } from './components/WebsiteEditor';
 import { SalonWebsitePreview } from './components/SalonWebsitePreview';
 import { SaaSDashboard } from './components/SaaSDashboard';
 import { AuthModal } from './components/AuthModal';
+import { UserProfileSettingsModal } from './components/UserProfileSettingsModal';
 import {
   loadSalonState,
   saveSalonState,
@@ -304,6 +305,7 @@ export default function App() {
 
   // Auth State Listener
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
   // Load the persistent salon state from localStorage on initial mount.
@@ -317,7 +319,23 @@ export default function App() {
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => {
+    try {
+      const raw = localStorage.getItem('nexora_auth_user_v1');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      if (user) {
+        localStorage.setItem('nexora_auth_user_v1', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('nexora_auth_user_v1');
+      }
+    } catch {}
+  }, [user]);
 
   const [services, setServices] = useState<SalonService[]>(
     initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : INITIAL_SERVICES
@@ -1467,6 +1485,7 @@ export default function App() {
           setAuthMode(mode);
           setIsAuthModalOpen(true);
         }}
+        onOpenProfileSettings={() => setIsProfileSettingsOpen(true)}
       />
 
       {currentView === 'landing' && (
@@ -1609,6 +1628,14 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         initialMode={authMode}
         onSuccess={(u) => setUser(u)}
+      />
+
+      <UserProfileSettingsModal
+        isOpen={isProfileSettingsOpen}
+        onClose={() => setIsProfileSettingsOpen(false)}
+        profile={profile}
+        setProfile={setProfile}
+        showToast={showToast}
       />
 
       {/* Global save toast */}

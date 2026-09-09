@@ -16,7 +16,6 @@ import { getSiteUrl } from '../lib/salonStore';
 
 import { BookingManager } from './BookingManager';
 import { BookingStatusBadge } from './BookingStatusBadge';
-import { GuestModeBanner } from './GuestModeBanner';
 import { AIClientReengagement } from './AIClientReengagement';
 import { PromotionalBannerConfigSection } from './PromotionalBannerConfigSection';
 import { BackupManagerModal } from './BackupManagerModal';
@@ -290,17 +289,6 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   return (
     <div className="min-h-screen pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
       <div className="max-w-[1240px] w-full px-4 sm:px-6">
-        
-        {/* Guest Mode Read-Only Banner */}
-        {!isAuthenticated && (
-          <div className="mb-6">
-            <GuestModeBanner
-              title="Dashboard Demo / Guest Preview Mode"
-              description="You are exploring the salon management dashboard in read-only guest preview. Log in or create an owner account to unlock full editing, booking status changes, and staff management."
-              onRequireAuth={onRequireAuth}
-            />
-          </div>
-        )}
 
         {/* DASHBOARD HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 bg-white p-6 rounded-2xl border border-gray-200 shadow-xs">

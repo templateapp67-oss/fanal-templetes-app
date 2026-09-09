@@ -185,13 +185,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   return (
     <div className="min-h-screen pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col gap-6">
-        {!isAuthenticated && (
-          <GuestModeBanner
-            title="Website Editor (Guest Preview)"
-            description="You are editing this salon website in guest preview mode. Changes are kept temporarily on this device. Sign in or create an account to permanently sync with the cloud and activate your public salon URL."
-            onRequireAuth={onRequireAuth}
-          />
-        )}
 
         {/* ===== Top sticky save bar ===== */}
         <div className="sticky top-20 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
