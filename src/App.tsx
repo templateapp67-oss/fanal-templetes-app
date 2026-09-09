@@ -1476,6 +1476,7 @@ export default function App() {
         onBuildWebsiteClick={handleBuildWebsiteClick}
         user={user}
         setUser={setUser}
+        onProfileSaved={(patch) => setProfile(prev => ({ ...prev, ...patch }))}
         profile={profile}
         openAuth={(mode) => {
           setAuthMode(mode);

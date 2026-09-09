@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppView, SalonProfile } from '../types';
+import { PartnerProfileModal } from './PartnerProfileModal';
 import { NotificationBell } from './NotificationBell';
 import { AuthModal } from './AuthModal';
 import { supabase } from '../lib/supabaseClient';
@@ -12,6 +13,7 @@ interface HeaderProps {
   user: any;
   setUser: (user: any) => void;
   profile: SalonProfile;
+  onProfileSaved: (patch: Partial<SalonProfile>) => void;
   openAuth: (mode: 'login' | 'signup') => void;
 }
 
@@ -24,7 +26,9 @@ export const Header: React.FC<HeaderProps> = ({
   setUser,
   profile,
   openAuth,
+  onProfileSaved,
 }) => {
+  const [profileOpen, setProfileOpen] = useState(false);
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
@@ -115,6 +119,13 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </div>
               <button
+                onClick={() => setProfileOpen(true)}
+                className="w-10 h-10 rounded-full overflow-hidden border border-pink-200"
+                aria-label="User Profile Settings" title="User Profile Settings"
+              >
+                {profile.ownerPhotoUrl ? <img src={profile.ownerPhotoUrl} alt="Your profile" className="w-full h-full object-cover" /> : <span>Profile</span>}
+              </button>
+              <button
                 onClick={handleLogout}
                 className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all group"
                 title="Logout"
@@ -140,6 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+      {profileOpen && <PartnerProfileModal profile={profile} onSaved={onProfileSaved} onClose={() => setProfileOpen(false)} />}
     </header>
   );
 };
