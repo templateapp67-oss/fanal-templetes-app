@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabaseClient';
+import { authenticatedBookingRead } from '../lib/authenticatedBookingRead';
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Check, X, AlertCircle } from 'lucide-react';
 import { BookingStatusBadge } from './BookingStatusBadge';
@@ -23,7 +25,7 @@ export const CustomerBookingPortal = ({ bookingId }: { bookingId: string }) => {
       setLoading(true);
       setLoadError('');
       try {
-        const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`);
+        const res = await authenticatedBookingRead(supabase.auth, `/api/bookings/${encodeURIComponent(bookingId)}`);
         const json = await res.json().catch(() => null);
         if (cancelled) return;
         if (!res.ok || !json || json.success === false) {
@@ -57,9 +59,11 @@ export const CustomerBookingPortal = ({ bookingId }: { bookingId: string }) => {
     setActionError('');
     setPendingAction(status);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sign in to update your booking.');
       const res = await fetch('/api/bookings/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ id: bookingId, status })
       });
       const json = await res.json().catch(() => null);

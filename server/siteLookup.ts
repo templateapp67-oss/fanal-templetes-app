@@ -6,7 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SalonProfile, SalonService, Stylist } from '../src/types.js';
 import { runDb, DEFAULT_DB_TIMEOUT_MS } from './dbGuard.js';
-import { isMissingColumnError, isMissingTableError } from './safeError.js';
+
 
 export const DEMO_SUBDOMAINS = new Set([
   'arts-by-uma',
@@ -90,32 +90,34 @@ export interface SiteLookupDeps {
 export function mapProfileRow(row: any): SalonProfile {
   if (!row) return artsByUmaSalon.profile;
 
-  const data = row.data || {};
+  const config = row.data?.editor_profile && typeof row.data.editor_profile === 'object' ? row.data.editor_profile : {};
+  const data = { ...(row.data || {}), ...Object.fromEntries(Object.entries(config).map(([key,value]) => [key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase()),value])) };
   const workingHours = data.working_hours || row.working_hours || {};
-  const businessName = row.salon_name || row.name || 'Arts By Uma';
-  const phone = row.phone_number || row.phone || row.mobile || '+91 98450 77654';
+  const businessName = row.salon_name || row.name || '';
+  const phone = row.phone_number ?? row.phone ?? row.mobile ?? '';
   const whatsapp = row.whatsapp || phone;
   const subdomain = row.slug || row.subdomain || slugifySalonName(businessName);
-  const city = row.city || row.location_city || 'Bengaluru';
-  const address = row.full_address || row.address || row.location_address || '100 Feet Road, 12th Main, Indiranagar';
-  const postalCode = row.postal_code || row.pincode || row.location_pincode || '560038';
-  const state = row.state || 'Karnataka';
+  const city = row.city ?? row.location_city ?? '';
+  const address = row.full_address ?? row.address ?? row.location_address ?? '';
+  const postalCode = row.postal_code ?? row.pincode ?? row.location_pincode ?? '';
+  const state = row.state ?? '';
 
   return {
+    ...config,
     workingHoursMonFri: workingHours.monFri || (row.opening_time ? `${row.opening_time} - ${row.closing_time}` : ''),
     workingHoursSat: workingHours.saturday || '',
     workingHoursSun: workingHours.sunday || '',
     homeService: row.home_service || data.home_service || undefined,
-    ownerId: row.owner_id || row.id,
+    ownerId: row.owner_id || (row.salon_name ? row.id : undefined),
     businessType: (row.business_type || row.business_category || row.category || data.business_type || 'hair_salon') as SalonProfile['businessType'],
     businessName,
-    ownerName: row.full_name || data.owner_name || 'Uma',
-    ownerRole: row.owner_role || data.owner_role || 'Founder & Master Stylist',
+    ownerName: row.full_name || data.owner_name || '',
+    ownerRole: row.owner_role || data.owner_role || '',
     phone,
     whatsapp,
-    email: row.email || 'hello@artsbyuma.com',
-    tagline: row.tagline || row.description || data.tagline || 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
-    about: row.about || data.about || row.description || 'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary. We craft personalized looks that elevate your confidence and natural beauty.',
+    email: row.email ?? '',
+    tagline: row.tagline || data.tagline || '',
+    about: row.about || data.about || row.description || '',
     ownerPhotoUrl: row.owner_photo_url || data.owner_photo_url || '',
     coverImageUrl: row.cover_image_url || row.cover_url || row.cover_image_path || data.cover_image_url || '',
     logoUrl: row.logo_url || row.logo_path || data.logo_url || undefined,
@@ -126,10 +128,11 @@ export function mapProfileRow(row: any): SalonProfile {
     address,
     city,
     postalCode,
+    areaLocality: row.area ?? config.areaLocality ?? '',
     state,
     latitude: row.latitude ?? undefined,
     longitude: row.longitude ?? undefined,
-    instagramHandle: row.instagram_handle || data.instagram_handle || 'arts_by_uma',
+    instagramHandle: row.instagram_handle || data.instagram_handle || '',
     facebookPage: row.facebook_page || data.facebook_page || undefined,
     youtubeChannel: row.youtube_channel || data.youtube_channel || undefined,
     tiktokProfile: row.tiktok_profile || data.tiktok_profile || undefined,
@@ -145,7 +148,7 @@ export function mapProfileRow(row: any): SalonProfile {
 }
 
 export function mapServiceRow(row: any): SalonService {
-  const price = Number(row?.price ?? (row?.price_paise ? row.price_paise / 100 : 0));
+  const price = Number(row?.price_paise != null ? row.price_paise / 100 : row?.price ?? 0);
   return {
     id: row.id,
     name: row.name,
@@ -180,8 +183,8 @@ export function mapStylistRow(row: any): Stylist {
 
 /**
  * Resolve a salon and its catalogue by subdomain or custom domain.
- * Gracefully checks `salons` table first (slug/custom_domain), falls back to
- * `profiles` table, and finally falls back to demo presets.
+ * Live reads use the normalized salon catalogue and propagate database failures.
+ * Demo presets are available only in explicit mock mode.
  */
 export async function lookupSalon(
   deps: SiteLookupDeps,
@@ -197,122 +200,29 @@ export async function lookupSalon(
     return { found: !!s, salon: s || null };
   }
 
-  // 1. Primary lookup: `salons` table by slug (or custom_domain)
   try {
-    const queryCol = isCustomDomain ? 'custom_domain' : 'slug';
+    const queryCol = isCustomDomain ? 'data->editor_profile->>customDomain' : 'slug';
     const salonRes = await runDb(
-      () => deps.db.from('salons').select('*').eq(queryCol, sub).maybeSingle(),
-      { label: `site lookup salons by ${queryCol}`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      () => deps.db.from('salons').select('*').eq(queryCol, sub).eq('is_active', true).maybeSingle(),
+      { label: 'public salon lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
     );
-
-    if (salonRes.data) {
-      const salonRow = salonRes.data;
-      const salonId = salonRow.id;
-
-      // Fetch services & staff for this salon_id
-      const [servicesRes, staffRes] = await Promise.all([
-        runDb(
-          () => deps.db.from('services').select('*').eq('salon_id', salonId),
-          { label: 'site services by salon_id', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-        runDb(
-          () => deps.db.from('staff').select('*').eq('salon_id', salonId),
-          { label: 'site staff by salon_id', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-      ]);
-
-      let serviceRows = servicesRes.data || [];
-      let stylistRows = staffRes.data || [];
-
-      // If services are empty and an owner_id exists, try owner_id
-      if (!serviceRows.length && salonRow.owner_id) {
-        const sOwnerRes = await runDb(
-          () => deps.db.from('services').select('*').eq('owner_id', salonRow.owner_id),
-          { label: 'site services by owner_id fallback', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        );
-        if (sOwnerRes.data?.length) serviceRows = sOwnerRes.data;
-      }
-
-      // If staff table was missing, try stylists table
-      if (staffRes.error && isMissingTableError(staffRes.error)) {
-        const styRes = await runDb(
-          () => deps.db.from('stylists').select('*').eq(salonRow.owner_id ? 'owner_id' : 'salon_id', salonRow.owner_id || salonId),
-          { label: 'site stylists fallback', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        );
-        if (styRes.data) stylistRows = styRes.data;
-      }
-
-      // If demo salon with no custom services in DB, supply default demo catalogue
-      if (serviceRows.length === 0 && (sub === 'arts-by-uma' || sub === 'artsbyuma' || DEMO_SUBDOMAINS.has(sub))) {
-        return {
-          found: true,
-          salon: {
-            profile: mapProfileRow(salonRow),
-            services: artsByUmaSalon.services,
-            stylists: stylistRows.length ? stylistRows.map(mapStylistRow) : artsByUmaSalon.stylists,
-          },
-        };
-      }
-
-      return {
-        found: true,
-        salon: {
-          profile: mapProfileRow(salonRow),
-          services: serviceRows.map(mapServiceRow),
-          stylists: stylistRows.map(mapStylistRow),
-        },
-      };
-    } else if (salonRes.error && !isMissingColumnError(salonRes.error) && !isMissingTableError(salonRes.error)) {
-      console.warn(`[Site lookup] salons query warning for ${sub}:`, salonRes.error.message || salonRes.error);
-    }
-  } catch (err) {
-    console.warn(`[Site lookup] error querying salons table:`, err);
+    if (salonRes.error) return { found: false, salon: null, error: salonRes.error };
+    if (!salonRes.data) return { found: false, salon: null };
+    const salonRow = salonRes.data;
+    const [servicesRes, staffRes] = await Promise.all([
+      runDb(() => deps.db.from('services').select('*').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_bookable_online', true).order('display_order'),
+        { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
+      runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_public', true),
+        { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
+    ]);
+    if (servicesRes.error || staffRes.error) return { found: false, salon: null, error: servicesRes.error || staffRes.error };
+    return { found: true, salon: {
+      profile: mapProfileRow(salonRow),
+      services: (servicesRes.data || []).map(mapServiceRow),
+      stylists: (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
+        assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) })),
+    } };
+  } catch (error) {
+    return { found: false, salon: null, error };
   }
-
-  // 2. Secondary lookup: `profiles` table (legacy schema)
-  try {
-    const profileCol = isCustomDomain ? 'custom_domain' : 'subdomain';
-    const profileRes = await runDb(
-      () => deps.db.from('profiles').select('*').eq(profileCol, sub).maybeSingle(),
-      { label: `site lookup profiles by ${profileCol}`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-    );
-
-    if (profileRes.data) {
-      const profileRow = profileRes.data;
-      const ownerId = profileRow.id;
-      const [servicesRes, stylistsRes] = await Promise.all([
-        runDb(
-          () => deps.db.from('services').select('*').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'site profiles services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-        runDb(
-          () => deps.db.from('stylists').select('*').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'site profiles stylists', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
-        ),
-      ]);
-
-      return {
-        found: true,
-        salon: {
-          profile: mapProfileRow(profileRow),
-          services: (servicesRes.data || []).map(mapServiceRow),
-          stylists: (stylistsRes.data || []).map(mapStylistRow),
-        },
-      };
-    } else if (profileRes.error) {
-      // If error is undefined column (e.g. profiles.subdomain does not exist) or missing table, ignore safely!
-      if (!isMissingColumnError(profileRes.error) && !isMissingTableError(profileRes.error)) {
-        console.error(`[Site lookup] Failed to read profile for subdomain "${sub}":`, profileRes.error);
-      }
-    }
-  } catch (err) {
-    console.warn(`[Site lookup] error querying profiles table:`, err);
-  }
-
-  // 3. Fallback for demo subdomains
-  if (sub === 'arts-by-uma' || sub === 'artsbyuma' || DEMO_SUBDOMAINS.has(sub)) {
-    return { found: true, salon: artsByUmaSalon };
-  }
-
-  return { found: false, salon: null };
 }

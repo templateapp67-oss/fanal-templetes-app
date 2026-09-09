@@ -155,9 +155,11 @@ export const BookingManager = ({
     setCheckinFeedback(null);
     setActionError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sign in to check in this booking.');
       const res = await fetch(`/api/bookings/check-in${scopeQuery}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify(target.code ? { code: target.code } : { booking_id: target.bookingId }),
       });
       const text = await res.text();
@@ -213,9 +215,11 @@ export const BookingManager = ({
     setActionError('');
     setUpdatingId(id);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sign in to update this booking.');
       const res = await fetch('/api/bookings/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ id, status, proposed_date: proposedDate, proposed_time_slot: proposedTime })
       });
       const json = await res.json().catch(() => null);

@@ -1,51 +1,11 @@
-// ============================================================================
-// Shared POST /api/website/save handler (dev server.ts + serverless
-// api/index.ts — one implementation so the two entrypoints can't drift, the
-// same pattern as server/bookingOps.ts).
-//
-// Server-side fallback for the editor's auto-save pipeline
-// (src/lib/autoSave.ts → runSalonSavePipeline): when the browser's direct
-// Supabase client sync fails (network, expired session, RLS policies, missing
-// table grants), the client POSTs the full salon state here. This handler
-// persists it with the Supabase ADMIN (service role) client built from
-// SUPABASE_SERVICE_ROLE_KEY, which safely bypasses RLS policies — RLS is a
-// client-side auth boundary and the service role is the one role allowed to
-// write through it from a trusted server.
-//
-// Contract (see src/lib/autoSave.ts saveViaWebsiteApi):
-//   POST /api/website/save
-//   headers: Authorization: Bearer <caller's Supabase access token>
-//   body: { salonData: { ownerId, profile, services, stylists, loyaltyConfig } }
-//          (a bare payload without the salonData wrapper is also accepted)
-//   200  { success: true, timestamp }            — persisted
-//   400  { success: false, error }               — subdomain / owner_id missing
-//   401  { success: false, error: "Unauthorized" } — live mode: no/invalid access
-//          token, or the token belongs to a different user than owner_id
-//   503  { success: false, code: "supabase_not_configured" } — missing server config
-//   500  { error: "Failed to persist site state" } — any persistence failure
-//
-// AUTH MODEL: the service role bypasses RLS, so RLS is NOT the authorization
-// boundary for this endpoint — the endpoint IS. In live mode (service key
-// configured) the caller must present their own Supabase access token; it is
-// verified against the Supabase Auth server (GET /auth/v1/user with the
-// service-role apikey) and must belong to the same user as owner_id. Without
-// that check, any visitor could pass any owner_id and upsert that owner's
-// rows. Mock mode (no env vars, local dev/demo) skips verification.
-//
-// The service-role key is read server-side only (supabaseClient.getSupabaseAdmin)
-// and never shipped to the browser bundle.
-// ============================================================================
+import { databaseForToken } from './backendContext.js';
+// Authenticated fallback for editor saves. Identity is verified against Supabase
+// Auth, then the caller-scoped workspace RPC enforces ownership and commits
+// contact, catalogue and editor state together.
 import { isMockSupabase, getSupabaseAdmin, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../src/lib/supabaseClient.js";
-import {
-  toProfileRow,
-  toServiceDbRow,
-  toStylistDbRow,
-  toLoyaltyConfigDbRow,
-  toRewardDbRow,
-  SALON_SYNC_TABLES,
-} from "../src/lib/salonSync.js";
+import { SALON_SYNC_TABLES } from "../src/lib/salonSync.js";
 import { isUuid } from "../src/lib/autoSave.js";
-import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from "../src/types.js";
+import { SalonProfile, SalonService, Stylist, LoyaltyConfig } from "../src/types.js";
 import {
   runDb,
   DEFAULT_DB_TIMEOUT_MS,
@@ -228,115 +188,18 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         });
       }
 
-      const profileRow = toProfileRow(profile, ownerId);
-      const serviceRows = services.map((s, i) => toServiceDbRow(s, ownerId, i));
-      const stylistRows = stylists.map((st, i) => toStylistDbRow(st, ownerId, i));
-      const rewardRows = (loyaltyConfig?.rewards || []).map((r, i) =>
-        toRewardDbRow(r as RewardThreshold, ownerId, i)
-      );
-
-      try {
-        // Upsert order: the profiles row first (identity + subdomain), then
-        // the tenant catalogue. Safe (non-destructive) on purpose: the
-        // fallback path must never delete rows it cannot verify.
-        const profileRes = await runDb(
-          () => admin.from("profiles").upsert(profileRow, { onConflict: "id" }),
-          { label: `website save profiles (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
-        );
-        if (profileRes.error) {
-          throw Object.assign(new Error(`profiles upsert failed: ${profileRes.error.message}`), {
-            table: "profiles",
-            code: profileRes.error.code,
-            details: profileRes.error.details,
-            hint: profileRes.error.hint,
-          });
-        }
-
-        if (serviceRows.length) {
-          const r = await runDb(
-            () => admin.from("services").upsert(serviceRows, { onConflict: "id" }),
-            { label: `website save services (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
-          );
-          if (r.error) {
-            throw Object.assign(new Error(`services upsert failed: ${r.error.message}`), {
-              table: "services",
-              code: r.error.code,
-              details: r.error.details,
-              hint: r.error.hint,
-            });
-          }
-        }
-
-        if (stylistRows.length) {
-          const r = await runDb(
-            () => admin.from("stylists").upsert(stylistRows, { onConflict: "id" }),
-            { label: `website save stylists (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
-          );
-          if (r.error) {
-            throw Object.assign(new Error(`stylists upsert failed: ${r.error.message}`), {
-              table: "stylists",
-              code: r.error.code,
-              details: r.error.details,
-              hint: r.error.hint,
-            });
-          }
-        }
-
-        if (loyaltyConfig) {
-          const r = await runDb(
-            () => admin
-              .from("loyalty_config")
-              .upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: "owner_id" }),
-            { label: `website save loyalty config (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
-          );
-          if (r.error) {
-            throw Object.assign(new Error(`loyalty_config upsert failed: ${r.error.message}`), {
-              table: "loyalty_config",
-              code: r.error.code,
-              details: r.error.details,
-              hint: r.error.hint,
-            });
-          }
-        }
-
-        if (rewardRows.length) {
-          const r = await runDb(
-            () => admin
-              .from("loyalty_rewards")
-              .upsert(rewardRows, { onConflict: "id" }),
-            { label: `website save loyalty rewards (${subdomain})`, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
-          );
-          if (r.error) {
-            throw Object.assign(new Error(`loyalty_rewards upsert failed: ${r.error.message}`), {
-              table: "loyalty_rewards",
-              code: r.error.code,
-              details: r.error.details,
-              hint: r.error.hint,
-            });
-          }
-        }
-      } catch (err) {
-        const e = err as any;
-        syncError(
-          `POST /api/website/save upsert failed (subdomain="${subdomain}", owner_id="${ownerId}") — the site state was NOT persisted.`,
-          {
-            table: e?.table ?? "unknown",
-            code: e?.code ?? null,
-            details: e?.details ?? null,
-            hint: e?.hint ?? null,
-            message: e?.message ?? String(err),
-            owner_id: ownerId,
-          }
-        );
+      // Use the same transaction as the editor. Never write salon fields into identity profiles.
+      const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
+        p_state: { profile, services, stylists, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+      }), { label: 'atomic owner workspace save', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
+      if (result.error) {
+        syncError('Owner workspace transaction failed', { code: result.error.code, message: result.error.message });
         if (responseAlreadyEnded(res)) return;
-        return res.status(500).json({ error: "Failed to persist site state" });
+        return res.status(503).json({ success: false, code: 'workspace_save_failed', error: 'Your workspace could not be saved. Please retry.', retryable: true });
       }
-
-      console.info(
-        `[Website save] Persisted site state via Supabase service role — subdomain="${subdomain}", owner_id=${ownerId}, ` +
-          `services=${serviceRows.length}, stylists=${stylistRows.length}, loyaltyRewards=${rewardRows.length}.`
-      );
-      return res.json({ success: true, timestamp: Date.now() });
+      if (responseAlreadyEnded(res)) return;
+      return res.json({ success: true, timestamp: Date.now(), mode: 'live' });
     } catch (err: any) {
       // Unreachable in normal operation (every DB call above is wrapped),
       // but the endpoint must always answer JSON, never an HTML 500 page.

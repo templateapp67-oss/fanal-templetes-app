@@ -35,6 +35,7 @@ const SAVED = {
 
 // Force the mock gateway for this process. The .env loader never overwrites
 // an existing variable, so setting them here (even to '') wins.
+for (const key of ['SUPABASE_URL','VITE_SUPABASE_URL','SUPABASE_ANON_KEY','VITE_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_SERVICE_KEY']) process.env[key] = key.endsWith('URL') ? 'https://placeholder-project.supabase.co' : 'placeholder';
 process.env.RAZORPAY_MOCK_MODE = 'true';
 process.env.NODE_ENV = 'test';
 delete process.env.VERCEL_ENV;

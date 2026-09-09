@@ -452,6 +452,7 @@ async function startServer() {
   // "/mine" would be swallowed by the ":id" route as a booking id of "mine".
   // ==========================================================================
   const bookingMineDeps: BookingMineDeps = {
+    normalizedBookings: true,
     db,
     isMock: bookingHandlerIsMock,
     hasAdminClient: !!admin,
@@ -513,6 +514,7 @@ async function startServer() {
     // and replies with its own un-parseable HTML error page.
     withRequestTimeout(API_REQUEST_TIMEOUT_MS, 'Saving your booking took too long. Nothing was charged — please try again.'),
     asyncRoute(createBookingHandler({
+    normalizedBookings: true,
       db,
       isMock: bookingHandlerIsMock,
       hasAdminClient: !!admin,

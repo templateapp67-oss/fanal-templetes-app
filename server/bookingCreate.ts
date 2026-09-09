@@ -1,3 +1,5 @@
+import { createNormalizedBooking } from './normalizedBookingCreate.js';
+import { BackendError } from './backendContext.js';
 // ============================================================================
 // POST /api/bookings/create — shared implementation for BOTH Express
 // entrypoints (server.ts and api/index.ts).
@@ -507,6 +509,7 @@ async function findExistingBooking(
 // ---------------------------------------------------------------------------
 
 export interface BookingCreateDeps {
+  normalizedBookings?: boolean;
   /** Supabase client (service-role preferred). */
   db: any;
   isMock: boolean;
@@ -635,6 +638,16 @@ export function createBookingHandler(deps: BookingCreateDeps) {
           console.log(
             `[Bookings] Verified ${mode === 'mock' ? 'MOCK ' : ''}Razorpay payment ${verifiedPaymentId} (order ${payment.razorpay_order_id})`
           );
+        }
+      }
+
+      if (!deps.isMock && deps.normalizedBookings) {
+        try {
+          const saved = await createNormalizedBooking(deps.db, req, authenticatedUser!.id, body, verifiedPaymentId);
+          return void res.json({ success: true, requestId, data: saved, paymentVerified: !!verifiedPaymentId, paymentMode: paymentGatewayMode });
+        } catch (error) {
+          if (error instanceof BackendError) return void fail(error.status, error.code, error.message);
+          throw error;
         }
       }
 

@@ -17,6 +17,8 @@ import { test, before, after } from 'node:test';
  *   • CORS / "Failed to fetch" — preflight 204 + origin echo for
  *     cross-origin callers; same-origin traffic stays header-free.
  */
+// Keep this mock HTTP suite isolated from a developer's local .env file.
+for (const key of ['SUPABASE_URL','VITE_SUPABASE_URL','SUPABASE_ANON_KEY','VITE_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_SERVICE_KEY']) process.env[key] = key.endsWith('URL') ? 'https://placeholder-project.supabase.co' : 'placeholder';
 const { nexoraCors } = await import('../server/cors');
 const { summarizeSaveError } = await import('../src/lib/autoSave');
 const app = (await import('../api/index')).default;

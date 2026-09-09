@@ -12,6 +12,7 @@
 
 import type { Express, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
+import { databaseForToken } from './backendContext.js';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
@@ -26,16 +27,10 @@ async function resolveOwnerId(req: Request): Promise<string | null> {
       const { data: { user }, error } = await adminSupabase.auth.getUser(token);
       if (user && !error) return user.id;
     } catch {
-      // Fallthrough to header check
+      // An unverified caller has no owner access.
     }
   }
 
-  const customOwnerId = req.headers['x-owner-id'] as string;
-  if (customOwnerId && customOwnerId.trim()) {
-    return customOwnerId.trim();
-  }
-
-  // Default fallback for dev/demo if auth user isn't specified
   return null;
 }
 
@@ -49,27 +44,14 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { startDate, endDate } = req.query;
-      const client = createClient(supabaseUrl, supabaseServiceKey, {
-        global: { headers: { 'x-owner-id': ownerId } },
-      });
 
       // Call RPC or fallback to custom admin query
-      const { data, error } = await adminSupabase.rpc('owner_staff_performance_summary', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_performance_summary', {
         p_start_date: startDate ? String(startDate) : null,
         p_end_date: endDate ? String(endDate) : null,
       });
 
-      if (error) {
-        // Direct query fallback if RPC unavailable in non-migrated environment
-        const { data: stylists, error: stErr } = await adminSupabase
-          .from('stylists')
-          .select('*')
-          .eq('owner_id', ownerId);
-
-        if (stErr) return res.status(500).json({ error: stErr.message });
-
-        return res.json({ data: stylists || [] });
-      }
+      if (error) return res.status(503).json({ error: 'Staff performance could not be loaded.', code: 'staff_backend_unavailable' });
 
       return res.json({ data: data || [] });
     } catch (err: any) {
@@ -85,7 +67,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
         return res.status(401).json({ error: 'Unauthorized: Owner credentials required' });
       }
 
-      const { data, error } = await adminSupabase.rpc('owner_seven_day_leaderboard');
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_seven_day_leaderboard');
       if (error) {
         return res.status(500).json({ error: error.message });
       }
@@ -105,7 +87,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, status, limit, offset } = req.query;
-      const { data, error } = await adminSupabase.rpc('owner_staff_booking_details', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_booking_details', {
         p_staff_id: staffId ? String(staffId) : null,
         p_status: status ? String(status) : null,
         p_limit: limit ? Number(limit) : 50,
@@ -131,7 +113,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, limit, offset } = req.query;
-      const { data, error } = await adminSupabase.rpc('owner_staff_payment_details', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_payment_details', {
         p_staff_id: staffId ? String(staffId) : null,
         p_limit: limit ? Number(limit) : 50,
         p_offset: offset ? Number(offset) : 0,
@@ -156,7 +138,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, limit, offset } = req.query;
-      const { data, error } = await adminSupabase.rpc('owner_staff_review_details', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_review_details', {
         p_staff_id: staffId ? String(staffId) : null,
         p_limit: limit ? Number(limit) : 50,
         p_offset: offset ? Number(offset) : 0,
@@ -186,7 +168,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
         return res.status(400).json({ error: 'Missing required staffId parameter' });
       }
 
-      const { data, error } = await adminSupabase.rpc('owner_update_staff_commission', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_update_staff_commission', {
         p_staff_id: staffId,
         p_commission_rate: Number(commissionRate ?? 0),
         p_fixed_amount: Number(fixedAmount ?? 0),
@@ -213,7 +195,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { period } = req.query;
-      const { data, error } = await adminSupabase.rpc('owner_get_monthly_payroll', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_get_monthly_payroll', {
         p_payout_period: period ? String(period) : null,
       });
 
@@ -253,7 +235,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
         return res.status(400).json({ error: 'Missing required parameters: staffId and payoutPeriod' });
       }
 
-      const { data, error } = await adminSupabase.rpc('owner_mark_payout_paid', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_mark_payout_paid', {
         p_staff_id: staffId,
         p_payout_period: payoutPeriod,
         p_gross_sales: Number(grossSales ?? 0),
@@ -286,7 +268,7 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId } = req.query;
-      const { data, error } = await adminSupabase.rpc('owner_get_payout_history', {
+      const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_get_payout_history', {
         p_staff_id: staffId ? String(staffId) : null,
       });
 

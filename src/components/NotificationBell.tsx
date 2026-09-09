@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabaseClient';
+import { authenticatedBookingRead } from '../lib/authenticatedBookingRead';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,12 +19,15 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
   const [error, setError] = useState<string>('');
   const mountedRef = useRef(true);
   const failureCountRef = useRef(0);
+  const generationRef = useRef(0);
 
   const fetchNotifications = useCallback(async () => {
     if (!userEmail) return;
+    const generation = generationRef.current;
     try {
-      const res = await fetch(`/api/notifications?email=${encodeURIComponent(userEmail)}`);
+      const res = await authenticatedBookingRead(supabase.auth, '/api/notifications');
       const json = await res.json().catch(() => null);
+      if (!mountedRef.current || generation !== generationRef.current) return;
       if (!res.ok || !json || json.success === false) {
         failureCountRef.current += 1;
         if (mountedRef.current) {
@@ -37,6 +42,7 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
       setNotifications(rows);
       setUnreadCount(rows.filter((n: any) => !n.is_read).length);
     } catch (e: any) {
+      if (!mountedRef.current || generation !== generationRef.current) return;
       failureCountRef.current += 1;
       if (mountedRef.current) setError(e?.message ? `Notifications unavailable (${e.message}).` : 'Notifications unavailable.');
     }
@@ -44,8 +50,13 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
 
   useEffect(() => {
     mountedRef.current = true;
+    const generation = ++generationRef.current;
     failureCountRef.current = 0;
-    fetchNotifications();
+    setNotifications([]);
+    setUnreadCount(0);
+    setError('');
+    setIsOpen(false);
+    if (!userEmail) return () => { mountedRef.current = false; generationRef.current++; };
 
     // 3s while healthy, exponential backoff (max 60s) while failing.
     let timer: any;
@@ -55,13 +66,16 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
         : 3000;
       timer = setTimeout(async () => {
         await fetchNotifications();
-        if (mountedRef.current) schedule();
+        if (mountedRef.current && generation === generationRef.current) schedule();
       }, delay);
     };
-    schedule();
+    void fetchNotifications().then(() => {
+      if (mountedRef.current && generation === generationRef.current) schedule();
+    });
 
     return () => {
       mountedRef.current = false;
+      generationRef.current++;
       clearTimeout(timer);
     };
   }, [fetchNotifications]);
@@ -71,23 +85,28 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
     setIsOpen(opening);
     if (opening && unreadCount > 0) {
       // Optimistically clear, but roll back (and say why) if the server refused.
+      const generation = generationRef.current;
       const previous = notifications;
       const previousUnread = unreadCount;
       setUnreadCount(0);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Sign in to update your notifications.');
         const res = await fetch('/api/notifications/read', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({ email: userEmail })
         });
         const json = await res.json().catch(() => null);
+        if (!mountedRef.current || generation !== generationRef.current) return;
         if (!res.ok || !json || json.success === false) {
           setNotifications(previous);
           setUnreadCount(previousUnread);
           setError(json?.error || `Could not mark notifications as read (HTTP ${res.status}).`);
         }
       } catch (e: any) {
+        if (!mountedRef.current || generation !== generationRef.current) return;
         setNotifications(previous);
         setUnreadCount(previousUnread);
         setError(e?.message ? `Could not mark notifications as read (${e.message}).` : 'Could not mark notifications as read.');

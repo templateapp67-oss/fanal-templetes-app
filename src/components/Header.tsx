@@ -108,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Actions */}
         <div className="flex items-center gap-4">
-          <NotificationBell userEmail={user?.email || "owner@salon.com"} />
+          <NotificationBell userEmail={user?.email || ""} />
           
           {user ? (
             <div className="flex items-center gap-4">
