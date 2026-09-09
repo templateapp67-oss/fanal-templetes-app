@@ -20,9 +20,12 @@ export function PartnerProfileModal({ profile, onSaved, onClose }: {
       if (isMockSupabase) throw new Error('Connect Supabase and sign in to save your profile.');
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw new Error('Please sign in again.');
-      const { data, error } = await supabase.from('partner_settings').select('date_of_birth,area,whatsapp_notifications').eq('owner_id', user.id).maybeSingle();
+      const { data, error } = await supabase.rpc('get_partner_profile');
       if (error) throw error;
-      if (active && data) setForm(f => ({ ...f, dob: data.date_of_birth || '', area: data.area || '', notifications: data.whatsapp_notifications }));
+      if (active && data) {
+        setForm(f => ({ name: data.name ?? f.name, whatsapp: data.whatsapp ?? f.whatsapp, postal: data.postal ?? f.postal, city: data.city ?? f.city, dob: data.dob || '', area: data.area || '', notifications: data.notifications === true }));
+        if (data.avatar) setAvatar(data.avatar);
+      }
       if (active) setLoading(false);
     })().catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
@@ -43,7 +46,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose }: {
       if (!form.dob || form.dob > new Date().toISOString().slice(0, 10)) throw new Error('Enter a valid date of birth.');
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error || !user) throw new Error('Please sign in again.');
-      let photo = profile.ownerPhotoUrl;
+      let photo = avatar;
       if (blob) {
         uploaded = `${user.id}/${crypto.randomUUID()}.webp`;
         const result = await supabase.storage.from('partner-avatars').upload(uploaded, blob, { contentType: 'image/webp', upsert: false });
