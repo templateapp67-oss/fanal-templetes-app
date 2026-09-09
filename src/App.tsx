@@ -37,6 +37,7 @@ import {
   runSalonSavePipeline,
 } from './lib/autoSave';
 import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
+import { saveOwnerEditorState } from './lib/ownerEditorState';
 import {
   usePathRoute,
   isCustomerAppPath,
@@ -628,6 +629,9 @@ export default function App() {
         // existed). `.single()` used to throw PGRST116 here, so the meta-data
         // fallback below never ran and the console logged a scary error on
         // every load for new accounts.
+        const { data: editorState, error: editorError } = await supabase.rpc('get_owner_editor_state');
+        if (editorError) throw editorError;
+        if (editorState?.profile) return;
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
@@ -701,7 +705,7 @@ export default function App() {
               businessName: data.salon_name || meta.salon_name || prev.businessName,
               ownerName: data.full_name || meta.full_name || prev.ownerName,
               ownerRole: data.owner_role || prev.ownerRole,
-              phone: data.phone_number || meta.phone_number || prev.phone,
+              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || prev.phone,
               whatsapp: data.whatsapp || prev.whatsapp,
               email: data.email || user.email || prev.email,
               ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || prev.ownerPhotoUrl,
@@ -709,7 +713,8 @@ export default function App() {
               tagline: data.tagline || prev.tagline,
               about: data.about || prev.about,
               address: data.full_address || prev.address,
-              city: data.city || meta.city || prev.city,
+              city: data.city || data.preferred_city || meta.city || prev.city,
+              areaLocality: data.area ?? data.preferred_area ?? prev.areaLocality,
               postalCode: data.postal_code || data.pincode || prev.postalCode,
               landmark: data.landmark || prev.landmark,
               subdomain: data.subdomain || prev.subdomain,
@@ -828,30 +833,17 @@ export default function App() {
             return false;
           }
 
-          const snapshot = await withRetry(
-            async () => {
-              const [svc, stf, lc, rw] = await Promise.all([
-                supabase.from('services').select('*').order('sort_order'),
-                supabase.from('stylists').select('*').order('sort_order'),
-                supabase.from('loyalty_config').select('*').eq('owner_id', userId).maybeSingle(),
-                supabase.from('loyalty_rewards').select('*').eq('owner_id', userId).order('sort_order'),
-              ]);
-              const selectError = svc.error || stf.error || lc.error || rw.error;
-              if (selectError) throw selectError;
-              return { svc, stf, lc, rw };
-            },
-            { label: 'hydrate salon data from cloud' }
-          );
-          // Only the CURRENTLY signed-in owner may have their snapshot applied
-          // or unlock destructive cleanup (a stale run for a previous owner
-          // must never satisfy the next owner's save guard). applyHydrationSnapshot
-          // defers (returns false) when the owner has unsaved edits, so the
-          // "hydrated" flag tracks "snapshot APPLIED", not just "fetch OK" —
-          // destructive cleanup stays off until the local draft has caught up.
+          const { data: saved, error } = await supabase.rpc('get_owner_editor_state');
+          if (error) throw error;
           if (hydrationUserRef.current === userId) {
-            const applied = applyHydrationSnapshot(snapshot);
-            hydratedForUserRef.current = applied;
-            hydrationErrorRef.current = applied ? null : 'deferred until pending edits are saved';
+            if (saved && !hasUnsavedEdits()) {
+              if (saved.profile) setProfile(prev => ({ ...prev, ...saved.profile, ownerId: userId }));
+              if (Array.isArray(saved.services)) setServices(saved.services);
+              if (Array.isArray(saved.stylists)) setStylists(saved.stylists);
+              if (saved.loyaltyConfig) setLoyaltyConfig(saved.loyaltyConfig);
+            }
+            hydratedForUserRef.current = true;
+            hydrationErrorRef.current = null;
           }
           return true;
         } catch (err) {
@@ -946,7 +938,7 @@ export default function App() {
       }
 
       const snapshot = snapshotOf(state);
-      if (snapshot === lastPersistedSnapshotRef.current) {
+      if (source === 'auto' && snapshot === lastPersistedSnapshotRef.current) {
         // Nothing actually changed — don't hammer localStorage/Supabase.
         if (source === 'manual') {
           setSaveStatus('saved');
@@ -1065,7 +1057,7 @@ export default function App() {
 
         // 2c) Run the pipeline: client sync → service-role API → local draft.
         const cloud = await runSalonSavePipeline({
-          sync: (p, o) => syncSalonToSupabase(supabase, p, o),
+          sync: (p) => saveOwnerEditorState(supabase, p),
           payload: {
             ownerId: liveOwnerId,
             profile: state.profile,
@@ -1121,7 +1113,7 @@ export default function App() {
           return false;
         }
 
-        if (!cloud.ok) {
+        if (!cloud.ok || (sessionOk && cloud.target === 'local_draft')) {
           // The single remaining hard failure: neither the cloud NOR the
           // local draft cache could take the state (storage disabled/quota
           // even after degradation). Surface it once; auto-saves stay quiet.
@@ -1476,7 +1468,7 @@ export default function App() {
         onBuildWebsiteClick={handleBuildWebsiteClick}
         user={user}
         setUser={setUser}
-        onProfileSaved={(patch) => setProfile(prev => ({ ...prev, ...patch }))}
+        onProfileSaved={(patch) => { setProfile(prev => ({ ...prev, ...patch })); showToast('Profile saved successfully. Contact & Location updated.'); }}
         profile={profile}
         openAuth={(mode) => {
           setAuthMode(mode);
