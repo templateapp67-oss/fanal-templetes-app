@@ -4,8 +4,8 @@ import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { compressPartnerAvatar, normalizeWhatsApp } from '../lib/partnerProfile';
 import { queueOwnerWrite } from '../lib/ownerEditorState';
 
-export function PartnerProfileModal({ profile, onSaved, onClose }: {
-  profile: SalonProfile; onSaved: (patch: Partial<SalonProfile>) => void; onClose: () => void;
+export function PartnerProfileModal({ profile, onSaved, onClose, editable = false }: {
+  editable?: boolean; profile: SalonProfile; onSaved: (patch: Partial<SalonProfile>) => void; onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const dirty = useRef(false);
@@ -81,14 +81,14 @@ export function PartnerProfileModal({ profile, onSaved, onClose }: {
   }
   return <dialog ref={dialog} onCancel={e => { e.preventDefault(); if (!busy) onClose(); }} aria-labelledby="partner-title" className="m-auto w-[min(94vw,560px)] max-h-[90dvh] rounded-3xl p-0 backdrop:bg-black/50">
     <div className="flex flex-col max-h-[90dvh]">
-      <div className="flex shrink-0 justify-between items-center bg-pink-50 p-5"><div><h2 id="partner-title" className="font-bold">User Profile Settings</h2><p className="text-xs text-slate-500">Synced with Contact & Location</p></div><button type="button" disabled={busy} onClick={onClose} aria-label="Close profile settings">✕</button></div>
+      <div className="flex shrink-0 justify-between items-center bg-pink-50 p-5"><div><h2 id="partner-title" className="font-bold">{editable ? "Contact & Location Details" : "User Profile"}</h2><p className="text-xs text-slate-500">{editable ? "Enter your details once here" : "Details from Contact & Location — no duplicate entry needed"}</p></div><button type="button" disabled={busy} onClick={onClose} aria-label="Close profile settings">✕</button></div>
       <form id="partner-profile-form" onSubmit={save} className="p-5 space-y-5 overflow-y-auto min-h-0">
         {error && <p role="alert" className="text-sm text-red-700">{error} {loading && <button type="button" className="underline" onClick={() => setLoadAttempt(v => v + 1)}>Retry loading</button>}</p>}
         {loading && !error && <p role="status" className="text-sm">Loading saved profile…</p>}
-        <fieldset disabled={loading || busy} className="space-y-5 disabled:opacity-60">
+        <fieldset disabled={!editable || loading || busy} className="space-y-5 disabled:opacity-60">
           <div className="flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
             {avatar && <img src={avatar} alt="Partner avatar" className="w-20 h-20 rounded-full object-cover" />}
-            <label className="text-sm font-semibold">Partner Avatar Image *<input type="file" accept="image/jpeg,image/png,image/webp" className="block mt-2 w-full text-xs" onChange={async e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; dirty.current = true; setBusy(true); setError(''); try { setBlob(await compressPartnerAvatar(file)); } catch (e: any) { setError(e.message); } finally { setBusy(false); } }} /><span className="block text-xs font-normal text-slate-500 mt-2">Max 5 MB. Automatically compressed to 500px.</span></label>
+            <label className="text-sm font-semibold">Partner Avatar Image {editable && <input type="file" accept="image/jpeg,image/png,image/webp" className="block mt-2 w-full text-xs" onChange={async e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; dirty.current = true; setBusy(true); setError(''); try { setBlob(await compressPartnerAvatar(file)); } catch (e: any) { setError(e.message); } finally { setBusy(false); } }} />}<span className="block text-xs font-normal text-slate-500 mt-2">Max 5 MB. Automatically compressed to 500px.</span></label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {([['ownerName', 'Full Name', 'text', true], ['whatsapp', 'WhatsApp Number', 'tel', true], ['dob', 'Date of Birth (DOB)', 'date', true], ['postalCode', 'PIN Code / Postal Code', 'text', true], ['city', 'City', 'text', true], ['areaLocality', 'Area / Locality', 'text', true], ['phone', 'Phone Number', 'tel', false], ['email', 'Contact Email', 'email', false], ['address', 'Physical Address', 'text', false], ['state', 'State', 'text', false], ['landmark', 'Landmark', 'text', false]] as const).map(([key, label, type, required]) => <label key={key} className="text-xs font-semibold text-slate-700">{label}{required ? ' *' : ''}<input required={required} type={type} value={form[key]} maxLength={key === 'postalCode' ? 6 : key === 'address' ? 1000 : 160} max={key === 'dob' ? new Date().toISOString().slice(0, 10) : undefined} inputMode={key === 'postalCode' ? 'numeric' : undefined} onChange={e => { dirty.current = true; setForm(f => ({ ...f, [key]: e.target.value })); }} className="block mt-2 w-full rounded-xl border border-slate-200 p-3 font-normal" /></label>)}
@@ -96,7 +96,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose }: {
           <label className="flex gap-3 items-center rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm"><input type="checkbox" checked={form.notifications} onChange={e => { dirty.current = true; setForm(f => ({ ...f, notifications: e.target.checked })); }} /><span>WhatsApp Booking Confirmations<span className="block text-xs text-slate-500">Save your booking alert preference.</span></span></label>
         </fieldset>
       </form>
-      <div className="shrink-0 border-t bg-white p-4"><button form="partner-profile-form" disabled={loading || busy} className="w-full rounded-xl bg-[#C20E5A] p-3 font-bold text-white disabled:opacity-50" type="submit">{busy ? 'Saving…' : 'Save Profile'}</button></div>
+      <div className="shrink-0 border-t bg-white p-4">{editable ? <button form="partner-profile-form" disabled={loading || busy} className="w-full rounded-xl bg-[#C20E5A] p-3 font-bold text-white disabled:opacity-50" type="submit">{busy ? 'Saving…' : 'Save Contact Details'}</button> : <button type="button" onClick={onClose} className="w-full rounded-xl bg-slate-100 p-3">Close</button>}</div>
     </div>
   </dialog>;
 }
