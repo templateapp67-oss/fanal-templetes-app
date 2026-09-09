@@ -51,6 +51,8 @@ export interface SectionVisibilityState {
   metrics: boolean;
   about: boolean;
   services: boolean;
+  offers: boolean;
+  promoPopup: boolean;
   stylists: boolean;
   testimonials: boolean;
   gallery: boolean;
@@ -64,6 +66,8 @@ export const DEFAULT_SECTION_VISIBILITY: SectionVisibilityState = {
   metrics: true,
   about: true,
   services: true,
+  offers: true,
+  promoPopup: true,
   stylists: true,
   testimonials: true,
   gallery: true,
@@ -1278,6 +1282,38 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                   }`}
                 >
                   {sectionVisibility.stylists ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-slate-900">Offers & Discounts</div>
+                  <div className="text-[10px] text-slate-400">Promotional deals & dynamic coupon cards</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleSection('offers')}
+                  className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                    sectionVisibility.offers ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  {sectionVisibility.offers ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-slate-900">Promotional Popup Overlay</div>
+                  <div className="text-[10px] text-slate-400">Display the featured offer modal immediately on site load</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleSection('promoPopup')}
+                  className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                    sectionVisibility.promoPopup ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  {sectionVisibility.promoPopup ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               </div>
 

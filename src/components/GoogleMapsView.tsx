@@ -5,8 +5,20 @@ import {
   AdvancedMarker,
   Pin,
   InfoWindow,
+  useMap,
 } from '@vis.gl/react-google-maps';
 import { MapPin, Navigation, ExternalLink, Compass } from 'lucide-react';
+
+// Helper component to handle auto-centering when coordinates update
+const MapCenterController: React.FC<{ center: { lat: number; lng: number } }> = ({ center }) => {
+  const map = useMap();
+  React.useEffect(() => {
+    if (map) {
+      map.panTo(center);
+    }
+  }, [map, center.lat, center.lng]);
+  return null;
+};
 
 interface GoogleMapsViewProps {
   latitude?: number;
@@ -88,6 +100,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
             internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
             className="w-full h-full"
           >
+            <MapCenterController center={markerPos} />
             <AdvancedMarker
               position={markerPos}
               draggable={interactive && !!onPositionChange}
@@ -106,14 +119,19 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
                 position={markerPos}
                 onCloseClick={() => setInfoOpen(false)}
               >
-                <div className="p-2 max-w-[220px] text-slate-900 font-sans">
+                <div className="p-2.5 max-w-[240px] text-slate-900 font-sans">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 mb-1">
                     <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                     <span>{title}</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-tight mb-2">
+                  <p className="text-[11px] text-slate-600 leading-tight mb-1.5">
                     {address}
                   </p>
+                  <div className="text-[9px] font-mono text-slate-500 bg-slate-50 border border-slate-100 px-1.5 py-1 rounded-md mb-2 flex flex-col gap-0.5">
+                    <span className="font-bold uppercase text-[8px] text-slate-400">Exact Coordinates</span>
+                    <span>Lat: {markerPos.lat.toFixed(6)}</span>
+                    <span>Lng: {markerPos.lng.toFixed(6)}</span>
+                  </div>
                   {phone && (
                     <p className="text-[10px] text-slate-500 font-mono mb-2">
                       📞 {phone}

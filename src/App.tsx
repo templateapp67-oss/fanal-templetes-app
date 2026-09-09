@@ -312,17 +312,17 @@ export default function App() {
   );
 
   const [profile, setProfile] = useState<SalonProfile>(
-    initialSaved?.profile || INITIAL_SALON_PROFILE
+    initialSaved?.profile && typeof initialSaved.profile === 'object' ? initialSaved.profile : INITIAL_SALON_PROFILE
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [user, setUser] = useState<any>(null);
 
   const [services, setServices] = useState<SalonService[]>(
-    initialSaved?.services || INITIAL_SERVICES
+    initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : INITIAL_SERVICES
   );
   const [stylists, setStylists] = useState<Stylist[]>(
-    initialSaved?.stylists || INITIAL_STYLISTS
+    initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : INITIAL_STYLISTS
   );
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
@@ -715,6 +715,7 @@ export default function App() {
               subdomain: data.subdomain || prev.subdomain,
               instagramHandle: data.instagram_handle || prev.instagramHandle,
               homeService: data.home_service ?? prev.homeService,
+              offers: data.offers ?? prev.offers,
               themePreset: data.theme_preset || prev.themePreset,
               themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
               customAccentColor: data.custom_accent_color || prev.customAccentColor,

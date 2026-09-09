@@ -12,6 +12,7 @@ import {
   MessageSquare, 
   Mail, 
   Clock, 
+  Calendar,
   Star, 
   ShieldCheck,
   Facebook,
@@ -38,7 +39,7 @@ import {
   RefreshCw, 
   Scissors
 } from 'lucide-react';
-import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId } from '../types';
+import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { CATEGORY_STANDARDIZED_DATA, Testimonial } from '../templateData';
@@ -89,6 +90,103 @@ interface SalonWebsitePreviewProps {
    */
   rebookRequest?: { serviceName: string; at: number } | null;
 }
+
+interface SalonOfferCardProps {
+  offer: SalonOffer;
+  isDarkCanvas: boolean;
+}
+
+const SalonOfferCard: React.FC<SalonOfferCardProps> = ({ offer, isDarkCanvas }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(offer.code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div 
+      key={offer.id} 
+      className={`rounded-2xl border overflow-hidden flex flex-col sm:flex-row relative transition-all duration-300 hover:shadow-md ${
+        isDarkCanvas ? 'bg-[#16161c] border-neutral-800' : 'bg-slate-50/50 border-slate-200'
+      }`}
+    >
+      {/* Left Side: Offer Image */}
+      <div className="w-full sm:w-1/3 h-40 sm:h-auto relative shrink-0">
+        <img 
+          src={offer.imageUrl || 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=400&q=80'} 
+          alt={offer.title} 
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute top-3 left-3 bg-red-500 text-white font-black px-2.5 py-1 rounded-lg text-xs tracking-wider shadow-sm">
+          {offer.discountValue}
+        </div>
+      </div>
+
+      {/* Right Side: Offer Details */}
+      <div className="p-5 flex-1 flex flex-col justify-between">
+        <div>
+          <h3 className="font-extrabold text-base md:text-lg leading-snug">{offer.title}</h3>
+          <p className={`text-xs mt-1.5 line-clamp-2 leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'}`}>
+            {offer.description}
+          </p>
+        </div>
+
+        <div className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-neutral-700 flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">USE CODE</div>
+              <div className="font-mono font-black text-sm text-emerald-600 dark:text-emerald-400 tracking-wider">
+                {offer.code}
+              </div>
+            </div>
+            <button 
+              type="button"
+              onClick={handleCopy}
+              className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                copied 
+                  ? 'bg-emerald-500 text-white animate-pulse' 
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700'
+              }`}
+            >
+              {copied ? 'Copied! ✨' : 'Copy'}
+            </button>
+          </div>
+
+          {/* Validity Badge & Countdown */}
+          <div className="flex flex-col gap-1 text-[10px] text-slate-400 font-mono mt-1 pt-1.5 border-t border-slate-100 dark:border-neutral-800/50">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="flex items-center gap-1">
+                <span className="material-symbols-outlined text-[12px]">calendar_today</span>
+                <span>Validity: {offer.startDate || 'Now'} to {offer.expiryDate || 'Always'}</span>
+              </span>
+              {offer.expiryDate && (() => {
+                const end = new Date(offer.expiryDate + 'T23:59:59');
+                const diff = end.getTime() - new Date().getTime();
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                if (diff <= 0) {
+                  return <span className="bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight">Expired</span>;
+                }
+                return (
+                  <span className="bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight">
+                    {days > 0 ? `${days}d left` : 'Ends Today'}
+                  </span>
+                );
+              })()}
+            </div>
+            <div className="flex justify-between items-center text-[9px] text-slate-400/80 mt-0.5">
+              <span className="underline cursor-help" title={offer.terms || 'Valid on select salon services.'}>Terms Apply</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Elegant slitted coupon circle separators (visual cue) */}
+      <div className="hidden sm:block absolute left-[33.33%] top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white dark:bg-[#0f0f13] border-r border-slate-200 dark:border-neutral-800 z-10" />
+    </div>
+  );
+};
 
 type DeviceMode = 'desktop' | 'tablet' | 'mobile';
 
@@ -168,6 +266,20 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Side Panel Section Visibility
   const [sectionVisibility, setSectionVisibility] = useState<SectionVisibilityState>(DEFAULT_SECTION_VISIBILITY);
+
+  // Promotional Popup Trigger State
+  const [showPromoPopup, setShowPromoPopup] = useState<boolean>(false);
+  useEffect(() => {
+    const hasActiveOffer = activeProfile.offers && activeProfile.offers.some(o => o.isActive !== false);
+    if (sectionVisibility.promoPopup && hasActiveOffer) {
+      const timer = setTimeout(() => {
+        setShowPromoPopup(true);
+      }, 1200);
+      return () => clearTimeout(timer);
+    } else {
+      setShowPromoPopup(false);
+    }
+  }, [sectionVisibility.promoPopup, activeProfile.offers]);
 
   // Active template configuration
   const activeTemplate = CATEGORY_TEMPLATES[selectedCategoryKey] || CATEGORY_TEMPLATES.hair_salon;
@@ -1811,6 +1923,36 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* ============================================================ */}
+        {/* OFFERS & DISCOUNTS SECTION */}
+        {/* ============================================================ */}
+        {sectionVisibility.offers && activeProfile.offers && activeProfile.offers.length > 0 && (
+          <section className={`p-6 md:p-12 border-b ${
+            isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
+          }`} id="offers-section">
+            <div className="mb-8">
+              <span 
+                className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
+              >
+                Promotions & Campaigns
+              </span>
+              <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                Special Offers & Discounts
+              </h2>
+              <p className={`text-xs md:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                Grab these exclusive limited-time deals and save on your next luxury pampering session.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {activeProfile.offers.map((offer) => (
+                <SalonOfferCard key={offer.id} offer={offer} isDarkCanvas={isDarkCanvas} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ============================================================ */}
         {/* 4. MASTER STYLISTS & SPECIALISTS SECTION (INLINE EDITABLE) */}
         {/* ============================================================ */}
         {sectionVisibility.stylists && (
@@ -2782,6 +2924,129 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         defaultCity={activeProfile.city}
         availableServices={activeServices.map((s) => s.name)}
       />
+
+      {/* Dynamic Promotional Popup Overlay */}
+      {showPromoPopup && (() => {
+        const featuredOffer = activeProfile.offers?.find(o => o.isActive !== false);
+        if (!featuredOffer) return null;
+
+        let daysLeftText = '';
+        if (featuredOffer.expiryDate) {
+          const end = new Date(featuredOffer.expiryDate + 'T23:59:59');
+          const diff = end.getTime() - new Date().getTime();
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          if (diff <= 0) {
+            daysLeftText = 'Expired';
+          } else {
+            daysLeftText = days > 0 ? `${days}d left` : 'Ends Today';
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+            <div 
+              className="bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-w-md w-full relative animate-scale-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Promo Banner Cover */}
+              <div className="w-full h-44 relative bg-slate-100">
+                <img 
+                  src={featuredOffer.imageUrl || 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=600&q=80'} 
+                  alt={featuredOffer.title} 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                
+                {/* Top Corner Close Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowPromoPopup(false)}
+                  className="absolute top-3 right-3 bg-black/45 hover:bg-black/70 text-white p-1.5 rounded-full transition-all cursor-pointer shadow border border-white/10"
+                  title="Close popup"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                <div className="absolute bottom-3 left-4 right-4">
+                  <span className="bg-red-500 text-white font-black px-2 py-0.5 rounded text-[10px] tracking-wider shadow-xs uppercase">
+                    {featuredOffer.discountValue || 'PROMO'}
+                  </span>
+                  <h3 className="text-white text-base font-black mt-1 leading-snug drop-shadow-sm">
+                    {featuredOffer.title}
+                  </h3>
+                </div>
+              </div>
+
+              {/* Promo Description */}
+              <div className="p-4 flex flex-col gap-3.5">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {featuredOffer.description || 'Pamper yourself today with our exclusive, premium salon services discount! Grab the code below.'}
+                </p>
+
+                {/* Validity Period & Live Countdown Timer */}
+                <div className="flex flex-wrap items-center gap-1.5 py-2 border-y border-slate-100 text-[10px] font-mono font-bold">
+                  <div className="flex items-center gap-1 bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded border border-amber-100/50">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>{daysLeftText || 'Ongoing Offer'}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded border border-indigo-100/50">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Validity: {featuredOffer.startDate || 'Now'} to {featuredOffer.expiryDate || 'Always'}</span>
+                  </div>
+                </div>
+
+                {/* Coupon Copy Block */}
+                <div className="p-2.5 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[9px] text-slate-400 font-mono uppercase tracking-widest">COUPON CODE</div>
+                    <div className="font-mono font-black text-sm text-emerald-600 tracking-wider">
+                      {featuredOffer.code}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                    onClick={() => {
+                      navigator.clipboard.writeText(featuredOffer.code);
+                      setNotificationToast(`Code "${featuredOffer.code}" copied to clipboard! ✨`);
+                      setTimeout(() => setNotificationToast(null), 2500);
+                    }}
+                  >
+                    Copy Code
+                  </button>
+                </div>
+
+                {/* Footers */}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowPromoPopup(false)}
+                    className="flex-1 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl cursor-pointer transition-colors text-center"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPromoPopup(false);
+                      const target = document.getElementById('services-section') || document.getElementById('offers-section');
+                      if (target) {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                      }
+                    }}
+                    className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors text-center shadow-sm"
+                  >
+                    Claim & Book Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

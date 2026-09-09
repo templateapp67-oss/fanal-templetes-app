@@ -199,6 +199,19 @@ export interface PromotionalBannerConfig {
   endDate?: string;
 }
 
+export interface SalonOffer {
+  id: string;
+  title: string;
+  description: string;
+  discountValue: string; // e.g. "20% OFF", "$10 OFF", "Buy 1 Get 1"
+  code: string; // e.g. "WELCOME20"
+  imageUrl?: string;
+  startDate?: string;
+  expiryDate?: string;
+  terms?: string;
+  isActive: boolean;
+}
+
 export interface SalonProfile {
   ownerId?: string;
   businessType: BusinessTypeId;
@@ -245,6 +258,7 @@ export interface SalonProfile {
   workingHoursSat?: string;
   workingHoursSun?: string;
   whiteLabelEnabled?: boolean;
+  offers?: SalonOffer[];
 }
 
 export interface SalonService {

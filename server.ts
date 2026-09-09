@@ -133,6 +133,30 @@ const artsByUmaSalon = {
     depositPercentage: 20,
     themeAccentKey: 'slate',
     whiteLabelEnabled: true,
+    offers: [
+      {
+        id: 'off-1',
+        title: 'Festive Hair & Styling Glowup',
+        description: 'Get our premium master balayage highlight and restorative hair spa treatments with our top master stylists.',
+        discountValue: '20% OFF',
+        code: 'FESTIVE20',
+        imageUrl: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=600&q=80',
+        expiryDate: '2026-10-31',
+        terms: 'Valid on services above ₹3000. Cannot be combined with other offers.',
+        isActive: true
+      },
+      {
+        id: 'off-2',
+        title: 'Bridal Glow Pre-Booking',
+        description: 'Pre-book your bridal HD makeup and skincare ritual to receive a complimentary gel nail extension set.',
+        discountValue: 'Flat ₹1500 OFF',
+        code: 'BRIDALGLOW',
+        imageUrl: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=600&q=80',
+        expiryDate: '2026-12-31',
+        terms: 'Applicable only on pre-booked full bridal packages.',
+        isActive: true
+      }
+    ]
   } as SalonProfile,
   services: [
     { id: 'hs-1', name: 'Master Stylist Precision Cut & Blowdry', category: 'Hair Artistry', description: 'Sculpted haircut tailored to face geometry, invigorating scalp wash, and professional salon blowout.', icon: 'scissors', price: 750, durationMinutes: 45, popular: true, showDuration: true },

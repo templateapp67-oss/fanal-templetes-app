@@ -114,6 +114,7 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     // previously stored only in localStorage, so it silently reset after a
     // reload and never reached the public site served from the database.
     home_service: profile.homeService ?? null,
+    offers: profile.offers ?? [],
     working_hours: buildWorkingHours(profile),
     updated_at: new Date().toISOString(),
   };

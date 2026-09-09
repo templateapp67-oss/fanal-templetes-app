@@ -6,6 +6,7 @@ import { ImageCompressorWidget } from './ImageCompressorWidget';
 import { TeamManagement } from './TeamManagement';
 import { ServiceManagement } from './ServiceManagement';
 import { PromoStudio } from './PromoStudio';
+import { OffersManagement } from './OffersManagement';
 import { LoyaltyManagement } from './LoyaltyManagement';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
 import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
@@ -1201,6 +1202,12 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               services={services}
               primaryAccentColor={currentPrimaryColor}
               onNavigateToPreview={onNavigateToPreview}
+            />
+
+            <OffersManagement
+              profile={profile}
+              setProfile={setProfile}
+              primaryAccentColor={currentPrimaryColor}
             />
 
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">

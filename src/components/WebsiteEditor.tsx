@@ -38,6 +38,7 @@ import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';
 import { GooglePlacesAutocompleteInput } from './GooglePlacesAutocompleteInput';
+import { GoogleMapsView } from './GoogleMapsView';
 
 interface WebsiteEditorProps {
   profile: SalonProfile;
@@ -420,7 +421,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               </div>
             </div>
 
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 space-y-4">
               <GooglePlacesAutocompleteInput
                 value={profile.address}
                 onChange={(val) => upd({ address: val })}
@@ -440,6 +441,38 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   upd({ latitude: lat, longitude: lng });
                 }}
               />
+
+              {profile.latitude && profile.longitude ? (
+                <div className="space-y-1.5 mt-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                      Live Location Map Preview
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
+                      GPS: {profile.latitude.toFixed(6)}, {profile.longitude.toFixed(6)}
+                    </span>
+                  </div>
+                  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-xs">
+                    <GoogleMapsView
+                      latitude={profile.latitude}
+                      longitude={profile.longitude}
+                      title={profile.businessName || 'Your Salon'}
+                      address={profile.address || ''}
+                      phone={profile.phone || ''}
+                      height="180px"
+                      zoom={15}
+                      interactive={true}
+                      onPositionChange={(lat, lng) => {
+                        upd({ latitude: lat, longitude: lng });
+                      }}
+                      accentColor={profile.brandColor || '#C20E5A'}
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium italic mt-1 text-center">
+                    "Pin updates automatically. Drag the marker pin on the map to fine-tune your exact coordinates."
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div className="md:col-span-2">

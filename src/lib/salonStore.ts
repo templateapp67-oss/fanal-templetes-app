@@ -298,13 +298,16 @@ export function loadSalonState(): SalonState | null {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
     return {
-      profile: parsed.profile,
-      services: parsed.services,
-      stylists: parsed.stylists,
-      loyaltyConfig: parsed.loyaltyConfig || DEFAULT_LOYALTY_CONFIG,
-      selectedTemplateId: parsed.selectedTemplateId,
+      profile: parsed.profile && typeof parsed.profile === 'object' && parsed.profile.businessName ? parsed.profile : null,
+      services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : null,
+      stylists: Array.isArray(parsed.stylists) && parsed.stylists.length > 0 ? parsed.stylists : null,
+      loyaltyConfig: parsed.loyaltyConfig && typeof parsed.loyaltyConfig === 'object' ? parsed.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
+      selectedTemplateId: parsed.selectedTemplateId || parsed.profile?.businessType || 1,
     };
   } catch {
+    try {
+      localStorage.removeItem(SALON_STATE_STORAGE_KEY);
+    } catch {}
     return null;
   }
 }
