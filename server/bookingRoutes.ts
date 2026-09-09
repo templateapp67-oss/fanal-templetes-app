@@ -1,3 +1,4 @@
+import { loadOwnerBookings } from './ownerBookings.js';
 // ============================================================================
 // Shared read/update routes for bookings + notifications.
 //
@@ -36,6 +37,7 @@ import {
 import { safeDatabaseError, sendSafeError, isMissingTableError } from './safeError.js';
 
 export interface BookingRoutesDeps {
+  normalizedBookings?: boolean;
   db: any;
   isMock: boolean;
   /** Explicit server-side service-role availability for live writes/reads. */
@@ -136,6 +138,11 @@ export function createBookingsListHandler(deps: BookingRoutesDeps) {
         return void res.json({ success: true, mode: 'mock', requestId, data: rows });
       }
 
+      if (deps.normalizedBookings) {
+        const result = await loadOwnerBookings(deps.db, req, deadlineAt);
+        if (responseAlreadyEnded(res)) return;
+        return void res.status(result.status).json({ success: result.status === 200, mode: 'live', requestId, ...result });
+      }
       const { ownerId, error: scopeError, errorStatus: scopeErrorStatus } = await resolveOwnerScope(deps, req.query || {}, deadlineAt);
       if (scopeError) {
         if (responseAlreadyEnded(res)) return;

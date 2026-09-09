@@ -433,6 +433,7 @@ async function startServer() {
   // in-memory result.
   // ==========================================================================
   const bookingRouteDeps: BookingRoutesDeps = {
+    normalizedBookings: true,
     db,
     isMock: bookingHandlerIsMock,
     hasAdminClient: !!admin,

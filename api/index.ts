@@ -384,6 +384,7 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
 // Owner-scoped, time-boxed, and honest about database failures.
 // ============================================================================
 const bookingRouteDeps: BookingRoutesDeps = {
+    normalizedBookings: true,
   db,
   isMock: bookingHandlerIsMock,
   hasAdminClient: !!admin,
