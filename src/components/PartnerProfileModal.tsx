@@ -70,6 +70,10 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
       await queueOwnerWrite(async () => {
         const result = await supabase.rpc('save_partner_profile_details', { p_details: { ...patch, subdomain: profile.subdomain, dob, notifications } });
         if (result.error) throw result.error;
+        uploaded = null;
+        const verification = await supabase.rpc('get_partner_profile');
+        if (verification.error) throw verification.error;
+        if (verification.data?.dob !== dob || verification.data?.avatar !== photo) throw new Error('Saved profile could not be verified. Please retry.');
       });
       uploaded = null;
       onSaved(patch);
@@ -81,7 +85,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
   }
   return <dialog ref={dialog} onCancel={e => { e.preventDefault(); if (!busy) onClose(); }} aria-labelledby="partner-title" className="m-auto w-[min(94vw,560px)] max-h-[90dvh] rounded-3xl p-0 backdrop:bg-black/50">
     <div className="flex flex-col max-h-[90dvh]">
-      <div className="flex shrink-0 justify-between items-center bg-pink-50 p-5"><div><h2 id="partner-title" className="font-bold">{editable ? "Contact & Location Details" : "User Profile"}</h2><p className="text-xs text-slate-500">{editable ? "Enter your details once here" : "Details from Contact & Location — no duplicate entry needed"}</p></div><button type="button" disabled={busy} onClick={onClose} aria-label="Close profile settings">✕</button></div>
+      <div className="flex shrink-0 justify-between items-center bg-pink-50 p-5"><div><h2 id="partner-title" className="font-bold">{editable ? "Profile Settings" : "User Profile"}</h2><p className="text-xs text-slate-500">{editable ? "Your saved profile · contact, date of birth & photo" : "Details from Contact & Location — no duplicate entry needed"}</p></div><button type="button" disabled={busy} onClick={onClose} aria-label="Close profile settings">✕</button></div>
       <form id="partner-profile-form" onSubmit={save} className="p-5 space-y-5 overflow-y-auto min-h-0">
         {error && <p role="alert" className="text-sm text-red-700">{error} {loading && <button type="button" className="underline" onClick={() => setLoadAttempt(v => v + 1)}>Retry loading</button>}</p>}
         {loading && !error && <p role="status" className="text-sm">Loading saved profile…</p>}
