@@ -1,3 +1,4 @@
+import { authenticatedBookingRead, BookingSessionError } from '../lib/authenticatedBookingRead';
 import { supabase } from '../lib/supabaseClient';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -59,6 +60,9 @@ export const BookingManager = ({
   const [newTime, setNewTime] = useState('');
   const mountedRef = useRef(true);
   const failureCountRef = useRef(0);
+  const readControllerRef = useRef<AbortController | null>(null);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const sessionBlockedRef = useRef(false);
 
   const scopeQuery = ownerId
     ? `?owner_id=${encodeURIComponent(ownerId)}`
@@ -67,63 +71,81 @@ export const BookingManager = ({
       : '';
 
   const fetchBookings = useCallback(async () => {
+    if (!isAuthenticated) return;
+    readControllerRef.current?.abort();
+    const controller = new AbortController();
+    readControllerRef.current = controller;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/bookings${scopeQuery}`, {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
+      const res = await authenticatedBookingRead(supabase.auth, `/api/bookings${scopeQuery}`, ownerId, fetch, controller.signal);
       const text = await res.text();
+      if (!mountedRef.current || controller.signal.aborted) return;
       let json: any = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        json = null;
-      }
-
+      try { json = text ? JSON.parse(text) : null; } catch { /* Report invalid responses below. */ }
       if (!res.ok || !json || json.success === false) {
-        const detail =
-          json?.error ||
-          (text ? `HTTP ${res.status} — ${text.slice(0, 120)}` : `HTTP ${res.status} ${res.statusText}`);
         failureCountRef.current += 1;
-        if (mountedRef.current) setLoadError(detail);
+        setLoadError(json?.error || `The booking service returned HTTP ${res.status}.`);
         return;
       }
-
       failureCountRef.current = 0;
-      if (!mountedRef.current) return;
+      sessionBlockedRef.current = false;
+      setNeedsLogin(false);
       setLoadError('');
       setBookings(Array.isArray(json.data) ? json.data : []);
       setLastSyncedAt(Date.now());
-    } catch (e: any) {
-      failureCountRef.current += 1;
-      if (mountedRef.current) {
-        setLoadError(e?.message ? `Could not reach the booking service (${e.message}).` : 'Could not reach the booking service.');
+    } catch (error: any) {
+      if (!mountedRef.current || controller.signal.aborted) return;
+      if (error instanceof BookingSessionError) {
+        sessionBlockedRef.current = true;
+        setNeedsLogin(true);
+        setBookings([]);
+        setLastSyncedAt(null);
       }
+      failureCountRef.current += 1;
+      setLoadError(error?.message || 'Could not reach the booking service.');
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current && !controller.signal.aborted) setLoading(false);
     }
-  }, [scopeQuery]);
+  }, [scopeQuery, ownerId, isAuthenticated]);
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchBookings();
-
-    // Poll every 3s while healthy; back off (up to 60s) while the API is
-    // failing so a broken endpoint isn't hammered 20x a minute.
-    let timer: any;
-    const schedule = () => {
-      const backoff = Math.min(3000 * Math.pow(2, Math.min(failureCountRef.current, 5)), 60000);
-      timer = setTimeout(async () => {
-        await fetchBookings();
-        if (mountedRef.current) schedule();
-      }, failureCountRef.current > 0 ? backoff : 3000);
-    };
-    schedule();
-
+    setBookings([]);
+    setLastSyncedAt(null);
+    setNeedsLogin(false);
+    setLoadError('');
+    sessionBlockedRef.current = false;
+    failureCountRef.current = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    let disposed = false;
+    if (isAuthenticated) {
+      setLoading(true);
+      const poll = async () => {
+        if (!sessionBlockedRef.current) await fetchBookings();
+        if (disposed) return;
+        const delay = Math.min(3000 * Math.pow(2, Math.min(failureCountRef.current, 5)), 60000);
+        timer = setTimeout(poll, delay);
+      };
+      void poll();
+    } else {
+      setLoading(false);
+    }
     return () => {
+      disposed = true;
       mountedRef.current = false;
       clearTimeout(timer);
+      readControllerRef.current?.abort();
     };
+  }, [fetchBookings, isAuthenticated]);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' && sessionBlockedRef.current) {
+        sessionBlockedRef.current = false;
+        // Auth callbacks must not await another auth call while the SDK lock is held.
+        setTimeout(() => { if (mountedRef.current) void fetchBookings(); }, 0);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, [fetchBookings]);
 
   /** Salon check-in — by pass code or by booking row (see server/bookingCheckin.ts). */
@@ -213,6 +235,14 @@ export const BookingManager = ({
       setUpdatingId(null);
     }
   };
+
+  if (!isAuthenticated || needsLogin) return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <h2 className="font-bold">Sign in to view your bookings</h2>
+      <p className="my-3 text-sm">{needsLogin ? loadError : 'Your saved bookings are available after signing in.'}</p>
+      <button type="button" onClick={() => onRequireAuth?.('login')} className="rounded-lg bg-pink-700 px-4 py-2 text-white">Sign in</button>
+    </div>
+  );
 
   if (loading) return <div className="p-4">Loading bookings...</div>;
 
