@@ -195,6 +195,47 @@ export function growthPartnerPath(section: GrowthPartnerSection = 'dashboard'): 
   return section === 'dashboard' ? GROWTH_PARTNER_PATH : `${GROWTH_PARTNER_PATH}/${section}`;
 }
 
+// ---------------------------------------------------------------------------
+// Onboarding App (`/onboarding/...`)
+// ---------------------------------------------------------------------------
+// A separate frontend surface of the same deployment — same Supabase project,
+// same Auth, same database/RPCs/RLS as the Template App. Auth screens are
+// public; referral + status are protected (the app resolves the final route
+// from the backend onboarding state, so refreshes and deep links land on the
+// correct screen). Unknown sub-paths fall back to `login`, never blank.
+export const ONBOARDING_PATH = '/onboarding';
+
+export type OnboardingSection = 'login' | 'signup' | 'forgot-password' | 'referral' | 'status';
+
+export const ONBOARDING_SECTIONS: OnboardingSection[] = [
+  'login',
+  'signup',
+  'forgot-password',
+  'referral',
+  'status',
+];
+
+/** True when the path belongs to the Onboarding App at all. */
+export function isOnboardingPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === ONBOARDING_PATH || path.startsWith(`${ONBOARDING_PATH}/`);
+}
+
+/** Section for `/onboarding` (login) and `/onboarding/:section`. */
+export function matchOnboardingRoute(pathname: string): OnboardingSection {
+  const segments = normalizePath(pathname)
+    .split('/')
+    .filter((segment) => segment.length > 0);
+  if (segments[0]?.toLowerCase() !== 'onboarding') return 'login';
+  const raw = String(segments[1] || '').toLowerCase();
+  return (ONBOARDING_SECTIONS as string[]).includes(raw) ? (raw as OnboardingSection) : 'login';
+}
+
+/** Canonical URL for an Onboarding App section. */
+export function onboardingPath(section: OnboardingSection = 'login'): string {
+  return section === 'login' ? `${ONBOARDING_PATH}/login` : `${ONBOARDING_PATH}/${section}`;
+}
+
 /** Canonical URL for one booking's detail page. */
 export function bookingDetailPath(bookingId: string): string {
   return `${BOOKING_DETAIL_PREFIX}/${encodeURIComponent(String(bookingId ?? '').trim())}`;

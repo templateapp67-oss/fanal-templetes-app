@@ -43,6 +43,7 @@ import { saveOwnerEditorState } from './lib/ownerEditorState';
 import {
   usePathRoute,
   isCustomerAppPath,
+  isOnboardingPath,
   isMyBookingsPath,
   isStaffPerformancePath,
   isStaffCommissionPath,
@@ -56,6 +57,7 @@ import {
 } from './lib/router';
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
+import { OnboardingApp } from './onboarding/OnboardingApp';
 import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
@@ -453,6 +455,10 @@ export default function App() {
   // it: a visitor with no owner session must never write the default salon
   // profile over a real one.
   const isCustomerApp = isCustomerAppPath(path);
+  // The Onboarding App (`/onboarding`) is a separate auth/referral surface of
+  // the same deployment: same Supabase Auth/project/database/RPCs/RLS, its own
+  // screens. Like the Customer App, the owner effects below stay silent on it.
+  const isOnboardingApp = isOnboardingPath(path);
 
   /**
    * Fetch a same-origin JSON API route with exact diagnostics.
@@ -1213,6 +1219,7 @@ export default function App() {
     }
     if (isPublicSite) return; // visitors on a public salon site never save
     if (isCustomerApp) return; // …and neither does anyone in the Customer App
+    if (isOnboardingApp) return; // …or in the Onboarding App
     if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
     setSaveStatus('pending');
     hasPendingSaveRef.current = true;
@@ -1233,6 +1240,7 @@ export default function App() {
     isMockSupabase,
     isPublicSite,
     isCustomerApp,
+    isOnboardingApp,
     persistSalonState,
   ]);
 
@@ -1376,7 +1384,7 @@ export default function App() {
     // The customer app must never append to the owner's `appointments`/`clients`
     // either: a customer booking arrives through /api/customer/* and is written
     // against their own rows.
-    if (isMockSupabase || isPublicSite || isCustomerApp) return;
+    if (isMockSupabase || isPublicSite || isCustomerApp || isOnboardingApp) return;
 
     const ownerId = user?.id ?? profile.ownerId;
     if (!ownerId) {
@@ -1431,6 +1439,17 @@ export default function App() {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
   };
+
+  // -------------------------------------------------------------------------
+  // ONBOARDING APP RENDER
+  //
+  // Ahead of everything else: `/onboarding` is the standalone auth/referral
+  // gateway (same Supabase Auth/project/database/RPCs/RLS), so no owner,
+  // public-site or customer UI mounts underneath it.
+  // -------------------------------------------------------------------------
+  if (isOnboardingApp) {
+    return <OnboardingApp path={path} navigate={navigate} />;
+  }
 
   // -------------------------------------------------------------------------
   // CUSTOMER APP RENDER
