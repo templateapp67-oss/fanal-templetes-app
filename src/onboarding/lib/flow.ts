@@ -116,6 +116,10 @@ export type OnboardingErrorCode =
   | 'email-in-use'
   | 'invalid-code'
   | 'already-linked'
+  | 'invalid-handoff'
+  | 'handoff-used'
+  | 'handoff-expired'
+  | 'handoff-forbidden'
   | 'session'
   | 'network'
   | 'unknown';

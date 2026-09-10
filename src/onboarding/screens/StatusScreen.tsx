@@ -18,7 +18,11 @@ export const StatusScreen: React.FC<{
   partnerName?: string | null;
   email?: string;
   onLogout?: () => void;
-}> = ({ referralCode, partnerName, email, onLogout }) => (
+  /** Phase 4: secure one-time handoff into the Template App. Absent = hidden. */
+  onContinueToTemplateApp?: () => void;
+  handoffBusy?: boolean;
+  handoffError?: string;
+}> = ({ referralCode, partnerName, email, onLogout, onContinueToTemplateApp, handoffBusy, handoffError }) => (
   <GatewayShell
     title={STATUS_VERIFIED_TITLE}
     subtitle={STATUS_VERIFIED_BODY}
@@ -59,6 +63,24 @@ export const StatusScreen: React.FC<{
       <p className="text-sm text-slate-600">
         Nothing more to do right now — stay signed in and you will pick up here.
       </p>
+      {onContinueToTemplateApp && (
+        <div className="space-y-3 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={onContinueToTemplateApp}
+            disabled={handoffBusy}
+            className="w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#C20E5A' }}
+          >
+            {handoffBusy ? 'Preparing secure handoff…' : 'Continue to Template App'}
+          </button>
+          {handoffError ? <FormAlert tone="error">{handoffError}</FormAlert> : null}
+          <p className="text-xs text-slate-500">
+            You will be securely signed in to the Template App. This pass can only be used once and expires in 5
+            minutes.
+          </p>
+        </div>
+      )}
     </div>
   </GatewayShell>
 );

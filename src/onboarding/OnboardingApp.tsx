@@ -7,7 +7,7 @@ import {
   onboardingPath,
   type OnboardingSection,
 } from '../lib/router';
-import { resolveOnboardingRoute, type OnboardingPhase } from './lib/flow';
+import { createSingleFlight, resolveOnboardingRoute, type OnboardingPhase } from './lib/flow';
 import {
   fetchOnboardingSnapshot,
   loadViewer,
@@ -16,6 +16,14 @@ import {
   type OnboardingViewer,
   type OnboardingSnapshot,
 } from './lib/auth';
+import {
+  buildTemplateHandoffUrl,
+  createTemplateHandoff,
+  newHandoffState,
+  redirectToTemplateApp,
+  saveHandoffState,
+  templateAppBaseUrl,
+} from './lib/handoff';
 import { FormAlert, GatewayShell } from './screens/Shell';
 import { SignupScreen } from './screens/SignupScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -96,6 +104,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [viewer, setViewer] = useState<OnboardingViewer | null>(null);
   const [snapshot, setSnapshot] = useState<OnboardingSnapshot | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffError, setHandoffError] = useState('');
+  const handoffFlight = useRef(createSingleFlight());
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -210,8 +221,35 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     if (!mounted.current) return;
     setViewer(null);
     setSnapshot(null);
+    setHandoffError('');
     navigate(onboardingPath('login'));
   }, [sb, navigate]);
+
+  // Phase 4: mint a one-time handoff (backend verifies auth + live referral)
+  // and redirect to the Template App. Single-flight + disabled button stop
+  // double-clicks; the backend additionally keeps at most one active grant.
+  const handleContinueToTemplateApp = useCallback(() => {
+    if (handoffBusy) return;
+    setHandoffBusy(true);
+    setHandoffError('');
+    void handoffFlight.current
+      .run(async () => {
+        const state = newHandoffState();
+        saveHandoffState(state);
+        const handoff = await createTemplateHandoff(sb, state);
+        redirectToTemplateApp(buildTemplateHandoffUrl(templateAppBaseUrl(), handoff.token, state));
+      })
+      .then(
+        () => {
+          // Success leaves this page (full redirect); busy stays on purpose.
+        },
+        (error: unknown) => {
+          if (!mounted.current) return;
+          setHandoffError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
+          setHandoffBusy(false);
+        }
+      );
+  }, [sb, handoffBusy]);
 
   if (isMockSupabase && !client) return <OnboardingMockNotice />;
   if (boot === 'loading' || (refreshing && !snapshot && !!viewer)) return <OnboardingBootLoading />;
@@ -249,6 +287,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         partnerName={snapshot?.partnerName ?? null}
         email={viewer?.email || ''}
         onLogout={() => void handleLogout()}
+        onContinueToTemplateApp={handleContinueToTemplateApp}
+        handoffBusy={handoffBusy}
+        handoffError={handoffError}
       />
     );
   }

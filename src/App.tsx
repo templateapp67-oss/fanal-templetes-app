@@ -44,6 +44,7 @@ import {
   usePathRoute,
   isCustomerAppPath,
   isOnboardingPath,
+  isTemplateHandoffPath,
   isMyBookingsPath,
   isStaffPerformancePath,
   isStaffCommissionPath,
@@ -58,6 +59,7 @@ import {
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
 import { OnboardingApp } from './onboarding/OnboardingApp';
+import { TemplateHandoffPage } from './components/TemplateHandoffPage';
 import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
@@ -459,6 +461,9 @@ export default function App() {
   // the same deployment: same Supabase Auth/project/database/RPCs/RLS, its own
   // screens. Like the Customer App, the owner effects below stay silent on it.
   const isOnboardingApp = isOnboardingPath(path);
+  // The handoff page lives under /onboarding/* but is a Template App route, so
+  // it must be matched BEFORE the Onboarding App branch below.
+  const isTemplateHandoff = isTemplateHandoffPath(path);
 
   /**
    * Fetch a same-origin JSON API route with exact diagnostics.
@@ -1439,6 +1444,17 @@ export default function App() {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
   };
+
+  // -------------------------------------------------------------------------
+  // TEMPLATE HANDOFF RENDER (Phase 4)
+  //
+  // Ahead of the Onboarding App: `/onboarding/handoff` belongs to the Template
+  // App entry gate, which exchanges the one-time grant server-side and then
+  // enters the normal application flow.
+  // -------------------------------------------------------------------------
+  if (isTemplateHandoff) {
+    return <TemplateHandoffPage navigate={navigate} />;
+  }
 
   // -------------------------------------------------------------------------
   // ONBOARDING APP RENDER

@@ -236,6 +236,39 @@ export function onboardingPath(section: OnboardingSection = 'login'): string {
   return section === 'login' ? `${ONBOARDING_PATH}/login` : `${ONBOARDING_PATH}/${section}`;
 }
 
+// ---------------------------------------------------------------------------
+// Template App handoff (`/onboarding/handoff?token=…&state=…`)
+// ---------------------------------------------------------------------------
+// The Template App side of the Phase 4 one-time handoff. The path lives under
+// `/onboarding` but is NOT an onboarding screen: App.tsx renders the handoff
+// page for it BEFORE the Onboarding App branch. The query carries only the
+// short-lived opaque token (+ anti-CSRF state) — never identity, which the
+// backend derives from the authenticated session during the exchange.
+export const TEMPLATE_HANDOFF_PATH = '/onboarding/handoff';
+
+/** True when the path is the Template App handoff page (query ignored). */
+export function isTemplateHandoffPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === TEMPLATE_HANDOFF_PATH;
+}
+
+export interface TemplateHandoffQuery {
+  token: string;
+  state: string;
+}
+
+/** Parse `?token=…&state=…` without touching window (SSR/test safe). */
+export function matchTemplateHandoffQuery(search: string): TemplateHandoffQuery {
+  try {
+    const params = new URLSearchParams(String(search || ''));
+    return {
+      token: (params.get('token') || '').trim(),
+      state: (params.get('state') || '').trim(),
+    };
+  } catch {
+    return { token: '', state: '' };
+  }
+}
+
 /** Canonical URL for one booking's detail page. */
 export function bookingDetailPath(bookingId: string): string {
   return `${BOOKING_DETAIL_PREFIX}/${encodeURIComponent(String(bookingId ?? '').trim())}`;
