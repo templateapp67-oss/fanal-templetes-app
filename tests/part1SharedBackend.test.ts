@@ -141,6 +141,7 @@ const CODE_A = 'ALPHA01';
 const CODE_B = 'BETA002';
 
 const MIGRATION = read('supabase/migrations/20260912_growth_partner_onboarding.sql');
+const HARDENING = read('supabase/migrations/20260916_part1_referral_hardening.sql');
 
 async function setup() {
   const db = new PGlite();
@@ -148,18 +149,34 @@ async function setup() {
     create role anon;
     create role authenticated;
     create schema auth;
-    create table auth.users(id uuid primary key);
+    create table auth.users(id uuid primary key, email text);
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to authenticated, anon;
     create table public.profiles(id uuid primary key, full_name text);
-    insert into auth.users(id) values
-      ('${PARTNER_A}'), ('${PARTNER_B}'), ('${USER_A}'), ('${USER_B}'), ('${USER_C}');
+    insert into auth.users(id, email) values
+      ('${PARTNER_A}', 'anita@example.com'), ('${PARTNER_B}', 'bala@example.com'),
+      ('${USER_A}', 'a@example.com'), ('${USER_B}', 'b@example.com'), ('${USER_C}', 'c@example.com');
     insert into public.profiles(id, full_name) values
       ('${PARTNER_A}', 'Partner Anita'), ('${PARTNER_B}', 'Partner Bala');
   `);
   await db.exec(MIGRATION);
   return db;
+}
+
+async function setup16() {
+  const db = await setup();
+  await db.exec(HARDENING);
+  return db;
+}
+
+/** EXECUTE check via the privilege catalog (names are hardcoded, never client input). */
+async function canExecute(db: PGlite, role: string, fn: string) {
+  return (
+    await db.query<any>(
+      `select has_function_privilege('${role}', '${fn}'::regprocedure, 'EXECUTE') as ok`
+    )
+  ).rows[0].ok;
 }
 
 async function rpc(db: any, userId: string, fn: string, args: any[] = []) {
@@ -297,8 +314,8 @@ test('Part1-1B/1C: referral acceptance — link, isolation, immutability, attack
   const db = await setup();
   try {
     // Admin provisions Partner A (active) and Partner B (active).
-    await db.query('select public.provision_growth_partner($1::uuid, $2)', [PARTNER_A, CODE_A]);
-    await db.query('select public.provision_growth_partner($1::uuid, $2)', [PARTNER_B, CODE_B]);
+    await db.query<any>('select public.provision_growth_partner($1::uuid, $2)', [PARTNER_A, CODE_A]);
+    await db.query<any>('select public.provision_growth_partner($1::uuid, $2)', [PARTNER_B, CODE_B]);
 
     // Valid code -> linked to the CORRECT partner; invalid -> rejected, no row.
     assert.equal((await rpc(db, USER_A, 'link_my_growth_referral', [CODE_A])).growth_partner_id, PARTNER_A);
@@ -369,6 +386,186 @@ test('Part1-1B/1C: referral acceptance — link, isolation, immutability, attack
     assert.equal(row.growth_partner_id, PARTNER_A);
     assert.equal(row.referral_code, CODE_A);
     assert.equal(row.status, 'linked');
+  } finally {
+    await db.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 20260916 — provisioning fixes + convergence guards
+// ---------------------------------------------------------------------------
+
+test('Part1-1B: omitted provision code keeps the current code; only new partners auto-generate', async () => {
+  const db = await setup16();
+  try {
+    await db.query<any>('select public.provision_growth_partner($1::uuid, $2)', [PARTNER_A, CODE_A]);
+
+    // Deactivation-style call (no code) must NOT rotate the public code.
+    const kept = (
+      await db.query<any>('select public.provision_growth_partner($1::uuid, null, false) as result', [PARTNER_A])
+    ).rows[0].result;
+    assert.equal(kept.referral_code, CODE_A);
+    assert.equal(kept.is_active, false);
+
+    // Reactivation without a code also preserves it.
+    const reactivated = (
+      await db.query<any>('select public.provision_growth_partner($1::uuid) as result', [PARTNER_A])
+    ).rows[0].result;
+    assert.equal(reactivated.referral_code, CODE_A);
+    assert.equal(reactivated.is_active, true);
+
+    // Explicit code still rotates intentionally.
+    const rotated = (
+      await db.query<any>('select public.provision_growth_partner($1::uuid, $2) as result', [PARTNER_A, 'NEWROT1'])
+    ).rows[0].result;
+    assert.equal(rotated.referral_code, 'NEWROT1');
+
+    // Brand-new partners get a generated, well-formed, unique code.
+    const fresh = (
+      await db.query<any>('select public.provision_growth_partner($1::uuid) as result', [PARTNER_B])
+    ).rows[0].result;
+    assert.match(fresh.referral_code, /^[A-Z0-9]{6,12}$/);
+    assert.notEqual(fresh.referral_code, 'NEWROT1');
+  } finally {
+    await db.close();
+  }
+});
+
+test('Part1-1B: admin can provision by login email; unknown/empty email fails safely', async () => {
+  const db = await setup16();
+  try {
+    const byEmail = (
+      await db.query<any>(`select public.provision_growth_partner_by_email('c@example.com', $1) as result`, ['CMAIL01'])
+    ).rows[0].result;
+    assert.equal(byEmail.user_id, USER_C);
+    assert.equal(byEmail.referral_code, 'CMAIL01');
+
+    // Case-insensitive match on the same user keeps their code (no rotation).
+    const again = (
+      await db.query<any>(`select public.provision_growth_partner_by_email('C@EXAMPLE.COM') as result`)
+    ).rows[0].result;
+    assert.equal(again.user_id, USER_C);
+    assert.equal(again.referral_code, 'CMAIL01');
+
+    await assert.rejects(
+      db.query(`select public.provision_growth_partner_by_email('ghost@example.com')`),
+      /Unknown user/
+    );
+    await assert.rejects(
+      db.query(`select public.provision_growth_partner_by_email('   ')`),
+      /An email address is required/
+    );
+
+    // Clients cannot execute the helper (mirrors provision lockdown).
+    const denied = await captureError(asUser(db, USER_A, `select public.provision_growth_partner_by_email('a@example.com')`));
+    assert.match(denied.message, /permission denied for function/i);
+  } finally {
+    await db.close();
+  }
+});
+
+test('Part1-1C: convergence migration is idempotent and repairs drift', async () => {
+  const db = await setup16();
+  try {
+    await db.query<any>('select public.provision_growth_partner($1::uuid, $2)', [PARTNER_A, CODE_A]);
+    await rpc(db, USER_A, 'link_my_growth_referral', [CODE_A]);
+
+    // Simulate drift: dropped policy/index/constraint + weakened/wrong grants.
+    await db.exec(`
+      drop policy growth_onboarding_select_own_or_partner on public.growth_onboarding;
+      drop index public.growth_partners_referral_code_key;
+      alter table public.growth_partners drop constraint growth_partners_code_format;
+      revoke select on public.growth_partners from authenticated;
+      grant insert on public.growth_onboarding to authenticated;
+      revoke execute on function public.link_my_growth_referral(text) from authenticated;
+      grant execute on function public.provision_growth_partner(uuid, text, boolean) to authenticated;
+      grant execute on function public.growth_normalize_code(text) to authenticated;
+    `);
+
+    // Re-running the hardening migration converges everything back.
+    await db.exec(HARDENING);
+
+    const policies = await db.query<any>(
+      `select policyname from pg_policies where schemaname = 'public'
+       and tablename in ('growth_partners', 'growth_onboarding') order by policyname`
+    );
+    assert.deepEqual(
+      policies.rows.map((r: any) => r.policyname),
+      ['growth_onboarding_select_own_or_partner', 'growth_partners_select_own']
+    );
+    const grants = await db.query<any>(
+      `select table_name, privilege_type from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name in ('growth_partners', 'growth_onboarding')
+         and grantee = 'authenticated' order by table_name`
+    );
+    assert.deepEqual(
+      grants.rows.map((r: any) => `${r.table_name}.${r.privilege_type}`),
+      ['growth_onboarding.SELECT', 'growth_partners.SELECT']
+    );
+    assert.equal(await canExecute(db, 'authenticated', 'public.link_my_growth_referral(text)'), true);
+    assert.equal(await canExecute(db, 'authenticated', 'public.provision_growth_partner(uuid, text, boolean)'), false);
+    assert.equal(await canExecute(db, 'authenticated', 'public.growth_normalize_code(text)'), false);
+    const idx = await db.query<any>(
+      `select indexname from pg_indexes where schemaname = 'public' and indexname = 'growth_partners_referral_code_key'`
+    );
+    assert.equal(idx.rows.length, 1);
+    const con = await db.query<any>(
+      `select conname from pg_constraint where conname = 'growth_partners_code_format'`
+    );
+    assert.equal(con.rows.length, 1);
+
+    // The restored unique index is functional, not just present.
+    const dup = await captureError(
+      db.query('insert into public.growth_partners(user_id, referral_code) values ($1::uuid, $2)', [PARTNER_B, CODE_A])
+    );
+    assert.equal(dup.code, '23505');
+
+    // Existing data survived the drift + convergence round-trip untouched.
+    assert.equal((await rpc(db, USER_A, 'get_my_growth_referral')).growth_partner_id, PARTNER_A);
+
+    // Third apply is still a clean no-op (idempotent).
+    await db.exec(HARDENING);
+  } finally {
+    await db.close();
+  }
+});
+
+test('Part1-1C: hardening refuses to run before the base migration', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`create role anon; create role authenticated; create schema auth;
+      create table auth.users(id uuid primary key);`);
+    await assert.rejects(db.exec(HARDENING), /before this file/);
+  } finally {
+    await db.close();
+  }
+});
+
+test('Part1-1C: hardening refuses to build on wrong-shaped tables', async () => {
+  for (const ddl of [
+    `create table public.growth_partners(user_id uuid primary key, wrong_col text);
+     create table public.growth_onboarding(user_id uuid primary key);`,
+    `create table public.growth_partners(user_id uuid primary key, referral_code text, is_active boolean, created_at timestamptz, updated_at timestamptz);
+     create table public.growth_onboarding(user_id uuid primary key, surprise_col int);`,
+  ]) {
+    const db = new PGlite();
+    try {
+      await db.exec(`create role anon; create role authenticated; create schema auth;
+        create table auth.users(id uuid primary key);`);
+      await db.exec(ddl);
+      await assert.rejects(db.exec(HARDENING), /unexpected shape/);
+    } finally {
+      await db.close();
+    }
+  }
+});
+
+test('Part1-1C: hardening fails loudly when a Part 1 routine was dropped', async () => {
+  const db = await setup();
+  try {
+    await db.exec('drop function public.link_my_growth_referral(text)');
+    await assert.rejects(db.exec(HARDENING), /is missing/);
   } finally {
     await db.close();
   }

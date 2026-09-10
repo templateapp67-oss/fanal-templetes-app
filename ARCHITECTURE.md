@@ -99,9 +99,13 @@ production unless explicitly forced.
 
 Supabase dashboard: Auth URL allow-list (production + preview domains),
 email provider/limits; apply migrations in filename order (growth chain
-`20260912 → 20260913 → 20260914 → 20260915`; staff chain honors the
-in-file ordering guard); provision partners via `provision_growth_partner`
-(SQL Editor / service_role only — revoked from all clients). Vercel:
+`20260912 → 20260913 → 20260914 → 20260915 → 20260916` (the last
+file converges Part 1 objects and guards ordering/shape; it never
+redefines later-phase RPC bodies); staff chain honors the
+in-file ordering guard); provision partners via `provision_growth_partner` or
+`provision_growth_partner_by_email` (SQL Editor / service_role only —
+revoked from all clients; omitted code keeps the current code, explicit
+code rotates intentionally). Vercel:
 env vars above, SPA rewrites (already in `vercel.json`), serverless `/api`
 entry (`api/index.ts`). Razorpay: live keys + webhook secret + endpoint
 `<domain>/api/payments/razorpay/webhook`.
