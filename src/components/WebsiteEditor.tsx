@@ -698,56 +698,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
-        {/* ===== 4. WORKING HOURS / TIMINGS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className="w-4 h-4 text-[#C20E5A]" />
-            <h2 className="font-display font-bold text-base">Timings</h2>
-          </div>
-          <p className="text-[11px] text-gray-500 mb-5">
-            Displayed on your website header and footer so clients know when you’re open.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Mon – Fri
-              </label>
-              <input
-                type="text"
-                value={profile.workingHoursMonFri || ''}
-                onChange={(e) => upd({ workingHoursMonFri: e.target.value })}
-                placeholder="10:00 AM - 08:30 PM"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Saturday
-              </label>
-              <input
-                type="text"
-                value={profile.workingHoursSat || ''}
-                onChange={(e) => upd({ workingHoursSat: e.target.value })}
-                placeholder="09:00 AM - 09:00 PM"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                Sunday
-              </label>
-              <input
-                type="text"
-                value={profile.workingHoursSun || ''}
-                onChange={(e) => upd({ workingHoursSun: e.target.value })}
-                placeholder="Closed / By appointment"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-            </div>
-          </div>
+        <section className="bg-white border border-gray-200 rounded-2xl p-6">
+          <h2 className="font-bold">Opening Hours</h2>
+          <p className="text-sm mt-2">Manage your daily opening times and weekly off in SaaS Dashboard → Appointments → Salon Opening Hours. Bookings use those saved hours.</p>
         </section>
 
         {/* ===== 5. TEMPLATE & LIVE SITE ===== */}

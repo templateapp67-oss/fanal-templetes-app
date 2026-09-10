@@ -4,7 +4,7 @@ import { authenticatedBookingRead } from './authenticatedBookingRead';
 import type { Appointment, ClientRecord, SalonService, Stylist } from '../types';
 
 export function useOwnerDashboard(ownerId?: string, subdomain?: string) {
-  const [data, setData] = useState<{ appointments: Appointment[]; clients: ClientRecord[]; services?: SalonService[]; stylists?: Stylist[]; loadedAt?: string }>({ appointments: [], clients: [] });
+  const [data, setData] = useState<{ appointments: Appointment[]; clients: ClientRecord[]; hours?: any[]; services?: SalonService[]; stylists?: Stylist[]; loadedAt?: string }>({ appointments: [], clients: [] });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,6 +48,7 @@ export function useOwnerDashboard(ownerId?: string, subdomain?: string) {
     } finally { busy.current = false; setSaving(false); }
   };
   return { ...data, error, loading, saving, refresh,
+    saveHours: (hours: any[]) => mutate('/api/owner/hours', { subdomain, hours }),
     create: (appointment: Appointment) => mutate('/api/owner/appointments', { ...appointment, subdomain, reference: appointment.id }),
     update: (id: string, status: string, date?: string, time?: string) => mutate('/api/bookings/update', { id, status, proposed_date: date, proposed_time_slot: time }),
   };
