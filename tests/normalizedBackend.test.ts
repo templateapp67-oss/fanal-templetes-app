@@ -39,7 +39,7 @@ test('live public lookup propagates catalogue failures and never substitutes dem
   const db = database(c => c.table === 'salons' ? result({ id: salonId, name: 'Real', slug: 'arts-by-uma' }) : { data: null, error });
   const response = await lookupSalon({ db: db as any, isMockSupabase: false, mockSalons: {} }, 'arts-by-uma');
   assert.equal(response.found, false); assert.equal(response.salon, null); assert.deepEqual(response.error, error);
-  assert.ok(db.calls.every(c => ['salons','services','staff'].includes(c.table)));
+  assert.ok(db.calls.every(c => ['salons','services','staff','salon_hours'].includes(c.table)));
 });
 test('live empty catalogue stays empty and public staff query excludes private employment data', async () => {
   const db = database(c => result(c.table === 'salons' ? { id: salonId, name: 'Real', slug: 'arts-by-uma' } : []));
