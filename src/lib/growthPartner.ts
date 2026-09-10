@@ -146,39 +146,11 @@ export async function updateMyOnboardingProgress(
 //   • growth_partners has a SELECT-own-row-only policy, so this query returns
 //     a row if and only if the signed-in user IS a Growth Partner. A normal
 //     user gets zero rows (null) — the "unauthorized" state.
-//   • growth_onboarding is readable only for one's own row plus (for partners)
-//     rows whose growth_partner_id is the caller. The query additionally
-//     filters growth_partner_id server-side, so the page never downloads
-//     another partner's referrals and filters in React.
+//   • Referral lists, KPIs and performance come from the Phase 6 RPCs at the
+//     bottom of this file, which derive the partner from auth.uid() and scope
+//     every query to the caller's own referrals — no partner id ever travels
+//     from the browser, and counts/rates are computed on the server.
 // ============================================================================
-
-/** One referral row as readable by its Growth Partner (no cross-partner PII). */
-export interface GrowthReferralRow {
-  user_id: string;
-  status: GrowthOnboardingStatusValue;
-  linked_at: string | null;
-  template_started_at: string | null;
-  template_completed_at: string | null;
-  /** Selected so the client can defensively drop any row that is not its own. */
-  growth_partner_id?: string | null;
-}
-
-/** Dashboard summary counts, computed from the partner's own referral rows. */
-export interface GrowthReferralSummary {
-  total: number;
-  onboarding: number;
-  completed: number;
-}
-
-/**
- * Pure summary reducer (exported for tests): total referred users, completed
- * users, and users still onboarding (total minus completed).
- */
-export function summarizeGrowthReferrals(rows: GrowthReferralRow[]): GrowthReferralSummary {
-  const list = Array.isArray(rows) ? rows : [];
-  const completed = list.filter((row) => row?.status === 'template_completed').length;
-  return { total: list.length, onboarding: list.length - completed, completed };
-}
 
 /**
  * The signed-in user's own Growth Partner row, or null when the account is
@@ -193,22 +165,6 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
   return (data ?? null) as GrowthPartner | null;
 }
 
-/**
- * Referral rows belonging to ONE partner. The growth_partner_id filter runs
- * server-side, and RLS independently restricts the caller to their own
- * referrals — a partner can never receive another partner's rows.
- */
-export async function fetchMyGrowthReferrals(partnerUserId: string): Promise<GrowthReferralRow[]> {
-  const { data, error } = await supabase
-    .from('growth_onboarding')
-    .select('user_id, status, linked_at, template_started_at, template_completed_at')
-    .eq('growth_partner_id', partnerUserId)
-    .order('linked_at', { ascending: false });
-  if (error) throw rpcError('Referral list lookup failed', error);
-  return ((data ?? []) as GrowthReferralRow[]).filter(
-    (row) => row && row.user_id && row.growth_partner_id !== undefined
-  );
-}
 
 /** True when a Supabase/PostgREST failure means the session must be renewed. */
 export function isSessionExpiredError(error: unknown): boolean {
@@ -249,17 +205,17 @@ export function resolveGrowthPartnerGate(input: {
   return 'ready';
 }
 
-/** Human label for a referral's onboarding status (dashboard + list). */
+/** Human label for a referral's onboarding status (the ONE reusable mapping). */
 export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue): string {
   switch (status) {
     case 'template_completed':
       return 'Completed';
     case 'template_started':
-      return 'Template started';
+      return 'Website Started';
     case 'linked':
-      return 'Onboarding';
+      return 'Referral Added';
     default:
-      return 'Linked';
+      return 'Pending';
   }
 }
 
@@ -317,4 +273,132 @@ export function isCompletionNotReadyError(error: unknown): boolean {
 export function toCompletionError(error: unknown): Error {
   if (isCompletionNotReadyError(error)) return new Error(TEMPLATE_COMPLETION_NOT_READY_MESSAGE);
   return new Error(TEMPLATE_COMPLETION_GENERIC_MESSAGE);
+}
+
+// ============================================================================
+// Growth Partner operational dashboard (Phase 6 — same anon client, same RLS).
+//
+// Reads go through three server-side RPCs (20260915_growth_partner_dashboard):
+// get_my_partner_dashboard / get_my_partner_referrals /
+// get_my_partner_performance. Each derives the partner from auth.uid() and
+// returns only that partner's own referrals — the frontend never passes a
+// partner id, never filters by partner, and never computes KPI or financial
+// totals. (The Phase 2 client-side list fetch + reducer were removed: counts
+// and rates now come from the backend.)
+// ============================================================================
+
+/** Server-side status filter accepted by get_my_partner_referrals. */
+export type PartnerReferralFilter = 'all' | 'pending' | 'in_progress' | 'completed';
+
+/** UI labels for the referral status filter (single reusable mapping). */
+export const PARTNER_REFERRAL_FILTER_LABELS: Record<PartnerReferralFilter, string> = {
+  all: 'All',
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+};
+
+/** One referral row for the caller's OWN referrals (masked ref, no ids). */
+export interface PartnerReferralEntry {
+  /** Masked reference ('…' + last 8 id chars) — never the full user id. */
+  ref: string;
+  /** Display name from profiles, or null when unavailable. */
+  display_name: string | null;
+  status: GrowthOnboardingStatusValue;
+  linked_at: string | null;
+  template_started_at: string | null;
+  template_completed_at: string | null;
+}
+
+/** Paginated referral list with a server-side total for the pager. */
+export interface PartnerReferralList {
+  total: number;
+  limit: number;
+  offset: number;
+  rows: PartnerReferralEntry[];
+}
+
+/** Recent-activity event kinds (backend activity types). */
+export type PartnerActivityType = 'referral_added' | 'website_started' | 'website_completed';
+
+/** UI labels for activity events (single reusable mapping). */
+export const PARTNER_ACTIVITY_LABELS: Record<PartnerActivityType, string> = {
+  referral_added: 'New referral added',
+  website_started: 'User started website',
+  website_completed: 'Website completed',
+};
+
+export interface PartnerActivityEntry {
+  type: PartnerActivityType;
+  ref: string;
+  display_name: string | null;
+  at: string | null;
+}
+
+export interface PartnerDashboardData {
+  partner: { referral_code: string; is_active: boolean; partner_since: string };
+  kpis: { total_referrals: number; active_onboarding: number; completed: number };
+  recent_activity: PartnerActivityEntry[];
+}
+
+export interface PartnerMonthlyPoint {
+  /** Calendar month as YYYY-MM. */
+  month: string;
+  referred: number;
+  completed: number;
+}
+
+export interface PartnerPerformanceData {
+  total_referrals: number;
+  completed: number;
+  active_onboarding: number;
+  websites_started: number;
+  completion_rate_pct: number;
+  monthly: PartnerMonthlyPoint[];
+}
+
+/** One-call dashboard read: partner card + server KPIs + recent activity. */
+export async function fetchMyPartnerDashboard(): Promise<PartnerDashboardData> {
+  const { data, error } = await supabase.rpc('get_my_partner_dashboard');
+  if (error) throw rpcError('Partner dashboard lookup failed', error);
+  return data as PartnerDashboardData;
+}
+
+/** Own referrals with server-side filter, search and pagination. */
+export async function fetchMyPartnerReferrals(input: {
+  status?: PartnerReferralFilter;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<PartnerReferralList> {
+  const { data, error } = await supabase.rpc('get_my_partner_referrals', {
+    p_status_filter: input.status ?? 'all',
+    p_search: input.search ?? null,
+    p_limit: input.limit ?? 20,
+    p_offset: input.offset ?? 0,
+  });
+  if (error) throw rpcError('Partner referral lookup failed', error);
+  return data as PartnerReferralList;
+}
+
+/** Server-side aggregates: totals, completion rate, monthly history. */
+export async function fetchMyPartnerPerformance(): Promise<PartnerPerformanceData> {
+  const { data, error } = await supabase.rpc('get_my_partner_performance');
+  if (error) throw rpcError('Partner performance lookup failed', error);
+  return data as PartnerPerformanceData;
+}
+
+/** Generic message for dashboard section failures (never SQL/database text). */
+export const PARTNER_SECTION_ERROR_MESSAGE = 'Could not load this section. Please try again.';
+
+/**
+ * Maps dashboard RPC failures to safe UI copy. Only the backend's own safe
+ * messages pass through; everything else becomes the generic retry message
+ * so raw SQL/database errors are never displayed.
+ */
+export function toSafePartnerSectionError(error: unknown): Error {
+  const message = String((error as Error)?.message || error || '');
+  const safe = message.match(/Growth Partner access required|Sign in required|Unknown referral filter/i);
+  if (safe) return new Error(safe[0]);
+  return new Error(PARTNER_SECTION_ERROR_MESSAGE);
 }

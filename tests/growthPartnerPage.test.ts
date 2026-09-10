@@ -1,14 +1,14 @@
 // ============================================================================
-// Growth Partner page (Phase 2) — route, gate, dashboard and RLS contract.
+// Growth Partner page (Phase 2 gate + Phase 6 operational dashboard).
 //
 //   • Route helpers resolve /growth-partner/... per the app's router idioms.
 //   • resolveGrowthPartnerGate maps auth + backend outcome to one page state.
-//   • summarizeGrowthReferrals reduces a partner's OWN rows to dashboard counts.
+//   • growthReferralStatusLabel is the single status→UI mapping.
 //   • Server-rendered output pins every gate state, the dashboard contents
-//     (real code + real counts, empty state) and the placeholder sections.
-//   • PGlite replays the UI's EXACT database queries as Partner A / Partner B
-//     and pins that each partner receives only their own rows — the page never
-//     fetches all users and filters in React.
+//     (real code + server counts + activity, empty state) and the six tabs.
+//   • PGlite replays the UI's EXACT authorization queries as Partner A /
+//     Partner B and pins that each partner receives only their own rows —
+//     the page never fetches all users and filters in React.
 // ============================================================================
 
 import assert from 'node:assert/strict';
@@ -29,14 +29,10 @@ import {
   growthReferralStatusLabel,
   isSessionExpiredError,
   resolveGrowthPartnerGate,
-  summarizeGrowthReferrals,
   type GrowthPartner,
-  type GrowthReferralRow,
+  type PartnerDashboardData,
 } from '../src/lib/growthPartner';
 import {
-  GROWTH_PARTNER_COMING_SOON_BODY,
-  GROWTH_PARTNER_EMPTY_BODY,
-  GROWTH_PARTNER_EMPTY_TITLE,
   GROWTH_PARTNER_MOCK_BODY,
   GROWTH_PARTNER_MOCK_TITLE,
   GROWTH_PARTNER_SECTION_LABELS,
@@ -46,8 +42,6 @@ import {
   GROWTH_PARTNER_SIGNIN_TITLE,
   GROWTH_PARTNER_UNAUTHORIZED_BODY,
   GROWTH_PARTNER_UNAUTHORIZED_TITLE,
-  GrowthPartnerComingSoon,
-  GrowthPartnerDashboard,
   GrowthPartnerLoadError,
   GrowthPartnerLoading,
   GrowthPartnerMockNotice,
@@ -55,8 +49,12 @@ import {
   GrowthPartnerSectionTabs,
   GrowthPartnerSignInPrompt,
   GrowthPartnerUnauthorized,
-  growthPartnerComingSoonTitle,
 } from '../src/components/GrowthPartnerPage';
+import {
+  GROWTH_PARTNER_NO_REFERRALS_BODY,
+  GROWTH_PARTNER_NO_REFERRALS_TITLE,
+  GrowthPartnerDashboard,
+} from '../src/components/GrowthPartnerSections';
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -64,7 +62,10 @@ import {
 
 test('growth partner routes resolve per the existing router conventions', () => {
   assert.equal(GROWTH_PARTNER_PATH, '/growth-partner');
-  assert.deepEqual([...GROWTH_PARTNER_SECTIONS], ['dashboard', 'referrals', 'customers', 'performance', 'commission']);
+  assert.deepEqual(
+    [...GROWTH_PARTNER_SECTIONS],
+    ['dashboard', 'referrals', 'customers', 'performance', 'commission', 'profile']
+  );
   assert.equal(isGrowthPartnerPath('/growth-partner'), true);
   assert.equal(isGrowthPartnerPath('/growth-partner/referrals'), true);
   assert.equal(isGrowthPartnerPath('/growth-partner/'), true);
@@ -74,6 +75,7 @@ test('growth partner routes resolve per the existing router conventions', () => 
   assert.equal(matchGrowthPartnerRoute('/growth-partner'), 'dashboard');
   assert.equal(matchGrowthPartnerRoute('/growth-partner/performance'), 'performance');
   assert.equal(matchGrowthPartnerRoute('/growth-partner/commission/'), 'commission');
+  assert.equal(matchGrowthPartnerRoute('/growth-partner/profile'), 'profile');
   // Unknown sections fall back to the dashboard, never a blank screen.
   assert.equal(matchGrowthPartnerRoute('/growth-partner/payouts'), 'dashboard');
   assert.equal(matchGrowthPartnerRoute('/elsewhere'), 'dashboard');
@@ -82,6 +84,7 @@ test('growth partner routes resolve per the existing router conventions', () => 
   assert.equal(growthPartnerPath('customers'), '/growth-partner/customers');
   assert.equal(growthPartnerPath('performance'), '/growth-partner/performance');
   assert.equal(growthPartnerPath('commission'), '/growth-partner/commission');
+  assert.equal(growthPartnerPath('profile'), '/growth-partner/profile');
 });
 
 // ---------------------------------------------------------------------------
@@ -137,27 +140,10 @@ test('session-expiry detection covers Supabase/PostgREST failure shapes', () => 
   assert.equal(isSessionExpiredError({ code: 'PGRST301' }), true);
 });
 
-test('referral summaries count total / onboarding / completed from partner rows', () => {
-  const row = (status: GrowthReferralRow['status']): GrowthReferralRow => ({
-    user_id: `u-${status}`,
-    status,
-    linked_at: '2026-09-02T00:00:00.000Z',
-    template_started_at: null,
-    template_completed_at: null,
-  });
-  assert.deepEqual(summarizeGrowthReferrals([]), { total: 0, onboarding: 0, completed: 0 });
-  assert.deepEqual(summarizeGrowthReferrals([row('linked'), row('template_started'), row('template_completed')]), {
-    total: 3,
-    onboarding: 2,
-    completed: 1,
-  });
-  assert.deepEqual(summarizeGrowthReferrals([row('template_completed')]), {
-    total: 1,
-    onboarding: 0,
-    completed: 1,
-  });
-  assert.equal(growthReferralStatusLabel('linked'), 'Onboarding');
-  assert.equal(growthReferralStatusLabel('template_started'), 'Template started');
+test('referral statuses map through the single shared label mapping', () => {
+  assert.equal(growthReferralStatusLabel('not_started'), 'Pending');
+  assert.equal(growthReferralStatusLabel('linked'), 'Referral Added');
+  assert.equal(growthReferralStatusLabel('template_started'), 'Website Started');
   assert.equal(growthReferralStatusLabel('template_completed'), 'Completed');
 });
 
@@ -225,35 +211,20 @@ test('the page container renders its loading state on first paint', () => {
   assert.match(html, /Loading your partner area/);
 });
 
-const DASHBOARD_ROWS: GrowthReferralRow[] = [
-  {
-    user_id: 'b0000000-0000-4000-8000-000000000001',
-    status: 'template_completed',
-    linked_at: '2026-09-02T10:00:00.000Z',
-    template_started_at: '2026-09-03T10:00:00.000Z',
-    template_completed_at: '2026-09-04T10:00:00.000Z',
-  },
-  {
-    user_id: 'b0000000-0000-4000-8000-000000000002',
-    status: 'template_started',
-    linked_at: '2026-09-05T10:00:00.000Z',
-    template_started_at: '2026-09-06T10:00:00.000Z',
-    template_completed_at: null,
-  },
-  {
-    user_id: 'b0000000-0000-4000-8000-000000000003',
-    status: 'linked',
-    linked_at: '2026-09-07T10:00:00.000Z',
-    template_started_at: null,
-    template_completed_at: null,
-  },
-];
+const DASHBOARD_SAMPLE: PartnerDashboardData = {
+  partner: { referral_code: 'ALPHA01', is_active: true, partner_since: '2026-09-01T00:00:00.000Z' },
+  kpis: { total_referrals: 3, active_onboarding: 2, completed: 1 },
+  recent_activity: [
+    { type: 'website_completed', ref: '\u202600000001', display_name: 'User One', at: '2026-09-04T10:00:00.000Z' },
+    { type: 'website_started', ref: '\u202600000002', display_name: null, at: '2026-09-06T10:00:00.000Z' },
+    { type: 'referral_added', ref: '\u202600000003', display_name: 'User Three', at: '2026-09-07T10:00:00.000Z' },
+  ],
+};
 
-test('the dashboard shows the real referral code, profile, counts and referral rows', () => {
+test('the dashboard shows the real referral code, profile, counts and activity', () => {
   const html = render(
     React.createElement(GrowthPartnerDashboard, {
-      partner: PARTNER_ROW,
-      referrals: DASHBOARD_ROWS,
+      dashboard: DASHBOARD_SAMPLE,
       displayName: 'Partner Anita',
       email: 'anita@example.com',
     })
@@ -267,24 +238,29 @@ test('the dashboard shows the real referral code, profile, counts and referral r
   assert.match(html, /Partner Anita/);
   assert.match(html, /anita@example\.com/);
   assert.match(html, /Active/);
-  // 5. Counts from the partner's own rows: 3 total, 2 onboarding, 1 completed.
-  assert.match(html, /Total referred/);
-  assert.match(html, /Onboarding now/);
+  // 5. Server KPI counts: 3 total, 2 onboarding, 1 completed.
+  assert.match(html, /Total Referrals/);
+  assert.match(html, /Active Onboarding/);
   assert.match(html, />3</);
   assert.match(html, />2</);
   assert.match(html, />1</);
-  assert.match(html, /Completed/);
-  // Referral rows carry status labels, never another partner's code.
-  assert.match(html, /Template started/);
-  assert.match(html, /Onboarding/);
+  assert.match(html, /Completed Customers/);
+  // Recent activity carries backend event labels, never another partner's code.
+  assert.match(html, /Website completed/);
+  assert.match(html, /User started website/);
+  assert.match(html, /New referral added/);
+  assert.match(html, /User One/);
+  assert.match(html, /Referred user \u202600000002/);
   assert.doesNotMatch(html, /BETA002/);
 });
 
 test('an inactive partner sees a Paused status, not a lockout', () => {
   const html = render(
     React.createElement(GrowthPartnerDashboard, {
-      partner: { ...PARTNER_ROW, is_active: false },
-      referrals: DASHBOARD_ROWS,
+      dashboard: {
+        ...DASHBOARD_SAMPLE,
+        partner: { ...DASHBOARD_SAMPLE.partner, is_active: false },
+      },
       displayName: 'Partner Anita',
       email: 'anita@example.com',
     })
@@ -297,36 +273,27 @@ test('an inactive partner sees a Paused status, not a lockout', () => {
 test('7. the empty state renders when the partner has no referrals', () => {
   const html = render(
     React.createElement(GrowthPartnerDashboard, {
-      partner: PARTNER_ROW,
-      referrals: [],
+      dashboard: {
+        ...DASHBOARD_SAMPLE,
+        kpis: { total_referrals: 0, active_onboarding: 0, completed: 0 },
+        recent_activity: [],
+      },
       displayName: 'Partner Anita',
       email: 'anita@example.com',
     })
   );
-  assert.match(html, new RegExp(GROWTH_PARTNER_EMPTY_TITLE));
-  assert.match(html, new RegExp(GROWTH_PARTNER_EMPTY_BODY));
+  assert.match(html, new RegExp(GROWTH_PARTNER_NO_REFERRALS_TITLE));
+  assert.match(html, new RegExp(GROWTH_PARTNER_NO_REFERRALS_BODY));
   // Zero counts, still showing the partner's own code.
   assert.match(html, />0</);
   assert.match(html, /ALPHA01/);
 });
 
-test('future sections render explicit not-implemented placeholders', () => {
-  for (const section of ['referrals', 'customers', 'performance', 'commission'] as const) {
-    const html = render(React.createElement(GrowthPartnerComingSoon, { section }));
-    assert.match(html, new RegExp(growthPartnerComingSoonTitle(section)));
-    assert.match(html, new RegExp(GROWTH_PARTNER_COMING_SOON_BODY));
-    assert.match(html, new RegExp(GROWTH_PARTNER_SECTION_LABELS[section]));
-    // No fake functionality: no numbers, no tables, no forms.
-    assert.doesNotMatch(html, /<table/);
-    assert.doesNotMatch(html, /<form/);
-  }
-});
-
-test('the section navigation lists all five modules with the active one marked', () => {
+test('the section navigation lists all six modules with the active one marked', () => {
   const html = render(
     React.createElement(GrowthPartnerSectionTabs, { section: 'referrals', navigate: () => {} })
   );
-  for (const label of ['Dashboard', 'Referrals', 'Customers', 'Performance', 'Commission']) {
+  for (const label of ['Dashboard', 'Referrals', 'Customers', 'Performance', 'Commission', 'Profile']) {
     assert.match(html, new RegExp(label));
   }
   assert.match(html, /aria-current="page"/);
@@ -395,7 +362,14 @@ async function uiReferralRows(db: any, userId: string, partnerId: string) {
      from public.growth_onboarding where growth_partner_id = $1::uuid order by linked_at desc`,
     [partnerId]
   );
-  return res.rows as GrowthReferralRow[];
+  return res.rows as Array<{
+    user_id: string;
+    status: string;
+    linked_at: string | null;
+    template_started_at: string | null;
+    template_completed_at: string | null;
+    growth_partner_id: string | null;
+  }>;
 }
 
 test('5. referral rows and counts belong only to the authenticated Growth Partner', async () => {
@@ -412,8 +386,9 @@ test('5. referral rows and counts belong only to the authenticated Growth Partne
       rows.map((row) => row.user_id).sort(),
       [USER_1, USER_2]
     );
-    // The dashboard reducer sees exactly Partner A's funnel.
-    assert.deepEqual(summarizeGrowthReferrals(rows), { total: 2, onboarding: 1, completed: 1 });
+    // Partner A's funnel behind the server KPIs: 2 total, 1 completed.
+    assert.equal(rows.length, 2);
+    assert.equal(rows.filter((row) => row.status === 'template_completed').length, 1);
   } finally {
     await db.close();
   }
@@ -441,7 +416,11 @@ test('6. Partner A cannot access Partner B referral data, even with an explicit 
 });
 
 test('the Growth Partner page never references the service role', () => {
-  for (const file of ['../src/components/GrowthPartnerPage.tsx', '../src/lib/growthPartner.ts']) {
+  for (const file of [
+    '../src/components/GrowthPartnerPage.tsx',
+    '../src/components/GrowthPartnerSections.tsx',
+    '../src/lib/growthPartner.ts',
+  ]) {
     const src = readFileSync(new URL(file, import.meta.url), 'utf8');
     const codeOnly = src
       .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -450,4 +429,9 @@ test('the Growth Partner page never references the service role', () => {
   }
   const pageSrc = readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8');
   assert.match(pageSrc, /from '\.\.\/lib\/growthPartner'/);
+  const sectionsSrc = readFileSync(
+    new URL('../src/components/GrowthPartnerSections.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(sectionsSrc, /from '\.\.\/lib\/growthPartner'/);
 });

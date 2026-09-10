@@ -152,9 +152,9 @@ export function isStaffCommissionPath(pathname: string): boolean {
 // Growth Partner area (`/growth-partner/...`)
 // ---------------------------------------------------------------------------
 // Second surface of the same deployment, same Supabase Auth/database/backend.
-// Sections after Dashboard are placeholders in this phase (routes resolve so
-// deep links and refreshes work; the page states they are not implemented
-// yet). Unknown sub-paths fall back to `dashboard` rather than a blank screen.
+// All six sections are real in Phase 6 (commission honestly reports that no
+// partner commission model exists yet). Unknown sub-paths fall back to
+// `dashboard` rather than a blank screen.
 export const GROWTH_PARTNER_PATH = '/growth-partner';
 
 export type GrowthPartnerSection =
@@ -162,7 +162,8 @@ export type GrowthPartnerSection =
   | 'referrals'
   | 'customers'
   | 'performance'
-  | 'commission';
+  | 'commission'
+  | 'profile';
 
 export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'dashboard',
@@ -170,6 +171,7 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'customers',
   'performance',
   'commission',
+  'profile',
 ];
 
 /** True when the path belongs to the Growth Partner area at all. */
