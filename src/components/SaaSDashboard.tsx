@@ -445,7 +445,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           {actionError && <p role="alert">{actionError}</p>}
         </div>
         {/* TAB CONTENT: OVERVIEW */}
-        {activeTab === 'overview' && (
+        {activeTab === 'overview' && live.loadedAt && (
           <div className="flex flex-col gap-6">
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -910,7 +910,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
 
               <div className="text-xs text-slate-500 font-medium">
-                {appointmentsSubTab === 'calendar' ? (
+                {appointmentsSubTab === 'calendar' ? (live.loadedAt ? (
                   <span>Visually manage appointments, staff schedules, and daily slots</span>
                 ) : (
                   <span>Incoming web booking requests & customer QR pass check-in</span>
@@ -929,7 +929,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 stylists={live.stylists || []}
                 primaryAccentColor={currentPrimaryColor}
               />
-            ) : (
+            ) : <p>Calendar will appear when live bookings finish loading successfully.</p>) : (
               <BookingManager
                 primaryAccentColor={currentPrimaryColor}
                 ownerId={profile.ownerId}

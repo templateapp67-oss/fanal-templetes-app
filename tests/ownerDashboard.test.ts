@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { allRows, createOwnerAppointment, dashboardAppointment, readOwnerDashboard } from '../server/ownerDashboard';
 
 const request = { headers: { authorization: 'Bearer token' }, query: { subdomain: 'mine' } };
-function database(options: { member?: boolean; bookings?: any[]; error?: boolean } = {}) {
+function database(options: { member?: boolean; bookings?: any[]; error?: boolean; salons?: any[] } = {}) {
   const calls: any[] = [];
   return { calls, auth: { getUser: async () => ({ data: { user: { id: 'actor' } } }) }, from(table: string) {
     const call: any = { table, filters: {} }; calls.push(call);
@@ -12,7 +12,7 @@ function database(options: { member?: boolean; bookings?: any[]; error?: boolean
     for (const method of ['eq','in']) q[method] = (key: string,value: any) => { call.filters[key] = value; return q; };
     q.then = (resolve: any) => resolve(options.error && table === 'bookings' ? { error: { code: '42501' } } : { data:
       table === 'organization_members' ? options.member === false ? [] : [{ organization_id: 'org' }] :
-      table === 'salons' ? [{ id: 'salon', timezone: 'Asia/Kolkata' }] :
+      table === 'salons' ? options.salons || [{ id: 'salon', timezone: 'Asia/Kolkata' }] :
       table === 'bookings' ? options.bookings || [] : table === 'services' || table === 'staff' ? call.maybeSingle ? { id: 'catalog' } : [] : [] });
     return q;
   } };
@@ -48,4 +48,16 @@ test('manual appointment delegates atomic insertion and rejects invented payment
   const result=await createOwnerAppointment(db,req,(() => ({rpc:async(name: string,args:any)=>{rpc={name,args};return {data:'booking'};}})) as any);
   assert.equal(result.id,'booking');assert.equal(rpc.name,'create_owner_booking');assert.equal(rpc.args.p_idempotency_key,'stable-reference');assert.equal(rpc.args.p_customer_user_id,null);assert.equal(rpc.args.p_salon_id,'salon');
   await assert.rejects(createOwnerAppointment(db,{...req,body:{...req.body,paymentStatus:'paid_full'}}),/payment workflow/);
+});
+
+test('legacy slug resolves only an unambiguous authorized salon', async () => {
+  const db = database({ salons: [{id:'one',slug:'saved-slug',timezone:'Asia/Kolkata'}] });
+  await readOwnerDashboard(db, request);
+  assert.equal(db.calls.find(c=>c.table==='bookings').filters.salon_id,'one');
+  const multiple = database({ salons: [{id:'one',slug:'other'},{id:'two',slug:'another'}] });
+  await assert.rejects(readOwnerDashboard(multiple,request), /Select one salon/);
+  assert.ok(!multiple.calls.some(c=>c.table==='bookings'));
+  const matched = database({ salons: [{id:'one',slug:'mine'},{id:'two',slug:'another'}] });
+  await readOwnerDashboard(matched,request);
+  assert.equal(matched.calls.find(c=>c.table==='bookings').filters.salon_id,'one');
 });
