@@ -1,3 +1,4 @@
+import { ownerDashboardHandler } from './server/ownerDashboard.js';
 // Loads process env > .env > .env.development (see server/env.ts).
 import "./server/env";
 import express from "express";
@@ -467,7 +468,9 @@ async function startServer() {
   app.post("/api/bookings/mine/cancel", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createCancelMyBookingHandler(bookingMineDeps)));
   app.post("/api/bookings/mine/review", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createReviewMyBookingHandler(bookingMineDeps)));
 
-  app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
+  app.get("/api/owner/dashboard", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db)));
+app.post("/api/owner/appointments", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db, true)));
+app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
   app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingGetHandler(bookingRouteDeps)));
   app.post("/api/bookings/update", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingUpdateHandler(bookingRouteDeps)));
   app.post("/api/bookings/check-in", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingCheckinHandler(bookingRouteDeps)));
