@@ -61,6 +61,66 @@ function getTodayStr(): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Map the new-appointment form onto the payload the backend expects.
+ *
+ * Rules (regression-tested in tests/appointmentsCalendar.test.ts):
+ *  • only PERSISTED database catalogue records may be booked — a missing
+ *    service/staff id is an error, never a silent substitution;
+ *  • an empty catalogue is an error the owner can act on;
+ *  • the id/reference fields are stable so a retried save stays idempotent.
+ */
+export function buildAppointmentDraft(input: {
+  reference: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail?: string;
+  serviceId: string;
+  stylistId: string;
+  date: string;
+  time: string;
+  paymentStatus: 'pay_at_salon' | 'paid_deposit' | 'paid_full';
+  services: SalonService[];
+  stylists: Stylist[];
+}): { ok: true; appointment: Appointment } | { ok: false; error: string } {
+  const clientName = input.clientName.trim();
+  const clientPhone = input.clientPhone.trim();
+  if (!clientName) return { ok: false, error: 'Please provide client name' };
+  if (!clientPhone) return { ok: false, error: 'Please provide client phone number' };
+  if (!input.services.length || !input.stylists.length) {
+    return { ok: false, error: 'Save at least one service and one specialist in your salon catalogue before adding an appointment.' };
+  }
+  const matchedService = input.services.find((s) => s.id === input.serviceId);
+  if (!matchedService) {
+    return { ok: false, error: 'The selected service is no longer available. Close this form, reopen it and choose a service from the saved catalogue.' };
+  }
+  const matchedStylist = input.stylists.find((s) => s.id === input.stylistId);
+  if (!matchedStylist) {
+    return { ok: false, error: 'The selected specialist is no longer available. Close this form, reopen it and choose a specialist from the saved team.' };
+  }
+  return {
+    ok: true,
+    appointment: {
+      id: input.reference,
+      clientName,
+      clientPhone,
+      clientEmail: (input.clientEmail || '').trim(),
+      serviceId: matchedService.id,
+      serviceName: matchedService.name,
+      servicePrice: matchedService.price,
+      stylistId: matchedStylist.id,
+      stylistName: matchedStylist.name,
+      date: input.date,
+      time: input.time,
+      status: 'confirmed',
+      paymentStatus: input.paymentStatus,
+      amountPaid: input.paymentStatus === 'paid_full' ? matchedService.price
+        : input.paymentStatus === 'paid_deposit' ? Math.round(matchedService.price * 0.2) : 0,
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
 export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> = ({
   appointments,
   setAppointments,
@@ -238,37 +298,22 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
 
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClientName.trim()) {
-      setFormError('Please provide client name');
-      return;
-    }
-    if (!newClientPhone.trim()) {
-      setFormError('Please provide client phone number');
-      return;
-    }
-
-    const matchedService = services.find((s) => s.id === newServiceId) || services[0];
-    const matchedStylist = stylists.find((s) => s.id === newStylistId) || stylists[0];
-
-    const newApt: Appointment = {
-      id: bookingReference.current,
-      clientName: newClientName.trim(),
-      clientPhone: newClientPhone.trim(),
-      clientEmail: newClientEmail.trim(),
-      serviceId: matchedService ? matchedService.id : 'custom',
-      serviceName: matchedService ? matchedService.name : 'Custom Service',
-      servicePrice: matchedService ? matchedService.price : 500,
-      stylistId: matchedStylist ? matchedStylist.id : 'st-default',
-      stylistName: matchedStylist ? matchedStylist.name : 'Salon Staff',
+    const draft = buildAppointmentDraft({
+      reference: bookingReference.current,
+      clientName: newClientName,
+      clientPhone: newClientPhone,
+      clientEmail: newClientEmail,
+      serviceId: newServiceId,
+      stylistId: newStylistId,
       date: newDate,
       time: newTime,
-      status: 'confirmed',
       paymentStatus: newPaymentStatus,
-      amountPaid: newPaymentStatus === 'paid_full' ? (matchedService?.price || 0) : newPaymentStatus === 'paid_deposit' ? Math.round((matchedService?.price || 0) * 0.2) : 0,
-      createdAt: new Date().toISOString(),
-    };
+      services,
+      stylists,
+    });
+    if (draft.ok === false) { setFormError(draft.error); return; }
 
-    try { setFormError(''); await onCreate(newApt); setIsAddModalOpen(false); }
+    try { setFormError(''); await onCreate(draft.appointment); setIsAddModalOpen(false); }
     catch (error: any) { setFormError(error.message); }
   };
 
@@ -1296,6 +1341,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                   onChange={(e) => setNewServiceId(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
                 >
+                  {services.length === 0 && <option value="">No saved services yet — add one in Services first</option>}
                   {services.map((svc) => (
                     <option key={svc.id} value={svc.id}>
                       {svc.name} — ₹{svc.price} ({svc.durationMinutes} mins)
@@ -1311,9 +1357,10 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                   onChange={(e) => setNewStylistId(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
                 >
+                  {stylists.length === 0 && <option value="">No saved specialists yet — add one in Team first</option>}
                   {stylists.map((st) => (
                     <option key={st.id} value={st.id}>
-                      {st.name} ({st.role})
+                      {st.role ? `${st.name} (${st.role})` : st.name}
                     </option>
                   ))}
                 </select>

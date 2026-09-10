@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { allRows, createOwnerAppointment, dashboardAppointment, readOwnerDashboard, validateSalonHours, salonHoursHandler } from '../server/ownerDashboard';
 
 const request = { headers: { authorization: 'Bearer token' }, query: { subdomain: 'mine' } };
-function database(options: { member?: boolean; bookings?: any[]; error?: boolean; salons?: any[] } = {}) {
+function database(options: { member?: boolean; bookings?: any[]; error?: boolean; salons?: any[]; catalogMissing?: boolean } = {}) {
   const calls: any[] = [];
   return { calls, auth: { getUser: async () => ({ data: { user: { id: 'actor' } } }) }, from(table: string) {
     const call: any = { table, filters: {} }; calls.push(call);
@@ -13,7 +13,7 @@ function database(options: { member?: boolean; bookings?: any[]; error?: boolean
     q.then = (resolve: any) => resolve(options.error && table === 'bookings' ? { error: { code: '42501' } } : { data:
       table === 'organization_members' ? options.member === false ? [] : [{ organization_id: 'org' }] :
       table === 'salons' ? options.salons || [{ id: 'salon', timezone: 'Asia/Kolkata' }] :
-      table === 'bookings' ? options.bookings || [] : table === 'services' || table === 'staff' ? call.maybeSingle ? { id: 'catalog' } : [] : [] });
+      table === 'bookings' ? options.bookings || [] : table === 'services' || table === 'staff' ? call.maybeSingle ? options.catalogMissing ? null : { id: 'catalog' } : [] : [] });
     return q;
   } };
 }
@@ -44,10 +44,49 @@ test('calendar uses canonical price, customer, staff and salon-local appointment
 });
 test('manual appointment delegates atomic insertion and rejects invented payment status',async () => {
   let rpc: any;
-  const db=database(); const req={...request,body:{clientName:'Test',clientPhone:'123',serviceId:'cut',stylistId:'staff',date:'2026-10-10',time:'10:00',reference:'stable-reference',paymentStatus:'pay_at_salon'}};
+  const serviceId='40000000-0000-4000-8000-000000000001', staffId='50000000-0000-4000-8000-000000000001';
+  const db=database(); const req={...request,body:{clientName:'Test',clientPhone:'123',clientEmail:'t@example.com',serviceId,stylistId:staffId,date:'2026-10-10',time:'10:00',reference:'stable-reference',paymentStatus:'pay_at_salon'}};
   const result=await createOwnerAppointment(db,req,(() => ({rpc:async(name: string,args:any)=>{rpc={name,args};return {data:'booking'};}})) as any);
-  assert.equal(result.id,'booking');assert.equal(rpc.name,'create_owner_booking');assert.equal(rpc.args.p_idempotency_key,'stable-reference');assert.equal(rpc.args.p_customer_user_id,null);assert.equal(rpc.args.p_salon_id,'salon');
+  assert.equal(result.id,'booking');assert.equal(rpc.name,'create_owner_booking');assert.equal(rpc.args.p_customer_user_id,null);assert.equal(rpc.args.p_salon_id,'salon');
+  // Only persisted catalogue UUIDs are forwarded; the reference is hashed with
+  // the caller id so a retried submit is idempotent per owner.
+  assert.deepEqual(rpc.args.p_service_ids,[serviceId]);assert.equal(rpc.args.p_staff_id,staffId);
+  assert.equal(rpc.args.p_customer_email,'t@example.com');assert.equal(rpc.args.p_customer_note,null);
+  assert.match(rpc.args.p_idempotency_key,/^[0-9a-f]{64}$/);assert.notEqual(rpc.args.p_idempotency_key,'stable-reference');
   await assert.rejects(createOwnerAppointment(db,{...req,body:{...req.body,paymentStatus:'paid_full'}}),/payment workflow/);
+});
+test('manual appointments refuse editor or placeholder catalogue ids and missing records',async () => {
+  const serviceId='40000000-0000-4000-8000-000000000001', staffId='50000000-0000-4000-8000-000000000001';
+  const db=database(); const base={clientName:'Test',clientPhone:'123',date:'2026-10-10',time:'10:00',reference:'r',paymentStatus:'pay_at_salon'};
+  const rpc=() => ({rpc:async()=>({data:'booking'})}) as any;
+  await assert.rejects(createOwnerAppointment(db,{...request,body:{...base,serviceId:'srv-1',stylistId:staffId}},rpc),/Choose a service from the saved salon catalogue/);
+  await assert.rejects(createOwnerAppointment(db,{...request,body:{...base,serviceId,stylistId:'st-default'}},rpc),/Choose a specialist from the saved salon team/);
+  // A saved catalogue record that was deleted or invalidated is reported
+  // clearly instead of being silently replaced by another record.
+  const missing = database({ catalogMissing: true });
+  await assert.rejects(createOwnerAppointment(missing,{...request,body:{...base,serviceId,stylistId:staffId}},rpc),/selected service is no longer available/);
+});
+test('database rejections of manual appointments map to actionable errors, not a generic mask', async () => {
+  const serviceId='40000000-0000-4000-8000-000000000001', staffId='50000000-0000-4000-8000-000000000001';
+  const base={clientName:'Test',clientPhone:'123',serviceId,stylistId:staffId,date:'2026-10-10',time:'10:00',reference:'r',paymentStatus:'pay_at_salon'};
+  const cases: [any, number, string, RegExp][] = [
+    [{ code:'PGRST202', message:'Could not find the function public.create_owner_booking without parameters in the schema cache' }, 503, 'booking_rpc_missing', /create_owner_booking update/],
+    [{ code:'42883', message:'function public.create_owner_booking(uuid, ...) does not exist' }, 503, 'booking_rpc_missing', /create_owner_booking update/],
+    [{ code:'42501', message:'new row violates row-level security policy' }, 403, 'forbidden', /outside your salon workspace/],
+    [{ code:'23503', message:'insert or update on table "bookings" violates foreign key constraint', details:'Key (staff_id)=(...) is not present in table "staff".' }, 409, 'staff_unavailable', /specialist is no longer available/],
+    [{ code:'23503', message:'insert or update on table "booking_items" violates foreign key constraint', details:'Key (service_id)=(...) is not present in table "services".' }, 409, 'service_unavailable', /service is no longer available/],
+    [{ code:'23P01', message:'The requested time is already booked for this specialist.' }, 409, 'slot_conflict', /already booked/],
+    [{ code:'22023', message:'The selected specialist does not offer this service.' }, 409, 'invalid_appointment_input', /does not offer this service/],
+  ];
+  for (const [error, status, code, message] of cases) {
+    let captured: any;
+    const rpc=() => ({rpc:async()=>{captured=true; return {data:null,error};}}) as any;
+    await assert.rejects(createOwnerAppointment(database(),{...request,body:{...base}},rpc),(err: any) => {
+      assert.equal(err.status,status);assert.equal(err.code,code);assert.match(err.message,message);
+      assert.ok(captured);
+      return true;
+    });
+  }
 });
 
 test('legacy slug resolves only an unambiguous authorized salon', async () => {

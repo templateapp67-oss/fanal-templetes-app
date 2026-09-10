@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { BackendError, databaseForToken, ownerSalonIds, readDatabase, verifyBackendUser } from './backendContext.js';
 import { NORMALIZED_BOOKING_SELECT, presentBooking } from './normalizedBookingAccess.js';
 import { appointmentInstant } from './appointmentTime.js';
 import { catalogId } from './normalizedBookingCreate.js';
+import { mapOwnerBookingDbError } from './ownerBookingErrors.js';
 
 // Page explicitly: PostgREST otherwise silently caps a dashboard at 1,000 rows.
 export async function allRows(query: () => any) {
@@ -46,42 +48,78 @@ export async function readOwnerDashboard(db: any, req: any) {
   const bookings = await allRows(() => db.from('bookings').select(NORMALIZED_BOOKING_SELECT).eq('salon_id', salon.id).order('id'));
   const customers = await allRows(() => db.from('salon_customers').select('id,name,phone,email').eq('salon_id', salon.id).order('id'));
   const services = await allRows(() => db.from('services').select('id,name,price_paise,duration_minutes').eq('salon_id',salon.id).eq('is_active',true).order('id'));
-  const staff = await allRows(() => db.from('staff').select('id,name').eq('salon_id',salon.id).eq('is_active',true).order('id'));
+  const staff = await allRows(() => db.from('staff').select('id,name,role_title').eq('salon_id',salon.id).eq('is_active',true).order('id'));
   const hours = await readDatabase(() => db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',salon.id).order('day_of_week'));
   const clients = customers.map((c: any) => {
     const visits = bookings.filter((b: any) => b.salon_customer_id === c.id && b.status === 'completed');
     return { ...c, totalVisits: visits.length, totalSpent: visits.reduce((sum: number,b: any) => sum + Number(b.total_paise)/100,0),
       lastVisit: visits.map((b: any) => dashboardAppointment(b).date).sort().at(-1) || '', notes: '', favoriteStylist: '' };
   });
-  return { success: true, hours, appointments: bookings.map(dashboardAppointment), clients, services: services.map(s => ({ id:s.id,name:s.name,price:Number(s.price_paise)/100,durationMinutes:s.duration_minutes,description:'',category:'',icon:'scissors' })), stylists: staff.map(s => ({id:s.id,name:s.name})), loadedAt: new Date().toISOString() };
+  return { success: true, hours, appointments: bookings.map(dashboardAppointment), clients, services: services.map(s => ({ id:s.id,name:s.name,price:Number(s.price_paise)/100,durationMinutes:s.duration_minutes,description:'',category:'',icon:'scissors' })), stylists: staff.map(s => ({id:s.id,name:s.name,role:s.role_title || ''})), loadedAt: new Date().toISOString() };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function createOwnerAppointment(db: any, req: any, userDatabase = databaseForToken) {
-  const { salon, token } = await dashboardSalon(db, req);
+  const { salon, token, user } = await dashboardSalon(db, req);
   const input = req.body || {};
   if (!String(input.clientName || '').trim() || !String(input.clientPhone || '').trim()) throw new BackendError(400, 'Client name and phone are required.');
   if (!input.reference || String(input.reference).length > 100) throw new BackendError(400, 'A booking reference is required.');
-  if (input.paymentStatus && input.paymentStatus !== 'pay_at_salon') throw new BackendError(400, 'Record payments through the payment workflow after creating the booking.');
-  const serviceId = catalogId(salon.id, 'service', String(input.serviceId || ''));
-  const staffId = catalogId(salon.id, 'staff', String(input.stylistId || ''));
+  if (input.paymentStatus && input.paymentStatus !== 'pay_at_salon') throw new BackendError(400, 'Record payments through the payment workflow after creating the booking.', 'payment_workflow_required');
+  // Only persisted catalogue UUIDs may enter database foreign keys. Editor
+  // ids, array indexes, slugs or generated frontend ids are refused here —
+  // they can never silently book an arbitrary catalogue record.
+  if (!UUID_RE.test(String(input.serviceId || ''))) throw new BackendError(400, 'Choose a service from the saved salon catalogue.', 'service_required');
+  if (!UUID_RE.test(String(input.stylistId || ''))) throw new BackendError(400, 'Choose a specialist from the saved salon team.', 'staff_required');
+  const serviceId = catalogId(salon.id, 'service', String(input.serviceId));
+  const staffId = catalogId(salon.id, 'staff', String(input.stylistId));
   const service = await readDatabase(() => db.from('services').select('id').eq('id',serviceId).eq('salon_id',salon.id).eq('is_active',true).maybeSingle());
+  if (!service) throw new BackendError(409, 'The selected service is no longer available in this salon. Refresh the calendar and choose a service from the saved catalogue.', 'service_unavailable');
   const staff = await readDatabase(() => db.from('staff').select('id').eq('id',staffId).eq('salon_id',salon.id).eq('is_active',true).maybeSingle());
-  if (!service || !staff) throw new BackendError(409, 'Save an active service and specialist before adding an appointment.');
-  const id = await readDatabase(() => userDatabase(token).rpc('create_owner_booking', {
-    p_salon_id: salon.id, p_service_ids: [serviceId], p_staff_id: staffId,
-    p_appointment_start: appointmentInstant(input.date,input.time,salon.timezone || 'Asia/Kolkata'),
-    p_customer_user_id: null, p_customer_name: String(input.clientName).trim(), p_customer_phone: String(input.clientPhone).trim(),
-    p_customer_note: input.clientEmail ? `Contact email: ${String(input.clientEmail).slice(0,254)}` : null,
-    p_is_walk_in: true, p_idempotency_key: String(input.reference),
-  }));
-  if (!id) throw new BackendError(409, 'The appointment was not created.');
+  if (!staff) throw new BackendError(409, 'The selected specialist is no longer available in this salon. Refresh the calendar and choose a specialist from the saved team.', 'staff_unavailable');
+  // Same idempotency scheme as the customer checkout path: actor + reference
+  // hashed to a stable key, so a retried submit returns the original booking.
+  const idempotencyKey = createHash('sha256').update(`${user.id}:${String(input.reference)}`).digest('hex');
+  let id: string | null = null;
+  try {
+    id = await readDatabase(() => userDatabase(token).rpc('create_owner_booking', {
+      p_salon_id: salon.id, p_service_ids: [serviceId], p_staff_id: staffId,
+      p_appointment_start: appointmentInstant(input.date, input.time, salon.timezone || 'Asia/Kolkata'),
+      p_customer_user_id: null, p_customer_name: String(input.clientName).trim(), p_customer_phone: String(input.clientPhone).trim(),
+      p_customer_email: input.clientEmail ? String(input.clientEmail).trim().slice(0, 254) : null,
+      p_customer_note: null, p_is_walk_in: true, p_idempotency_key: idempotencyKey,
+    }));
+  } catch (error: any) {
+    // Diagnostics stay in the server log: the caller identity, resolved salon,
+    // catalogue ids and the exact database rejection (code/message/details/hint).
+    console.error('[owner-appointment] create_owner_booking rejected', {
+      authUid: user.id, salonId: salon.id, serviceId, staffId,
+      appointmentStart: input.date && input.time ? `${input.date} ${input.time} (${salon.timezone || 'Asia/Kolkata'})` : null,
+      reference: String(input.reference),
+      code: error?.code ?? null, message: error?.message ?? String(error),
+      details: error?.details ?? null, hint: error?.hint ?? null,
+    });
+    throw mapOwnerBookingDbError(error);
+  }
+  if (!id) throw new BackendError(503, 'The appointment was not created. Please retry.', 'booking_not_created');
   return { success: true, id };
 }
 
-export function ownerDashboardHandler(db: any, create = false) {
+export function ownerDashboardHandler(db: any, create = false, userDatabase = databaseForToken) {
   return async (req: any, res: any) => {
-    try { res.json(await (create ? createOwnerAppointment(db,req) : readOwnerDashboard(db,req))); }
-    catch (error: any) { res.status(error instanceof BackendError ? error.status : error.code === '22023' || error.code === '23P01' ? 409 : 503).json({ success: false, error: error instanceof BackendError || error.code === '22023' || error.code === '23P01' ? error.message : 'The booking database could not complete this request. Please retry.', code: error.code || 'database_unavailable' }); }
+    try { res.json(await (create ? createOwnerAppointment(db, req, userDatabase) : readOwnerDashboard(db, req))); }
+    catch (error: any) {
+      if (!(error instanceof BackendError)) {
+        // Raw database internals never reach the browser; they land in the
+        // server log so a failure can be diagnosed without exposing them.
+        console.error('[owner-dashboard] unhandled database rejection', {
+          create, code: error?.code ?? null, message: error?.message ?? String(error),
+          details: error?.details ?? null, hint: error?.hint ?? null,
+        });
+        return res.status(503).json({ success: false, error: 'The booking database could not complete this request. Please retry.', code: 'database_unavailable' });
+      }
+      res.status(error.status).json({ success: false, error: error.message, code: error.code });
+    }
   };
 }
 
