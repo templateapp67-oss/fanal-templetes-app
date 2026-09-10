@@ -148,6 +148,53 @@ export function isStaffCommissionPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === STAFF_COMMISSION_PATH;
 }
 
+// ---------------------------------------------------------------------------
+// Growth Partner area (`/growth-partner/...`)
+// ---------------------------------------------------------------------------
+// Second surface of the same deployment, same Supabase Auth/database/backend.
+// Sections after Dashboard are placeholders in this phase (routes resolve so
+// deep links and refreshes work; the page states they are not implemented
+// yet). Unknown sub-paths fall back to `dashboard` rather than a blank screen.
+export const GROWTH_PARTNER_PATH = '/growth-partner';
+
+export type GrowthPartnerSection =
+  | 'dashboard'
+  | 'referrals'
+  | 'customers'
+  | 'performance'
+  | 'commission';
+
+export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
+  'dashboard',
+  'referrals',
+  'customers',
+  'performance',
+  'commission',
+];
+
+/** True when the path belongs to the Growth Partner area at all. */
+export function isGrowthPartnerPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === GROWTH_PARTNER_PATH || path.startsWith(`${GROWTH_PARTNER_PATH}/`);
+}
+
+/** Section for `/growth-partner` (dashboard) and `/growth-partner/:section`. */
+export function matchGrowthPartnerRoute(pathname: string): GrowthPartnerSection {
+  const segments = normalizePath(pathname)
+    .split('/')
+    .filter((segment) => segment.length > 0);
+  if (segments[0]?.toLowerCase() !== 'growth-partner') return 'dashboard';
+  const raw = String(segments[1] || '').toLowerCase();
+  return (GROWTH_PARTNER_SECTIONS as string[]).includes(raw)
+    ? (raw as GrowthPartnerSection)
+    : 'dashboard';
+}
+
+/** Canonical URL for a Growth Partner section. */
+export function growthPartnerPath(section: GrowthPartnerSection = 'dashboard'): string {
+  return section === 'dashboard' ? GROWTH_PARTNER_PATH : `${GROWTH_PARTNER_PATH}/${section}`;
+}
+
 /** Canonical URL for one booking's detail page. */
 export function bookingDetailPath(bookingId: string): string {
   return `${BOOKING_DETAIL_PREFIX}/${encodeURIComponent(String(bookingId ?? '').trim())}`;

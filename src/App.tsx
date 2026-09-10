@@ -46,9 +46,11 @@ import {
   isMyBookingsPath,
   isStaffPerformancePath,
   isStaffCommissionPath,
+  isGrowthPartnerPath,
   MY_BOOKINGS_PATH,
   STAFF_PERFORMANCE_PATH,
   STAFF_COMMISSION_PATH,
+  GROWTH_PARTNER_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
@@ -57,6 +59,7 @@ import { CustomerApp } from './customer/CustomerApp';
 import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
+import { GrowthPartnerPage } from './components/GrowthPartnerPage';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -258,8 +261,12 @@ export default function App() {
       setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
       return;
     }
+    if (isGrowthPartnerPath(path)) {
+      setCurrentViewState((view) => (view === 'growthPartner' ? view : 'growthPartner'));
+      return;
+    }
     setCurrentViewState((view) =>
-      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission'
+      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission' || view === 'growthPartner'
         ? 'landing'
         : view
     );
@@ -281,6 +288,8 @@ export default function App() {
         navigate(STAFF_PERFORMANCE_PATH);
       } else if (view === 'staffCommission') {
         navigate(STAFF_COMMISSION_PATH);
+      } else if (view === 'growthPartner') {
+        navigate(GROWTH_PARTNER_PATH);
       } else {
         navigate('/');
       }
@@ -424,9 +433,7 @@ export default function App() {
   // WHITE-LABEL TENANT BOOTSTRAP
   // Supports:
   //   1. Subdomain / Host lookup (e.g. https://arts-by-uma.nexora.in)
-  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site=arts-by-uma)
-  //   3. Direct public view mode (?view=public)
-  // -------------------------------------------------------------------------
+  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site---------------------------------------------------------
   const [siteTenant, setSiteTenant] = useState<{
     isTenant: boolean;
     found: boolean;
@@ -1605,6 +1612,17 @@ export default function App() {
           primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
           currencySymbol={profile.currency || '₹'}
           salonName={profile.businessName}
+        />
+      )}
+
+      {currentView === 'growthPartner' && (
+        <GrowthPartnerPage
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onBack={() => setCurrentView('dashboard')}
+          path={path}
+          navigate={navigate}
+          accentHex={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
         />
       )}
 

@@ -11,6 +11,7 @@ export type AppView =
   | 'dashboard'
   | 'staffPerformance'
   | 'staffCommission'
+  | 'growthPartner'
   | 'bookings'
   | 'bookingDetail';
 

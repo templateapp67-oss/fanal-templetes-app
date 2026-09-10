@@ -138,3 +138,127 @@ export async function updateMyOnboardingProgress(
   if (error) throw rpcError('Onboarding update failed', error);
   return data as GrowthOnboardingStatus;
 }
+
+// ============================================================================
+// Growth Partner area reads (Phase 2 — same anon client, same RLS model).
+//
+// Authorization is enforced by the DATABASE, not by route hiding:
+//   • growth_partners has a SELECT-own-row-only policy, so this query returns
+//     a row if and only if the signed-in user IS a Growth Partner. A normal
+//     user gets zero rows (null) — the "unauthorized" state.
+//   • growth_onboarding is readable only for one's own row plus (for partners)
+//     rows whose growth_partner_id is the caller. The query additionally
+//     filters growth_partner_id server-side, so the page never downloads
+//     another partner's referrals and filters in React.
+// ============================================================================
+
+/** One referral row as readable by its Growth Partner (no cross-partner PII). */
+export interface GrowthReferralRow {
+  user_id: string;
+  status: GrowthOnboardingStatusValue;
+  linked_at: string | null;
+  template_started_at: string | null;
+  template_completed_at: string | null;
+  /** Selected so the client can defensively drop any row that is not its own. */
+  growth_partner_id?: string | null;
+}
+
+/** Dashboard summary counts, computed from the partner's own referral rows. */
+export interface GrowthReferralSummary {
+  total: number;
+  onboarding: number;
+  completed: number;
+}
+
+/**
+ * Pure summary reducer (exported for tests): total referred users, completed
+ * users, and users still onboarding (total minus completed).
+ */
+export function summarizeGrowthReferrals(rows: GrowthReferralRow[]): GrowthReferralSummary {
+  const list = Array.isArray(rows) ? rows : [];
+  const completed = list.filter((row) => row?.status === 'template_completed').length;
+  return { total: list.length, onboarding: list.length - completed, completed };
+}
+
+/**
+ * The signed-in user's own Growth Partner row, or null when the account is
+ * not a partner. RLS decides — the frontend only renders the outcome.
+ */
+export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
+  const { data, error } = await supabase
+    .from('growth_partners')
+    .select('user_id, referral_code, is_active, created_at, updated_at')
+    .maybeSingle();
+  if (error) throw rpcError('Growth Partner lookup failed', error);
+  return (data ?? null) as GrowthPartner | null;
+}
+
+/**
+ * Referral rows belonging to ONE partner. The growth_partner_id filter runs
+ * server-side, and RLS independently restricts the caller to their own
+ * referrals — a partner can never receive another partner's rows.
+ */
+export async function fetchMyGrowthReferrals(partnerUserId: string): Promise<GrowthReferralRow[]> {
+  const { data, error } = await supabase
+    .from('growth_onboarding')
+    .select('user_id, status, linked_at, template_started_at, template_completed_at')
+    .eq('growth_partner_id', partnerUserId)
+    .order('linked_at', { ascending: false });
+  if (error) throw rpcError('Referral list lookup failed', error);
+  return ((data ?? []) as GrowthReferralRow[]).filter(
+    (row) => row && row.user_id && row.growth_partner_id !== undefined
+  );
+}
+
+/** True when a Supabase/PostgREST failure means the session must be renewed. */
+export function isSessionExpiredError(error: unknown): boolean {
+  if (!error) return false;
+  const anyErr = error as { status?: number; code?: string; message?: string };
+  if (anyErr.status === 401 || anyErr.code === 'PGRST301') return true;
+  const message = String((error as Error)?.message || anyErr || '');
+  return /jwt expired|invalid jwt|session.*expired|not authenticated|auth.*required/i.test(message);
+}
+
+/** Page-level gate states for the Growth Partner area. */
+export type GrowthPartnerGate =
+  | 'loading'
+  | 'mock-mode'
+  | 'unauthenticated'
+  | 'unauthorized'
+  | 'session-expired'
+  | 'error'
+  | 'ready';
+
+/**
+ * Pure gate resolver (exported for tests): maps auth + backend outcome to the
+ * single state the page renders. `partnerRow === null` after a successful
+ * lookup means "signed in but not a partner".
+ */
+export function resolveGrowthPartnerGate(input: {
+  userId: string | null;
+  loading: boolean;
+  isMockMode: boolean;
+  partnerRow: GrowthPartner | null;
+  loadError: unknown;
+}): GrowthPartnerGate {
+  if (input.loading) return 'loading';
+  if (!input.userId) return 'unauthenticated';
+  if (input.isMockMode) return 'mock-mode';
+  if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
+  if (!input.partnerRow) return 'unauthorized';
+  return 'ready';
+}
+
+/** Human label for a referral's onboarding status (dashboard + list). */
+export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue): string {
+  switch (status) {
+    case 'template_completed':
+      return 'Completed';
+    case 'template_started':
+      return 'Template started';
+    case 'linked':
+      return 'Onboarding';
+    default:
+      return 'Linked';
+  }
+}
