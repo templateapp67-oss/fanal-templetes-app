@@ -14,6 +14,13 @@ import type { Express, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { databaseForToken } from './backendContext.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function optionalUuid(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = String(value).trim();
+  return UUID_RE.test(text) ? text : null;
+}
+
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
 
@@ -87,8 +94,10 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, status, limit, offset } = req.query;
+      const safeStaffId = optionalUuid(staffId);
+      if (staffId && !safeStaffId) return res.status(400).json({ error: 'Invalid specialist id.' });
       const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_booking_details', {
-        p_staff_id: staffId ? String(staffId) : null,
+        p_staff_id: safeStaffId,
         p_status: status ? String(status) : null,
         p_limit: limit ? Number(limit) : 50,
         p_offset: offset ? Number(offset) : 0,
@@ -113,8 +122,10 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, limit, offset } = req.query;
+      const safeStaffId = optionalUuid(staffId);
+      if (staffId && !safeStaffId) return res.status(400).json({ error: 'Invalid specialist id.' });
       const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_payment_details', {
-        p_staff_id: staffId ? String(staffId) : null,
+        p_staff_id: safeStaffId,
         p_limit: limit ? Number(limit) : 50,
         p_offset: offset ? Number(offset) : 0,
       });
@@ -138,8 +149,10 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, limit, offset } = req.query;
+      const safeStaffId = optionalUuid(staffId);
+      if (staffId && !safeStaffId) return res.status(400).json({ error: 'Invalid specialist id.' });
       const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_staff_review_details', {
-        p_staff_id: staffId ? String(staffId) : null,
+        p_staff_id: safeStaffId,
         p_limit: limit ? Number(limit) : 50,
         p_offset: offset ? Number(offset) : 0,
       });
@@ -163,13 +176,11 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId, commissionRate, fixedAmount, commissionType, commissionBasis } = req.body;
-
-      if (!staffId) {
-        return res.status(400).json({ error: 'Missing required staffId parameter' });
-      }
+      const safeStaffId = optionalUuid(staffId);
+      if (!safeStaffId) return res.status(400).json({ error: 'Missing or invalid specialist id.' });
 
       const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_update_staff_commission', {
-        p_staff_id: staffId,
+        p_staff_id: safeStaffId,
         p_commission_rate: Number(commissionRate ?? 0),
         p_fixed_amount: Number(fixedAmount ?? 0),
         p_commission_type: commissionType || 'percentage',
@@ -231,12 +242,13 @@ export function registerStaffPerformanceRoutes(app: Express) {
         notes,
       } = req.body;
 
-      if (!staffId || !payoutPeriod) {
-        return res.status(400).json({ error: 'Missing required parameters: staffId and payoutPeriod' });
+      const safeStaffId = optionalUuid(staffId);
+      if (!safeStaffId || !payoutPeriod) {
+        return res.status(400).json({ error: 'Missing or invalid specialist id.' });
       }
 
       const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_mark_payout_paid', {
-        p_staff_id: staffId,
+        p_staff_id: safeStaffId,
         p_payout_period: payoutPeriod,
         p_gross_sales: Number(grossSales ?? 0),
         p_commission_earned: Number(commissionEarned ?? 0),
@@ -268,8 +280,10 @@ export function registerStaffPerformanceRoutes(app: Express) {
       }
 
       const { staffId } = req.query;
+      const safeStaffId = optionalUuid(staffId);
+      if (staffId && !safeStaffId) return res.status(400).json({ error: 'Invalid specialist id.' });
       const { data, error } = await databaseForToken(String(req.headers.authorization).slice(7)).rpc('owner_get_payout_history', {
-        p_staff_id: staffId ? String(staffId) : null,
+        p_staff_id: safeStaffId,
       });
 
       if (error) {

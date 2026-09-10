@@ -88,10 +88,13 @@ test('normalized create uses server catalogue, caller RPC and stable idempotency
   const db = database(c => result(c.table==='salons' ? {id:salonId,timezone:'Asia/Kolkata',accepts_online_bookings:true} : c.table==='services' ? [{id:serviceId,price_paise:49900}] : row()));
   let args: any; let callerToken: any;
   const integrations: any = { gateway:()=>{throw Error('Unverified payment must not invoke gateway');}, userDatabase:(token: string)=>{callerToken=token;return {rpc:(name: string,payload: any)=>{assert.equal(name,'create_customer_booking');args=payload;return Promise.resolve(result(bookingId));}};} };
-  const body = { subdomain:'mine',booking:{service_id:'cut',booking_date:'2026-10-10',time_slot:'10:00',payment_id:'reference',total_amount:1,advance_paid_amount:999999,payment_status:'paid'} };
+  const body = { subdomain:'mine',booking:{service_id:'cut',booking_date:'2026-10-10',time_slot:'10:00',payment_id:'reference',customer_name:'Riya Sharma',customer_phone:'9876543210',total_amount:1,advance_paid_amount:999999,payment_status:'paid'} };
   const saved = await createNormalizedBooking(db,{headers:{authorization:'Bearer customer-token'}},actor,body,null,integrations);
   assert.equal(saved.total_amount,499); assert.equal(saved.advance_paid_amount,0); assert.equal(callerToken,'customer-token');
-  assert.deepEqual(args.p_service_ids,[serviceId]); assert.equal(args.p_salon_id,salonId); assert.equal(args.p_customer_user_id,undefined);
+  assert.deepEqual(args.p_service_ids,[serviceId]); assert.equal(args.p_salon_id,salonId);
+  assert.equal(args.p_customer_user_id, actor, 'customer_user_id must be bound to the signed-in actor');
+  assert.equal(args.p_customer_name,'Riya Sharma');
+  assert.equal(args.p_customer_phone,'9876543210');
   const key = args.p_idempotency_key;
   await createNormalizedBooking(db,{headers:{authorization:'Bearer customer-token'}},actor,body,null,integrations);
   assert.equal(args.p_idempotency_key,key);

@@ -36,6 +36,12 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
     if (!staff) throw new BackendError(409,'The selected specialist is unavailable.');
   }
   const start = appointmentInstant(booking.booking_date,booking.time_slot,salon.timezone);
+  const customerName = String(booking.customer_name || '').trim().slice(0, 120);
+  const customerPhone = String(booking.customer_phone || '').replace(/[^\d+]/g, '').slice(0, 20);
+  if (!customerName) throw new BackendError(400, 'A customer name is required.');
+  if (!/^[+\d]{7,20}$/.test(customerPhone)) throw new BackendError(400, 'A valid contact phone number is required.');
+  const customerEmail = booking.customer_email ? String(booking.customer_email).trim().toLowerCase().slice(0, 254) : null;
+  const note = String(booking.notes || '').slice(0, 2000);
   let payment: any = null;
   if (verifiedPaymentId) {
     payment = await integrations.gateway()?.fetchPayment?.(verifiedPaymentId,req.res?.locals?.requestDeadlineAt);
@@ -50,7 +56,9 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   const token = String(req.headers.authorization).replace(/^Bearer\s+/i,'');
   const id = await readDatabase(() => integrations.userDatabase(token).rpc('create_customer_booking', {
     p_salon_id: salon.id, p_service_ids: ids, p_staff_id: staffId, p_appointment_start: start,
-    p_customer_note: String(booking.notes || '').slice(0,2000), p_idempotency_key: idempotencyKey,
+    p_customer_user_id: actor,
+    p_customer_name: customerName, p_customer_phone: customerPhone,
+    p_customer_email: customerEmail, p_customer_note: note, p_idempotency_key: idempotencyKey,
   }));
   if (!id) throw new BackendError(503,'The database did not return a saved booking.');
   if (payment) {

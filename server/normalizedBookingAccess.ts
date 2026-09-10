@@ -42,6 +42,7 @@ export async function listNormalizedCustomerBookings(db: any, actor: string) {
 }
 
 const OWNER_TRANSITIONS: Record<string, string[]> = {
+  payment_pending: ['confirmed', 'cancelled', 'reschedule_proposed'],
   pending: ['confirmed', 'cancelled', 'checked_in', 'reschedule_proposed'],
   confirmed: ['cancelled', 'checked_in', 'no_show', 'reschedule_proposed', 'completed'],
   reschedule_requested: ['confirmed', 'cancelled', 'reschedule_proposed'],

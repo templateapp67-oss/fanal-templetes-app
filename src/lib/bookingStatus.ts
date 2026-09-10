@@ -32,10 +32,16 @@
 // import it directly, the same way they already import `../src/lib/tenant`.
 // ============================================================================
 
-/** The five lifecycle states a booking moves through, in order of severity. */
+/** The lifecycle states a booking moves through. `payment_pending` is the
+ *  state of an online booking whose deposit is still in flight / not yet
+ *  verified; `checked_in` and `in_progress` are used by the normalized
+ *  salon workflow. */
 export const BOOKING_STATUS_ORDER = [
+  'payment_pending',
   'pending',
   'confirmed',
+  'checked_in',
+  'in_progress',
   'completed',
   'cancelled',
   'no_show',
@@ -49,7 +55,7 @@ export type BookingLifecycleStatus = (typeof BOOKING_STATUS_ORDER)[number];
  * the five lifecycle outcomes, so it is modelled as a sibling rather than
  * being folded into `pending` and losing the proposed date/time handling.
  */
-export const TRANSITIONAL_BOOKING_STATUSES = ['reschedule_proposed'] as const;
+export const TRANSITIONAL_BOOKING_STATUSES = ['reschedule_requested', 'reschedule_proposed'] as const;
 
 export type TransitionalBookingStatus = (typeof TRANSITIONAL_BOOKING_STATUSES)[number];
 
@@ -119,11 +125,35 @@ function descriptor(
  * "unknown" branch, but it is flagged non-persistable.
  */
 export const BOOKING_STATUSES: Record<DisplayBookingStatus, BookingStatusDescriptor> = {
+  payment_pending: descriptor(
+    'payment_pending',
+    'Awaiting Payment',
+    'Reserving your slot while the advance payment is verified.',
+    'orange',
+    false,
+    true
+  ),
   pending: descriptor(
     'pending',
     'Pending',
     'Submitted to the salon. Waiting for them to accept this slot.',
     'amber',
+    false,
+    true
+  ),
+  checked_in: descriptor(
+    'checked_in',
+    'Checked In',
+    'The customer has arrived at the salon.',
+    'sky',
+    false,
+    true
+  ),
+  in_progress: descriptor(
+    'in_progress',
+    'In Progress',
+    'The appointment is currently underway.',
+    'blue',
     false,
     true
   ),
@@ -157,6 +187,14 @@ export const BOOKING_STATUSES: Record<DisplayBookingStatus, BookingStatusDescrip
     'The customer did not arrive for the booked slot.',
     'orange',
     true,
+    true
+  ),
+  reschedule_requested: descriptor(
+    'reschedule_requested',
+    'Reschedule Requested',
+    'You asked to move this appointment; waiting for the salon to respond.',
+    'blue',
+    false,
     true
   ),
   reschedule_proposed: descriptor(
@@ -240,6 +278,12 @@ export function bookingStatusHeadline(status: unknown): string {
   switch (id) {
     case 'confirmed':
       return 'Your booking is confirmed.';
+    case 'payment_pending':
+      return 'Your advance is being verified — your slot is held.';
+    case 'checked_in':
+      return 'You have checked in for your appointment.';
+    case 'in_progress':
+      return 'Your appointment is in progress.';
     case 'pending':
       return 'Your booking is submitted.';
     case 'completed':
