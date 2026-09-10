@@ -910,7 +910,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
 
               <div className="text-xs text-slate-500 font-medium">
-                {appointmentsSubTab === 'calendar' ? (live.loadedAt ? (
+                {appointmentsSubTab === 'calendar' ? (
                   <span>Visually manage appointments, staff schedules, and daily slots</span>
                 ) : (
                   <span>Incoming web booking requests & customer QR pass check-in</span>
@@ -918,7 +918,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
-            {appointmentsSubTab === 'calendar' ? (
+            {appointmentsSubTab === 'calendar' ? (live.loadedAt ? (
               <AppointmentsCalendarView
                 onCreate={live.create}
                 onUpdate={live.update}
