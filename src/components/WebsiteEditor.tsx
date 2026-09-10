@@ -37,6 +37,7 @@ import { slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
+import { isCompletionNotReadyError, recordTemplateCompletion } from '../lib/growthPartner';
 import { GuestModeBanner } from './GuestModeBanner';
 import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
@@ -98,6 +99,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
+  // Phase 5: set ONLY when the verified completion RPC rejects as not-ready
+  // after a successful cloud save. Never set optimistically, never blocks save.
+  const [completionNote, setCompletionNote] = useState<string | null>(null);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
   // 'pending' = edits are debounced and will save in ~1.2s; 'saving' = the
   // save request is in flight. Both show as "Saving…".
@@ -184,7 +188,23 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
       // Only an explicit, successful save opens the next-step dialog, never an autosave.
       // persistSalonState resolves false (never throws) when a save fails, so a
       // thrown error here means an unexpected programming error — log it fully.
-      if (await onSave()) setSavedSiteUrl(siteUrl);
+      if (await onSave()) {
+        setSavedSiteUrl(siteUrl);
+        // Phase 5: verified onboarding completion. The RPC derives the user
+        // from the session, verifies the finished-website conditions
+        // server-side, and advances the funnel row (idempotent — safe after
+        // every cloud save, including retries). Best-effort: the save already
+        // succeeded, so only a not-ready verdict surfaces a note in the
+        // success dialog; anything else is logged, never shown as an error.
+        setCompletionNote(null);
+        recordTemplateCompletion().catch((completionError: unknown) => {
+          if (isCompletionNotReadyError(completionError)) {
+            setCompletionNote('Your website setup is not complete yet.');
+          } else {
+            console.error('[WebsiteEditor] Template completion update failed:', completionError);
+          }
+        });
+      }
     } catch (err) {
       console.error('[WebsiteEditor] Unexpected error during manual save:', err);
       showToast?.('Save failed. Please try again.', 'error');
@@ -830,11 +850,16 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         <WebsiteSavedModal
           siteUrl={savedSiteUrl}
           returnFocusTo={saveTriggerRef.current}
-          onClose={() => setSavedSiteUrl(null)}
+          onClose={() => {
+            setSavedSiteUrl(null);
+            setCompletionNote(null);
+          }}
           onBackToDashboard={() => {
             setSavedSiteUrl(null);
+            setCompletionNote(null);
             onBackToDashboard();
           }}
+          completionNote={completionNote}
         />
       )}
 

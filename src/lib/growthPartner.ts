@@ -262,3 +262,59 @@ export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue): 
       return 'Linked';
   }
 }
+
+// ============================================================================
+// Verified website completion (Phase 5 — same anon client, same RLS model).
+//
+// The Template App calls recordTemplateCompletion() right after the existing
+// explicit cloud save whose success opens "Website saved successfully!".
+// Whether the website REALLY is finished is decided server-side by
+// complete_template_onboarding() — the browser merely reports the outcome
+// and never asserts completion itself. The onboarding screen reads the same
+// completed state back through getMyOnboardingStatus() (backend source of
+// truth; nothing completion-related is persisted in localStorage).
+// ============================================================================
+
+/** Safe message when the user's website does not verify as finished yet. */
+export const TEMPLATE_COMPLETION_NOT_READY_MESSAGE = 'Your website setup is not complete yet.';
+
+/** Generic message when the completion request itself fails. */
+export const TEMPLATE_COMPLETION_GENERIC_MESSAGE = 'Could not update completion status. Please try again.';
+
+/** Completion event result: the caller's progress plus the verified outcome. */
+export interface TemplateCompletionResult extends GrowthOnboardingStatus {
+  completed: boolean;
+}
+
+/**
+ * Record the verified website-completion event for the signed-in user. The
+ * RPC derives the user from the session, verifies the finished-website
+ * conditions against committed database state, and advances the funnel row
+ * to template_completed with server timestamps. Idempotent (safe to call
+ * after every cloud save — including save retries), a no-op for users with
+ * no onboarding row, and referral ownership is never touched.
+ *
+ * Throws only safe UI copy: the not-ready message when the website does not
+ * verify yet, otherwise a generic failure message (never SQL/stack text).
+ */
+export async function recordTemplateCompletion(): Promise<TemplateCompletionResult> {
+  try {
+    const { data, error } = await supabase.rpc('complete_template_onboarding');
+    if (error) throw rpcError('Template completion update failed', error);
+    return data as TemplateCompletionResult;
+  } catch (error) {
+    throw toCompletionError(error);
+  }
+}
+
+/** True when a completion failure means "website not finished yet". */
+export function isCompletionNotReadyError(error: unknown): boolean {
+  const message = String((error as Error)?.message || error || '');
+  return /website setup is not complete yet/i.test(message);
+}
+
+/** Maps completion failures to safe UI copy (never SQL/stack traces). */
+export function toCompletionError(error: unknown): Error {
+  if (isCompletionNotReadyError(error)) return new Error(TEMPLATE_COMPLETION_NOT_READY_MESSAGE);
+  return new Error(TEMPLATE_COMPLETION_GENERIC_MESSAGE);
+}

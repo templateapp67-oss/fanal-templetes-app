@@ -1,7 +1,8 @@
 // ============================================================================
 // Growth Partner + shared Onboarding backend wiring (Phase 1).
 //
-// Runs supabase/migrations/20260912_growth_partner_onboarding.sql against a
+// Runs supabase/migrations/20260912_growth_partner_onboarding.sql plus the
+// Phase 5 completion migration (20260914_template_completion.sql) against a
 // real Postgres engine (PGlite) with the production auth contract
 // (auth.users + auth.uid() + anon/authenticated roles) and pins:
 //   • valid / invalid referral validation (no identity leaked)
@@ -11,6 +12,7 @@
 //   • growth_partners is not client-writable (provision is admin-only)
 //   • cross-user reads blocked; partners read ONLY their own referrals
 //   • onboarding progress is forward-only, idempotent, server-timestamped
+//   • completion requires a verified finished website (Phase 5, no bypass)
 //   • the migration is idempotent and preserves existing data
 // ============================================================================
 
@@ -36,6 +38,11 @@ const MIGRATION = readFileSync(
   'utf8'
 );
 
+const COMPLETION_MIGRATION = readFileSync(
+  new URL('../supabase/migrations/20260914_template_completion.sql', import.meta.url),
+  'utf8'
+);
+
 async function setup() {
   const db = new PGlite();
   await db.exec(`
@@ -47,7 +54,8 @@ async function setup() {
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to authenticated, anon;
     -- Minimal slice of the EXISTING profiles table (reused for display names).
-    create table public.profiles(id uuid primary key, full_name text);
+    create table public.profiles(id uuid primary key, full_name text, subdomain text, salon_name text);
+    create table public.services(id uuid primary key, owner_id uuid);
     insert into auth.users(id) values
       ('${PARTNER_A}'), ('${PARTNER_B}'),
       ('${USER_1}'), ('${USER_2}'), ('${USER_3}'), ('${USER_4}');
@@ -56,6 +64,7 @@ async function setup() {
       ('${USER_1}', 'User One'), ('${USER_2}', 'User Two');
   `);
   await db.exec(MIGRATION);
+  await db.exec(COMPLETION_MIGRATION);
   return db;
 }
 
@@ -88,6 +97,24 @@ async function captureError(promise: Promise<any>) {
     return err;
   }
   assert.fail('expected the statement to fail, but it succeeded');
+}
+
+/**
+ * Phase 5: give a user a finished legacy-generation website (profiles
+ * subdomain + salon name, plus one owned service) so verified completion
+ * passes for them. Upserts profiles: the base fixture only seeds profiles
+ * rows for the partners, USER_1 and USER_2.
+ */
+async function seedLegacyWebsite(db: any, userId: string, tag: string) {
+  await db.query(
+    `insert into public.profiles(id, subdomain, salon_name) values ($1::uuid, $2, $3)
+     on conflict (id) do update set subdomain = excluded.subdomain, salon_name = excluded.salon_name`,
+    [userId, `site-${tag}`, `Salon ${tag}`]
+  );
+  await db.query('insert into public.services(id, owner_id) values ($1::uuid, $2::uuid)', [
+    `c${userId.slice(1)}`,
+    userId,
+  ]);
 }
 
 test('referral validation accepts an active code and rejects unknown, malformed and inactive codes', async () => {
@@ -434,6 +461,18 @@ test('onboarding progress is forward-only, idempotent and server-timestamped', a
     assert.equal(relinked.status, 'template_started');
     assert.equal(relinked.growth_partner_id, PARTNER_A);
 
+    // Phase 5: completion without a finished website is rejected (verified
+    // server-side) and changes nothing.
+    await rpc(db, USER_2, 'update_my_onboarding_progress', ['start_template']);
+    await assert.rejects(
+      rpc(db, USER_2, 'update_my_onboarding_progress', ['complete_template']),
+      /website setup is not complete yet/
+    );
+    assert.equal((await rpc(db, USER_2, 'get_my_onboarding_status')).status, 'template_started');
+    assert.equal((await rpc(db, USER_2, 'get_my_onboarding_status')).template_completed_at, null);
+
+    // USER_1 finished their website, so completion now verifies and succeeds.
+    await seedLegacyWebsite(db, USER_1, 'one');
     // Complete sets the server timestamp at/after the start; repeating is idempotent.
     const done = await rpc(db, USER_1, 'update_my_onboarding_progress', ['complete_template']);
     assert.equal(done.status, 'template_completed');
@@ -448,10 +487,11 @@ test('onboarding progress is forward-only, idempotent and server-timestamped', a
     assert.equal(afterDone.status, 'template_completed');
 
     // Other users are unaffected (per-user isolation of progress writes).
-    assert.equal((await rpc(db, USER_2, 'get_my_onboarding_status')).status, 'not_started');
+    assert.equal((await rpc(db, USER_3, 'get_my_onboarding_status')).status, 'not_started');
 
-    // Organic users (no partner) can complete the same flow end to end.
+    // Organic users (no partner) with a finished website complete the same flow.
     await rpc(db, USER_4, 'update_my_onboarding_progress', ['start_template']);
+    await seedLegacyWebsite(db, USER_4, 'four');
     const organic = await rpc(db, USER_4, 'update_my_onboarding_progress', ['complete_template']);
     assert.equal(organic.status, 'template_completed');
     assert.equal(organic.linked, false);
@@ -467,14 +507,17 @@ test('the migration is idempotent and preserves existing partner, link and progr
     await provision(db, PARTNER_B, CODE_B);
     await rpc(db, USER_1, 'link_my_growth_referral', [CODE_A]);
     await rpc(db, USER_1, 'update_my_onboarding_progress', ['start_template']);
+    await seedLegacyWebsite(db, USER_1, 'one');
     await rpc(db, USER_1, 'update_my_onboarding_progress', ['complete_template']);
 
     const beforePartners = (await db.query('select * from public.growth_partners order by user_id')).rows;
     const beforeOnboarding = (await db.query('select * from public.growth_onboarding order by user_id')).rows;
 
-    // Re-apply the whole migration exactly like `supabase db push` / SQL Editor would.
+    // Re-apply the whole migration stack in order, like `supabase db push` would.
     await db.exec(MIGRATION);
+    await db.exec(COMPLETION_MIGRATION);
     await db.exec(MIGRATION);
+    await db.exec(COMPLETION_MIGRATION);
 
     assert.deepEqual((await db.query('select * from public.growth_partners order by user_id')).rows, beforePartners);
     assert.deepEqual(

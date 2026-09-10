@@ -1,16 +1,26 @@
 import React from 'react';
 import { FormAlert, GatewayShell } from './Shell';
 import type { OnboardingPhase } from '../lib/flow';
+import { templateAppBaseUrl } from '../lib/handoff';
 
 // ============================================================================
-// Post-referral status — the Phase 3 terminal state. Shows that the referral
-// is verified and keeps the user inside the Onboarding App. NO Template App
-// redirect/handoff here (Phase 4/5 boundary).
+// Post-referral status. Two variants, both read-only views of the BACKEND
+// onboarding row (never localStorage):
+//   • verified (default): referral linked, Template App not finished yet.
+//     Phase 4 secure handoff button when the host passes the handler.
+//   • completed (Phase 5): the Template App backend verified a finished
+//     website. Ready state only — no referral/handoff/signup repeated, just
+//     a plain link back to the Template App (no token: the user returns on
+//     their normal session).
 // ============================================================================
 
 export const STATUS_VERIFIED_TITLE = 'Referral code verified successfully.';
 export const STATUS_VERIFIED_BODY =
   'Your account is linked and ready for the next step. You will continue from here when it opens.';
+
+export const STATUS_COMPLETED_TITLE = 'Your website setup is complete.';
+export const STATUS_COMPLETED_BODY =
+  'Your Template App website is finished and linked to your referral.';
 
 export const StatusScreen: React.FC<{
   phase: OnboardingPhase;
@@ -22,10 +32,21 @@ export const StatusScreen: React.FC<{
   onContinueToTemplateApp?: () => void;
   handoffBusy?: boolean;
   handoffError?: string;
-}> = ({ referralCode, partnerName, email, onLogout, onContinueToTemplateApp, handoffBusy, handoffError }) => (
+  /** Phase 5: true when the backend reports template_completed. Ready state. */
+  completed?: boolean;
+}> = ({
+  referralCode,
+  partnerName,
+  email,
+  onLogout,
+  onContinueToTemplateApp,
+  handoffBusy,
+  handoffError,
+  completed,
+}) => (
   <GatewayShell
-    title={STATUS_VERIFIED_TITLE}
-    subtitle={STATUS_VERIFIED_BODY}
+    title={completed ? STATUS_COMPLETED_TITLE : STATUS_VERIFIED_TITLE}
+    subtitle={completed ? STATUS_COMPLETED_BODY : STATUS_VERIFIED_BODY}
     footer={
       <>
         {email ? (
@@ -60,26 +81,48 @@ export const StatusScreen: React.FC<{
           'Your referral is linked.'
         )}
       </FormAlert>
-      <p className="text-sm text-slate-600">
-        Nothing more to do right now — stay signed in and you will pick up here.
-      </p>
-      {onContinueToTemplateApp && (
-        <div className="space-y-3 border-t border-slate-100 pt-4">
-          <button
-            type="button"
-            onClick={onContinueToTemplateApp}
-            disabled={handoffBusy}
-            className="w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#C20E5A' }}
-          >
-            {handoffBusy ? 'Preparing secure handoff…' : 'Continue to Template App'}
-          </button>
-          {handoffError ? <FormAlert tone="error">{handoffError}</FormAlert> : null}
-          <p className="text-xs text-slate-500">
-            You will be securely signed in to the Template App. This pass can only be used once and expires in 5
-            minutes.
+      {completed ? (
+        <>
+          <p className="text-sm text-slate-600">
+            Nothing more to do — your progress is saved and recognized every time you sign in.
           </p>
-        </div>
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            <a
+              href={templateAppBaseUrl() || '/'}
+              className="block w-full py-3 rounded-xl text-white text-sm font-bold text-center cursor-pointer transition-opacity hover:opacity-90"
+              style={{ backgroundColor: '#C20E5A' }}
+            >
+              Open Template App
+            </a>
+            <p className="text-xs text-slate-500">
+              Opens the Template App in this browser — no new code or sign-up needed.
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-slate-600">
+            Nothing more to do right now — stay signed in and you will pick up here.
+          </p>
+          {onContinueToTemplateApp && (
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={onContinueToTemplateApp}
+                disabled={handoffBusy}
+                className="w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#C20E5A' }}
+              >
+                {handoffBusy ? 'Preparing secure handoff…' : 'Continue to Template App'}
+              </button>
+              {handoffError ? <FormAlert tone="error">{handoffError}</FormAlert> : null}
+              <p className="text-xs text-slate-500">
+                You will be securely signed in to the Template App. This pass can only be used once and expires in 5
+                minutes.
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   </GatewayShell>

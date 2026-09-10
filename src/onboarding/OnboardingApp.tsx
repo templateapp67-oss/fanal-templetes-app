@@ -287,9 +287,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         partnerName={snapshot?.partnerName ?? null}
         email={viewer?.email || ''}
         onLogout={() => void handleLogout()}
-        onContinueToTemplateApp={handleContinueToTemplateApp}
+        onContinueToTemplateApp={phase === 'completed' ? undefined : handleContinueToTemplateApp}
         handoffBusy={handoffBusy}
         handoffError={handoffError}
+        completed={phase === 'completed'}
       />
     );
   }
