@@ -19,11 +19,13 @@ export async function dashboardSalon(db: any, req: any) {
   const ids = await ownerSalonIds(db, identity.user.id);
   if (!ids.length) throw new BackendError(403, 'No active salon membership was found.');
   const slug = String(req.query?.subdomain || req.body?.subdomain || '');
-  let query = db.from('salons').select('id,timezone').in('id', ids);
-  if (slug) query = query.eq('slug', slug);
-  const salons = await readDatabase(() => query);
-  if (salons?.length !== 1) throw new BackendError(403, 'Select one salon belonging to your account.');
-  return { ...identity, salon: salons[0] };
+  const salons = await readDatabase(() => db.from('salons').select('id,slug,timezone').in('id', ids));
+  const matched = slug ? salons?.filter((salon: any) => salon.slug === slug) : [];
+  // Match the workspace RPC: a legacy editor slug may differ from the saved
+  // salon slug. A sole authorized salon is unambiguous; never guess among many.
+  const salon = matched?.length === 1 ? matched[0] : salons?.length === 1 ? salons[0] : null;
+  if (!salon) throw new BackendError(403, 'Select one salon belonging to your account.');
+  return { ...identity, salon };
 }
 
 export function dashboardAppointment(row: any) {
