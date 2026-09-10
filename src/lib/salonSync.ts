@@ -80,22 +80,42 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     business_type: profile.businessType,
     full_name: profile.ownerName,
     salon_name: profile.businessName,
-    email: profile.email ?? null,
-    phone: profile.phone,
-    mobile: profile.phone,
+    email: profile.email,
     phone_number: profile.phone,
     whatsapp: profile.whatsapp,
+    whatsapp_notifications_enabled: profile.whatsappNotificationsEnabled ?? true,
+    owner_role: profile.ownerRole,
+    owner_photo_url: profile.ownerPhotoUrl,
+    cover_image_url: profile.coverImageUrl,
+    logo_url: profile.logoUrl ?? null,
     tagline: profile.tagline,
     about: profile.about,
-    city: profile.city,
-    area: profile.areaLocality || profile.city,
-    pincode: profile.postalCode,
-    postal_code: profile.postalCode,
+    currency: profile.currency,
     subdomain: profile.subdomain,
-    photo_url: profile.ownerPhotoUrl ?? null,
-    avatar_url: profile.ownerPhotoUrl ?? null,
+    custom_domain: profile.customDomain ?? null,
+    full_address: profile.address,
+    city: profile.city,
+    postal_code: profile.postalCode,
+    state: profile.state ?? null,
+    landmark: profile.landmark ?? null,
+    latitude: profile.latitude ?? null,
+    longitude: profile.longitude ?? null,
+    founding_year: profile.foundingYear ?? null,
+    instagram_handle: profile.instagramHandle,
+    facebook_page: profile.facebookPage ?? null,
+    youtube_channel: profile.youtubeChannel ?? null,
+    tiktok_profile: profile.tiktokProfile ?? null,
+    google_business_url: profile.googleBusinessUrl ?? null,
     theme_preset: profile.themePreset,
     theme_accent_key: profile.themeAccentKey ?? null,
+    custom_accent_color: profile.customAccentColor ?? null,
+    require_deposit: profile.requireDeposit,
+    deposit_percentage: profile.depositPercentage,
+    // Home-service toggle/charge/radius (edited in Side Panel Customizer) —
+    // previously stored only in localStorage, so it silently reset after a
+    // reload and never reached the public site served from the database.
+    home_service: profile.homeService ?? null,
+    offers: profile.offers ?? [],
     working_hours: buildWorkingHours(profile),
     updated_at: new Date().toISOString(),
   };
@@ -293,24 +313,9 @@ export async function syncSalonToSupabase(
     const rewardRows = (loyaltyConfig.rewards || []).map((r, i) => toRewardDbRow(r, ownerId, i));
 
     await Promise.all([
-      runOp('profiles', 'save salon profile', () => {
-        const fullRow = toProfileRow(profile, ownerId);
-        const cleanProfileRow = {
-          id: fullRow.id,
-          full_name: fullRow.full_name,
-          phone: fullRow.phone,
-          mobile: fullRow.mobile,
-          whatsapp: fullRow.whatsapp,
-          city: fullRow.city,
-          area: fullRow.area,
-          pincode: fullRow.pincode,
-          photo_url: fullRow.photo_url,
-          avatar_url: fullRow.avatar_url,
-          email: fullRow.email,
-          updated_at: fullRow.updated_at,
-        };
-        return db.from('profiles').upsert(cleanProfileRow);
-      }),
+      runOp('profiles', 'save salon profile', () =>
+        db.from('profiles').upsert(toProfileRow(profile, ownerId))
+      ),
 
       serviceRows.length
         ? runOp('services', 'save services & pricing', () => db.from('services').upsert(serviceRows))

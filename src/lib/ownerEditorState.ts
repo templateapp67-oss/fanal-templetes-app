@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { SalonSyncPayload, SalonSyncResult, syncSalonToSupabase } from './salonSync';
+import type { SalonSyncPayload, SalonSyncResult } from './salonSync';
 import { describeError, isAuthLikeFailure } from './autoSave';
 
 // Serialize profile and editor writes so an older in-flight autosave cannot
@@ -17,26 +17,17 @@ export async function saveOwnerEditorState(
   options?: { deleteRemoved?: boolean }
 ): Promise<SalonSyncResult> {
   try {
-    return await queueOwnerWrite(async () => {
-      // 1) Direct client sync to existing standard tables (profiles, services, stylists, loyalty_config, loyalty_rewards)
-      const syncResult = await syncSalonToSupabase(db, payload, options);
-
-      // 2) Best-effort sync to owner_editor_state RPC if available in the database
-      try {
-        await db.rpc('save_owner_editor_state', {
-          p_state: {
-            profile: payload.profile,
-            services: payload.services,
-            stylists: payload.stylists,
-            loyaltyConfig: payload.loyaltyConfig,
-          },
-        });
-      } catch {
-        // RPC might not exist in database schema, safe to ignore
-      }
-
-      return syncResult;
+    await queueOwnerWrite(async () => {
+      const { error } = await db.rpc('save_owner_editor_state', { p_state: {
+        profile: payload.profile, services: payload.services,
+        stylists: payload.stylists, loyaltyConfig: payload.loyaltyConfig,
+        ...(payload.appointments !== undefined ? { appointments: payload.appointments } : {}),
+        ...(payload.clients !== undefined ? { clients: payload.clients } : {}),
+        ...(payload.selectedTemplateId !== undefined ? { selectedTemplateId: payload.selectedTemplateId } : {}),
+      } });
+      if (error) throw error;
     });
+    return { ok: true, errors: [] };
   } catch (error) {
     const detail = describeError(error);
     return { ok: false, errors: [detail], blockedByAuth: isAuthLikeFailure(detail) };

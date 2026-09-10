@@ -1,4 +1,4 @@
-import { databaseForToken } from './backendContext.js';
+import { BackendError, databaseForToken, verifyBackendUser, readDatabase } from './backendContext.js';
 // Authenticated fallback for editor saves. Identity is verified against Supabase
 // Auth, then the caller-scoped workspace RPC enforces ownership and commits
 // contact, catalogue and editor state together.
@@ -93,6 +93,11 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       const salonData =
         body.salonData && typeof body.salonData === "object" ? body.salonData : body;
 
+      for (const key of ['services', 'stylists', 'appointments', 'clients']) {
+        if (salonData[key] !== undefined && !Array.isArray(salonData[key])) {
+          return res.status(400).json({ success: false, error: key + ' must be an array.' });
+        }
+      }
       const profile: SalonProfile | null =
         salonData.profile && typeof salonData.profile === "object" ? salonData.profile : null;
       const services: SalonService[] = Array.isArray(salonData.services)
@@ -188,10 +193,15 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         });
       }
 
+      const extraState = {
+        ...(Array.isArray(salonData.appointments) ? { appointments: salonData.appointments } : {}),
+        ...(Array.isArray(salonData.clients) ? { clients: salonData.clients } : {}),
+        ...(salonData.selectedTemplateId !== undefined ? { selectedTemplateId: salonData.selectedTemplateId } : {}),
+      };
       // Use the same transaction as the editor. Never write salon fields into identity profiles.
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
-        p_state: { profile, services, stylists, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+        p_state: { profile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
       }), { label: 'atomic owner workspace save', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
       if (result.error) {
         syncError('Owner workspace transaction failed', { code: result.error.code, message: result.error.message });
@@ -208,6 +218,27 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       });
       if (responseAlreadyEnded(res)) return;
       return res.status(500).json({ error: "Failed to persist site state" });
+    }
+  };
+}
+
+/** Restore the verified caller's private workspace; query-string identities are not trusted. */
+export function handleGetSalonState(deps: WebsiteSaveDeps) {
+  return async (req: any, res: any): Promise<void> => {
+    try {
+      if (isMockSupabase) {
+        return void res.json({ success: true, mode: 'mock', data: deps.mockSalons[String(req.query?.subdomain || '')] || null });
+      }
+      const admin = getSupabaseAdmin();
+      if (!admin) throw new BackendError(503, 'The workspace database is not configured.', 'supabase_not_configured');
+      const { token } = await verifyBackendUser(admin, req);
+      const data = await readDatabase(() => databaseForToken(token).rpc('get_owner_editor_state'), res.locals?.requestDeadlineAt);
+      if (!responseAlreadyEnded(res)) res.json({ success: true, mode: 'live', data: data || null });
+    } catch (error: any) {
+      if (responseAlreadyEnded(res)) return;
+      if (error instanceof BackendError) return void res.status(error.status).json({ success: false, code: error.code, error: error.message });
+      syncError('Workspace hydration failed', { code: error?.code });
+      res.status(503).json({ success: false, code: 'workspace_load_failed', error: 'Your saved workspace could not be loaded. Please retry.', retryable: true });
     }
   };
 }
