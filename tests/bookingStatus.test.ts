@@ -29,10 +29,13 @@ import { validateBookingPayload } from '../server/bookingCreate';
 // The five lifecycle states the product requires
 // ---------------------------------------------------------------------------
 
-test('all five required lifecycle states exist in order', () => {
+test('all required lifecycle states exist in order', () => {
   assert.deepEqual([...BOOKING_STATUS_ORDER], [
+    'payment_pending',
     'pending',
     'confirmed',
+    'checked_in',
+    'in_progress',
     'completed',
     'cancelled',
     'no_show',
@@ -41,7 +44,16 @@ test('all five required lifecycle states exist in order', () => {
 
 test('every lifecycle state has a customer-readable label', () => {
   const labels = BOOKING_STATUS_ORDER.map((id) => BOOKING_STATUSES[id].label);
-  assert.deepEqual(labels, ['Pending', 'Confirmed', 'Completed', 'Cancelled', 'No-show']);
+  assert.deepEqual(labels, [
+    'Awaiting Payment',
+    'Pending',
+    'Confirmed',
+    'Checked In',
+    'In Progress',
+    'Completed',
+    'Cancelled',
+    'No-show',
+  ]);
   for (const id of BOOKING_STATUS_ORDER) {
     assert.ok(BOOKING_STATUSES[id].description.length > 0, `${id} needs a description`);
   }
@@ -66,8 +78,11 @@ test('terminal states are marked terminal, in-flight states are not', () => {
   assert.equal(BOOKING_STATUSES.completed.isTerminal, true);
   assert.equal(BOOKING_STATUSES.cancelled.isTerminal, true);
   assert.equal(BOOKING_STATUSES.no_show.isTerminal, true);
+  assert.equal(BOOKING_STATUSES.payment_pending.isTerminal, false);
   assert.equal(BOOKING_STATUSES.pending.isTerminal, false);
   assert.equal(BOOKING_STATUSES.confirmed.isTerminal, false);
+  assert.equal(BOOKING_STATUSES.checked_in.isTerminal, false);
+  assert.equal(BOOKING_STATUSES.in_progress.isTerminal, false);
 });
 
 // ---------------------------------------------------------------------------
@@ -75,7 +90,7 @@ test('terminal states are marked terminal, in-flight states are not', () => {
 // ---------------------------------------------------------------------------
 
 test('the API allow-list accepts every lifecycle state plus reschedule_proposed', () => {
-  for (const status of [...BOOKING_STATUS_ORDER, 'reschedule_proposed']) {
+  for (const status of [...BOOKING_STATUS_ORDER, 'reschedule_requested', 'reschedule_proposed']) {
     assert.ok(PERSISTABLE_BOOKING_STATUS_SET.has(status), `${status} must be persistable`);
     assert.equal(isPersistableBookingStatus(status), true);
   }

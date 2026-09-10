@@ -11,3 +11,5 @@ coverage/
 supabase/.temp/
 supabase/.branches/
 .vercel
+node_modules
+package-lock.json
