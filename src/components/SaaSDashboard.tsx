@@ -1,3 +1,4 @@
+import { useOwnerDashboard, dashboardTotals } from '../lib/useOwnerDashboard';
 import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, AppointmentStatus, ClientRecord, LoyaltyConfig } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
@@ -24,6 +25,7 @@ import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 
 interface SaaSDashboardProps {
+  ownerId?: string;
   profile: SalonProfile;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   services: SalonService[];
@@ -54,9 +56,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   setServices,
   stylists,
   setStylists,
-  appointments,
+  appointments: suppliedAppointments,
   setAppointments,
-  clients,
+  clients: suppliedClients,
+  ownerId,
   setClients = (_clients: React.SetStateAction<ClientRecord[]>) => {},
   loyaltyConfig: externalLoyaltyConfig,
   setLoyaltyConfig: externalSetLoyaltyConfig,
@@ -68,6 +71,10 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   onNavigateToStaffPerformance,
   onNavigateToStaffCommission,
 }) => {
+  const live = useOwnerDashboard(ownerId, profile.subdomain);
+  const appointments = live.appointments;
+  const clients = live.clients;
+  const [actionError, setActionError] = useState('');
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
   const setLoyaltyConfig = externalSetLoyaltyConfig || setInternalLoyaltyConfig;
@@ -136,8 +143,9 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     }
   };
 
-  const totalRevenue = appointments.reduce((sum, a) => sum + a.servicePrice, 0) + 142500;
-  const totalBookings = appointments.length + 68;
+  const totals = dashboardTotals(appointments, clients);
+  const totalRevenue = totals.revenue;
+  const totalBookings = totals.bookings;
 
   const handleSelectAccent = (palKey: AccentPaletteKey) => {
     const pal = ACCENT_PALETTES[palKey];
@@ -232,49 +240,9 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   // Loyalty points are awarded inside the `completed` branch only, so widening
   // the accepted statuses to the full lifecycle cannot grant points for a
   // no-show or a cancellation.
-  const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
-    if (!isAuthenticated) {
-      onRequireAuth?.('login');
-      return;
-    }
-    setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
-    if (status === 'completed') {
-      const apt = appointments.find((a) => a.id === id);
-      if (apt) {
-        const client = clients.find((c) => c.phone === apt.clientPhone || c.name.toLowerCase() === apt.clientName.toLowerCase());
-        if (client) {
-          const spendPoints = Math.round((apt.servicePrice / 100) * loyaltyConfig.pointsPerHundredSpent);
-          const baseVisitPoints = loyaltyConfig.pointsPerVisit;
-          const tier = client.loyaltyTier || 'bronze';
-          const multiplier = loyaltyConfig.tierMultipliers[tier] || 1.0;
-          const finalEarned = Math.round((baseVisitPoints + spendPoints) * multiplier);
-
-          const newTx = {
-            id: `tx-${Date.now()}`,
-            date: apt.date,
-            description: `Completed Appointment: ${apt.serviceName}`,
-            pointsChange: finalEarned,
-            type: 'spend_earned' as const,
-          };
-
-          setClients((prev) =>
-            prev.map((c) => {
-              if (c.id !== client.id) return c;
-              const newPts = (c.points || 0) + finalEarned;
-              const newLife = (c.lifetimePoints || (c.points || 0)) + finalEarned;
-              const newTier = calculateLoyaltyTier(newLife, loyaltyConfig.tierThresholds);
-              return {
-                ...c,
-                points: newPts,
-                lifetimePoints: newLife,
-                loyaltyTier: newTier,
-                pointHistory: [newTx, ...(c.pointHistory || [])],
-              };
-            })
-          );
-        }
-      }
-    }
+  const updateAppointmentStatus = async (id: string, status: AppointmentStatus) => {
+    try { setActionError(''); await live.update(id, status); }
+    catch (error: any) { setActionError(error.message); }
   };
 
   const handleSendCampaign = () => {
@@ -282,7 +250,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       onRequireAuth?.('login');
       return;
     }
-    setSmsSentNotice('Campaign dispatched successfully via WhatsApp & SMS to 42 clients across India!');
+    setSmsSentNotice('Campaign sending is not connected. No messages have been sent.');
     setTimeout(() => {
       setSmsSentNotice('');
     }, 4000);
@@ -367,12 +335,12 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             )}
 
             <div className="text-right hidden sm:block border-l border-gray-200 pl-4">
-              <div className="text-xs font-bold text-gray-500 font-mono-caps">Monthly Earnings (₹ INR)</div>
+              <div className="text-xs font-bold text-gray-500 font-mono-caps">Completed Booking Value (all time) (₹ INR)</div>
               <div 
                 className="font-display font-extrabold text-2xl"
                 style={{ color: currentPrimaryColor }}
               >
-                ₹{totalRevenue.toLocaleString('en-IN')}
+                ₹{live.loadedAt ? totalRevenue.toLocaleString('en-IN') : '—'}
               </div>
             </div>
           </div>
@@ -471,6 +439,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           })}
         </div>
 
+        <div role="status" className="p-3 rounded-xl bg-slate-50 text-sm">
+          {live.loading ? 'Loading live dashboard…' : live.error ? 'Live dashboard unavailable. Figures may be out of date. ' + live.error : 'Live database · ' + (live.loadedAt ? new Date(live.loadedAt).toLocaleTimeString() : '')}
+          <button onClick={() => void live.refresh()} className="ml-3 underline">Refresh dashboard</button>
+          {actionError && <p role="alert">{actionError}</p>}
+        </div>
         {/* TAB CONTENT: OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="flex flex-col gap-6">
@@ -478,11 +451,11 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs">
                 <div className="flex justify-between items-center text-gray-500 mb-2">
-                  <span className="text-xs font-bold font-mono-caps">Total Revenue (₹)</span>
+                  <span className="text-xs font-bold font-mono-caps">Completed Booking Value (₹)</span>
                   <span className="material-symbols-outlined text-[#b0004a]">payments</span>
                 </div>
-                <div className="font-display font-extrabold text-2xl">₹{totalRevenue.toLocaleString('en-IN')}</div>
-                <div className="text-[11px] text-emerald-600 font-bold mt-1">+24% vs last month</div>
+                <div className="font-display font-extrabold text-2xl">₹{live.loadedAt ? totalRevenue.toLocaleString('en-IN') : '—'}</div>
+                <div className="text-[11px] text-emerald-600 font-bold mt-1">All time · completed bookings, before payment reconciliation</div>
               </div>
 
               <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs">
@@ -490,17 +463,17 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   <span className="text-xs font-bold font-mono-caps">Appointments</span>
                   <span className="material-symbols-outlined text-[#b0004a]">calendar_month</span>
                 </div>
-                <div className="font-display font-extrabold text-2xl">{totalBookings}</div>
-                <div className="text-[11px] text-emerald-600 font-bold mt-1">96% Fill rate</div>
+                <div className="font-display font-extrabold text-2xl">{live.loadedAt ? totalBookings : '—'}</div>
+                <div className="text-[11px] text-emerald-600 font-bold mt-1">All recorded bookings</div>
               </div>
 
               <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs">
                 <div className="flex justify-between items-center text-gray-500 mb-2">
-                  <span className="text-xs font-bold font-mono-caps">Active Clients</span>
+                  <span className="text-xs font-bold font-mono-caps">Saved Customers</span>
                   <span className="material-symbols-outlined text-[#b0004a]">person_add</span>
                 </div>
-                <div className="font-display font-extrabold text-2xl">218</div>
-                <div className="text-[11px] text-emerald-600 font-bold mt-1">+18 Indian clients this week</div>
+                <div className="font-display font-extrabold text-2xl">{live.loadedAt ? clients.length : '—'}</div>
+                <div className="text-[11px] text-emerald-600 font-bold mt-1">Customers saved for this salon</div>
               </div>
 
               <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs">
@@ -508,8 +481,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   <span className="text-xs font-bold font-mono-caps">Repeat Visit Rate</span>
                   <span className="material-symbols-outlined text-[#b0004a]">repeat</span>
                 </div>
-                <div className="font-display font-extrabold text-2xl">86%</div>
-                <div className="text-[11px] text-emerald-600 font-bold mt-1">+8% automated retention</div>
+                <div className="font-display font-extrabold text-2xl">{totals.repeatRate === null ? '—' : `${totals.repeatRate}%`}</div>
+                <div className="text-[11px] text-emerald-600 font-bold mt-1">Customers with more than one completed visit</div>
               </div>
             </div>
 
@@ -594,7 +567,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-purple-200/80 mt-1 max-w-2xl">
-                    4+ inactive clients identified past their regular service cycle. Generate personalized promotional offers and WhatsApp comeback messages to recover ~₹38,000 in appointments.
+                    Review saved customer visit history to prepare comeback offers.
                   </p>
                 </div>
               </div>
@@ -615,7 +588,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 border-b border-gray-100 pb-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="font-display font-bold text-lg text-gray-900">Confirmed Client Appointments</h2>
+                    <h2 className="font-display font-bold text-lg text-gray-900">Salon Appointments</h2>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                       {appointments.length} Records
                     </span>
@@ -947,10 +920,13 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
             {appointmentsSubTab === 'calendar' ? (
               <AppointmentsCalendarView
+                onCreate={live.create}
+                onUpdate={live.update}
+                saving={live.saving}
                 appointments={appointments}
                 setAppointments={setAppointments}
-                services={services}
-                stylists={stylists}
+                services={live.services || []}
+                stylists={live.stylists || []}
                 primaryAccentColor={currentPrimaryColor}
               />
             ) : (
@@ -1303,7 +1279,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-lg w-fit cursor-pointer flex items-center gap-1.5"
                       >
                         <span className="material-symbols-outlined text-sm">send</span>
-                        <span>Send to 42 Clients Now</span>
+                        <span>Review Campaign</span>
                       </button>
                       {smsSentNotice && (
                         <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">

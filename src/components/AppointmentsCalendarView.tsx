@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -28,6 +28,9 @@ import { BookingStatusBadge } from './BookingStatusBadge';
 
 interface AppointmentsCalendarViewProps {
   appointments: Appointment[];
+  onCreate: (appointment: Appointment) => Promise<void>;
+  onUpdate: (id: string, status: string, date?: string, time?: string) => Promise<void>;
+  saving: boolean;
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   services: SalonService[];
   stylists: Stylist[];
@@ -61,6 +64,7 @@ function getTodayStr(): string {
 export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> = ({
   appointments,
   setAppointments,
+  onCreate, onUpdate, saving,
   services,
   stylists,
   primaryAccentColor = '#C20E5A',
@@ -84,6 +88,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [addModalDefaultDate, setAddModalDefaultDate] = useState<string>(getTodayStr());
 
+  const bookingReference = useRef(crypto.randomUUID());
   // New Appointment Form state
   const [newClientName, setNewClientName] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
@@ -141,7 +146,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
       const items = map.get(dateKey)!;
       // Sort appointments within the day by time
       items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-      const dayTotalRevenue = items.reduce((sum, item) => sum + (item.servicePrice || 0), 0);
+      const dayTotalRevenue = items.filter(item => item.status === 'completed').reduce((sum, item) => sum + (item.servicePrice || 0), 0);
       const confirmedCount = items.filter((i) => i.status === 'confirmed').length;
       const completedCount = items.filter((i) => i.status === 'completed').length;
       return {
@@ -161,7 +166,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
     const confirmed = filteredAppointments.filter((a) => a.status === 'confirmed').length;
     const completed = filteredAppointments.filter((a) => a.status === 'completed').length;
     const pending = filteredAppointments.filter((a) => a.status === 'pending').length;
-    const revenue = filteredAppointments.reduce((sum, a) => sum + (a.servicePrice || 0), 0);
+    const revenue = filteredAppointments.filter(a => a.status === 'completed').reduce((sum, a) => sum + (a.servicePrice || 0), 0);
     return { total, confirmed, completed, pending, revenue };
   }, [filteredAppointments]);
 
@@ -197,34 +202,15 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
   };
 
   // Status updates
-  const handleUpdateStatus = (id: string, newStatus: AppointmentStatus) => {
-    setAppointments((prev) =>
-      prev.map((apt) => (apt.id === id ? { ...apt, status: newStatus } : apt))
-    );
-    if (activeAppointment && activeAppointment.id === id) {
-      setActiveAppointment((prev) => (prev ? { ...prev, status: newStatus } : null));
-    }
+  const handleUpdateStatus = async (id: string, newStatus: AppointmentStatus) => {
+    try { setFormError(''); await onUpdate(id, newStatus); setActiveAppointment(null); }
+    catch (error: any) { setFormError(error.message); }
   };
 
-  // Reschedule save
-  const handleSaveReschedule = () => {
+  const handleSaveReschedule = async () => {
     if (!activeAppointment) return;
-    const matchedStylist = stylists.find((s) => s.id === editStylistId);
-    setAppointments((prev) =>
-      prev.map((apt) => {
-        if (apt.id === activeAppointment.id) {
-          return {
-            ...apt,
-            date: editDate,
-            time: editTime,
-            stylistId: editStylistId,
-            stylistName: matchedStylist ? matchedStylist.name : apt.stylistName,
-          };
-        }
-        return apt;
-      })
-    );
-    setActiveAppointment(null);
+    try { setFormError(''); await onUpdate(activeAppointment.id, 'reschedule_proposed', editDate, editTime); setActiveAppointment(null); }
+    catch (error: any) { setFormError(error.message); }
   };
 
   // Open active appointment modal
@@ -237,6 +223,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
 
   // Open Add Modal
   const openAddModal = (defaultDate?: string) => {
+    bookingReference.current = crypto.randomUUID();
     setNewClientName('');
     setNewClientPhone('');
     setNewClientEmail('');
@@ -249,7 +236,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
     setIsAddModalOpen(true);
   };
 
-  const handleCreateAppointment = (e: React.FormEvent) => {
+  const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientName.trim()) {
       setFormError('Please provide client name');
@@ -264,10 +251,10 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
     const matchedStylist = stylists.find((s) => s.id === newStylistId) || stylists[0];
 
     const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
+      id: bookingReference.current,
       clientName: newClientName.trim(),
       clientPhone: newClientPhone.trim(),
-      clientEmail: newClientEmail.trim() || `${newClientName.toLowerCase().replace(/\s+/g, '')}@example.com`,
+      clientEmail: newClientEmail.trim(),
       serviceId: matchedService ? matchedService.id : 'custom',
       serviceName: matchedService ? matchedService.name : 'Custom Service',
       servicePrice: matchedService ? matchedService.price : 500,
@@ -281,8 +268,8 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
       createdAt: new Date().toISOString(),
     };
 
-    setAppointments((prev) => [newApt, ...prev]);
-    setIsAddModalOpen(false);
+    try { setFormError(''); await onCreate(newApt); setIsAddModalOpen(false); }
+    catch (error: any) { setFormError(error.message); }
   };
 
   // Current view period title
@@ -453,7 +440,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
               <IndianRupee className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Revenue Projected</p>
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Completed Booking Value</p>
               <p className="text-lg font-extrabold text-amber-900">₹{metrics.revenue.toLocaleString('en-IN')}</p>
             </div>
           </div>
@@ -648,7 +635,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                           <span>{group.totalCount} {group.totalCount === 1 ? 'Appointment' : 'Appointments'}</span>
                           <span>•</span>
                           <span className="font-semibold text-slate-800">
-                            Day Revenue: ₹{group.totalRevenue.toLocaleString('en-IN')}
+                            Completed Value: ₹{group.totalRevenue.toLocaleString('en-IN')}
                           </span>
                         </div>
                       </div>
@@ -1033,6 +1020,8 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
         </div>
       )}
 
+      {formError && <p role="alert" className="p-3 bg-rose-50 text-rose-700">{formError}</p>}
+      {saving && <p role="status">Saving appointment…</p>}
       {/* APPOINTMENT DETAILS & RESCHEDULE MODAL */}
       {activeAppointment && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1120,9 +1109,10 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                 </div>
               </div>
 
+              {formError && <p role="alert" className="text-rose-700">{formError}</p>}
               {/* Reschedule Date, Time & Stylist */}
               <div className="p-4 rounded-2xl border border-slate-200 space-y-3">
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Reschedule Appointment</h4>
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Propose a new date (awaits acceptance)</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 mb-1">Date</label>
@@ -1145,6 +1135,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 mb-1">Stylist</label>
                     <select
+                      disabled
                       value={editStylistId}
                       onChange={(e) => setEditStylistId(e.target.value)}
                       className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
@@ -1160,10 +1151,11 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
 
                 <div className="flex justify-end pt-2">
                   <button
+                    disabled={saving}
                     onClick={handleSaveReschedule}
                     className="px-3.5 py-1.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition-colors"
                   >
-                    Save Reschedule
+                    Propose Reschedule
                   </button>
                 </div>
               </div>
@@ -1358,8 +1350,8 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
                 >
                   <option value="pay_at_salon">Pay at Salon (Pending)</option>
-                  <option value="paid_deposit">Paid Deposit (20% Advance)</option>
-                  <option value="paid_full">Paid in Full</option>
+                  <option disabled value="paid_deposit">Paid Deposit (20% Advance)</option>
+                  <option disabled value="paid_full">Paid in Full</option>
                 </select>
               </div>
 
@@ -1372,6 +1364,7 @@ export const AppointmentsCalendarView: React.FC<AppointmentsCalendarViewProps> =
                   Cancel
                 </button>
                 <button
+                  disabled={saving}
                   type="submit"
                   className="px-4 py-2 rounded-xl text-white font-bold text-xs shadow-xs hover:opacity-95 transition-all"
                   style={{ backgroundColor: primaryAccentColor }}

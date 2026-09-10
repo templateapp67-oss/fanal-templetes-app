@@ -349,8 +349,8 @@ export default function App() {
   const [stylists, setStylists] = useState<Stylist[]>(
     initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : INITIAL_STYLISTS
   );
-  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
-  const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS);
+  const [appointments, setAppointments] = useState<Appointment[]>(isMockSupabase ? INITIAL_APPOINTMENTS : []);
+  const [clients, setClients] = useState<ClientRecord[]>(isMockSupabase ? INITIAL_CLIENTS : []);
   const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(
     initialSaved?.loyaltyConfig || DEFAULT_LOYALTY_CONFIG
   );
@@ -757,26 +757,6 @@ export default function App() {
 
     fetchProfile();
   }, [user]);
-
-  // Sync Supabase Realtime Data
-  useEffect(() => {
-    const fetchSyncData = async () => {
-      if (isMockSupabase) return;
-      try {
-        const { data: apts } = await supabase.from('appointments').select('*').order('date', { ascending: false });
-        if (apts && apts.length > 0) setAppointments(apts.map(toAppointment));
-
-        const { data: clis } = await supabase.from('clients').select('*').order('last_visit', { ascending: false });
-        if (clis && clis.length > 0) setClients(clis.map(toClientRecord));
-      } catch (err) {
-        console.warn('Could not sync with Supabase', err);
-      }
-    };
-
-    fetchSyncData();
-    const interval = setInterval(fetchSyncData, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Hydrate services / staff / loyalty from Supabase once the owner logs in.
   // The cloud sync only performs *destructive* cleanup (deleting rows removed
@@ -1312,6 +1292,7 @@ export default function App() {
   };
 
   const handleAddAppointment = async (newApt: Appointment) => {
+    if (!isMockSupabase) { window.dispatchEvent(new Event('owner-bookings-changed')); return; }
     setAppointments((prev) => [newApt, ...prev]);
 
     const spendPoints = Math.round((newApt.servicePrice / 100) * loyaltyConfig.pointsPerHundredSpent);
@@ -1576,6 +1557,8 @@ export default function App() {
 
       {currentView === 'dashboard' && (
         <SaaSDashboard
+          key={user?.id || 'signed-out'}
+          ownerId={user?.id}
           profile={profile}
           setProfile={setProfile}
           services={services}
