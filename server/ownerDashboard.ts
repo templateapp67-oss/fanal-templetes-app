@@ -49,12 +49,13 @@ export async function readOwnerDashboard(db: any, req: any) {
   const customers = await allRows(() => db.from('salon_customers').select('id,name,phone,email').eq('salon_id', salon.id).order('id'));
   const services = await allRows(() => db.from('services').select('id,name,price_paise,duration_minutes').eq('salon_id',salon.id).eq('is_active',true).order('id'));
   const staff = await allRows(() => db.from('staff').select('id,name,role_title').eq('salon_id',salon.id).eq('is_active',true).order('id'));
+  const hours = await readDatabase(() => db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',salon.id).order('day_of_week'));
   const clients = customers.map((c: any) => {
     const visits = bookings.filter((b: any) => b.salon_customer_id === c.id && b.status === 'completed');
     return { ...c, totalVisits: visits.length, totalSpent: visits.reduce((sum: number,b: any) => sum + Number(b.total_paise)/100,0),
       lastVisit: visits.map((b: any) => dashboardAppointment(b).date).sort().at(-1) || '', notes: '', favoriteStylist: '' };
   });
-  return { success: true, appointments: bookings.map(dashboardAppointment), clients, services: services.map(s => ({ id:s.id,name:s.name,price:Number(s.price_paise)/100,durationMinutes:s.duration_minutes,description:'',category:'',icon:'scissors' })), stylists: staff.map(s => ({id:s.id,name:s.name,role:s.role_title || ''})), loadedAt: new Date().toISOString() };
+  return { success: true, hours, appointments: bookings.map(dashboardAppointment), clients, services: services.map(s => ({ id:s.id,name:s.name,price:Number(s.price_paise)/100,durationMinutes:s.duration_minutes,description:'',category:'',icon:'scissors' })), stylists: staff.map(s => ({id:s.id,name:s.name,role:s.role_title || ''})), loadedAt: new Date().toISOString() };
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -119,5 +120,37 @@ export function ownerDashboardHandler(db: any, create = false, userDatabase = da
       }
       res.status(error.status).json({ success: false, error: error.message, code: error.code });
     }
+  };
+}
+
+export function validateSalonHours(input: any, salonId: string) {
+  if (!Array.isArray(input) || input.length !== 7 || new Set(input.map(h=>h.day_of_week)).size !== 7) throw new BackendError(400,'Provide all seven days once.');
+  return input.map(h => {
+    if (!Number.isInteger(h.day_of_week) || h.day_of_week < 0 || h.day_of_week > 6 || typeof h.is_closed !== 'boolean') throw new BackendError(400,'Invalid day or closed status.');
+    if (!h.is_closed && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h.opens_at) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(h.closes_at) || h.opens_at >= h.closes_at)) throw new BackendError(400,'Choose valid opening and closing times. Closing must be later on the same day.');
+    return {salon_id:salonId,day_of_week:h.day_of_week,is_closed:h.is_closed,opens_at:h.is_closed?null:h.opens_at,closes_at:h.is_closed?null:h.closes_at};
+  });
+}
+export function salonHoursHandler(db: any) {
+  return async (req: any,res: any) => {
+    try {
+      const {salon,user}=await dashboardSalon(db,req);
+      const salonRow=await readDatabase(()=>db.from('salons').select('organization_id').eq('id',salon.id).single());
+      const membership=await readDatabase(()=>db.from('organization_members').select('id').eq('organization_id',salonRow.organization_id).eq('user_id',user.id).eq('status','active').in('role',['owner','manager']).maybeSingle());
+      if(!membership)throw new BackendError(403,'Only an owner or manager can change salon hours.');
+      const rows=validateSalonHours(req.body?.hours,salon.id);
+      const saved=await readDatabase(()=>db.from('salon_hours').upsert(rows,{onConflict:'salon_id,day_of_week'}).select('day_of_week,opens_at,closes_at,is_closed'));
+      if(saved?.length!==7)throw new BackendError(409,'Opening hours were not saved.');
+      // Missing staff calendars inherit the explicitly saved salon hours.
+      // Never overwrite a specialist's individually configured schedule.
+      const staff=await readDatabase(()=>db.from('staff').select('id').eq('salon_id',salon.id).eq('is_active',true));
+      if(staff?.length){
+        const schedules=await readDatabase(()=>db.from('staff_schedules').select('staff_id').in('staff_id',staff.map((s:any)=>s.id)));
+        const configured=new Set((schedules||[]).map((s:any)=>s.staff_id));
+        const missing=staff.filter((s:any)=>!configured.has(s.id)).flatMap((s:any)=>rows.map(h=>({staff_id:s.id,day_of_week:h.day_of_week,is_working:!h.is_closed,start_time:h.opens_at,end_time:h.closes_at})));
+        if(missing.length)await readDatabase(()=>db.from('staff_schedules').upsert(missing,{onConflict:'staff_id,day_of_week',ignoreDuplicates:true}));
+      }
+      res.json({success:true,hours:saved});
+    }catch(error:any){res.status(error instanceof BackendError?error.status:503).json({success:false,error:error instanceof BackendError?error.message:'Opening hours could not be saved.',code:error.code});}
   };
 }

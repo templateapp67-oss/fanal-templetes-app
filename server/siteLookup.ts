@@ -209,15 +209,18 @@ export async function lookupSalon(
     if (salonRes.error) return { found: false, salon: null, error: salonRes.error };
     if (!salonRes.data) return { found: false, salon: null };
     const salonRow = salonRes.data;
-    const [servicesRes, staffRes] = await Promise.all([
+    const [servicesRes, staffRes, hoursRes] = await Promise.all([
       runDb(() => deps.db.from('services').select('*').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_bookable_online', true).order('display_order'),
         { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_public', true),
         { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
+      runDb(() => deps.db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',salonRow.id),
+        { label: 'public salon hours', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
     ]);
+    if (hoursRes.error) return { found: false, salon: null, error: hoursRes.error };
     if (servicesRes.error || staffRes.error) return { found: false, salon: null, error: servicesRes.error || staffRes.error };
     return { found: true, salon: {
-      profile: mapProfileRow(salonRow),
+      profile: { ...mapProfileRow(salonRow), ...publicHours(hoursRes.data || []) },
       services: (servicesRes.data || []).map(mapServiceRow),
       stylists: (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
         assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) })),
@@ -225,4 +228,11 @@ export async function lookupSalon(
   } catch (error) {
     return { found: false, salon: null, error };
   }
+}
+
+export function publicHours(hours: any[]) {
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const display=(day:number)=>{const h=hours.find(h=>h.day_of_week===day);return !h?'Not configured':h.is_closed?'Closed':String(h.opens_at).slice(0,5)+'–'+String(h.closes_at).slice(0,5);};
+  const weekday=[1,2,3,4,5].map(display);
+  return {workingHoursMonFri:new Set(weekday).size===1?weekday[0]:weekday.map((value,index)=>days[index+1]+': '+value).join('; '),workingHoursSat:display(6),workingHoursSun:display(0)};
 }

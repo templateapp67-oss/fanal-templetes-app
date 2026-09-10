@@ -180,6 +180,16 @@ create table public.booking_items (
   quantity int default 1,
   created_at timestamptz default now()
 );
+-- Opening hours (read by the dashboard since the calendar-opening-hours fix).
+create table public.salon_hours (
+  salon_id uuid not null references public.salons(id),
+  day_of_week int not null check (day_of_week between 0 and 6),
+  opens_at text,
+  closes_at text,
+  is_closed boolean default false,
+  primary key (salon_id, day_of_week)
+);
+
 create table public.reviews (
   id uuid primary key default gen_random_uuid(),
   booking_id uuid constraint reviews_booking_id_fkey references public.bookings(id),
@@ -195,6 +205,7 @@ alter table public.services enable row level security;
 alter table public.staff enable row level security;
 alter table public.staff_services enable row level security;
 alter table public.salon_customers enable row level security;
+alter table public.salon_hours enable row level security;
 alter table public.bookings enable row level security;
 alter table public.booking_items enable row level security;
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allRows, createOwnerAppointment, dashboardAppointment, readOwnerDashboard } from '../server/ownerDashboard';
+import { allRows, createOwnerAppointment, dashboardAppointment, readOwnerDashboard, validateSalonHours, salonHoursHandler } from '../server/ownerDashboard';
 
 const request = { headers: { authorization: 'Bearer token' }, query: { subdomain: 'mine' } };
 function database(options: { member?: boolean; bookings?: any[]; error?: boolean; salons?: any[]; catalogMissing?: boolean } = {}) {
@@ -99,4 +99,31 @@ test('legacy slug resolves only an unambiguous authorized salon', async () => {
   const matched = database({ salons: [{id:'one',slug:'mine'},{id:'two',slug:'another'}] });
   await readOwnerDashboard(matched,request);
   assert.equal(matched.calls.find(c=>c.table==='bookings').filters.salon_id,'one');
+});
+
+test('hours reject missing days, duplicates, invalid times and reversed intervals',()=>{
+  const hours=Array.from({length:7},(_,day_of_week)=>({day_of_week,is_closed:day_of_week===2,opens_at:'08:00',closes_at:'21:00'}));
+  const rows=validateSalonHours(hours,'salon');assert.equal(rows[2].opens_at,null);assert.equal(rows[1].opens_at,'08:00');assert.ok(rows.every(r=>r.salon_id==='salon'));
+  assert.throws(()=>validateSalonHours(hours.slice(0,6),'salon'));
+  assert.throws(()=>validateSalonHours(hours.map(h=>({...h,day_of_week:1})),'salon'));
+  assert.throws(()=>validateSalonHours(hours.map(h=>({...h,closes_at:'06:00'})),'salon'));
+  assert.throws(()=>validateSalonHours(hours.map(h=>({...h,opens_at:'25:00'})),'salon'));
+});
+
+test('hours save requires manager membership and never overwrites configured staff schedules',async()=>{
+  const writes:any[]=[];let manager=false;
+  const db:any={auth:{getUser:async()=>({data:{user:{id:'actor'}}})},from(table:string){
+    let single=false,payload:any=null;const q:any={};
+    for(const name of ['select','eq','in','order'])q[name]=()=>q;
+    q.single=q.maybeSingle=()=>{single=true;return q;};
+    q.upsert=(rows:any,options:any)=>{payload=rows;writes.push({table,rows,options});return q;};
+    q.then=(resolve:any)=>resolve({data:payload||(table==='organization_members'?(single?(manager?{id:'member'}:null):[{organization_id:'org'}]):table==='salons'?(single?{organization_id:'org'}:[{id:'salon',slug:'mine'}]):table==='staff'?[{id:'configured'},{id:'missing'}]:table==='staff_schedules'?[{staff_id:'configured'}]:[])});return q;
+  }};
+  const hours=Array.from({length:7},(_,day_of_week)=>({day_of_week,is_closed:day_of_week===2,opens_at:'08:00',closes_at:'21:00'}));
+  const req={...request,body:{salon_id:'foreign',hours}};let status=200;let body:any;
+  const res:any={status(n:number){status=n;return res;},json(value:any){body=value;return res;}};
+  await salonHoursHandler(db)(req,res);assert.equal(status,403);assert.equal(writes.length,0);
+  manager=true;status=200;await salonHoursHandler(db)(req,res);assert.equal(status,200);assert.equal(body.success,true);
+  assert.ok(writes[0].rows.every((row:any)=>row.salon_id==='salon'));
+  const staffWrite=writes.find(w=>w.table==='staff_schedules');assert.equal(staffWrite.rows.length,7);assert.ok(staffWrite.rows.every((r:any)=>r.staff_id==='missing'));assert.equal(staffWrite.options.ignoreDuplicates,true);
 });

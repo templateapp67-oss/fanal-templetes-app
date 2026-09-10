@@ -1,3 +1,4 @@
+import { SalonOpeningHours } from './SalonOpeningHours';
 import { useOwnerDashboard, dashboardTotals } from '../lib/useOwnerDashboard';
 import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, AppointmentStatus, ClientRecord, LoyaltyConfig } from '../types';
@@ -918,6 +919,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
+            {live.loadedAt && <SalonOpeningHours hours={live.hours || []} onSave={live.saveHours} saving={live.saving} />}
             {appointmentsSubTab === 'calendar' ? (live.loadedAt ? (
               <AppointmentsCalendarView
                 onCreate={live.create}
