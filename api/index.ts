@@ -6,7 +6,7 @@ import { supabase, isMockSupabase, getSupabaseAdmin, supabaseConfig } from "../s
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant.js";
 import { SalonProfile, SalonService, Stylist } from "../src/types.js";
 import { nexoraCors } from "../server/cors.js";
-import { handleWebsiteSave } from "../server/websiteSave.js";
+import { handleWebsiteSave, handleGetSalonState } from "../server/websiteSave.js";
 import { handleFetchYouTubeMetadata } from "../server/youtubeMetadata.js";
 import { createBookingHandler } from "../server/bookingCreate.js";
 import { authenticateBookingRequest } from "../server/bookingAuth.js";
@@ -723,6 +723,8 @@ app.post("/api/fetch-youtube-meta", withRequestTimeout(API_REQUEST_TIMEOUT_MS), 
 //   400 { success: false, error }
 //   500 { error: "Failed to persist site state" }
 // ============================================================================
+app.get("/api/salon/state", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleGetSalonState({ mockSalons })));
+app.post("/api/salon/save", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleWebsiteSave({ mockSalons })));
 app.post("/api/website/save", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleWebsiteSave({ mockSalons })));
 
 // ============================================================================

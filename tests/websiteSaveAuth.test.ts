@@ -63,6 +63,11 @@ function startFakeSupabase(): Promise<string> {
           apikey: (req.headers.apikey as string) ?? null,
           prefer: (req.headers.prefer as string) ?? null,
         });
+        if (url.pathname === '/rest/v1/rpc/get_owner_editor_state') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ profile: { businessName: req.headers.authorization === 'Bearer owner-a-token' ? 'Salon A' : 'Salon B' } }));
+          return;
+        }
         res.writeHead(204);
         res.end();
         return;
@@ -183,4 +188,21 @@ test('live mode keeps 400 validation for a malformed owner_id (before auth)', as
   assert.equal(res.status, 400);
   const body: any = await res.json();
   assert.equal(body.success, false);
+});
+
+test('production salon state route restores only the verified caller, ignoring spoofed query identity', async () => {
+  const missing = await fetch(baseUrl+'/api/salon/state');
+  assert.equal(missing.status,401);
+  const response = await fetch(baseUrl+'/api/salon/state?owner_id='+OWNER_B,{headers:{Authorization:'Bearer owner-a-token'}});
+  assert.equal(response.status,200);
+  const body:any=await response.json();
+  assert.equal(body.data.profile.businessName,'Salon A');
+});
+
+test('production salon save alias uses the same authenticated transaction as website save', async () => {
+  restCalls.length=0;
+  const response=await fetch(baseUrl+'/api/salon/save',{method:'POST',headers:{Authorization:'Bearer owner-a-token','Content-Type':'application/json'},body:JSON.stringify(savePayload(OWNER_A))});
+  assert.equal(response.status,200);
+  assert.equal(restCalls.length,1);
+  assert.equal(restCalls[0].path,'/rest/v1/rpc/save_owner_editor_state');
 });

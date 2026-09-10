@@ -38,7 +38,7 @@ import {
   withRetry,
   runSalonSavePipeline,
 } from './lib/autoSave';
-import { syncSalonToSupabase, applyWorkingHoursFromRow } from './lib/salonSync';
+import { applyWorkingHoursFromRow } from './lib/salonSync';
 import { saveOwnerEditorState } from './lib/ownerEditorState';
 import {
   usePathRoute,
@@ -1028,7 +1028,7 @@ export default function App() {
           // 2a) Pre-flight: the Supabase client must hold a LIVE session for
           // the same owner we are saving for. A dead session is no longer a
           // hard failure — the pipeline degrades to SUCCESS (Local Draft) —
-          // but we still flip the header/auth UI back to signed-out.
+          // the auth observer alone controls the signed-in UI.
           try {
             const { data: sessionData, error: sessionLookupError } =
               await supabase.auth.getSession();
@@ -1048,28 +1048,27 @@ export default function App() {
               );
               // Only the auth listener changes login state; a data read cannot log the user out.
             } else if (sessionUser.id !== liveOwnerId) {
-              // Stale React state after an account switch — adopt the live
-              // session identity and save as that owner (safe mode below
-              // unless hydration for the new owner already succeeded).
+              // A save started before an account switch. Keep its original
+              // identity and prevent this snapshot from reaching the new account.
               console.warn(
-                `[AutoSave] Session user changed (${liveOwnerId} → ${sessionUser.id}); adopting the live account.`
+                `[AutoSave] Session user changed (${liveOwnerId} → ${sessionUser.id}); preserving the old account draft without a cloud write.`
               );
-              liveOwnerId = sessionUser.id;
-              setUser(sessionUser);
-              hydratedForUserRef.current = false;
-              hydrationUserRef.current = sessionUser.id;
+              // This snapshot belongs to the previous account. Never save it as the new user.
+              sessionOk = false;
+              liveAccessToken = undefined;
             }
           } catch (err) {
-            // Session check itself failed (e.g. offline) — proceed optimistically;
-            // the pipeline still logs per-path failures with table + status.
-            console.warn('[AutoSave] Session pre-flight check failed (continuing):', err);
+            // An unverified session cannot authorize a cloud write.
+            sessionOk = false;
+            liveAccessToken = undefined;
+            console.warn('[AutoSave] Session verification failed; preserving a local draft:', err);
           }
 
           // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
           // in the editor) is only safe after a successful hydrate, so a
           // half-loaded client can never wipe rows it hasn't seen. A flaky
-          // hydrate no longer hard-fails EVERY later save — the pipeline
-          // falls back to the service-role API / local draft below.
+          // hydrate preserves a local draft; neither cloud write path can run
+          // until the existing workspace has loaded for this account.
           if (sessionOk) {
             if (hydratedForUserRef.current && hydrationUserRef.current !== liveOwnerId) {
               hydratedForUserRef.current = false;
@@ -1083,7 +1082,7 @@ export default function App() {
             if (!canCleanUpCloudRows) {
               const reason = hydrationErrorRef.current || 'hydration still pending';
               console.warn(
-                `[AutoSave] Cloud hydration unavailable (${reason}) — saving owner rows in safe (non-destructive) mode; deleted-row cleanup stays disabled.`
+                `[AutoSave] Cloud hydration unavailable (${reason}) — preserving a local draft until the complete cloud workspace has loaded.`
               );
             }
           }
@@ -1099,6 +1098,7 @@ export default function App() {
             stylists: state.stylists,
             loyaltyConfig: state.loyaltyConfig,
           },
+          workspaceReady: canCleanUpCloudRows,
           deleteRemoved: canCleanUpCloudRows,
           isMockMode: isMockSupabase,
           authenticated: sessionOk && !!liveOwnerId,
@@ -1127,7 +1127,7 @@ export default function App() {
         }
         if (cloud.target === 'api') {
           console.warn(
-            '[AutoSave] Direct client sync failed — the server saved your site state via POST /api/website/save (Supabase service role).'
+            '[AutoSave] Direct client sync failed — the server saved your site state via POST /api/website/save (authenticated workspace transaction).'
           );
         }
 

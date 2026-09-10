@@ -660,6 +660,8 @@ export interface SalonSaveOutcome {
 }
 
 export interface SalonSavePipelineOptions {
+  /** False until this account's complete workspace has loaded; never replace cloud state before that. */
+  workspaceReady?: boolean;
   /** The salon state to persist (SalonSyncPayload from salonSync.ts). */
   payload: SalonSyncPayload;
   /** Enable destructive (deleted-row) cleanup — only after a successful hydrate. */
@@ -742,7 +744,7 @@ export async function runSalonSavePipeline(
   };
 
   // ---- 0) Unauthenticated / mock session → clean local draft, no error ----
-  if (options.isMockMode || !options.authenticated) {
+  if (options.isMockMode || !options.authenticated || options.workspaceReady === false) {
     const { draftWritten, error } = storeLocalDraft();
     if (!draftWritten) {
       return {
@@ -763,7 +765,9 @@ export async function runSalonSavePipeline(
       draftWritten: true,
       errors: [],
       summary:
-        'Saved as a local draft on this device — sign in to publish and sync to the cloud.',
+        options.authenticated && options.workspaceReady === false
+          ? 'Saved on this device while your existing workspace loads. Cloud data has not been replaced.'
+          : 'Saved as a local draft on this device — sign in to publish and sync to the cloud.',
     };
   }
 
