@@ -24,6 +24,7 @@ import { GROWTH_PARTNER_LOGIN_PATH, isGrowthPartnerLoginPath } from './router';
  */
 export interface GrowthPartnerAuthClient {
   auth: {
+    signUp?: (args: { email: string; password: string; options?: { data?: Record<string, string> } }) => Promise<{ data: any; error: any }>;
     signInWithPassword: (args: {
       email: string;
       password: string;
@@ -38,6 +39,28 @@ export interface GrowthPartnerAuthClient {
    * auth actions and the Growth Partner authorization check.
    */
   fetchPartnerRow?: () => Promise<GrowthPartner | null>;
+  rpc?: (name: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }>;
+}
+
+/** Create an Auth account, then submit a pending partner application. */
+export async function signUpGrowthPartner(
+  client: GrowthPartnerAuthClient,
+  input: { email: string; password: string; fullName: string; phone?: string }
+): Promise<{ confirmed: boolean }> {
+  if (!client.auth.signUp) throw new Error('Signup is unavailable. Please try again later.');
+  const { data, error } = await client.auth.signUp({
+    email: input.email.trim(), password: input.password,
+    options: { data: { full_name: input.fullName.trim() } },
+  });
+  if (error) throw toGrowthPartnerLoginError(error);
+  if (!data?.user) throw new Error('Signup failed. Please try again.');
+  if (!data.session) return { confirmed: false };
+  if (!client.rpc) throw new Error('Signup is unavailable. Please try again later.');
+  const { error: applicationError } = await client.rpc('submit_growth_partner_application', {
+    p_full_name: input.fullName.trim(), p_phone: input.phone?.trim() || null,
+  });
+  if (applicationError) throw new Error('Account created, but the partner application could not be submitted. Please sign in and try again.');
+  return { confirmed: true };
 }
 
 /** The authenticated viewer identity (id + email), never a role. */

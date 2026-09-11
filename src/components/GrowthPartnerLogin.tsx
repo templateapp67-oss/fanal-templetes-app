@@ -12,6 +12,7 @@ import {
   loadGrowthPartnerSession,
   resolveGrowthPartnerLogin,
   signInGrowthPartner,
+  signUpGrowthPartner,
   signOutGrowthPartner,
   type GrowthPartnerAuthClient,
   type GrowthPartnerLoginState,
@@ -47,6 +48,7 @@ export const GROWTH_PARTNER_LOGIN_SESSION_TITLE = 'Your session expired';
 export const GROWTH_PARTNER_LOGIN_SESSION_BODY = 'Please sign in again to continue.';
 export const GROWTH_PARTNER_LOGIN_ERROR_TITLE = 'Could not verify your Growth Partner access';
 export const GROWTH_PARTNER_LOGIN_ERROR_BODY = 'Please try again.';
+export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Application submitted. We will review it and email you after approval.';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -87,7 +89,8 @@ export const GrowthPartnerLoginForm: React.FC<{
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: React.FormEvent) => void;
-}> = ({ email, password, fieldErrors, formError, busy, accentHex = '#C20E5A', onEmailChange, onPasswordChange, onSubmit }) => (
+  onSwitchToSignup: () => void;
+}> = ({ email, password, fieldErrors, formError, busy, accentHex = '#C20E5A', onEmailChange, onPasswordChange, onSubmit, onSwitchToSignup }) => (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -124,10 +127,32 @@ export const GrowthPartnerLoginForm: React.FC<{
         <SubmitButton busy={busy} busyLabel="Signing in…" accentHex={accentHex}>
           Sign in
         </SubmitButton>
+        <button type="button" onClick={onSwitchToSignup} className="w-full text-sm font-bold text-slate-500 hover:text-slate-800">Apply as a Growth Partner</button>
       </form>
     </motion.div>
   </main>
 );
+
+export const GrowthPartnerSignupForm: React.FC<{
+  busy: boolean; formError: string; success: string; accentHex?: string;
+  onSubmit: (input: { fullName: string; phone: string; email: string; password: string }) => void; onBack: () => void;
+}> = ({ busy, formError, success, accentHex = '#C20E5A', onSubmit, onBack }) => {
+  const [fullName, setFullName] = useState(''); const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
+  return <main className="min-h-[70vh] flex items-center justify-center px-4 py-16"><motion.div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8">
+    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Growth Partner</p><h1 className="mt-1 text-2xl font-bold text-slate-900">Apply as a Growth Partner</h1>
+    <p className="mt-1 text-sm text-slate-600">Create an account and submit your application. Access starts only after approval.</p>
+    <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); onSubmit({ fullName, phone, email, password }); }}>
+      <Field id="growth-partner-signup-name" label="Full name" value={fullName} onChange={setFullName} disabled={busy} />
+      <Field id="growth-partner-signup-phone" label="Phone (optional)" value={phone} onChange={setPhone} disabled={busy} />
+      <Field id="growth-partner-signup-email" label="Email" type="email" value={email} onChange={setEmail} disabled={busy} />
+      <Field id="growth-partner-signup-password" label="Password" type="password" value={password} autoComplete="new-password" onChange={setPassword} disabled={busy} />
+      {formError && <FormAlert tone="error">{formError}</FormAlert>}{success && <FormAlert tone="success">{success}</FormAlert>}
+      <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>Submit application</SubmitButton>
+      <button type="button" onClick={onBack} className="w-full text-sm font-bold text-slate-500 hover:text-slate-800">Back to sign in</button>
+    </form>
+  </motion.div></main>;
+};
 
 export const GrowthPartnerLoginVerifying: React.FC = () => (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
@@ -263,6 +288,8 @@ export const GrowthPartnerLogin: React.FC<{
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [signup, setSignup] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState('');
 
   // 1) Verify the live session (page refresh / already-signed-in path).
   useEffect(() => {
@@ -354,8 +381,20 @@ export const GrowthPartnerLogin: React.FC<{
     ).finally(() => setBusy(false));
   };
 
+  const handleSignup = (input: { fullName: string; phone: string; email: string; password: string }) => {
+    if (!input.fullName.trim() || !EMAIL_RE.test(input.email.trim()) || input.password.length < 8) {
+      setFormError('Enter your full name, a valid email, and a password of at least 8 characters.'); return;
+    }
+    setBusy(true); setFormError(''); setSignupSuccess('');
+    void signUpGrowthPartner(sb, input).then((result) => {
+      setSignupSuccess(result.confirmed ? GROWTH_PARTNER_SIGNUP_SUCCESS : 'Account created. Verify your email, then return here to sign in and submit your application.');
+    }, (error: Error) => setFormError(error.message || 'Signup failed. Please try again.')).finally(() => setBusy(false));
+  };
+
   if (state === 'mock-mode') return <GrowthPartnerLoginMockNotice onBack={onBack} />;
   if (state === 'loading' || state === 'granted') return <GrowthPartnerLoginVerifying />;
+  if (state === 'signed-out' && signup)
+    return <GrowthPartnerSignupForm busy={busy} formError={formError} success={signupSuccess} accentHex={accentHex} onSubmit={handleSignup} onBack={() => { setSignup(false); setFormError(''); }} />;
   if (state === 'signed-out')
     return (
       <GrowthPartnerLoginForm
@@ -368,6 +407,7 @@ export const GrowthPartnerLogin: React.FC<{
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
         onSubmit={handleSubmit}
+        onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
       />
     );
   if (state === 'unauthorized')
