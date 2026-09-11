@@ -23,6 +23,7 @@ export function GrowthPartnerInvite({ code }: { code: string | null | undefined 
   }
   return <section className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
     <h2 className="text-xl font-bold">Onboard a business</h2>
+    <a href="/growth-partner#rewards" className="mt-2 inline-block text-sm font-bold text-pink-700 underline">View reward milestones and remaining targets →</a>
     <p className="mt-2 text-sm text-slate-600">Share your invite with the business owner. They create their own account, confirm your referral code, and continue to build their website.</p>
     {!link ? <p className="mt-5">Your referral code is unavailable. Refresh your dashboard to try again.</p> : <>
       <div className="mt-6 grid gap-6 sm:grid-cols-[1fr_200px]">

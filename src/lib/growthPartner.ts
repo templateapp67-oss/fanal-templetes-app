@@ -407,7 +407,7 @@ export interface PartnerActivityEntry {
 
 export interface PartnerDashboardData {
   partner: { referral_code: string; is_active: boolean; partner_since: string };
-  kpis: { total_referrals: number; active_onboarding: number | null; completed: number | null };
+  kpis: { total_referrals: number; active_onboarding: number | null; completed: number | null; onboarded_shops?: number | null };
   recent_activity: PartnerActivityEntry[];
 }
 
@@ -431,6 +431,21 @@ export interface PartnerPerformanceData {
 export async function fetchMyPartnerDashboard(): Promise<PartnerDashboardData> {
   const { data, error } = await supabase.rpc('get_my_partner_dashboard');
   if (error) throw rpcError('Partner dashboard lookup failed', error);
+  data.kpis.onboarded_shops = null;
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    if (session.session) {
+      const response = await fetch('/api/growth-partner/milestones', {
+        headers: { Authorization: 'Bearer ' + session.session.access_token },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        if (Number.isSafeInteger(result.onboarded_shops) && result.onboarded_shops >= 0)
+          data.kpis.onboarded_shops = result.onboarded_shops;
+      }
+    }
+  } catch { /* Keep targets visible without fabricating a count. */ }
   return data as PartnerDashboardData;
 }
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { GrowthPartnerMilestones } from './GrowthPartnerMilestones';
 import { motion } from 'motion/react';
 import {
   AlertCircle,
@@ -386,6 +387,7 @@ export const GrowthPartnerDashboard: React.FC<{
       <KpiCard label="Completed Customers" value={String(dashboard.kpis.completed ?? '—')} />
     </section>
 
+    <GrowthPartnerMilestones shopCount={dashboard.kpis.onboarded_shops} />
     <section aria-label="Recent activity" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-base font-bold text-slate-900">Recent activity</h2>
       <ActivityList activity={dashboard.recent_activity} />

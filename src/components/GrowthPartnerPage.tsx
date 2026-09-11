@@ -354,6 +354,7 @@ const GrowthPartnerArea: React.FC<GrowthPartnerPageProps> = ({
   const [gateLoading, setGateLoading] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [milestoneRefresh, setMilestoneRefresh] = useState(0);
 
   // Section data (each fetched once per visit from its backend RPC).
   const [dashboard, setDashboard] = useState<SectionState<PartnerDashboardData>>(initialSectionState);
@@ -410,6 +411,13 @@ const GrowthPartnerArea: React.FC<GrowthPartnerPageProps> = ({
     loadError,
   });
   const ready = gate === 'ready';
+  useEffect(() => {
+    if (!ready || section !== 'dashboard') return;
+    const refresh = () => { if (document.visibilityState === 'visible') setMilestoneRefresh(value => value + 1); };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [ready, section]);
 
   // Unauthenticated visitors to the protected area are sent to the dedicated
   // login route. The login route renders its own screen (and only forwards
@@ -449,7 +457,7 @@ const GrowthPartnerArea: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, section, reloadKey]);
+  }, [ready, section, reloadKey, milestoneRefresh]);
 
   useEffect(() => {
     if (!ready || section !== 'referrals') return;

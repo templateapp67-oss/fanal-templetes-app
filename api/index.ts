@@ -3,6 +3,7 @@ import { ownerDashboardHandler, salonHoursHandler } from '../server/ownerDashboa
 // Loads process env > .env > .env.development (see server/env.ts).
 import "../server/env.js";
 import express from "express";
+import { partnerMilestonesHandler } from '../server/partnerMilestones.js';
 import { GoogleGenAI } from "@google/genai";
 import { supabase, isMockSupabase, getSupabaseAdmin, supabaseConfig } from "../src/lib/supabaseClient.js";
 import { resolveTenantFromHost, BASE_DOMAIN } from "../src/lib/tenant.js";
@@ -73,6 +74,7 @@ app.use(
 // Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
 // catch-all — that is exactly the "404 / blocked by CORS" failure mode.
 app.use(nexoraCors);
+app.get('/api/growth-partner/milestones', partnerMilestonesHandler);
 
 /** Owner email for booking notifications, resolved from the profiles row. */
 async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?: number): Promise<string> {

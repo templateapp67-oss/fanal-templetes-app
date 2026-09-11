@@ -3,6 +3,7 @@ import { ownerDashboardHandler, salonHoursHandler } from './server/ownerDashboar
 // Loads process env > .env > .env.development (see server/env.ts).
 import "./server/env";
 import express from "express";
+import { partnerMilestonesHandler } from './server/partnerMilestones.js';
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -230,6 +231,7 @@ async function startServer() {
   // untouched. Mounted before the routes so OPTIONS preflights for
   // /api/* (incl. /api/website/save) get a 204 instead of a 404.
   app.use(nexoraCors);
+  app.get('/api/growth-partner/milestones', partnerMilestonesHandler);
 
   // API Routes
   // Configuration + connectivity diagnostics. `?deep=1` also round-trips the
