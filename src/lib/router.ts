@@ -161,6 +161,7 @@ export const GROWTH_PARTNER_ONBOARDING_PATH = '/growth-partner/onboarding';
 
 export type GrowthPartnerSection =
   | 'dashboard'
+  | 'onboard'
   | 'referrals'
   | 'customers'
   | 'performance'
@@ -169,6 +170,7 @@ export type GrowthPartnerSection =
 
 export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'dashboard',
+  'onboard',
   'referrals',
   'customers',
   'performance',

@@ -686,18 +686,21 @@ test('the referral owner cannot be altered through frontend-style manipulation',
 // Secrets: the onboarding frontend must stay privilege-free
 // ---------------------------------------------------------------------------
 
+import { fileURLToPath } from 'node:url';
+
 function onboardingSources(): string[] {
   const root = new URL('../src/onboarding', import.meta.url);
   const files: string[] = [];
   const walk = (dir: string) => {
-    for (const entry of readdirSync(new URL(dir, import.meta.url))) {
+    for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
       if (entry.endsWith('.ts') || entry.endsWith('.tsx')) files.push(full);
     }
   };
-  walk(root.pathname);
-  walk(join(root.pathname, 'lib'));
-  walk(join(root.pathname, 'screens'));
+  const rootPath = fileURLToPath(root);
+  walk(rootPath);
+  walk(join(rootPath, 'lib'));
+  walk(join(rootPath, 'screens'));
   return files;
 }
 

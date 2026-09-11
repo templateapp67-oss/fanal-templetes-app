@@ -46,11 +46,12 @@ export const ReferralForm: React.FC<{
 
 export const ReferralScreen: React.FC<{
   client?: OnboardingSupabaseClient;
+  initialCode?: string;
   email?: string;
   onLinked?: () => void;
   onLogout?: () => void;
-}> = ({ client, email, onLinked, onLogout }) => {
-  const [code, setCode] = useState('');
+}> = ({ client, email, onLinked, onLogout, initialCode = '' }) => {
+  const [code, setCode] = useState(initialCode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const flight = useRef(createSingleFlight());

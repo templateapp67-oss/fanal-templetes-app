@@ -27,6 +27,7 @@ import {
   type GrowthPartnerSection,
 } from '../lib/router';
 import { GrowthPartnerLogin } from './GrowthPartnerLogin';
+import { GrowthPartnerInvite } from './GrowthPartnerInvite';
 import { GrowthPartnerOnboardingPage } from './GrowthPartnerOnboardingPage';
 import { isGrowthPartnerOnboardingPath } from '../lib/router';
 import {
@@ -83,6 +84,7 @@ export const GROWTH_PARTNER_MOCK_BODY =
 
 export const GROWTH_PARTNER_SECTION_LABELS: Record<GrowthPartnerSection, string> = {
   dashboard: 'Dashboard',
+  onboard: 'Onboard business',
   referrals: 'Referrals',
   customers: 'Customers',
   performance: 'Performance',
@@ -430,7 +432,7 @@ const GrowthPartnerArea: React.FC<GrowthPartnerPageProps> = ({
   };
 
   useEffect(() => {
-    if (!ready || (section !== 'dashboard' && section !== 'profile')) return;
+    if (!ready || (section !== 'dashboard' && section !== 'profile' && section !== 'onboard')) return;
     let cancelled = false;
     setDashboard((prev) => ({ ...prev, loading: true, error: null }));
     (async () => {
@@ -562,6 +564,10 @@ const GrowthPartnerArea: React.FC<GrowthPartnerPageProps> = ({
 
   const renderSection = () => {
     switch (section) {
+      case 'onboard':
+        if (dashboard.loading) return <SectionLoading label="Loading your invite…" />;
+        if (dashboard.error) return <SectionError message={dashboard.error} onRetry={retrySection} />;
+        return <GrowthPartnerInvite code={dashboard.data?.partner.referral_code} />;
       case 'dashboard':
         if (dashboard.loading && !dashboard.data) return <SectionLoading label="Loading your dashboard…" />;
         if (dashboard.error && !dashboard.data)

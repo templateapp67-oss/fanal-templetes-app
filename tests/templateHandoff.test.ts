@@ -747,18 +747,20 @@ test('CORS stays restricted: no wildcard origin on authenticated endpoints', () 
   }
 });
 
+import { fileURLToPath } from 'node:url';
+
 function browserSources(): string[] {
   const files: string[] = [];
   const walk = (dir: string) => {
-    for (const entry of readdirSync(new URL(dir, import.meta.url))) {
+    for (const entry of readdirSync(dir)) {
       if (entry.endsWith('.ts') || entry.endsWith('.tsx')) files.push(join(dir, entry));
     }
   };
-  const root = new URL('../src/onboarding', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../src/onboarding', import.meta.url));
   walk(root);
   walk(join(root, 'lib'));
   walk(join(root, 'screens'));
-  files.push(new URL('../src/components/TemplateHandoffPage.tsx', import.meta.url).pathname);
+  files.push(fileURLToPath(new URL('../src/components/TemplateHandoffPage.tsx', import.meta.url)));
   return files;
 }
 

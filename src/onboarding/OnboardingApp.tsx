@@ -30,6 +30,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { ReferralScreen } from './screens/ReferralScreen';
 import { StatusScreen } from './screens/StatusScreen';
+import { restoreInvite, clearInvite } from './lib/invite';
 
 // ============================================================================
 // Onboarding App (`/onboarding/...`) — auth + referral gateway on the SHARED
@@ -101,6 +102,11 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [boot, setBoot] = useState<'loading' | 'error' | 'ready'>('loading');
   const [bootError, setBootError] = useState('');
   const [bootKey, setBootKey] = useState(0);
+  const [invite] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try { return restoreInvite(window.location.search, window.sessionStorage); }
+    catch { return restoreInvite(window.location.search); }
+  });
   const [viewer, setViewer] = useState<OnboardingViewer | null>(null);
   const [snapshot, setSnapshot] = useState<OnboardingSnapshot | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -273,8 +279,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     return (
       <ReferralScreen
         client={sb}
+        initialCode={invite}
         email={viewer?.email || ''}
-        onLinked={() => void handleAuthDone()}
+        onLinked={() => { clearInvite(); void handleAuthDone(); }}
         onLogout={() => void handleLogout()}
       />
     );

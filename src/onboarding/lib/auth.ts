@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabaseClient';
 import { normalizeGrowthReferralCode } from '../../lib/growthPartner';
+import { restoreInvite, buildInviteUrl } from './invite';
 import {
   OnboardingError,
   phaseFromOnboardingState,
@@ -75,7 +76,17 @@ export async function signUpWithEmail(
   const validation = validateSignup(input);
   if (!validation.ok) throw new OnboardingError('validation', firstValidationMessage(validation.errors));
   const email = input.email.trim();
-  const { data, error } = await client.auth.signUp({ email, password: input.password });
+  let emailRedirectTo: string | undefined;
+  if (typeof window !== 'undefined') {
+    let code = '';
+    try { code = restoreInvite(window.location.search, window.sessionStorage); }
+    catch { code = restoreInvite(window.location.search); }
+    emailRedirectTo = code ? buildInviteUrl(window.location.origin, code) : window.location.origin + '/onboarding/login';
+  }
+  const { data, error } = await client.auth.signUp({
+    email, password: input.password,
+    ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
+  });
   if (error) throw toSafeAuthError(error, 'signup');
   if (!data?.user) throw toSafeAuthError(new Error('signup failed'), 'signup');
   return { viewer: viewerFromUser(data.user), confirmationRequired: !data.session };
