@@ -501,7 +501,8 @@ test('the token is stripped from the URL after successful processing', () => {
   // The component applies this via replaceState (never lingering in history).
   const src = readFileSync(new URL('../src/components/TemplateHandoffPage.tsx', import.meta.url), 'utf8');
   assert.match(src, /history\.replaceState/);
-  assert.match(src, /replaceState\(\{\}, '', '\/'\)/);
+  assert.match(src, /replaceState\(\{\}, '', '\/owner\/setup'\)/);
+  assert.match(src, /navigate\('\/owner\/setup'\)/);
 });
 
 test('base URLs come from env with a same-origin default and strict validation', () => {
