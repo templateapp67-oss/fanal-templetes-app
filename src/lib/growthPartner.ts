@@ -183,6 +183,49 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
   return (data ?? null) as GrowthPartner | null;
 }
 
+// ============================================================================
+// Referral code section (Part 2.3) — display + copy, ownership via RLS.
+//
+// The referral code is NEVER generated, chosen or trusted from the frontend:
+// it is read from the caller's OWN growth_partners row (SELECT-own-row RLS
+// above), so a partner can only ever see their own code and there is no
+// partner_id / user_id / URL / query parameter to manipulate. The clipboard
+// helper copies ONLY the code string and keeps no browser-side state.
+// ============================================================================
+
+/** Safe copy when the partner has no referral code yet (never invented). */
+export const GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE = 'Referral code not available.';
+
+/** Structural clipboard (real `navigator` satisfies this; so do test fakes). */
+export interface ClipboardLike {
+  clipboard?: { writeText: (text: string) => Promise<void> } | null;
+}
+
+/**
+ * Copy the referral code to the clipboard. Resolves true only when the value
+ * was actually written (clipboard present and writeText resolved); otherwise
+ * false — the UI keeps its "Copy" affordance instead of claiming a copy that
+ * never happened. Never throws. `target` is optional (tests inject a fake);
+ * the default reads the browser `navigator`.
+ */
+export async function copyReferralCodeToClipboard(
+  code: unknown,
+  target?: ClipboardLike | null
+): Promise<boolean> {
+  const value = String(code ?? '').trim();
+  if (!value) return false;
+  try {
+    const nav: ClipboardLike | null =
+      target ?? (typeof navigator !== 'undefined' ? (navigator as unknown as ClipboardLike) : null);
+    const writeText = nav?.clipboard?.writeText;
+    if (typeof writeText !== 'function') return false;
+    await writeText(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 /** True when a Supabase/PostgREST failure means the session must be renewed. */
 export function isSessionExpiredError(error: unknown): boolean {
@@ -199,6 +242,7 @@ export type GrowthPartnerGate =
   | 'mock-mode'
   | 'unauthenticated'
   | 'unauthorized'
+  | 'inactive'
   | 'session-expired'
   | 'error'
   | 'ready';
@@ -206,7 +250,9 @@ export type GrowthPartnerGate =
 /**
  * Pure gate resolver (exported for tests): maps auth + backend outcome to the
  * single state the page renders. `partnerRow === null` after a successful
- * lookup means "signed in but not a partner".
+ * lookup means "signed in but not a partner". A partner row with
+ * `is_active === false` is DENIED entry (inactive), never silently admitted —
+ * the account and its historical data are left untouched, only access is cut.
  */
 export function resolveGrowthPartnerGate(input: {
   userId: string | null;
@@ -220,8 +266,14 @@ export function resolveGrowthPartnerGate(input: {
   if (input.isMockMode) return 'mock-mode';
   if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
   if (!input.partnerRow) return 'unauthorized';
+  if (input.partnerRow.is_active === false) return 'inactive';
   return 'ready';
 }
+
+/** Inactive partner denial copy (shared by the area gate and the login page). */
+export const GROWTH_PARTNER_INACTIVE_TITLE = 'Growth Partner access is paused';
+export const GROWTH_PARTNER_INACTIVE_BODY =
+  'Your Growth Partner account is currently inactive. Your account and historical data are safe — contact the platform to reactivate partner access.';
 
 /** Human label for a referral's onboarding status (the ONE reusable mapping). */
 export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue | null): string {

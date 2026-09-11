@@ -1657,6 +1657,11 @@ export default function App() {
           onBack={() => setCurrentView('dashboard')}
           path={path}
           navigate={navigate}
+          onLogout={() => {
+            // Existing Supabase Auth logout; the auth observer clears `user`
+            // and the gate then redirects to the Growth Partner login route.
+            void supabase.auth.signOut();
+          }}
           accentHex={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
         />
       )}
