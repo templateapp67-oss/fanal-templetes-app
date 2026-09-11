@@ -12,6 +12,8 @@ Apply `supabase/migrations/20260909142000_normalized_owner_workspace.sql` in SQL
 
 The migration requires the existing `nexora_owner_salon_ids()`, `sync_owner_contact(jsonb)`, and normalized tables. It saves editor state, contact, services, staff assignments and schedules in one transaction; validates ownership; preserves historical catalogue rows; and removes only conflicting booking foreign keys to the old `salon_staff` table while retaining the canonical `staff` foreign key. It does not disable RLS or grant anonymous writes.
 
+**Required for Growth Partner + shared Onboarding wiring (Phase 1):** apply `supabase/migrations/20260912_growth_partner_onboarding.sql` in the SQL Editor (idempotent; creates ONLY the new `growth_partners` + `growth_onboarding` tables, their SELECT-only RLS policies, and the `validate/link/get/update` RPCs plus the admin-only `provision_growth_partner` — no existing table/column/policy/function is touched). Afterwards provision each partner as an administrator with `select public.provision_growth_partner('<auth-user-uuid>', 'CODE123');` (or omit the code to auto-generate one). Browser clients keep using only `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` via the wrappers in `src/lib/growthPartner.ts`. Pinned by `tests/growthPartner.test.ts` (PGlite).
+
 Server routes require SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY. Browser configuration uses only VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Never expose a service role key in VITE variables.
 
 Verification: `npm run typecheck`, `npm test`, and `npm run build`. The PGlite migration tests cover atomic rollback and tenant isolation using a local fixture. Backend HTTP tests use synthetic credentials, not a real user session.

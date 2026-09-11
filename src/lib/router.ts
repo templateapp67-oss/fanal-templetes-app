@@ -148,6 +148,129 @@ export function isStaffCommissionPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === STAFF_COMMISSION_PATH;
 }
 
+// ---------------------------------------------------------------------------
+// Growth Partner area (`/growth-partner/...`)
+// ---------------------------------------------------------------------------
+// Second surface of the same deployment, same Supabase Auth/database/backend.
+// All six sections are real in Phase 6 (commission honestly reports that no
+// partner commission model exists yet). Unknown sub-paths fall back to
+// `dashboard` rather than a blank screen.
+export const GROWTH_PARTNER_PATH = '/growth-partner';
+
+export type GrowthPartnerSection =
+  | 'dashboard'
+  | 'referrals'
+  | 'customers'
+  | 'performance'
+  | 'commission'
+  | 'profile';
+
+export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
+  'dashboard',
+  'referrals',
+  'customers',
+  'performance',
+  'commission',
+  'profile',
+];
+
+/** True when the path belongs to the Growth Partner area at all. */
+export function isGrowthPartnerPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === GROWTH_PARTNER_PATH || path.startsWith(`${GROWTH_PARTNER_PATH}/`);
+}
+
+/** Section for `/growth-partner` (dashboard) and `/growth-partner/:section`. */
+export function matchGrowthPartnerRoute(pathname: string): GrowthPartnerSection {
+  const segments = normalizePath(pathname)
+    .split('/')
+    .filter((segment) => segment.length > 0);
+  if (segments[0]?.toLowerCase() !== 'growth-partner') return 'dashboard';
+  const raw = String(segments[1] || '').toLowerCase();
+  return (GROWTH_PARTNER_SECTIONS as string[]).includes(raw)
+    ? (raw as GrowthPartnerSection)
+    : 'dashboard';
+}
+
+/** Canonical URL for a Growth Partner section. */
+export function growthPartnerPath(section: GrowthPartnerSection = 'dashboard'): string {
+  return section === 'dashboard' ? GROWTH_PARTNER_PATH : `${GROWTH_PARTNER_PATH}/${section}`;
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding App (`/onboarding/...`)
+// ---------------------------------------------------------------------------
+// A separate frontend surface of the same deployment — same Supabase project,
+// same Auth, same database/RPCs/RLS as the Template App. Auth screens are
+// public; referral + status are protected (the app resolves the final route
+// from the backend onboarding state, so refreshes and deep links land on the
+// correct screen). Unknown sub-paths fall back to `login`, never blank.
+export const ONBOARDING_PATH = '/onboarding';
+
+export type OnboardingSection = 'login' | 'signup' | 'forgot-password' | 'referral' | 'status';
+
+export const ONBOARDING_SECTIONS: OnboardingSection[] = [
+  'login',
+  'signup',
+  'forgot-password',
+  'referral',
+  'status',
+];
+
+/** True when the path belongs to the Onboarding App at all. */
+export function isOnboardingPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === ONBOARDING_PATH || path.startsWith(`${ONBOARDING_PATH}/`);
+}
+
+/** Section for `/onboarding` (login) and `/onboarding/:section`. */
+export function matchOnboardingRoute(pathname: string): OnboardingSection {
+  const segments = normalizePath(pathname)
+    .split('/')
+    .filter((segment) => segment.length > 0);
+  if (segments[0]?.toLowerCase() !== 'onboarding') return 'login';
+  const raw = String(segments[1] || '').toLowerCase();
+  return (ONBOARDING_SECTIONS as string[]).includes(raw) ? (raw as OnboardingSection) : 'login';
+}
+
+/** Canonical URL for an Onboarding App section. */
+export function onboardingPath(section: OnboardingSection = 'login'): string {
+  return section === 'login' ? `${ONBOARDING_PATH}/login` : `${ONBOARDING_PATH}/${section}`;
+}
+
+// ---------------------------------------------------------------------------
+// Template App handoff (`/onboarding/handoff?token=…&state=…`)
+// ---------------------------------------------------------------------------
+// The Template App side of the Phase 4 one-time handoff. The path lives under
+// `/onboarding` but is NOT an onboarding screen: App.tsx renders the handoff
+// page for it BEFORE the Onboarding App branch. The query carries only the
+// short-lived opaque token (+ anti-CSRF state) — never identity, which the
+// backend derives from the authenticated session during the exchange.
+export const TEMPLATE_HANDOFF_PATH = '/onboarding/handoff';
+
+/** True when the path is the Template App handoff page (query ignored). */
+export function isTemplateHandoffPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === TEMPLATE_HANDOFF_PATH;
+}
+
+export interface TemplateHandoffQuery {
+  token: string;
+  state: string;
+}
+
+/** Parse `?token=…&state=…` without touching window (SSR/test safe). */
+export function matchTemplateHandoffQuery(search: string): TemplateHandoffQuery {
+  try {
+    const params = new URLSearchParams(String(search || ''));
+    return {
+      token: (params.get('token') || '').trim(),
+      state: (params.get('state') || '').trim(),
+    };
+  } catch {
+    return { token: '', state: '' };
+  }
+}
+
 /** Canonical URL for one booking's detail page. */
 export function bookingDetailPath(bookingId: string): string {
   return `${BOOKING_DETAIL_PREFIX}/${encodeURIComponent(String(bookingId ?? '').trim())}`;

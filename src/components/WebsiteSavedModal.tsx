@@ -6,6 +6,8 @@ interface WebsiteSavedModalProps {
   returnFocusTo?: HTMLElement | null;
   onClose: () => void;
   onBackToDashboard: () => void;
+  /** Phase 5: shown only when the verified completion check reports not-ready. */
+  completionNote?: string | null;
 }
 
 export const WebsiteSavedModal: React.FC<WebsiteSavedModalProps> = ({
@@ -13,6 +15,7 @@ export const WebsiteSavedModal: React.FC<WebsiteSavedModalProps> = ({
   returnFocusTo,
   onClose,
   onBackToDashboard,
+  completionNote,
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const previewRef = useRef<HTMLAnchorElement>(null);
@@ -157,6 +160,20 @@ export const WebsiteSavedModal: React.FC<WebsiteSavedModalProps> = ({
           >
             {copyNotice.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
             <span>{copyNotice.message}</span>
+          </div>
+        )}
+
+        {/* Phase 5: completion note — appears only when the backend's verified
+            completion check reports the website is not finished yet. Never
+            blocks the save-success state above. */}
+        {completionNote && (
+          <div
+            role="status"
+            aria-atomic="true"
+            className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{completionNote}</span>
           </div>
         )}
 

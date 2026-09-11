@@ -43,20 +43,27 @@ import { saveOwnerEditorState } from './lib/ownerEditorState';
 import {
   usePathRoute,
   isCustomerAppPath,
+  isOnboardingPath,
+  isTemplateHandoffPath,
   isMyBookingsPath,
   isStaffPerformancePath,
   isStaffCommissionPath,
+  isGrowthPartnerPath,
   MY_BOOKINGS_PATH,
   STAFF_PERFORMANCE_PATH,
   STAFF_COMMISSION_PATH,
+  GROWTH_PARTNER_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
+import { OnboardingApp } from './onboarding/OnboardingApp';
+import { TemplateHandoffPage } from './components/TemplateHandoffPage';
 import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
+import { GrowthPartnerPage } from './components/GrowthPartnerPage';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -258,8 +265,12 @@ export default function App() {
       setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
       return;
     }
+    if (isGrowthPartnerPath(path)) {
+      setCurrentViewState((view) => (view === 'growthPartner' ? view : 'growthPartner'));
+      return;
+    }
     setCurrentViewState((view) =>
-      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission'
+      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission' || view === 'growthPartner'
         ? 'landing'
         : view
     );
@@ -281,6 +292,8 @@ export default function App() {
         navigate(STAFF_PERFORMANCE_PATH);
       } else if (view === 'staffCommission') {
         navigate(STAFF_COMMISSION_PATH);
+      } else if (view === 'growthPartner') {
+        navigate(GROWTH_PARTNER_PATH);
       } else {
         navigate('/');
       }
@@ -424,9 +437,7 @@ export default function App() {
   // WHITE-LABEL TENANT BOOTSTRAP
   // Supports:
   //   1. Subdomain / Host lookup (e.g. https://arts-by-uma.nexora.in)
-  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site=arts-by-uma)
-  //   3. Direct public view mode (?view=public)
-  // -------------------------------------------------------------------------
+  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site---------------------------------------------------------
   const [siteTenant, setSiteTenant] = useState<{
     isTenant: boolean;
     found: boolean;
@@ -446,6 +457,13 @@ export default function App() {
   // it: a visitor with no owner session must never write the default salon
   // profile over a real one.
   const isCustomerApp = isCustomerAppPath(path);
+  // The Onboarding App (`/onboarding`) is a separate auth/referral surface of
+  // the same deployment: same Supabase Auth/project/database/RPCs/RLS, its own
+  // screens. Like the Customer App, the owner effects below stay silent on it.
+  const isOnboardingApp = isOnboardingPath(path);
+  // The handoff page lives under /onboarding/* but is a Template App route, so
+  // it must be matched BEFORE the Onboarding App branch below.
+  const isTemplateHandoff = isTemplateHandoffPath(path);
 
   /**
    * Fetch a same-origin JSON API route with exact diagnostics.
@@ -1206,6 +1224,7 @@ export default function App() {
     }
     if (isPublicSite) return; // visitors on a public salon site never save
     if (isCustomerApp) return; // …and neither does anyone in the Customer App
+    if (isOnboardingApp) return; // …or in the Onboarding App
     if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
     setSaveStatus('pending');
     hasPendingSaveRef.current = true;
@@ -1226,6 +1245,7 @@ export default function App() {
     isMockSupabase,
     isPublicSite,
     isCustomerApp,
+    isOnboardingApp,
     persistSalonState,
   ]);
 
@@ -1369,7 +1389,7 @@ export default function App() {
     // The customer app must never append to the owner's `appointments`/`clients`
     // either: a customer booking arrives through /api/customer/* and is written
     // against their own rows.
-    if (isMockSupabase || isPublicSite || isCustomerApp) return;
+    if (isMockSupabase || isPublicSite || isCustomerApp || isOnboardingApp) return;
 
     const ownerId = user?.id ?? profile.ownerId;
     if (!ownerId) {
@@ -1424,6 +1444,28 @@ export default function App() {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
   };
+
+  // -------------------------------------------------------------------------
+  // TEMPLATE HANDOFF RENDER (Phase 4)
+  //
+  // Ahead of the Onboarding App: `/onboarding/handoff` belongs to the Template
+  // App entry gate, which exchanges the one-time grant server-side and then
+  // enters the normal application flow.
+  // -------------------------------------------------------------------------
+  if (isTemplateHandoff) {
+    return <TemplateHandoffPage navigate={navigate} />;
+  }
+
+  // -------------------------------------------------------------------------
+  // ONBOARDING APP RENDER
+  //
+  // Ahead of everything else: `/onboarding` is the standalone auth/referral
+  // gateway (same Supabase Auth/project/database/RPCs/RLS), so no owner,
+  // public-site or customer UI mounts underneath it.
+  // -------------------------------------------------------------------------
+  if (isOnboardingApp) {
+    return <OnboardingApp path={path} navigate={navigate} />;
+  }
 
   // -------------------------------------------------------------------------
   // CUSTOMER APP RENDER
@@ -1605,6 +1647,17 @@ export default function App() {
           primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
           currencySymbol={profile.currency || '₹'}
           salonName={profile.businessName}
+        />
+      )}
+
+      {currentView === 'growthPartner' && (
+        <GrowthPartnerPage
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onBack={() => setCurrentView('dashboard')}
+          path={path}
+          navigate={navigate}
+          accentHex={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
         />
       )}
 
