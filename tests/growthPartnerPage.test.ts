@@ -26,6 +26,8 @@ import {
   matchGrowthPartnerRoute,
 } from '../src/lib/router';
 import {
+  GROWTH_PARTNER_INACTIVE_BODY,
+  GROWTH_PARTNER_INACTIVE_TITLE,
   growthReferralStatusLabel,
   isSessionExpiredError,
   resolveGrowthPartnerGate,
@@ -41,6 +43,7 @@ import {
   GROWTH_PARTNER_SIGNIN_TITLE,
   GROWTH_PARTNER_UNAUTHORIZED_BODY,
   GROWTH_PARTNER_UNAUTHORIZED_TITLE,
+  GrowthPartnerInactive,
   GrowthPartnerLoadError,
   GrowthPartnerLoading,
   GrowthPartnerMockNotice,
@@ -115,10 +118,10 @@ test('the gate maps auth + backend outcome to exactly one page state', () => {
   assert.equal(gate({ userId: '' }), 'unauthenticated');
   // 2. Signed-in non-partners (zero partner rows from RLS) are unauthorized.
   assert.equal(gate({ partnerRow: null }), 'unauthorized');
-  // 3. Partners reach the dashboard.
+  // 3. Active partners reach the dashboard.
   assert.equal(gate(), 'ready');
-  // Deactivation is a status badge, not a lockout of the partner's own data.
-  assert.equal(gate({ partnerRow: { ...PARTNER_ROW, is_active: false } }), 'ready');
+  // 4. An INACTIVE partner is denied entry (account/data left untouched).
+  assert.equal(gate({ partnerRow: { ...PARTNER_ROW, is_active: false } }), 'inactive');
   // Errors: session expiry is distinguished from generic failures.
   assert.equal(gate({ loadError: new Error('JWT expired') }), 'session-expired');
   assert.equal(gate({ loadError: { status: 401 } }), 'session-expired');
@@ -169,6 +172,16 @@ test('signed-in non-partners get an unauthorized state, never partner data', () 
   assert.match(html, new RegExp(GROWTH_PARTNER_UNAUTHORIZED_BODY));
   assert.doesNotMatch(html, /Your referral code/);
   assert.doesNotMatch(html, /ALPHA01/);
+});
+
+test('inactive partners are denied with a safe paused message, never partner data', () => {
+  const html = render(React.createElement(GrowthPartnerInactive, { onBack: () => {} }));
+  assert.match(html, new RegExp(GROWTH_PARTNER_INACTIVE_TITLE));
+  assert.match(html, new RegExp(GROWTH_PARTNER_INACTIVE_BODY));
+  assert.match(html, /safe/);
+  assert.doesNotMatch(html, /Your referral code/);
+  assert.doesNotMatch(html, /ALPHA01/);
+  assert.doesNotMatch(html, /Total referred/);
 });
 
 test('loading, error, session-expired and mock states never render blank screens', () => {
@@ -251,6 +264,41 @@ test('the dashboard shows the real referral code, profile, counts and activity',
   assert.match(html, /User One/);
   assert.match(html, /Referred user \u202600000002/);
   assert.doesNotMatch(html, /BETA002/);
+});
+
+test('the dashboard exposes a refresh affordance that disables while refetching', () => {
+  const html = render(
+    React.createElement(GrowthPartnerDashboard, {
+      dashboard: DASHBOARD_SAMPLE,
+      displayName: 'Partner Anita',
+      email: 'anita@example.com',
+      onRetry: () => {},
+    })
+  );
+  assert.match(html, /Refresh/);
+  assert.match(html, /aria-label="Refresh dashboard"/);
+
+  const refreshing = render(
+    React.createElement(GrowthPartnerDashboard, {
+      dashboard: DASHBOARD_SAMPLE,
+      displayName: 'Partner Anita',
+      email: 'anita@example.com',
+      onRetry: () => {},
+      refreshing: true,
+    })
+  );
+  assert.match(refreshing, /Refreshing…/);
+  assert.match(refreshing, /disabled/);
+
+  // Without a retry handler there is no refresh control (no dead button).
+  const none = render(
+    React.createElement(GrowthPartnerDashboard, {
+      dashboard: DASHBOARD_SAMPLE,
+      displayName: 'Partner Anita',
+      email: 'anita@example.com',
+    })
+  );
+  assert.doesNotMatch(none, /aria-label="Refresh dashboard"/);
 });
 
 test('an inactive partner sees a Paused status, not a lockout', () => {

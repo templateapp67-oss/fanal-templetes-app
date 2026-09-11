@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertCircle, ArrowLeft, Loader2, LogIn, RefreshCw, ShieldAlert } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, LogIn, LogOut, RefreshCw, ShieldAlert } from 'lucide-react';
 import {
   fetchMyGrowthPartnerRow,
   fetchMyPartnerDashboard,
   fetchMyPartnerPerformance,
   fetchMyPartnerReferrals,
+  GROWTH_PARTNER_INACTIVE_BODY,
+  GROWTH_PARTNER_INACTIVE_TITLE,
   isSessionExpiredError,
   resolveGrowthPartnerGate,
   toSafePartnerSectionError,
@@ -18,10 +20,13 @@ import {
 import { isMockSupabase } from '../lib/supabaseClient';
 import {
   GROWTH_PARTNER_SECTIONS,
+  growthPartnerLoginPath,
   growthPartnerPath,
+  isGrowthPartnerLoginPath,
   matchGrowthPartnerRoute,
   type GrowthPartnerSection,
 } from '../lib/router';
+import { GrowthPartnerLogin } from './GrowthPartnerLogin';
 import {
   GrowthPartnerCommission,
   GrowthPartnerCustomers,
@@ -56,6 +61,8 @@ export interface GrowthPartnerPageProps {
   path?: string;
   /** Navigate to another Growth Partner section. */
   navigate?: (to: string) => void;
+  /** Log out via the existing Supabase Auth flow (clears the session). */
+  onLogout?: () => void;
   accentHex?: string;
 }
 
@@ -153,6 +160,24 @@ export const GrowthPartnerUnauthorized: React.FC<{ onBack?: () => void }> = ({ o
   </main>
 );
 
+export const GrowthPartnerInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
+  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+    <StateCard
+      icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
+      title={GROWTH_PARTNER_INACTIVE_TITLE}
+      body={GROWTH_PARTNER_INACTIVE_BODY}
+    >
+      <button
+        type="button"
+        onClick={() => onBack?.()}
+        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
+      >
+        Back to dashboard
+      </button>
+    </StateCard>
+  </main>
+);
+
 export const GrowthPartnerLoadError: React.FC<{
   title: string;
   body: string;
@@ -238,6 +263,58 @@ export function GrowthPartnerSectionTabs({
   );
 }
 
+/**
+ * Growth Partner dashboard SHELL (Part 2.2) — header (back link + partner area
+ * title + basic partner identity + logout action), navigation area (the section
+ * tabs) and a main content slot. Rendered only after the authorization gate
+ * reaches `ready` (authenticated ACTIVE partner). Responsive: the header wraps
+ * on narrow screens and the tabs scroll horizontally instead of overflowing.
+ */
+export const GrowthPartnerShell: React.FC<{
+  section: GrowthPartnerSection;
+  displayName: string;
+  navigate?: (to: string) => void;
+  onBack?: () => void;
+  onLogout?: () => void;
+  accentHex?: string;
+  children?: React.ReactNode;
+}> = ({ section, displayName, navigate, onBack, onLogout, accentHex = '#C20E5A', children }) => (
+  <main className="max-w-6xl mx-auto px-4 py-8">
+    <header className="mb-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <button
+            type="button"
+            onClick={() => onBack?.()}
+            className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to dashboard
+          </button>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900">Growth Partner</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Signed in as <span className="font-semibold text-slate-900">{displayName}</span>
+          </p>
+        </div>
+        {onLogout && (
+          <button
+            type="button"
+            onClick={() => onLogout()}
+            title="Log out"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            Log out
+          </button>
+        )}
+      </div>
+      <GrowthPartnerSectionTabs section={section} navigate={navigate} accentHex={accentHex} />
+    </header>
+
+    <div className="mt-4">{children}</div>
+  </main>
+);
+
 const LIST_PAGE_SIZE = 20;
 
 interface SectionState<T> {
@@ -256,9 +333,11 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   onBack,
   path = '/growth-partner',
   navigate,
+  onLogout,
   accentHex = '#C20E5A',
 }) => {
   const section = matchGrowthPartnerRoute(path);
+  const isLoginPath = isGrowthPartnerLoginPath(path);
   const userId = user?.id || null;
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
@@ -283,7 +362,9 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    if (!userId || isMockSupabase) {
+    if (!userId || isMockSupabase || isLoginPath) {
+      // The login route performs its own role verification (GrowthPartnerLogin),
+      // so the area gate stays quiet there and never double-fetches.
       setGateLoading(false);
       return () => {
         cancelled = true;
@@ -309,7 +390,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       cancelled = true;
     };
     // `onRequireAuth` is intentionally not a dependency (inline arrow at call site).
-  }, [userId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId, reloadKey, isLoginPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gate = resolveGrowthPartnerGate({
     userId,
@@ -319,6 +400,15 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     loadError,
   });
   const ready = gate === 'ready';
+
+  // Unauthenticated visitors to the protected area are sent to the dedicated
+  // login route. The login route renders its own screen (and only forwards
+  // ACTIVE partners back to the area), so the two never chase each other.
+  useEffect(() => {
+    if (!isLoginPath && gate === 'unauthenticated') {
+      navigate?.(growthPartnerLoginPath());
+    }
+  }, [isLoginPath, gate, navigate]);
 
   // A session dying mid-section returns to the page-level session gate instead
   // of stranding the section on an error card.
@@ -420,10 +510,16 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     };
   }, [ready, section, reloadKey]);
 
+  // The login route is a separate surface of the same namespace: render the
+  // dedicated login screen (email + password → backend role verification).
+  if (isLoginPath) {
+    return <GrowthPartnerLogin user={user} navigate={navigate} onBack={onBack} accentHex={accentHex} />;
+  }
+
   if (gate === 'loading') return <GrowthPartnerLoading />;
-  if (gate === 'unauthenticated')
-    return <GrowthPartnerSignInPrompt onRequireAuth={onRequireAuth} accentHex={accentHex} />;
+  if (gate === 'unauthenticated') return <GrowthPartnerLoading />; // redirects to the login route (effect above)
   if (gate === 'unauthorized') return <GrowthPartnerUnauthorized onBack={onBack} />;
+  if (gate === 'inactive') return <GrowthPartnerInactive onBack={onBack} />;
   if (gate === 'mock-mode') return <GrowthPartnerMockNotice onBack={onBack} />;
   if (gate === 'session-expired')
     return (
@@ -431,7 +527,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         title={GROWTH_PARTNER_SESSION_TITLE}
         body={GROWTH_PARTNER_SESSION_BODY}
         actionLabel="Sign in again"
-        onAction={() => onRequireAuth?.('login')}
+        onAction={() => navigate?.(growthPartnerLoginPath())}
       />
     );
   if (gate === 'error')
@@ -462,6 +558,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             displayName={displayName}
             email={email}
             accentHex={accentHex}
+            onRetry={retrySection}
+            refreshing={dashboard.loading}
           />
         ) : null;
       case 'referrals':
@@ -529,22 +627,15 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   };
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-8">
-      <header className="mb-2">
-        <button
-          type="button"
-          onClick={() => onBack?.()}
-          className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to dashboard
-        </button>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Growth Partner</h1>
-        <p className="text-sm text-slate-600">Your referral code, referrals, customers and performance.</p>
-        <GrowthPartnerSectionTabs section={section} navigate={navigate} accentHex={accentHex} />
-      </header>
-
-      <div className="mt-4">{renderSection()}</div>
-    </main>
+    <GrowthPartnerShell
+      section={section}
+      displayName={displayName}
+      navigate={navigate}
+      onBack={onBack}
+      onLogout={onLogout}
+      accentHex={accentHex}
+    >
+      {renderSection()}
+    </GrowthPartnerShell>
   );
 };
