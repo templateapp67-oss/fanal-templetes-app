@@ -100,6 +100,9 @@ export function toGrowthPartnerLoginError(error: unknown): Error {
   if (/invalid login credentials|invalid email or password|invalid grant/i.test(message)) {
     return new Error('Invalid email or password. Please try again.');
   }
+  if (/user already registered|already registered|already exists/i.test(message)) {
+    return new Error('This email already has an account. Please use Sign in instead.');
+  }
   if (/email not confirmed/i.test(message)) {
     return new Error('Please verify your email, then log in.');
   }
