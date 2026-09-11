@@ -178,10 +178,7 @@ export async function updateMyOnboardingProgress(
  * not a partner. RLS decides — the frontend only renders the outcome.
  */
 export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
-  const { data, error } = await supabase
-    .from('growth_partners')
-    .select('user_id, referral_code, is_active, created_at, updated_at')
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('get_my_growth_partner');
   if (error) throw rpcError('Growth Partner lookup failed', error);
   return (data ?? null) as GrowthPartner | null;
 }
@@ -227,7 +224,7 @@ export function resolveGrowthPartnerGate(input: {
 }
 
 /** Human label for a referral's onboarding status (the ONE reusable mapping). */
-export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue): string {
+export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue | null): string {
   switch (status) {
     case 'template_completed':
       return 'Completed';
@@ -325,7 +322,7 @@ export interface PartnerReferralEntry {
   ref: string;
   /** Display name from profiles, or null when unavailable. */
   display_name: string | null;
-  status: GrowthOnboardingStatusValue;
+  status: GrowthOnboardingStatusValue | null;
   linked_at: string | null;
   template_started_at: string | null;
   template_completed_at: string | null;
@@ -358,7 +355,7 @@ export interface PartnerActivityEntry {
 
 export interface PartnerDashboardData {
   partner: { referral_code: string; is_active: boolean; partner_since: string };
-  kpis: { total_referrals: number; active_onboarding: number; completed: number };
+  kpis: { total_referrals: number; active_onboarding: number | null; completed: number | null };
   recent_activity: PartnerActivityEntry[];
 }
 

@@ -71,7 +71,7 @@ function referralTitle(row: Pick<PartnerReferralEntry, 'ref' | 'display_name'>):
 // ---------------------------------------------------------------------------
 
 /** Status pill — the single place referral statuses become UI (one mapping). */
-export function ReferralStatusPill({ status }: { status: GrowthOnboardingStatusValue }) {
+export function ReferralStatusPill({ status }: { status: GrowthOnboardingStatusValue | null }) {
   const tone =
     status === 'template_completed'
       ? 'bg-emerald-100 text-emerald-800'
@@ -349,8 +349,8 @@ export const GrowthPartnerDashboard: React.FC<{
 
     <section aria-label="Referral summary" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <KpiCard label="Total Referrals" value={String(dashboard.kpis.total_referrals)} />
-      <KpiCard label="Active Onboarding" value={String(dashboard.kpis.active_onboarding)} />
-      <KpiCard label="Completed Customers" value={String(dashboard.kpis.completed)} />
+      <KpiCard label="Active Onboarding" value={String(dashboard.kpis.active_onboarding ?? '—')} />
+      <KpiCard label="Completed Customers" value={String(dashboard.kpis.completed ?? '—')} />
     </section>
 
     <section aria-label="Recent activity" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
@@ -420,42 +420,51 @@ export interface PartnerListSectionProps {
   onRetry: () => void;
 }
 
-export const GrowthPartnerReferrals: React.FC<PartnerListSectionProps> = ({
-  list,
-  loading,
-  error,
-  filter,
-  onFilterChange,
-  onPage,
-  onRetry,
-}) => {
-  if (loading && !list) return <SectionLoading label="Loading your referrals…" />;
-  if (error && !list) return <SectionError message={error} onRetry={onRetry} />;
-  if (list && list.total === 0 && filter === 'all') {
-    return (
-      <SectionEmpty title={GROWTH_PARTNER_NO_REFERRALS_TITLE} body={GROWTH_PARTNER_NO_REFERRALS_BODY} />
-    );
-  }
+// Referred users deliberately omit onboarding status and milestone UI (Part 2.5).
+export const GrowthPartnerReferrals: React.FC<
+  Omit<PartnerListSectionProps, 'filter' | 'onFilterChange'>
+> = ({ list, loading, error, onPage, onRetry }) => {
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      <PartnerFilterPills value={filter} onChange={onFilterChange} />
-      <section aria-label="Referrals" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-        <h2 className="text-base font-bold text-slate-900">Referrals</h2>
-        {loading && <p className="mt-2 text-xs font-bold text-slate-500">Refreshing…</p>}
-        {list && list.total === 0 ? (
-          <p className="mt-4 text-sm text-slate-600">No referrals match this filter.</p>
-        ) : (
-          list && (
-            <>
-              <div className="mt-4">
-                <ReferralTable rows={list.rows} showStarted />
-              </div>
-              <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
-            </>
-          )
-        )}
-      </section>
-    </motion.div>
+    <section aria-label="Referred users" aria-busy={loading} className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-bold text-slate-900">Referred Users</h2>
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+      {loading ? (
+        <SectionLoading label="Loading referred users…" />
+      ) : error ? (
+        <div role="alert"><SectionError message={error} onRetry={onRetry} /></div>
+      ) : !list ? (
+        <SectionLoading label="Loading referred users…" />
+      ) : list.total === 0 ? (
+        <SectionEmpty title="No referred users yet." body={GROWTH_PARTNER_NO_REFERRALS_BODY} />
+      ) : (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <ul aria-label="Referred user list" className="divide-y divide-slate-100">
+            {list.rows.map((row) => (
+              <li key={row.ref + '-' + row.linked_at} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                <div className="min-w-0">
+                  <p className="break-words font-bold text-slate-900">{referralTitle(row)}</p>
+                  <p className="font-mono text-xs text-slate-500">Reference: {row.ref}</p>
+                </div>
+                <p className="shrink-0 text-sm text-slate-600">
+                  Referred: {formatPartnerDate(row.linked_at)}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
+        </div>
+      )}
+    </section>
   );
 };
 

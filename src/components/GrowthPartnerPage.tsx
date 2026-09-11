@@ -274,7 +274,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const [performance, setPerformance] = useState<SectionState<PartnerPerformanceData>>(initialSectionState);
 
   // Server-side list controls (filter/search/page all re-query the backend).
-  const [referralFilter, setReferralFilter] = useState<PartnerReferralFilter>('all');
+  const [referralRefreshKey, setReferralRefreshKey] = useState(0);
+  const [referralOwner, setReferralOwner] = useState<string | null>(null);
   const [referralOffset, setReferralOffset] = useState(0);
   const [customerFilter, setCustomerFilter] = useState<PartnerReferralFilter>('all');
   const [customerOffset, setCustomerOffset] = useState(0);
@@ -354,15 +355,21 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   useEffect(() => {
     if (!ready || section !== 'referrals') return;
     let cancelled = false;
-    setReferrals((prev) => ({ ...prev, loading: true, error: null }));
+    setReferralOwner(userId);
+    setReferrals({ data: null, loading: true, error: null });
     (async () => {
       try {
         const data = await fetchMyPartnerReferrals({
-          status: referralFilter,
           limit: LIST_PAGE_SIZE,
           offset: referralOffset,
         });
-        if (!cancelled) setReferrals({ data, loading: false, error: null });
+        if (cancelled) return;
+        // A refresh may remove the last row on the current page.
+        if (referralOffset > 0 && referralOffset >= data.total) {
+          setReferralOffset(Math.max(0, Math.ceil(data.total / data.limit) - 1) * data.limit);
+          return;
+        }
+        setReferrals({ data, loading: false, error: null });
       } catch (err) {
         if (cancelled) return;
         const message = noteSectionFailure(err);
@@ -373,7 +380,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, section, referralFilter, referralOffset, reloadKey]);
+  }, [ready, section, userId, referralOffset, referralRefreshKey, reloadKey]);
 
   useEffect(() => {
     if (!ready || section !== 'customers') return;
@@ -467,16 +474,11 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'referrals':
         return (
           <GrowthPartnerReferrals
-            list={referrals.data}
-            loading={referrals.loading}
+            list={referralOwner === userId ? referrals.data : null}
+            loading={referralOwner !== userId || referrals.loading}
             error={referrals.error}
-            filter={referralFilter}
-            onFilterChange={(next) => {
-              setReferralFilter(next);
-              setReferralOffset(0);
-            }}
             onPage={setReferralOffset}
-            onRetry={retrySection}
+            onRetry={() => setReferralRefreshKey((key) => key + 1)}
           />
         );
       case 'customers':
