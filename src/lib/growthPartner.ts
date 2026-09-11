@@ -36,6 +36,27 @@ export interface GrowthPartner {
   updated_at: string;
 }
 
+/**
+ * A growth_onboarding row as stored (backend source of truth for the
+ * referral relationship + template progress). Clients never write this
+ * table directly — all writes go through the link/progress RPCs.
+ *
+ * NOTE: the customer-loyalty `Referral` type (src/lib/customer/types.ts,
+ * NX- codes, clicked/booked/credited) is a SEPARATE salon-owner feature,
+ * not a duplicate of this — the two domains must stay unmerged.
+ */
+export interface GrowthOnboardingRow {
+  user_id: string;
+  growth_partner_id: string | null;
+  referral_code: string | null;
+  status: GrowthOnboardingStatusValue;
+  linked_at: string | null;
+  template_started_at: string | null;
+  template_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** The caller's referral relationship (get_my_growth_referral / link result). */
 export interface GrowthReferralRelationship {
   growth_partner_id: string;
