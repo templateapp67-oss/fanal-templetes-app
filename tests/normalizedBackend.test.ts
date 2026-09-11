@@ -87,7 +87,7 @@ test('appointment conversion handles Indian timezone and rejects invalid or none
 test('normalized create uses server catalogue, caller RPC and stable idempotency; ignores forged paid fields', async () => {
   const db = database(c => result(c.table==='salons' ? {id:salonId,timezone:'Asia/Kolkata',accepts_online_bookings:true} : c.table==='services' ? [{id:serviceId,price_paise:49900}] : row()));
   let args: any; let callerToken: any;
-  const integrations: any = { gateway:()=>{throw Error('Unverified payment must not invoke gateway');}, userDatabase:(token: string)=>{callerToken=token;return {rpc:(name: string,payload: any)=>{assert.equal(name,'create_customer_booking');args=payload;return Promise.resolve(result(bookingId));}};} };
+  const integrations: any = { gateway:()=>{throw Error('Unverified payment must not invoke gateway');}, userDatabase:(token: string)=>{callerToken=token;return {rpc:(name: string,payload: any)=>{assert.equal(name,'nexora_create_customer_booking');args=payload;return Promise.resolve(result(bookingId));}};} };
   const body = { subdomain:'mine',booking:{service_id:'cut',booking_date:'2026-10-10',time_slot:'10:00',payment_id:'reference',customer_name:'Riya Sharma',customer_phone:'9876543210',total_amount:1,advance_paid_amount:999999,payment_status:'paid'} };
   const saved = await createNormalizedBooking(db,{headers:{authorization:'Bearer customer-token'}},actor,body,null,integrations);
   assert.equal(saved.total_amount,499); assert.equal(saved.advance_paid_amount,0); assert.equal(callerToken,'customer-token');
