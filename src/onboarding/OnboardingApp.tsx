@@ -192,9 +192,16 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       }
       setViewer({ id: String(session.user.id), email: session.user.email || '' });
       setRefreshing(true);
-      void refreshSnapshot().finally(() => {
-        if (mounted.current) setRefreshing(false);
-      });
+      // Defer Supabase calls until its auth callback releases the session lock.
+      window.setTimeout(() => {
+        if (!mounted.current) return;
+        void refreshSnapshot().catch(() => {
+          if (mounted.current) {
+            setBootError('Could not load onboarding status. Please retry.');
+            setBoot('error');
+          }
+        }).finally(() => { if (mounted.current) setRefreshing(false); });
+      }, 0);
     });
     return () => data.subscription.unsubscribe();
   }, [sb, client, refreshSnapshot]);
@@ -217,8 +224,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       setViewer(restored);
       if (restored) await refreshSnapshot();
     } catch {
-      // The auth event subscription covers the steady state; a failed manual
-      // refresh here simply leaves the resolver on backend-known state.
+      if (mounted.current) {
+        setBootError('Your account is signed in, but onboarding status could not load. Retry to continue.');
+        setBoot('error');
+      }
     }
   }, [sb, refreshSnapshot]);
 

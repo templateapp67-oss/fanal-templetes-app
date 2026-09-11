@@ -248,6 +248,10 @@ export default function App() {
   // two never chase each other in a loop.
   useEffect(() => {
     const detailId = matchBookingDetailPath(path);
+    if (path === '/owner/setup') {
+      setCurrentViewState('wizard');
+      return;
+    }
     if (detailId) {
       setBookingDetailId((prev) => (prev === detailId ? prev : detailId));
       setCurrentViewState((view) => (view === 'bookingDetail' ? view : 'bookingDetail'));

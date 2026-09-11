@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabaseClient';
 import { matchTemplateHandoffQuery } from '../lib/router';
 import {
   OnboardingError,
-  createSingleFlight,
 } from '../onboarding/lib/flow';
 import type { OnboardingSupabaseClient } from '../onboarding/lib/auth';
 import {
@@ -137,15 +136,12 @@ export const TemplateHandoffPage: React.FC<{
   const [status, setStatus] = useState<TemplateHandoffStatus>('verifying');
   const [message, setMessage] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const startedRef = useRef(false);
-  const flightRef = useRef(createSingleFlight());
+  const exchangeRef = useRef<ReturnType<typeof exchangeTemplateHandoff> | null>(null);
 
   useEffect(() => {
     // Exactly one exchange per page load: double-mounts, back/forward and
     // duplicate requests all funnel through this guard (and the backend's
     // atomic consume is the final backstop).
-    if (startedRef.current) return;
-    startedRef.current = true;
     let cancelled = false;
 
     const fail = (error: unknown) => {
@@ -162,12 +158,12 @@ export const TemplateHandoffPage: React.FC<{
       // push) so back/forward can never resurface the credential.
       try {
         if (typeof window !== 'undefined' && window.history?.replaceState) {
-          window.history.replaceState({}, '', '/');
+          window.history.replaceState({}, '', '/owner/setup');
         }
       } catch {
         // ignore — navigate below still leaves the handoff route
       }
-      navigate('/');
+      navigate('/owner/setup');
     };
 
     (async () => {
@@ -185,7 +181,7 @@ export const TemplateHandoffPage: React.FC<{
           fail(new OnboardingError('invalid-handoff', 'Invalid onboarding session.'));
           return;
         }
-        const exchanged = await flightRef.current.run(() => exchangeTemplateHandoff(sb, token));
+        const exchanged = await (exchangeRef.current ??= exchangeTemplateHandoff(sb, token));
         if (cancelled) return;
         if (exchanged === null) return; // duplicate submit while busy — ignored
         setStatus('success');
@@ -196,9 +192,9 @@ export const TemplateHandoffPage: React.FC<{
         // continue in instead of stranding the user on "already used".
         if (error instanceof OnboardingError && error.code === 'handoff-used') {
           try {
-            const { data } = await sb.rpc('get_my_onboarding_status');
+            const { data, error: statusError } = await sb.rpc('get_my_onboarding_status');
             if (cancelled) return;
-            if (isEnteredOnboardingStatus(data?.status)) {
+            if (!statusError && readHandoffState() && isEnteredOnboardingStatus(data?.status)) {
               setStatus('success');
               enter();
               return;
@@ -225,7 +221,7 @@ export const TemplateHandoffPage: React.FC<{
       message={message}
       showRetry={retryable}
       onRetry={() => {
-        startedRef.current = false;
+        exchangeRef.current = null;
         setStatus('verifying');
         setMessage('');
         setAttempt((key) => key + 1);
