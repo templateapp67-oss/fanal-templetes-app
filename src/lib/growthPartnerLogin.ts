@@ -45,7 +45,7 @@ export interface GrowthPartnerAuthClient {
 /** Create an Auth account, then submit a pending partner application. */
 export async function signUpGrowthPartner(
   client: GrowthPartnerAuthClient,
-  input: { email: string; password: string; fullName: string; phone?: string }
+  input: { email: string; password: string; fullName: string; phone?: string; kycDocumentType: string; kycDocumentReference: string }
 ): Promise<{ confirmed: boolean }> {
   if (!client.auth.signUp) throw new Error('Signup is unavailable. Please try again later.');
   const { data, error } = await client.auth.signUp({
@@ -58,6 +58,7 @@ export async function signUpGrowthPartner(
   if (!client.rpc) throw new Error('Signup is unavailable. Please try again later.');
   const { error: applicationError } = await client.rpc('submit_growth_partner_application', {
     p_full_name: input.fullName.trim(), p_phone: input.phone?.trim() || null,
+    p_kyc_document_type: input.kycDocumentType, p_kyc_document_reference: input.kycDocumentReference.trim(),
   });
   if (applicationError) throw new Error('Account created, but the partner application could not be submitted. Please sign in and try again.');
   return { confirmed: true };

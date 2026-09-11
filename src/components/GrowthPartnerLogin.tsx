@@ -135,18 +135,21 @@ export const GrowthPartnerLoginForm: React.FC<{
 
 export const GrowthPartnerSignupForm: React.FC<{
   busy: boolean; formError: string; success: string; accentHex?: string;
-  onSubmit: (input: { fullName: string; phone: string; email: string; password: string }) => void; onBack: () => void;
+  onSubmit: (input: { fullName: string; phone: string; email: string; password: string; kycDocumentType: string; kycDocumentReference: string }) => void; onBack: () => void;
 }> = ({ busy, formError, success, accentHex = '#C20E5A', onSubmit, onBack }) => {
   const [fullName, setFullName] = useState(''); const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
+  const [kycDocumentType, setKycDocumentType] = useState(''); const [kycDocumentReference, setKycDocumentReference] = useState('');
   return <main className="min-h-[70vh] flex items-center justify-center px-4 py-16"><motion.div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8">
     <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Growth Partner</p><h1 className="mt-1 text-2xl font-bold text-slate-900">Apply as a Growth Partner</h1>
     <p className="mt-1 text-sm text-slate-600">Create an account and submit your application. Access starts only after approval.</p>
-    <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); onSubmit({ fullName, phone, email, password }); }}>
+    <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); onSubmit({ fullName, phone, email, password, kycDocumentType, kycDocumentReference }); }}>
       <Field id="growth-partner-signup-name" label="Full name" value={fullName} onChange={setFullName} disabled={busy} />
       <Field id="growth-partner-signup-phone" label="Phone (optional)" value={phone} onChange={setPhone} disabled={busy} />
       <Field id="growth-partner-signup-email" label="Email" type="email" value={email} onChange={setEmail} disabled={busy} />
       <Field id="growth-partner-signup-password" label="Password" type="password" value={password} autoComplete="new-password" onChange={setPassword} disabled={busy} />
+      <label className="block text-sm font-bold text-slate-700" htmlFor="growth-partner-kyc-type">KYC document type<select id="growth-partner-kyc-type" value={kycDocumentType} onChange={(e) => setKycDocumentType(e.target.value)} disabled={busy} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"><option value="">Select document</option><option value="pan">PAN</option><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving licence</option><option value="business_registration">Business registration</option></select></label>
+      <Field id="growth-partner-kyc-reference" label="KYC reference number" value={kycDocumentReference} onChange={setKycDocumentReference} disabled={busy} placeholder="Reference only; do not upload document here" />
       {formError && <FormAlert tone="error">{formError}</FormAlert>}{success && <FormAlert tone="success">{success}</FormAlert>}
       <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>Submit application</SubmitButton>
       <button type="button" onClick={onBack} className="w-full text-sm font-bold text-slate-500 hover:text-slate-800">Back to sign in</button>
@@ -381,9 +384,9 @@ export const GrowthPartnerLogin: React.FC<{
     ).finally(() => setBusy(false));
   };
 
-  const handleSignup = (input: { fullName: string; phone: string; email: string; password: string }) => {
-    if (!input.fullName.trim() || !EMAIL_RE.test(input.email.trim()) || input.password.length < 8) {
-      setFormError('Enter your full name, a valid email, and a password of at least 8 characters.'); return;
+  const handleSignup = (input: { fullName: string; phone: string; email: string; password: string; kycDocumentType: string; kycDocumentReference: string }) => {
+    if (!input.fullName.trim() || !EMAIL_RE.test(input.email.trim()) || input.password.length < 8 || !input.kycDocumentType || !input.kycDocumentReference.trim()) {
+      setFormError('Enter your name, valid email, 8+ character password, and KYC details.'); return;
     }
     setBusy(true); setFormError(''); setSignupSuccess('');
     void signUpGrowthPartner(sb, input).then((result) => {
