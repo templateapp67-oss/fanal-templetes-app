@@ -1,3 +1,4 @@
+import { useCustomerAvailability } from '../lib/useCustomerAvailability';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { postBookingWithRetry, getBookingAccessToken } from '../lib/bookingApi';
@@ -101,17 +102,6 @@ const ANY_SPECIALIST: Stylist = {
   rating: 4.95,
 };
 
-const TIME_SLOTS = [
-  { time: '10:00', label: '10:00 AM', status: 'available', badge: 'Available' },
-  { time: '11:30', label: '11:30 AM', status: 'filling_fast', badge: '2 slots left' },
-  { time: '13:00', label: '01:00 PM', status: 'available', badge: 'Available' },
-  { time: '14:30', label: '02:30 PM', status: 'popular', badge: 'Filling fast' },
-  { time: '16:00', label: '04:00 PM', status: 'available', badge: 'Available' },
-  { time: '17:30', label: '05:30 PM', status: 'filling_fast', badge: '1 slot left' },
-  { time: '19:00', label: '07:00 PM', status: 'available', badge: 'Available' },
-  { time: '20:00', label: '08:00 PM', status: 'available', badge: 'Available' }
-];
-
 const LOCAL_STORAGE_GUEST_KEY = 'salon_guest_booking_info';
 
 const formatIndianMoney = (value: number) => (value || 0).toLocaleString('en-IN');
@@ -188,9 +178,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Step 2: Date & Time Slot
   const todayStr = new Date().toISOString().split('T')[0];
   const [bookingDate, setBookingDate] = useState<string>(todayStr);
-  const [bookingTime, setBookingTime] = useState<string>('11:30');
-  const [slotLockSeconds, setSlotLockSeconds] = useState<number>(300); // 5 minutes
-  const [slotLocked, setSlotLocked] = useState<boolean>(true);
+  const [bookingTime, setBookingTime] = useState<string>('');
+  const availability = useCustomerAvailability(isOpen && ['datetime','guest','payment'].includes(currentStep),profile.subdomain,[...selectedServices,...selectedUpgrades].map(s=>s.id).sort().join(','),selectedStylist.id,bookingDate);
+  const [slotStaffId,setSlotStaffId]=useState('');
+  const availableTimes=Array.from(new Set(availability.slots.map(slot=>slot.time)));
+  const selectedSlot=availability.slots.find(slot=>slot.time===bookingTime && slot.staffId===slotStaffId);
+  useEffect(()=>{setBookingTime('');setSlotStaffId('');},[bookingDate,selectedStylist.id,selectedServices,selectedUpgrades]);
 
   // Step 3: Guest Information
   const [guestName, setGuestName] = useState<string>('');
@@ -335,21 +328,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (found && found.payment.attempts > 0) setResumableDraft(found);
   }, [isOpen, profile.ownerId, profile.subdomain, profile.businessName]);
 
-  // 5-minute Slot Lock Timer countdown
-  useEffect(() => {
-    if (!isOpen || currentStep === 'confirmed') return;
-    const interval = setInterval(() => {
-      setSlotLockSeconds((prev) => {
-        if (prev <= 1) {
-          setSlotLocked(false);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isOpen, currentStep]);
-
   // Resend OTP countdown (30s)
   useEffect(() => {
     if (currentStep !== 'otp') return;
@@ -414,7 +392,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setOtpDigits(['', '', '', '']);
     setOtpError('');
     setResendTimer(30);
-    setCurrentStep('otp');
+    setIsWhatsappVerified(false);
+    setCurrentStep('payment');
 
     // Focus first OTP digit
     setTimeout(() => {
@@ -702,7 +681,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setSubmitStage('paying');
       // The payload comes from the DRAFT, never from live form state.
       const outcome = await payAdvanceWithRazorpay(
-        toAdvancePaymentInput(workingDraft, { themeColor: themeAccentHex, accountEmail: user?.email || null })
+        { ...toAdvancePaymentInput(workingDraft, { themeColor: themeAccentHex, accountEmail: user?.email || null }),
+          accessToken: await getBookingAccessToken(user),
+          extraOrderBody: {subdomain:workingDraft.salon.subdomain,service_ids:[workingDraft.service,...workingDraft.upgrades].map(s=>s.id),staff_id:workingDraft.stylist.id,date:workingDraft.slot.date,time:workingDraft.slot.time} }
       );
 
       if (outcome.status === 'paid') {
@@ -762,6 +743,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const advanceAmount = paidAdvance ? workingDraft.pricing.depositAmount : 0;
     try {
       const requestBody = JSON.stringify({
+        idempotency_key: workingDraft.id,
         owner_id: workingDraft.salon.ownerId || undefined,
         subdomain: workingDraft.salon.subdomain || undefined,
         owner_email: workingDraft.salon.email || undefined,
@@ -788,7 +770,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           // Persisted into the booking's metadata by the API. The customer's
           // "My Bookings" cards need these: `bookings` has no salon or
           // stylist column, so without them the card cannot say who or where.
-          staff_id: workingDraft.stylist.id === ANY_SPECIALIST.id ? undefined : workingDraft.stylist.id,
+          staff_id: workingDraft.stylist.id,
           stylist_name: workingDraft.stylist.name,
           salon_name: workingDraft.salon.name,
           // `bookings` stores one service plus a total; checkout folds the
@@ -998,7 +980,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     // again after a failed payment without changing anything, so the salon
     // sees ONE booking reference across retries.
     const refNum = bookingRef || `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
+    if (!selectedSlot) { setSubmitError('Refresh availability and choose a current slot.');setCurrentStep('datetime');return; }
     const fresh = buildDraftFromForm(refNum);
+    fresh.stylist={...fresh.stylist,id:selectedSlot.staffId,name:stylists.find(s=>s.id===selectedSlot.staffId)?.name || fresh.stylist.name};
+    if (Math.round(fresh.pricing.total*100)!==selectedSlot.totalPaise) {setSubmitError('The current specialist price differs from the menu. Reload the salon menu before paying.');return;}
     const draft =
       activeDraft && activeDraft.id === refNum
         ? { ...fresh, createdAt: activeDraft.createdAt, payment: { ...fresh.payment, attempts: activeDraft.payment.attempts } }
@@ -1149,8 +1134,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setOtpError('');
     setIsWhatsappVerified(false);
     setBookingRef('');
-    setSlotLockSeconds(300);
-    setSlotLocked(true);
+
     setSubmitError('');
     setPaymentNotice('');
     setAdvancePaid(false);
@@ -1235,20 +1219,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 4. Info
               </span>
               <ChevronRight className="w-3 h-3 text-slate-400" />
-              <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'otp' ? 'bg-emerald-700 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
-                5. OTP
-              </span>
-              <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className={`px-2 py-0.5 rounded-md font-bold ${currentStep === 'payment' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white border border-slate-200'}`}>
-                6. Pay
+                5. Pay
               </span>
             </div>
 
-            {/* Slot Lock Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 text-[10px]">
-              <Lock className="w-3 h-3 text-amber-600" />
-              <span>Held: <strong>{formatTimer(slotLockSeconds)}</strong></span>
-            </div>
           </div>
         )}
 
@@ -1620,25 +1595,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               exit={{ opacity: 0, x: -10 }}
               className="flex flex-col gap-4"
             >
-              {/* Slot Temporary Hold Banner */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
-                <div className="flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Temporary reservation slot held for <strong>{formatTimer(slotLockSeconds)}</strong></span>
-                </div>
-                {!slotLocked && (
-                  <button
-                    onClick={() => {
-                      setSlotLockSeconds(300);
-                      setSlotLocked(true);
-                    }}
-                    className="text-[11px] font-bold underline cursor-pointer text-amber-800"
-                  >
-                    Refresh Hold
-                  </button>
-                )}
-              </div>
-
+              <p className="text-xs text-slate-600">Times are checked against the salon schedule. A slot is confirmed only after the booking is saved.</p>
               {/* Date Selection */}
               <div>
                 <label className="text-xs font-bold font-mono-caps text-slate-700 block mb-1.5">
@@ -1679,6 +1636,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
               </div>
 
+              {availability.loading && <p role="status">Loading available times…</p>}
+              {availability.error && <p role="alert">{availability.error} <button onClick={availability.refresh} className="underline">Retry availability</button></p>}
+              {!availability.loading && !availability.error && !availableTimes.length && <p>No available appointments for these services and this date. Choose another date or specialist.</p>}
               {/* Time Slot Availability Grid */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1691,13 +1651,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {TIME_SLOTS.map((slot) => {
+                  {availableTimes.map((time) => {
+                    const slot={time,label:time,status:"available",badge:"Available"};
                     const isSelected = bookingTime === slot.time;
                     return (
                       <button
                         type="button"
                         key={slot.time}
-                        onClick={() => setBookingTime(slot.time)}
+                        onClick={() => { setBookingTime(slot.time);setSlotStaffId(availability.slots.find(s=>s.time===slot.time)?.staffId || ''); }}
                         className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
                           isSelected
                             ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
@@ -1746,6 +1707,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  disabled={!selectedSlot || availability.loading}
                   onClick={() => setCurrentStep('guest')}
                   className="flex-1 py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95"
                   style={{ backgroundColor: themeAccentHex }}
@@ -1772,7 +1734,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <div>
                   <h4 className="font-bold text-sm text-slate-900">Guest Contact Information</h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    We will send booking pass and instant WhatsApp reminders to this number.
+                    This contact number will be saved with your booking.
                   </p>
                 </div>
                 {isPrefilled && (

@@ -1,3 +1,4 @@
+import { availabilityHandler, customerPaymentOrderHandler } from './server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from './server/ownerDashboard.js';
 // Loads process env > .env > .env.development (see server/env.ts).
 import "./server/env";
@@ -469,6 +470,7 @@ async function startServer() {
   app.post("/api/bookings/mine/review", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createReviewMyBookingHandler(bookingMineDeps)));
 
   app.post("/api/owner/hours", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(salonHoursHandler(db)));
+app.get("/api/bookings/availability", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(availabilityHandler(db)));
 app.get("/api/owner/dashboard", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db)));
 app.post("/api/owner/appointments", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db, true)));
 app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
@@ -543,7 +545,7 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
   // none present outside production the mock gateway takes over.
   // ==========================================================================
   app.get("/api/payments/razorpay/config", asyncRoute(handleRazorpayConfig));
-  app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayOrder));
+  app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(customerPaymentOrderHandler(db, bookingHandlerIsMock)));
   app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
   app.post("/api/payments/razorpay/mock-pay", asyncRoute(handleMockRazorpayPayment));
 

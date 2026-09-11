@@ -246,6 +246,7 @@ export interface RazorpayClient {
    * `null` means the gateway has no such payment (or this mode keeps no payment
    * records, which is true of the mock client).
    */
+  fetchOrder?(orderId: string, deadlineAt?: number): Promise<RazorpayOrder | null>;
   fetchPayment?(paymentId: string, deadlineAt?: number): Promise<RazorpayPayment | null>;
 }
 
@@ -334,11 +335,17 @@ export function signMockPayment(
 
 function createMockRazorpayClient(env: EnvLike): RazorpayClient {
   const secret = readMockSecret(env);
+  const orders = new Map<string, RazorpayOrder>();
   return {
     keyId: MOCK_KEY_ID,
     mode: 'mock',
     async createOrder(input) {
-      return createMockOrder(input);
+      const order = createMockOrder(input);
+      orders.set(order.id, order);
+      return order;
+    },
+    async fetchOrder(orderId) {
+      return orders.get(orderId) || null;
     },
     verifyPaymentSignature({ orderId, paymentId, signature }) {
       return verifyRazorpaySignature({ orderId, paymentId, signature, keySecret: secret });
@@ -441,6 +448,15 @@ export function createRazorpayClient(env: EnvLike = process.env): RazorpayClient
       return verifyRazorpaySignature({ orderId, paymentId, signature, keySecret });
     },
 
+    async fetchOrder(orderId, deadlineAt?) {
+      if (!/^order_[a-zA-Z0-9]+$/.test(orderId)) return null;
+      const remaining = typeof deadlineAt === 'number' ? deadlineAt-Date.now() : REQUEST_TIMEOUT_MS;
+      if (remaining <= 0) throw new Error('Payment verification timed out.');
+      const response=await fetch(RAZORPAY_API_BASE+'/orders/'+encodeURIComponent(orderId),{headers:{Authorization:authHeader},signal:AbortSignal.timeout(Math.max(1,Math.min(REQUEST_TIMEOUT_MS,remaining)))});
+      if(response.status===404)return null;
+      if(!response.ok)throw new Error('The gateway order could not be verified.');
+      return await response.json() as RazorpayOrder;
+    },
     async fetchPayment(paymentId, deadlineAt?) {
       const id = String(paymentId || '').trim();
       if (!id) return null;

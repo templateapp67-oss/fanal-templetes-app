@@ -46,6 +46,8 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   if (verifiedPaymentId) {
     payment = await integrations.gateway()?.fetchPayment?.(verifiedPaymentId,req.res?.locals?.requestDeadlineAt);
     if (!payment?.captured || payment.orderId !== body.payment?.razorpay_order_id || payment.currency !== 'INR' || payment.amountPaidRupees <= 0 || Math.round(payment.amountPaidRupees*100) > totalPaise) throw new BackendError(409,'The gateway payment could not be matched to this booking.','payment_unverified');
+    const order=await integrations.gateway()?.fetchOrder?.(payment.orderId,req.res?.locals?.requestDeadlineAt);
+    if (!order || order.notes?.nexora_actor !== actor || order.notes?.nexora_salon !== salon.id || order.notes?.nexora_reference !== reference || order.notes?.nexora_start !== start || order.notes?.nexora_services !== createHash('sha256').update(ids.slice().sort().join(',')).digest('hex')) throw new BackendError(409,'This payment order does not match your account and booking.','payment_order_mismatch');
     const used = await readDatabase(() => db.from('payments').select('booking_id').eq('provider_payment_id',verifiedPaymentId).maybeSingle());
     if (used) {
       const previous = await readDatabase(() => db.from('bookings').select(NORMALIZED_BOOKING_SELECT).eq('id',used.booking_id).eq('customer_user_id',actor).eq('idempotency_key',idempotencyKey).maybeSingle());
@@ -54,7 +56,7 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
     }
   }
   const token = String(req.headers.authorization).replace(/^Bearer\s+/i,'');
-  const id = await readDatabase(() => integrations.userDatabase(token).rpc('create_customer_booking', {
+  const id = await readDatabase(() => integrations.userDatabase(token).rpc('nexora_create_customer_booking', {
     p_salon_id: salon.id, p_service_ids: ids, p_staff_id: staffId, p_appointment_start: start,
     p_customer_user_id: actor,
     p_customer_name: customerName, p_customer_phone: customerPhone,
