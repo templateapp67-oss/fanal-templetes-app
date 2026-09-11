@@ -4,6 +4,7 @@ import { PartnerProfileModal } from './PartnerProfileModal';
 import { NotificationBell } from './NotificationBell';
 import { AuthModal } from './AuthModal';
 import { supabase } from '../lib/supabaseClient';
+import { GROWTH_PARTNER_LOGIN_PATH, GROWTH_PARTNER_PATH, isGrowthPartnerPath } from '../lib/router';
 
 interface HeaderProps {
   currentView: AppView;
@@ -15,6 +16,9 @@ interface HeaderProps {
   profile: SalonProfile;
   onProfileSaved: (patch: Partial<SalonProfile>) => void;
   openAuth: (mode: 'login' | 'signup') => void;
+  navigate?: (to: string) => void;
+  path?: string;
+  onOpenProfileSettings?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,10 +31,27 @@ export const Header: React.FC<HeaderProps> = ({
   profile,
   openAuth,
   onProfileSaved,
+  navigate,
+  path,
 }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  const isGrowthPartnerActive = currentView === 'growthPartner' || (path ? isGrowthPartnerPath(path) : false);
+  const openGrowthPartner = () => {
+    // Entry point required by PART 2: must open /growth-partner/login via existing router.
+    if (navigate) {
+      navigate(GROWTH_PARTNER_LOGIN_PATH);
+    } else {
+      // Fallback uses the same path contract; App's path listener will pick it up.
+      if (typeof window !== 'undefined') {
+        window.history.pushState({}, '', GROWTH_PARTNER_LOGIN_PATH);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
+      setCurrentView('growthPartner');
+    }
   };
 
   return (
@@ -104,10 +125,37 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="material-symbols-outlined text-base">event_available</span>
             My Bookings
           </button>
+
+          <button
+            onClick={openGrowthPartner}
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              isGrowthPartnerActive
+                ? 'bg-[#C20E5A] text-white shadow-sm'
+                : 'text-on-surface-variant hover:text-[#C20E5A]'
+            }`}
+            aria-label="Growth Partner"
+            id="nav-growth-partner"
+          >
+            <span className="material-symbols-outlined text-base">handshake</span>
+            Growth Partner
+          </button>
         </nav>
 
         {/* Actions */}
         <div className="flex items-center gap-4">
+          <button
+            onClick={openGrowthPartner}
+            className={`lg:hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border ${
+              isGrowthPartnerActive
+                ? 'bg-[#C20E5A] text-white border-[#C20E5A]'
+                : 'bg-white text-slate-700 border-slate-200 hover:border-[#C20E5A] hover:text-[#C20E5A]'
+            }`}
+            aria-label="Growth Partner"
+            id="nav-growth-partner-mobile"
+          >
+            <span className="material-symbols-outlined text-base">handshake</span>
+            <span className="hidden sm:inline">Growth Partner</span>
+          </button>
           <NotificationBell userEmail={user?.email || ""} />
           
           {user ? (

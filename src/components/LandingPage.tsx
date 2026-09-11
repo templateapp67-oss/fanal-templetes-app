@@ -1,14 +1,25 @@
 import React from 'react';
 import { AppView, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
+import { GROWTH_PARTNER_LOGIN_PATH } from '../lib/router';
 
 interface LandingPageProps {
   setCurrentView: (view: AppView) => void;
   onSelectCategory?: (categoryId: BusinessTypeId) => void;
+  navigate?: (to: string) => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSelectCategory }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSelectCategory, navigate }) => {
   const templatesList = Object.values(CATEGORY_TEMPLATES);
+
+  const openGrowthPartner = () => {
+    if (navigate) {
+      navigate(GROWTH_PARTNER_LOGIN_PATH);
+    } else if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', GROWTH_PARTNER_LOGIN_PATH);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
 
   const handleTemplateClick = (catId: BusinessTypeId) => {
     if (onSelectCategory) {
@@ -52,6 +63,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
               >
                 <span className="material-symbols-outlined text-base group-hover:scale-110 transition-transform">devices</span>
                 <span>Explore 14 Live Templates</span>
+              </button>
+              <button
+                onClick={openGrowthPartner}
+                className="bg-white border border-outline-variant/50 hover:border-[#C20E5A] hover:text-[#C20E5A] text-on-surface-variant font-bold text-sm h-12 px-8 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                id="landing-growth-partner"
+                aria-label="Growth Partner"
+              >
+                <span className="material-symbols-outlined text-base">handshake</span>
+                <span>Growth Partner</span>
               </button>
             </div>
 
@@ -210,6 +230,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
             <span>INR (₹) Standard</span>
             <span>•</span>
             <span>Bengaluru • Mumbai • Delhi • Hyderabad • Jaipur • Kochi</span>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={openGrowthPartner}
+              className="font-bold text-[#C20E5A] hover:underline inline-flex items-center gap-1 cursor-pointer"
+              id="footer-growth-partner"
+            >
+              <span className="material-symbols-outlined text-sm">handshake</span>
+              Growth Partner
+            </button>
           </div>
 
           <div>

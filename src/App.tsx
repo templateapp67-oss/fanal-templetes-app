@@ -1542,6 +1542,8 @@ export default function App() {
           setIsAuthModalOpen(true);
         }}
         onOpenProfileSettings={() => setIsProfileSettingsOpen(true)}
+        navigate={navigate}
+        path={path}
       />
 
       {currentView === 'landing' && (
@@ -1555,6 +1557,7 @@ export default function App() {
             }
           }} 
           onSelectCategory={handleSelectCategory}
+          navigate={navigate}
         />
       )}
 
