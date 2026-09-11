@@ -157,6 +157,7 @@ export function isStaffCommissionPath(pathname: string): boolean {
 // `dashboard` rather than a blank screen.
 export const GROWTH_PARTNER_PATH = '/growth-partner';
 export const GROWTH_PARTNER_LOGIN_PATH = '/growth-partner/login';
+export const GROWTH_PARTNER_ONBOARDING_PATH = '/growth-partner/onboarding';
 
 export type GrowthPartnerSection =
   | 'dashboard'
@@ -189,6 +190,9 @@ export function isGrowthPartnerPath(pathname: string): boolean {
  */
 export function isGrowthPartnerLoginPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === GROWTH_PARTNER_LOGIN_PATH;
+}
+export function isGrowthPartnerOnboardingPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === GROWTH_PARTNER_ONBOARDING_PATH;
 }
 
 /** Canonical URL for the Growth Partner login route. */

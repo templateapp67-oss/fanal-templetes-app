@@ -357,6 +357,7 @@ export const GrowthPartnerLogin: React.FC<{
   //    area (the area re-verifies too). Loop-free: the area is a different path.
   useEffect(() => {
     if (state === 'granted') navigate?.(GROWTH_PARTNER_PATH);
+    if (state === 'unauthorized') navigate?.('/growth-partner/onboarding');
   }, [state, navigate]);
 
   const clearSession = async () => {
@@ -410,7 +411,7 @@ export const GrowthPartnerLogin: React.FC<{
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
         onSubmit={handleSubmit}
-        onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
+        onSwitchToSignup={() => { if (navigate) navigate('/growth-partner/onboarding'); else setSignup(true); setFormError(''); }}
       />
     );
   if (state === 'unauthorized')

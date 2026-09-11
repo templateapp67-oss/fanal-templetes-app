@@ -27,6 +27,8 @@ import {
   type GrowthPartnerSection,
 } from '../lib/router';
 import { GrowthPartnerLogin } from './GrowthPartnerLogin';
+import { GrowthPartnerOnboardingPage } from './GrowthPartnerOnboardingPage';
+import { isGrowthPartnerOnboardingPath } from '../lib/router';
 import {
   GrowthPartnerCommission,
   GrowthPartnerCustomers,
@@ -327,7 +329,12 @@ function initialSectionState<T>(): SectionState<T> {
   return { data: null, loading: true, error: null };
 }
 
-export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
+export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = (props) =>
+  isGrowthPartnerOnboardingPath(props.path || '')
+    ? <GrowthPartnerOnboardingPage navigate={props.navigate} accentHex={props.accentHex} />
+    : <GrowthPartnerArea {...props} />;
+
+const GrowthPartnerArea: React.FC<GrowthPartnerPageProps> = ({
   user,
   onRequireAuth,
   onBack,
