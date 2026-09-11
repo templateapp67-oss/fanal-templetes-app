@@ -12,6 +12,8 @@ import {
   Search,
 } from 'lucide-react';
 import {
+  copyReferralCodeToClipboard,
+  GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE,
   growthReferralStatusLabel,
   PARTNER_ACTIVITY_LABELS,
   PARTNER_REFERRAL_FILTER_LABELS,
@@ -223,25 +225,37 @@ function initialsFor(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function ReferralCodeCard({ code }: { code: string }) {
+export function ReferralCodeCard({ code }: { code?: string | null }) {
   const [copied, setCopied] = useState(false);
+  const value = typeof code === 'string' ? code.trim() : '';
   const copy = useCallback(async () => {
-    try {
-      // Copies ONLY the referral code — never ids, links or metadata.
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
-      }
+    // Copies ONLY the referral code — never ids, links or metadata. The helper
+    // reports whether the write actually happened, so a missing/rejected
+    // clipboard never shows a fake "Copied" state.
+    const ok = await copyReferralCodeToClipboard(value);
+    if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
     }
-  }, [code]);
+  }, [value]);
+
+  if (!value) {
+    return (
+      <section aria-label="Your referral code" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">Your referral code</h2>
+        <p className="mt-3 text-sm font-bold text-slate-700">{GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE}</p>
+        <p className="mt-3 text-xs text-slate-500">
+          Your code is managed by the platform and cannot be changed here.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Your referral code" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">Your referral code</h2>
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <code className="text-2xl font-black tracking-[0.2em] text-slate-900 select-all">{code}</code>
+        <code className="text-2xl font-black tracking-[0.2em] text-slate-900 select-all">{value}</code>
         <button
           type="button"
           onClick={() => void copy()}
@@ -340,8 +354,27 @@ export const GrowthPartnerDashboard: React.FC<{
   displayName: string;
   email: string;
   accentHex?: string;
-}> = ({ dashboard, displayName, email, accentHex = '#C20E5A' }) => (
+  onRetry?: () => void;
+  refreshing?: boolean;
+}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false }) => (
   <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-base font-bold text-slate-900">Dashboard</h2>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={() => onRetry()}
+          disabled={refreshing}
+          aria-label="Refresh dashboard"
+          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
+      )}
+    </div>
+    {refreshing && <p className="text-xs font-bold text-slate-500">Refreshing…</p>}
+
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <PartnerProfileCard dashboard={dashboard} displayName={displayName} email={email} accentHex={accentHex} />
       <ReferralCodeCard code={dashboard.partner.referral_code} />
@@ -440,7 +473,19 @@ export const GrowthPartnerReferrals: React.FC<PartnerListSectionProps> = ({
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <PartnerFilterPills value={filter} onChange={onFilterChange} />
       <section aria-label="Referrals" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-        <h2 className="text-base font-bold text-slate-900">Referrals</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold text-slate-900">Referrals</h2>
+          <button
+            type="button"
+            onClick={() => onRetry?.()}
+            disabled={loading}
+            aria-label="Refresh referrals"
+            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+        </div>
         {loading && <p className="mt-2 text-xs font-bold text-slate-500">Refreshing…</p>}
         {list && list.total === 0 ? (
           <p className="mt-4 text-sm text-slate-600">No referrals match this filter.</p>

@@ -156,6 +156,7 @@ export function isStaffCommissionPath(pathname: string): boolean {
 // partner commission model exists yet). Unknown sub-paths fall back to
 // `dashboard` rather than a blank screen.
 export const GROWTH_PARTNER_PATH = '/growth-partner';
+export const GROWTH_PARTNER_LOGIN_PATH = '/growth-partner/login';
 
 export type GrowthPartnerSection =
   | 'dashboard'
@@ -178,6 +179,21 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
 export function isGrowthPartnerPath(pathname: string): boolean {
   const path = normalizePath(pathname).toLowerCase();
   return path === GROWTH_PARTNER_PATH || path.startsWith(`${GROWTH_PARTNER_PATH}/`);
+}
+
+/**
+ * True when the path is the Growth Partner LOGIN route (a separate surface of
+ * the same `/growth-partner/...` namespace: unauthenticated visitors to the
+ * area are sent here, and a signed-in partner landing here is verified and
+ * forwarded to the area without being asked to log in again).
+ */
+export function isGrowthPartnerLoginPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === GROWTH_PARTNER_LOGIN_PATH;
+}
+
+/** Canonical URL for the Growth Partner login route. */
+export function growthPartnerLoginPath(): string {
+  return GROWTH_PARTNER_LOGIN_PATH;
 }
 
 /** Section for `/growth-partner` (dashboard) and `/growth-partner/:section`. */

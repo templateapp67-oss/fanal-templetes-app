@@ -63,6 +63,10 @@ const DASHBOARD_MIGRATION = readFileSync(
   new URL('../supabase/migrations/20260915_growth_partner_dashboard.sql', import.meta.url),
   'utf8'
 );
+const INACTIVE_GUARD_MIGRATION = readFileSync(
+  new URL('../supabase/migrations/20260918_partner_dashboard_inactive_guard.sql', import.meta.url),
+  'utf8'
+);
 
 async function setup() {
   const db = new PGlite();
@@ -82,6 +86,7 @@ async function setup() {
   `);
   await db.exec(GROWTH_MIGRATION);
   await db.exec(DASHBOARD_MIGRATION);
+  await db.exec(INACTIVE_GUARD_MIGRATION);
   return db;
 }
 
@@ -242,13 +247,24 @@ test('non-partners fail closed with a safe message; anonymous callers are denied
   }
 });
 
-test('an inactive partner still reads their own data (matches the RLS posture)', async () => {
+test('an inactive partner is denied the dashboard reads (fail closed, matching the gate)', async () => {
   const db = await setupPopulatedDb();
   try {
     await db.query('update public.growth_partners set is_active = false where user_id = $1::uuid', [PARTNER_A]);
-    const dashboard = (await rpc(db, PARTNER_A, 'get_my_partner_dashboard')) as PartnerDashboardData;
-    assert.equal(dashboard.partner.is_active, false);
-    assert.equal(dashboard.kpis.total_referrals, 5);
+
+    // The gate row read still succeeds (the UI gate needs to learn is_active),
+    // but every dashboard/referrals/performance read is denied.
+    const row = (
+      await asUser(db, PARTNER_A, 'select user_id, is_active from public.growth_partners')
+    ).rows[0];
+    assert.equal(row.is_active, false);
+
+    await assert.rejects(rpc(db, PARTNER_A, 'get_my_partner_dashboard'), /Growth Partner access is paused/);
+    await assert.rejects(
+      rpc(db, PARTNER_A, 'get_my_partner_referrals', ['all', null, 20, 0]),
+      /Growth Partner access is paused/
+    );
+    await assert.rejects(rpc(db, PARTNER_A, 'get_my_partner_performance'), /Growth Partner access is paused/);
   } finally {
     await db.close();
   }
@@ -797,9 +813,15 @@ test('the pager turns server pages and disables correctly at the bounds', () => 
 
 test('section code copies only the referral code and keeps no browser-side state', () => {
   const source = readFileSync(new URL('../src/components/GrowthPartnerSections.tsx', import.meta.url), 'utf8');
-  assert.match(source, /navigator\.clipboard\.writeText\(code\)/);
+  // The card delegates to the single shared clipboard helper (Part 2.3).
+  assert.match(source, /copyReferralCodeToClipboard/);
   assert.doesNotMatch(stripComments(source), /localStorage|sessionStorage/);
   // No client-side business math: rates, totals and payouts never computed here.
   assert.doesNotMatch(stripComments(source), /completion_rate_pct\s*=[^=]/);
   assert.doesNotMatch(stripComments(source), /commission_amount|payout_amount|total_earned/);
+
+  // The helper itself copies ONLY the code via the browser clipboard API.
+  const lib = readFileSync(new URL('../src/lib/growthPartner.ts', import.meta.url), 'utf8');
+  assert.match(lib, /\.clipboard\?\.writeText/);
+  assert.doesNotMatch(stripComments(lib), /localStorage|sessionStorage/);
 });
