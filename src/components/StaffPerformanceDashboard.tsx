@@ -13,6 +13,7 @@ import {
 import {
   STAFF_PERFORMANCE_ERROR_COPY,
   aggregateSalonTotals,
+  selectedPeriodLeaders,
   bookingGrowthPercent,
   chartStaffBars,
   dailySeries,
@@ -144,14 +145,15 @@ function SkeletonCard() {
 
 function Delta({ current, previous, money = false, currencySymbol = '₹' }: { current: number; previous: number; money?: boolean; currencySymbol?: string }) {
   const pct = percentChange(current, previous);
-  const up = current >= previous;
+  const up = current > previous;
+  const unchanged = current === previous;
   const label = pct === null ? 'New' : formatPercent(pct);
   return (
-    <div className={`text-[11px] font-bold mt-1 flex items-center gap-1 ${up ? 'text-emerald-600' : 'text-rose-600'}`}>
-      <span className="material-symbols-outlined text-sm">{up ? 'trending_up' : 'trending_down'}</span>
+    <div className={`text-[11px] font-bold mt-1 flex items-center gap-1 ${unchanged ? 'text-gray-500' : up ? 'text-emerald-600' : 'text-rose-600'}`}>
+      <span className="material-symbols-outlined text-sm">{unchanged ? 'trending_flat' : up ? 'trending_up' : 'trending_down'}</span>
       <span>{label}</span>
       <span className="text-gray-400 font-medium">
-        vs {money ? formatInr(previous, currencySymbol) : previous.toLocaleString('en-IN')}
+        vs previous period: {money ? formatInr(previous, currencySymbol) : previous.toLocaleString('en-IN')}
       </span>
     </div>
   );
@@ -295,7 +297,7 @@ function LineMini({
     <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs min-h-[220px]">
       <h3 className="text-xs font-bold font-mono-caps text-gray-700 mb-2">{title}</h3>
       {empty ? (
-        <EmptyBlock title="No chart data" body="No daily values in the last 7 days." />
+        <EmptyBlock title="No chart data" body="No daily values in the selected period." />
       ) : canUseCharts() ? (
         <div className="h-44" role="img" aria-label={title}>
           <ResponsiveContainer width="100%" height="100%">
@@ -384,6 +386,8 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     }
     const ticket = ++inflight.current;
     setLoading(true);
+    setBundle(null);
+    setDetailOpen(false);
     setLoadError(null);
     setFatal(null);
 
@@ -405,20 +409,16 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     }
 
     salonIdRef.current = owner.context.salonId;
-    const seven = lastSevenCivilDays();
-    const prev7 = previousPeriod(seven.from, seven.to);
     const prevRange = previousPeriod(debouncedRange.from, debouncedRange.to);
 
-    const [current, previous, last7, previous7, daily7] = await Promise.all([
+    const [current, previous, daily7] = await Promise.all([
       fetchStaffPerformance(owner.context.salonId, debouncedRange.from, debouncedRange.to, null),
       fetchStaffPerformance(owner.context.salonId, prevRange.from, prevRange.to, null),
-      fetchStaffLast7Days(owner.context.salonId),
-      fetchStaffPerformance(owner.context.salonId, prev7.from, prev7.to, null),
-      fetchStaffDailyPerformance(owner.context.salonId, seven.from, seven.to, null),
+      fetchStaffDailyPerformance(owner.context.salonId, debouncedRange.from, debouncedRange.to, null),
     ]);
     if (ticket !== inflight.current) return;
 
-    const firstFail = [current, previous, last7, previous7, daily7].find(isRpcFail);
+    const firstFail = [current, previous, daily7].find(isRpcFail);
     if (firstFail) {
       if (firstFail.error.code === 'session_expired' || firstFail.error.code === 'owner_access_denied') {
         clearDashboard();
@@ -434,8 +434,8 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
       salonId: owner.context.salonId,
       rows: current.ok ? current.rows : [],
       previousRows: previous.ok ? previous.rows : [],
-      last7: last7.ok ? last7.rows : [],
-      previous7: previous7.ok ? previous7.rows : [],
+      last7: current.ok ? selectedPeriodLeaders(current.rows) : [],
+      previous7: previous.ok ? previous.rows : [],
       daily7: daily7.ok ? daily7.rows : [],
     });
     setLoading(false);
@@ -483,7 +483,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   }, [bundle, search, staffIdFilter, sortKey, sortDir, ranks]);
 
   const paged = paginateRows<StaffPerformanceSummaryRow>(visibleRows, page, PAGE_SIZE);
-  const totals: SalonTotals = bundle ? aggregateSalonTotals(visibleRows) : emptyTotals();
+  const totals: SalonTotals = bundle ? aggregateSalonTotals(filterStaffRows(bundle.rows, { staffId: staffIdFilter })) : emptyTotals();
   const prevTotals: SalonTotals = bundle
     ? aggregateSalonTotals(filterStaffRows(bundle.previousRows, { staffId: staffIdFilter }))
     : emptyTotals();
@@ -516,13 +516,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   const handleRefresh = async () => {
     if (!salonIdRef.current || refreshing) return;
     setRefreshing(true);
-    const result = await refreshStaffDaily(salonIdRef.current, range.to);
-    setRefreshing(false);
-    if (isRpcFail(result)) {
-      setLoadError(result.error);
-      return;
-    }
-    await load();
+    try { await load(); } finally { setRefreshing(false); }
   };
 
   const handleExport = async () => {
@@ -578,13 +572,12 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   const discountBars = chartStaffBars(chartRows, 'discount_amount');
   const reviewBars = chartStaffBars(chartRows, 'review_count');
   const ratingBars = chartStaffBars(chartRows, 'average_rating');
-  const seven = lastSevenCivilDays();
   const dailySource =
     staffFilter === 'all'
       ? bundle?.daily7 || []
       : (bundle?.daily7 || []).filter((row) => row.staff_id === staffFilter);
-  const dailyBookings = dailySeries(dailySource, seven.from, seven.to, 'bookings');
-  const dailyPaid = dailySeries(dailySource, seven.from, seven.to, 'paid_amount');
+  const dailyBookings = dailySeries(dailySource, debouncedRange.from, debouncedRange.to, 'bookings');
+  const dailyPaid = dailySeries(dailySource, debouncedRange.from, debouncedRange.to, 'paid_amount');
 
   const kpis = [
     { key: 'bookings', label: 'Total Bookings', value: String(totals.total_bookings), current: totals.total_bookings, previous: prevTotals.total_bookings, icon: 'event_available' },
@@ -733,13 +726,13 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
                       {card.icon}
                     </span>
                   </div>
-                  <div className="font-display font-extrabold text-2xl">{card.value || '—'}</div>
-                  <Delta
+                  <div className="font-display font-extrabold text-2xl">{loadError ? '—' : card.value || '—'}</div>
+                  {loadError ? <p role="status" className="mt-2 text-xs text-rose-700">Could not load this value. Use Refresh to retry.</p> : <Delta
                     current={card.current}
                     previous={card.previous}
                     money={!!card.money}
                     currencySymbol={currencySymbol}
-                  />
+                  />}
                 </div>
               ))}
         </div>
@@ -901,7 +894,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
         </div>
 
         <div>
-          <h2 className="font-display font-bold text-lg mb-3">Last 7 days leaderboard</h2>
+          <h2 className="font-display font-bold text-lg mb-3">Selected period leaderboard</h2>
           {loading ? (
             <div className="h-40 bg-white border rounded-2xl animate-pulse" data-testid="leaderboard-skeleton" />
           ) : !loading && last7filtered.length === 0 ? (
@@ -948,8 +941,8 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
               <MiniChart title="Discounts by Staff" data={discountBars} currency color="#be123c" />
               <MiniChart title="Reviews by Staff" data={reviewBars} color="#6d28d9" />
               <MiniChart title="Rating Comparison" data={ratingBars} color="#ca8a04" />
-              <LineMini title="Daily Bookings for Last 7 Days" data={dailyBookings} color={primaryAccentColor} />
-              <LineMini title="Daily Payments for Last 7 Days" data={dailyPaid} currency color="#047857" />
+              <LineMini title="Daily Bookings — Selected Period" data={dailyBookings} color={primaryAccentColor} />
+              <LineMini title="Daily Payments — Selected Period" data={dailyPaid} currency color="#047857" />
             </div>
           )}
         </div>

@@ -121,6 +121,24 @@ export interface StaffDailyPerformanceRow {
   average_rating: number;
 }
 
+/** Rank the selected-period RPC rows; retain the shared leaderboard shape. */
+export function selectedPeriodLeaders(rows: StaffPerformanceSummaryRow[]): StaffLast7DaysRow[] {
+  const rank = (value: number, key: keyof StaffPerformanceSummaryRow) =>
+    1 + rows.filter(row => Number(row[key]) > value).length;
+  return rows.map(row => ({
+    staff_id: row.staff_id, staff_name: row.staff_name, staff_photo: row.staff_photo,
+    booking_count_7d: row.total_bookings, completed_booking_count_7d: row.completed_bookings,
+    gross_amount_7d: row.gross_amount, discount_amount_7d: row.discount_amount,
+    net_amount_7d: row.net_amount, paid_amount_7d: row.paid_amount,
+    commission_amount_7d: row.commission_amount, salon_amount_7d: row.salon_amount,
+    review_count_7d: row.review_count, average_rating_7d: row.average_rating,
+    booking_rank: rank(row.completed_bookings, 'completed_bookings'),
+    payment_rank: rank(row.paid_amount, 'paid_amount'),
+    review_rank: rank(row.average_rating, 'average_rating'),
+    overall_rank: rank(row.completed_bookings, 'completed_bookings'),
+  }));
+}
+
 export interface StaffCommissionResult {
   gross_amount: number;
   discount_amount: number;
