@@ -58,6 +58,9 @@ import {
   GROWTH_PARTNER_LOGIN_MOCK_TITLE,
   GROWTH_PARTNER_LOGIN_SESSION_TITLE,
   GROWTH_PARTNER_LOGIN_TITLE,
+  GROWTH_PARTNER_LOGIN_PENDING_BODY,
+  GROWTH_PARTNER_LOGIN_PENDING_TITLE,
+  GROWTH_PARTNER_ADMIN_QUEUE_EMPTY,
   GROWTH_PARTNER_LOGIN_UNAUTHORIZED_BODY,
   GROWTH_PARTNER_LOGIN_UNAUTHORIZED_TITLE,
   GrowthPartnerLogin,
@@ -65,8 +68,10 @@ import {
   GrowthPartnerLoginForm,
   GrowthPartnerLoginInactive,
   GrowthPartnerLoginMockNotice,
+  GrowthPartnerLoginPendingReview,
   GrowthPartnerLoginUnauthorized,
   GrowthPartnerLoginVerifying,
+  GrowthPartnerAdminReviewPanel,
 } from '../src/components/GrowthPartnerLogin';
 
 const PARTNER_A = 'a0000000-0000-4000-8000-000000000001';
@@ -158,6 +163,13 @@ test('the login resolver maps (session, backend role) to exactly one state', () 
   assert.equal(login({ userId: '' }), 'signed-out');
   // 4. Normal user (zero partner rows from RLS) → unauthorized.
   assert.equal(login({ partnerRow: null }), 'unauthorized');
+  // A submitted-but-unapproved application is its own state, never a grant.
+  assert.equal(login({ partnerRow: null, applicationStatus: 'pending' }), 'pending-review');
+  // A decided application that produced no partner row is still unauthorized.
+  assert.equal(login({ partnerRow: null, applicationStatus: 'approved' }), 'unauthorized');
+  assert.equal(login({ partnerRow: null, applicationStatus: 'rejected' }), 'unauthorized');
+  // An active partner row wins over any application status.
+  assert.equal(login({ applicationStatus: 'pending' }), 'granted');
   // 5. Inactive partner → denied (not granted).
   assert.equal(login({ partnerRow: ROW_INACTIVE }), 'inactive');
   // 1. Active partner → granted.
@@ -199,7 +211,9 @@ test('1. a valid Growth Partner login succeeds and yields the signed-in viewer',
     email: '  anita@example.com ',
     password: 'correct-horse-battery',
   });
-  assert.deepEqual(viewer, { id: PARTNER_A, email: 'anita@example.com' });
+  // isAdmin is part of the viewer contract: false for a normal partner, so the
+  // sign-in and session-restore paths return the same shape.
+  assert.deepEqual(viewer, { id: PARTNER_A, email: 'anita@example.com', isAdmin: false });
 });
 
 test('2. a wrong password is rejected with safe copy', async () => {
@@ -223,7 +237,30 @@ test('2. a wrong password is rejected with safe copy', async () => {
 
 test('6. a persisted session is restored on refresh and keeps the viewer signed in', async () => {
   const restored = await loadGrowthPartnerSession(sessionClientFor(PARTNER_A, 'anita@example.com'));
-  assert.deepEqual(restored, { id: PARTNER_A, email: 'anita@example.com' });
+  // isAdmin is part of the viewer now: false unless the auth provider marks the
+  // account as an admin (it only unlocks the local review queue).
+  assert.deepEqual(restored, { id: PARTNER_A, email: 'anita@example.com', isAdmin: false });
+
+  const adminSession: GrowthPartnerAuthClient = {
+    auth: {
+      signInWithPassword: async () => ({ data: {}, error: null }),
+      signOut: async () => ({ error: null }),
+      getSession: async () => ({
+        data: {
+          session: {
+            user: { id: PARTNER_A, email: 'admin@example.com', app_metadata: { is_admin: true } },
+            access_token: 'jwt',
+          },
+        },
+        error: null,
+      }),
+    },
+  };
+  assert.deepEqual(await loadGrowthPartnerSession(adminSession), {
+    id: PARTNER_A,
+    email: 'admin@example.com',
+    isAdmin: true,
+  });
   // No session → signed out.
   const none = await loadGrowthPartnerSession(clientWith({}));
   assert.equal(none, null);
@@ -515,4 +552,86 @@ test('the growth partner login frontend never touches the service role or fronte
     'utf8'
   );
   assert.match(componentSrc, /fetchMyGrowthPartnerRow/);
+});
+
+// ---------------------------------------------------------------------------
+// Pending-review screen + the admin review queue (rendered states)
+// ---------------------------------------------------------------------------
+
+test('a submitted application renders "under review", never partner data or the form', () => {
+  const html = render(
+    React.createElement(GrowthPartnerLoginPendingReview, {
+      submittedAt: '2026-09-12T04:29:32.256+00:00',
+      onBack: () => {},
+      onCheckAgain: () => {},
+      onSwitchAccount: () => {},
+    })
+  );
+  assert.match(html, new RegExp(GROWTH_PARTNER_LOGIN_PENDING_TITLE));
+  assert.match(html, new RegExp(GROWTH_PARTNER_LOGIN_PENDING_BODY));
+  assert.match(html, /Check again/);
+  assert.match(html, /Submitted /);
+  // Not the login form, not the partner area, not an access grant.
+  assert.doesNotMatch(html, /growth-partner-login-password/);
+  assert.doesNotMatch(html, /Your referral code/);
+  assert.doesNotMatch(html, /ALPHA01/);
+});
+
+test('the pending screen survives an unparsable submitted date (no crash, no fake date)', () => {
+  const html = render(
+    React.createElement(GrowthPartnerLoginPendingReview, { submittedAt: 'not-a-date', onBack: () => {} })
+  );
+  assert.match(html, new RegExp(GROWTH_PARTNER_LOGIN_PENDING_TITLE));
+  assert.doesNotMatch(html, /Submitted /);
+});
+
+const QUEUE_ROW = {
+  id: 'c0000000-0000-4000-8000-000000000001',
+  user_id: USER_1,
+  applicant_name: 'Asha Sharma',
+  applicant_email: 'asha@example.com',
+  applicant_phone: '9876543210',
+  status: 'pending' as const,
+  kyc_status: 'submitted',
+  kyc_document_type: 'pan',
+  kyc_document_reference: 'ABCDE1234F',
+  review_note: null,
+  created_at: '2026-09-12T04:29:32.256+00:00',
+  reviewed_at: null,
+};
+
+test('the admin queue lists applicants with the KYC reference and approve/reject actions', () => {
+  const html = render(
+    React.createElement(GrowthPartnerAdminReviewPanel, {
+      rows: [QUEUE_ROW],
+      busyId: null,
+      error: '',
+      onRefresh: () => {},
+      onDecide: () => {},
+    })
+  );
+  assert.match(html, /Asha Sharma/);
+  assert.match(html, /asha@example\.com/);
+  assert.match(html, /ABCDE1234F/);
+  assert.match(html, /Approve/);
+  assert.match(html, /Reject/);
+  assert.match(html, /aria-label="Refresh application queue"/);
+  assert.doesNotMatch(html, new RegExp(GROWTH_PARTNER_ADMIN_QUEUE_EMPTY));
+});
+
+test('the admin queue says so when nothing is waiting, and surfaces failures', () => {
+  const empty = render(
+    React.createElement(GrowthPartnerAdminReviewPanel, { rows: [], onRefresh: () => {}, onDecide: () => {} })
+  );
+  assert.match(empty, new RegExp(GROWTH_PARTNER_ADMIN_QUEUE_EMPTY));
+
+  const failed = render(
+    React.createElement(GrowthPartnerAdminReviewPanel, {
+      rows: [],
+      error: 'permission denied for function list_growth_partner_applications',
+      onRefresh: () => {},
+      onDecide: () => {},
+    })
+  );
+  assert.match(failed, /permission denied for function/);
 });

@@ -39,6 +39,12 @@ export interface GrowthPartnerAuthClient {
    * auth actions and the Growth Partner authorization check.
    */
   fetchPartnerRow?: () => Promise<GrowthPartner | null>;
+  /**
+   * The caller's own application row, used to tell "under review" apart from
+   * "never applied". Defaults to `fetchMyGrowthPartnerApplication` (the RLS
+   * self-select read); injectable for the same reason as `fetchPartnerRow`.
+   */
+  fetchApplicationRow?: () => Promise<{ status?: string | null } | null>;
   rpc?: (name: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }>;
 }
 
@@ -68,17 +74,21 @@ export async function signUpGrowthPartner(
 export interface GrowthPartnerViewer {
   id: string;
   email: string;
+  /** True only when the auth provider marks this account as an admin (local dev review panel). */
+  isAdmin?: boolean;
 }
 
 /**
  * Login-page states. `granted` means "active Growth Partner — proceed to the
- * area"; every other state keeps the visitor out of the partner area.
+ * area"; `pending-review` means the KYC application is with an admin; every
+ * other state keeps the visitor out of the partner area.
  */
 export type GrowthPartnerLoginState =
   | 'loading'
   | 'mock-mode'
   | 'signed-out'
   | 'unauthorized'
+  | 'pending-review'
   | 'inactive'
   | 'session-expired'
   | 'error'
@@ -116,6 +126,20 @@ export function toGrowthPartnerLoginError(error: unknown): Error {
   return new Error('Login failed. Please try again.');
 }
 
+/**
+ * Map an auth user to the viewer the login route uses. One mapper for both the
+ * sign-in and session-restore paths so the shape can never drift between them.
+ */
+function viewerFromUser(user: { id?: unknown; email?: unknown; app_metadata?: unknown }): GrowthPartnerViewer {
+  return {
+    id: String(user.id),
+    email: typeof user.email === 'string' ? user.email : '',
+    // True only when the auth provider marks this account as an admin; that
+    // flag unlocks the local review queue, never any partner data.
+    isAdmin: (user.app_metadata as { is_admin?: unknown } | undefined)?.is_admin === true,
+  };
+}
+
 /** Sign in with email + password via Supabase Auth (no password storage). */
 export async function signInGrowthPartner(
   client: GrowthPartnerAuthClient = supabase as unknown as GrowthPartnerAuthClient,
@@ -128,7 +152,7 @@ export async function signInGrowthPartner(
   if (error) throw toGrowthPartnerLoginError(error);
   const user = data?.session?.user ?? data?.user;
   if (!user?.id || !data?.session) throw new Error('Login failed. Please try again.');
-  return { id: String(user.id), email: typeof user.email === 'string' ? user.email : '' };
+  return viewerFromUser(user);
 }
 
 /**
@@ -142,7 +166,7 @@ export async function loadGrowthPartnerSession(
   if (error) throw toGrowthPartnerLoginError(error);
   const user = data?.session?.user;
   if (!user?.id) return null;
-  return { id: String(user.id), email: typeof user.email === 'string' ? user.email : '' };
+  return viewerFromUser(user);
 }
 
 /** Sign out via Supabase Auth (removes the session; the account/data stay). */
@@ -168,12 +192,14 @@ export function resolveGrowthPartnerLogin(input: {
   userId: string | null;
   partnerRow: GrowthPartner | null;
   loadError: unknown;
+  /** Status of the caller's own KYC application, when they have one. */
+  applicationStatus?: string | null;
 }): GrowthPartnerLoginState {
   if (input.isMockMode) return 'mock-mode';
   if (input.loading) return 'loading';
   if (!input.userId) return 'signed-out';
   if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
-  if (!input.partnerRow) return 'unauthorized';
+  if (!input.partnerRow) return input.applicationStatus === 'pending' ? 'pending-review' : 'unauthorized';
   if (input.partnerRow.is_active === false) return 'inactive';
   return 'granted';
 }

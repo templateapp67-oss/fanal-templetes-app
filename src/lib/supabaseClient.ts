@@ -34,7 +34,35 @@ const isPlaceholder = (value: string): boolean =>
   value === 'YOUR_SUPABASE_ANON_KEY' ||
   value === 'YOUR_SUPABASE_SERVICE_ROLE_KEY';
 
-export const SUPABASE_URL: string = clean(getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL'));
+/**
+ * Local development gateway (server/localSupabase.ts): with LOCAL_SUPABASE=true
+ * this app serves its own Supabase-compatible /auth/v1 + /rest/v1 API from
+ * PGlite. The browser must call the origin that served the page — inside a
+ * hosted preview `127.0.0.1` would be the user's own machine — while Node talks
+ * to itself. Ignored whenever a real SUPABASE_URL is configured.
+ */
+// Static `import.meta.env.VITE_*` access on purpose: Vite inlines that exact
+// expression at build time, whereas the dynamic lookup inside getEnvVar cannot
+// be inlined into the browser bundle.
+let viteLocalSupabaseFlag: string | undefined;
+try {
+  viteLocalSupabaseFlag = import.meta.env.VITE_LOCAL_SUPABASE;
+} catch {
+  viteLocalSupabaseFlag = undefined;
+}
+
+const LOCAL_SUPABASE_GATEWAY =
+  getEnvVar('LOCAL_SUPABASE', 'VITE_LOCAL_SUPABASE') === 'true' ||
+  viteLocalSupabaseFlag === 'true';
+
+const localGatewayOrigin = (): string =>
+  typeof window !== 'undefined'
+    ? window.location.origin
+    : `http://127.0.0.1:${(typeof process !== 'undefined' && process.env.PORT) || 3000}`;
+
+export const SUPABASE_URL: string =
+  clean(getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL')) ||
+  (LOCAL_SUPABASE_GATEWAY ? localGatewayOrigin() : '');
 // Accept the common aliases a deployment may have used for the public key.
 export const SUPABASE_ANON_KEY: string = clean(
   getEnvVar('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY') ||
@@ -179,7 +207,13 @@ export function getSupabaseAdmin(): SupabaseClient | null {
 // Convenience singleton for the Express server (server.ts).
 export const supabaseAdmin = getSupabaseAdmin();
 
-if (typeof console !== 'undefined') {
+// Boot-time environment notice. Suppressed during a test run (`npm test`
+// imports this module from dozens of files, and the notice describes the
+// developer environment rather than the code under test). Logic and exported
+// values are identical either way.
+const quietBootLogs = typeof process !== 'undefined' && process.env?.NEXORA_TEST_RUN === '1';
+
+if (typeof console !== 'undefined' && !quietBootLogs) {
   if (isMockSupabase) {
     console.warn(
       'Supabase keys are missing or using placeholders. App will run in mock mode with limited persistence.' +

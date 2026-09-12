@@ -36,6 +36,7 @@ import {
 import { matchGrowthPartnerRoute } from '../src/lib/router';
 import {
   GROWTH_PARTNER_NO_REFERRALS_BODY,
+  GROWTH_PARTNER_NO_REFERRED_USERS_TITLE,
   GROWTH_PARTNER_NO_REFERRALS_TITLE,
   GrowthPartnerReferrals,
 } from '../src/components/GrowthPartnerSections';
@@ -165,7 +166,7 @@ test('2. a partner with no referrals gets the empty state, never fake users', as
         onRetry: () => {},
       })
     );
-    assert.match(html, new RegExp(GROWTH_PARTNER_NO_REFERRALS_TITLE));
+    assert.match(html, new RegExp(GROWTH_PARTNER_NO_REFERRED_USERS_TITLE));
     assert.match(html, new RegExp(GROWTH_PARTNER_NO_REFERRALS_BODY));
     assert.doesNotMatch(html, /Asha Sharma|Rohan Verma|Meera Iyer|Bala Krishnan/);
   } finally {
@@ -270,7 +271,7 @@ test('7. the list renders a loading state and never misleading rows while loadin
     })
   );
   assert.match(html, /role="status"/);
-  assert.match(html, /Loading your referrals/);
+  assert.match(html, /Loading referred users/);
   assert.doesNotMatch(html, /Asha Sharma/);
   assert.doesNotMatch(html, /<table/);
 });
@@ -327,7 +328,7 @@ test('9. refresh re-fetches from the backend and the affordance exists', async (
       })
     );
     assert.match(html, /Refresh/);
-    assert.match(html, /aria-label="Refresh referrals"/);
+    assert.match(html, /aria-label="Refresh referred users"/);
   } finally {
     await db.close();
   }

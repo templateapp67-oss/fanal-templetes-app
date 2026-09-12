@@ -35,6 +35,7 @@ import {
   GROWTH_PARTNER_NO_COMMISSION_BODY,
   GROWTH_PARTNER_NO_COMMISSION_TITLE,
   GROWTH_PARTNER_NO_PERFORMANCE_BODY,
+  GROWTH_PARTNER_NO_REFERRED_USERS_TITLE,
   GROWTH_PARTNER_NO_REFERRALS_BODY,
   GrowthPartnerCommission,
   GrowthPartnerCustomers,
@@ -642,47 +643,43 @@ test('status pills render every funnel label through the shared mapping', () => 
   assert.match(render(React.createElement(ReferralStatusPill, { status: 'not_started' })), /Pending/);
 });
 
-test('the referrals section renders filters, rows, dates and the pager', () => {
+test('the referred-users section renders rows, dates, the pager and its states', () => {
   const html = render(
     React.createElement(GrowthPartnerReferrals, {
       list: SAMPLE_LIST,
       loading: false,
       error: null,
-      filter: 'all',
-      onFilterChange: noop,
       onPage: noop,
       onRetry: noop,
     })
   );
-  for (const label of ['All', 'Pending', 'In Progress', 'Completed']) {
-    assert.match(html, new RegExp(label));
-  }
+  assert.match(html, /Referred Users/);
   assert.match(html, /Asha Sharma/);
   assert.match(html, /Referred user …00000003/);
-  assert.match(html, /Completed/);
-  assert.match(html, /Referral Added/);
+  assert.match(html, /Reference: …00000001/);
+  assert.match(html, /Referred: /);
   assert.match(html, /Showing 1–2 of 2/);
+  assert.match(html, /aria-label="Refresh referred users"/);
+  // Status filtering belongs to the Customers section (server-side). This list
+  // is the plain referred-users roll and must not grow a second filter row.
+  assert.doesNotMatch(html, /Filter by status/);
 
   const loading = render(
     React.createElement(GrowthPartnerReferrals, {
       list: null,
       loading: true,
       error: null,
-      filter: 'all',
-      onFilterChange: noop,
       onPage: noop,
       onRetry: noop,
     })
   );
-  assert.match(loading, /Loading your referrals/);
+  assert.match(loading, /Loading referred users/);
 
   const failed = render(
     React.createElement(GrowthPartnerReferrals, {
       list: null,
       loading: false,
       error: 'Could not load this section. Please try again.',
-      filter: 'all',
-      onFilterChange: noop,
       onPage: noop,
       onRetry: noop,
     })
@@ -695,26 +692,12 @@ test('the referrals section renders filters, rows, dates and the pager', () => {
       list: { total: 0, limit: 20, offset: 0, rows: [] },
       loading: false,
       error: null,
-      filter: 'all',
-      onFilterChange: noop,
       onPage: noop,
       onRetry: noop,
     })
   );
+  assert.match(empty, new RegExp(GROWTH_PARTNER_NO_REFERRED_USERS_TITLE));
   assert.match(empty, new RegExp(GROWTH_PARTNER_NO_REFERRALS_BODY));
-
-  const filteredEmpty = render(
-    React.createElement(GrowthPartnerReferrals, {
-      list: { total: 0, limit: 20, offset: 0, rows: [] },
-      loading: false,
-      error: null,
-      filter: 'completed',
-      onFilterChange: noop,
-      onPage: noop,
-      onRetry: noop,
-    })
-  );
-  assert.match(filteredEmpty, /No referrals match this filter/);
 });
 
 test('the customers section adds server-side search to the shared referral rows', () => {
@@ -734,6 +717,11 @@ test('the customers section adds server-side search to the shared referral rows'
   );
   assert.match(html, /Search by customer name/);
   assert.match(html, /<form/);
+  // The status filter pills live here (and only here): all four backend buckets.
+  assert.match(html, /Filter by status/);
+  for (const label of ['All', 'Pending', 'In Progress', 'Completed']) {
+    assert.match(html, new RegExp(label));
+  }
   assert.match(html, /Asha Sharma/);
   assert.match(html, /Joined/);
 

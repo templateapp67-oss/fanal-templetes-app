@@ -165,10 +165,12 @@ export function createRazorpayWebhookHandler(deps: WebhookDeps) {
       }
       const secret = readWebhookSecret();
       if (!secret) {
-        console.error(
-          '[Razorpay webhook] Received a callback but RAZORPAY_WEBHOOK_SECRET is not set — cannot verify it. ' +
-            'Add the same secret you entered in the Razorpay dashboard to the server environment.'
-        );
+        if (process.env.NEXORA_TEST_RUN !== '1') {
+          console.error(
+            '[Razorpay webhook] Received a callback but RAZORPAY_WEBHOOK_SECRET is not set — cannot verify it. ' +
+              'Add the same secret you entered in the Razorpay dashboard to the server environment.'
+          );
+        }
         return void res
           .status(503)
           .json({ success: false, code: 'webhook_not_configured', error: 'Webhook secret is not configured.' });

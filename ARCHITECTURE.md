@@ -99,13 +99,19 @@ production unless explicitly forced.
 
 Supabase dashboard: Auth URL allow-list (production + preview domains),
 email provider/limits; apply migrations in filename order (growth chain
-`20260912 → 20260913 → 20260914 → 20260915 → 20260916` (the last
-file converges Part 1 objects and guards ordering/shape; it never
-redefines later-phase RPC bodies); staff chain honors the
-in-file ordering guard); provision partners via `provision_growth_partner` or
-`provision_growth_partner_by_email` (SQL Editor / service_role only —
-revoked from all clients; omitted code keeps the current code, explicit
-code rotates intentionally). Vercel:
+`20260911094853 → 20260911101201 → 20260912 → 20260913 → 20260914 →
+20260915 → 20260916 → 20260917 → 20260918 → 20260919 → 20260920`, where
+`20260916` converges Part 1 objects and guards ordering/shape (it never
+redefines later-phase RPC bodies) and `20260919` aligns the application →
+KYC review → partner-read chain with the shipped `growth_partners`
+schema — without it the area applies cleanly and then fails at runtime;
+staff chain honors the in-file ordering guard); provision partners via
+`provision_growth_partner` or `provision_growth_partner_by_email`
+(SQL Editor / service_role only — revoked from all clients; omitted code
+keeps the current code, explicit code rotates intentionally), or approve a
+submitted application with `review_growth_partner_application`. Full
+runbook: `GROWTH_PARTNER_SETUP.md`; check a deployment with
+`npm run verify:growth-partner -- .env`. Vercel:
 env vars above, SPA rewrites (already in `vercel.json`), serverless `/api`
 entry (`api/index.ts`). Razorpay: live keys + webhook secret + endpoint
 `<domain>/api/payments/razorpay/webhook`.
@@ -113,11 +119,22 @@ entry (`api/index.ts`). Razorpay: live keys + webhook secret + endpoint
 ## Migration order & rollback
 
 Apply `supabase/migrations/*.sql` in lexical order; never run files
-individually out of order. Growth migrations (`20260912–15`) are additive
+individually out of order. Growth migrations (`20260912–19`) are additive
 (functions + two tables + RLS/policies); rollback = drop the added
 functions/tables (no destructive rewrites exist in this chain). Do not
 recreate the legacy bootstrap to “fix” drift — normalized production is
 the baseline; legacy branches are probed defensively, never assumed.
+
+Two files are NOT part of that chain and must not be applied to a project
+built from this repository: `20260911092650_growth_partner_referred_users_production.sql`
+and `20260911092959_bind_growth_partner_referrals_private_wrapper.sql`. They
+target an older production `growth_partners` generation (`id`,
+`partner_code`, `status`) plus `shop_attributions`; the first is a
+`language sql` body, so Postgres resolves `gp.status` at CREATE time and the
+file fails against the table `20260912` creates. `20260919` supplies
+`get_my_growth_partner()` for the shipped schema instead (and still serves
+the older generation if a deployment has it). Pinned by
+`tests/growthPartnerApproval.test.ts`.
 
 ## Testing procedure
 
