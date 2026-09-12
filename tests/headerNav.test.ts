@@ -208,9 +208,13 @@ test('7b. the /partner/* portal routes resolve to the same area', () => {
   assert.equal(isPartnerLoginPath('/partner/dashboard'), false);
   assert.equal(matchPartnerPortalRoute('/partner'), 'dashboard');
   assert.equal(matchPartnerPortalRoute('/partner/dashboard'), 'dashboard');
-  assert.equal(matchPartnerPortalRoute('/partner/referrals'), 'referrals');
+  assert.equal(matchPartnerPortalRoute('/partner/referred-users'), 'referred-users');
+  assert.equal(matchPartnerPortalRoute('/partner/referral-status'), 'referral-status');
+  assert.equal(matchPartnerPortalRoute('/partner/referrals'), 'referred-users', 'legacy alias resolves');
+  assert.equal(matchPartnerPortalRoute('/partner/customers'), 'referral-status', 'legacy alias resolves');
   assert.equal(matchPartnerPortalRoute('/partner/performance'), 'performance');
   assert.equal(matchPartnerPortalRoute('/partner/unknown-section'), 'dashboard', 'never a blank screen');
   assert.equal(partnerPortalPath('dashboard'), '/partner/dashboard');
-  assert.equal(partnerPortalPath('referrals'), '/partner/referrals');
+  assert.equal(partnerPortalPath('referred-users'), '/partner/referred-users');
+  assert.equal(partnerPortalPath('referral-status'), '/partner/referral-status');
 });

@@ -242,27 +242,87 @@ export function isPartnerLoginPath(pathname: string): boolean {
 }
 
 /**
- * Section for `/partner` (dashboard), `/partner/dashboard` and
- * `/partner/:section`. Unknown sub-paths fall back to `dashboard` rather than a
- * blank screen — the authorization gate still runs, so an unauthenticated
- * visitor is redirected to the login route and a non-partner still gets the
- * access-denied state (an unknown path is never a bypass).
+ * Section of the partner portal. The five primary sections mirror the sidebar
+ * menu (Dashboard, My Referral Code, Referred Users, Referral Status,
+ * Profile); `performance` and `commission` keep their URL-reachable content
+ * (they are real today) but are not in the sidebar menu yet — they will appear
+ * once the fuller dashboard modules (Earnings, Commission, Withdrawals, …)
+ * land, without redesigning the shell.
  */
-export function matchPartnerPortalRoute(pathname: string): GrowthPartnerSection {
+export type PartnerPortalSection =
+  | 'dashboard'
+  | 'referral-code'
+  | 'referred-users'
+  | 'referral-status'
+  | 'profile'
+  | 'performance'
+  | 'commission';
+
+/** Every partner-portal section, in canonical sidebar order. */
+export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
+  'dashboard',
+  'referral-code',
+  'referred-users',
+  'referral-status',
+  'profile',
+  'performance',
+  'commission',
+];
+
+/** Sidebar sections (the menu) — a subset of the URL sections. */
+export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
+  'dashboard',
+  'referral-code',
+  'referred-users',
+  'referral-status',
+  'profile',
+];
+
+/** Canonical URL for each partner-portal section. */
+const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
+  dashboard: PARTNER_DASHBOARD_PATH,
+  'referral-code': `${PARTNER_PORTAL_ROOT}/referral-code`,
+  'referred-users': `${PARTNER_PORTAL_ROOT}/referred-users`,
+  'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
+  profile: `${PARTNER_PORTAL_ROOT}/profile`,
+  performance: `${PARTNER_PORTAL_ROOT}/performance`,
+  commission: `${PARTNER_PORTAL_ROOT}/commission`,
+};
+
+/**
+ * Legacy `/partner/:section` aliases → canonical sections. The portal briefly
+ * used the growth-partner section ids (`/partner/referrals`,
+ * `/partner/customers`); those links keep working and resolve to the canonical
+ * menu sections.
+ */
+const PARTNER_PORTAL_ALIASES: Record<string, PartnerPortalSection> = {
+  referrals: 'referred-users',
+  customers: 'referral-status',
+};
+
+/**
+ * Section for `/partner` (dashboard), `/partner/dashboard` and
+ * `/partner/:section`. Legacy aliases resolve to their canonical section and
+ * unknown sub-paths fall back to `dashboard` rather than a blank screen — the
+ * authorization gate still runs, so an unauthenticated visitor is redirected
+ * to the login route and a non-partner still gets the access-denied state (an
+ * unknown path is never a bypass).
+ */
+export function matchPartnerPortalRoute(pathname: string): PartnerPortalSection {
   const segments = normalizePath(pathname)
     .split('/')
     .filter((segment) => segment.length > 0);
   if (segments[0]?.toLowerCase() !== 'partner') return 'dashboard';
   const raw = String(segments[1] || '').toLowerCase();
-  if (raw === 'dashboard') return 'dashboard';
-  return (GROWTH_PARTNER_SECTIONS as string[]).includes(raw)
-    ? (raw as GrowthPartnerSection)
-    : 'dashboard';
+  if (!raw || raw === 'dashboard') return 'dashboard';
+  if ((PARTNER_PORTAL_SECTIONS as string[]).includes(raw)) return raw as PartnerPortalSection;
+  const alias = PARTNER_PORTAL_ALIASES[raw];
+  return alias ?? 'dashboard';
 }
 
 /** Canonical URL for a partner-portal section (always `/partner/<section>`). */
-export function partnerPortalPath(section: GrowthPartnerSection = 'dashboard'): string {
-  return `${PARTNER_PORTAL_ROOT}/${section}`;
+export function partnerPortalPath(section: PartnerPortalSection = 'dashboard'): string {
+  return PARTNER_PORTAL_PATHS[section] ?? PARTNER_DASHBOARD_PATH;
 }
 
 // ---------------------------------------------------------------------------

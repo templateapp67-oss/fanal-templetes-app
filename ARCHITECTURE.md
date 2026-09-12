@@ -77,6 +77,18 @@ forgot password goes through Supabase Auth
 `resetPasswordForEmail`/`updateUser` with `PASSWORD_RECOVERY` handled on
 `/partner/login`.
 
+The portal dashboard shell (`PartnerPortalShell.tsx`, PART 2.2) renders the
+sidebar + top header + main layout on desktop and a hamburger drawer on
+mobile. The menu is registry-driven (live sections + planned "Soon" slots for
+Earnings, Commission, Withdrawals, Marketing Materials, Partner Levels,
+Leaderboards, Notifications, Support), so new modules plug in without
+redesigning the shell. Menu sections: Dashboard, My Referral Code (own code +
+share link `/onboarding/referral?ref=CODE`, which pre-fills the onboarding
+referral screen — backend still re-validates on submit), Referred Users,
+Referral Status (KPI chips + legend around the server-filtered list), Profile;
+Logout is an action, not a section. Legacy `/partner/referrals` and
+`/partner/customers` aliases resolve to Referred Users / Referral Status.
+
 ## Commission source of truth
 
 - **Staff (salon payroll):** `calculate_staff_commission` (canonical 5-arg;

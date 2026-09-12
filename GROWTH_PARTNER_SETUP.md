@@ -1,6 +1,6 @@
 # Growth Partner area — complete setup
 
-`/partner/dashboard` (Dashboard · Referrals · Customers · Performance · Commission · Profile), reached through the dedicated login page at **`/partner/login`** ("Growth Partner Login"). The older `/growth-partner/*` routes keep working as an alias of the same module — both namespaces share the same component, the same Supabase Auth and the same backend checks.
+`/partner/dashboard` (Dashboard · My Referral Code · Referred Users · Referral Status · Profile), reached through the dedicated login page at **`/partner/login`** ("Growth Partner Login"). The older `/growth-partner/*` routes keep working as an alias of the same module — both namespaces share the same component, the same Supabase Auth and the same backend checks.
 
 The frontend, the backend RPCs and the tests are all in this repository. What a
 deployment must add is three things, in this order:
@@ -245,6 +245,49 @@ remember-me stores, reset flow, PGlite backend contract) and
 remember me, submit → error → success redirect, denial, forgot password,
 recovery). Gateway coverage for the reset endpoints lives in
 `tests/localSupabaseGateway.test.ts` (test 6).
+
+### 7.1 The partner dashboard shell (Part 2, section 2)
+
+After login, `/partner/dashboard` renders the professional portal shell
+(`src/components/PartnerPortalShell.tsx`): on desktop a **fixed sidebar + top
+header + main content** column; on mobile a collapsible navigation **drawer**
+(hamburger button, backdrop click and Escape both close it, a navigation tap
+closes it too).
+
+* **The sidebar menu is exactly** Dashboard, My Referral Code, Referred Users,
+  Referral Status, Profile and Logout (bottom of the sidebar, also in the
+  header). `aria-current="page"` marks the active section; the header shows
+  the partner's name, email and a logout action.
+* **My Referral Code** (`/partner/referral-code`) shows the caller's own code
+  (from their `growth_partners` row — never editable in the UI) with one-click
+  copy and a ready-to-share onboarding link:
+  `<origin>/onboarding/referral?ref=CODE`. Opening that link lands the new
+  user on the onboarding referral screen with the code pre-filled
+  (`readSharedReferralCode()` in `src/onboarding/OnboardingApp.tsx`); the
+  backend still re-validates the code on submit, so the prefill is UX only.
+  A paused partner sees an honest "paused" note instead.
+* **Referred Users** (`/partner/referred-users`) is the plain referrals roll;
+  **Referral Status** (`/partner/referral-status`) frames the same real,
+  server-filtered/searchable list with KPI chips (Total / In Progress /
+  Completed, from `get_my_partner_dashboard`) and a plain-language legend of
+  the three statuses. **Profile** (`/partner/profile`) stays read-only.
+* **Expandable by design.** The sidebar is data-driven from two registries in
+  the shell: `PARTNER_PORTAL_NAV` (live menu items) and `PARTNER_PORTAL_PLANNED`
+  (future modules, rendered as disabled "Soon" slots — never fake links). The
+  eight planned slots are Earnings, Commission, Withdrawals, Marketing
+  Materials, Partner Levels, Leaderboards, Notifications and Support: adding a
+  real module later means adding a router section + content renderer and moving
+  the entry from the planned registry to the nav registry — no shell redesign.
+  `/partner/performance` and `/partner/commission` remain URL-reachable (their
+  real content) without being menu items yet. Legacy aliases
+  `/partner/referrals` → Referred Users and `/partner/customers` → Referral
+  Status keep working.
+
+Tests: `tests/partnerPortalShell.test.ts` (menu contract, layout SSR, planned
+slots, referral-code page, share-link helper, status page, prefill wiring) and
+`tests/dom/partnerPortalShellBrowserFlow.test.ts` (real clicks through the
+stubbed-but-real Supabase REST layer: boot → shell → section navigation,
+drawer open/close, logout, `?ref=` prefill).
 
 ## Troubleshooting
 

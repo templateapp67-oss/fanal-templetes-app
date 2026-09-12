@@ -111,11 +111,24 @@ test('the partner portal routes live under /partner and never collide with the l
   assert.equal(isPartnerLoginPath('/partner/dashboard'), false);
   assert.equal(matchPartnerPortalRoute('/partner'), 'dashboard');
   assert.equal(matchPartnerPortalRoute('/partner/dashboard'), 'dashboard');
-  assert.equal(matchPartnerPortalRoute('/partner/customers'), 'customers');
+  // Canonical menu sections (sidebar order: Dashboard, My Referral Code,
+  // Referred Users, Referral Status, Profile).
+  assert.equal(matchPartnerPortalRoute('/partner/referral-code'), 'referral-code');
+  assert.equal(matchPartnerPortalRoute('/partner/referred-users'), 'referred-users');
+  assert.equal(matchPartnerPortalRoute('/partner/referral-status'), 'referral-status');
+  assert.equal(matchPartnerPortalRoute('/partner/profile'), 'profile');
+  // URL-reachable content sections that are not sidebar items yet.
+  assert.equal(matchPartnerPortalRoute('/partner/performance'), 'performance');
   assert.equal(matchPartnerPortalRoute('/partner/commission'), 'commission');
+  // Legacy aliases keep working and resolve to the canonical sections.
+  assert.equal(matchPartnerPortalRoute('/partner/referrals'), 'referred-users');
+  assert.equal(matchPartnerPortalRoute('/partner/customers'), 'referral-status');
   assert.equal(matchPartnerPortalRoute('/partner/nonsense'), 'dashboard', 'unknown never blanks');
   assert.equal(partnerPortalPath('dashboard'), '/partner/dashboard');
-  assert.equal(partnerPortalPath('referrals'), '/partner/referrals');
+  assert.equal(partnerPortalPath('referral-code'), '/partner/referral-code');
+  assert.equal(partnerPortalPath('referred-users'), '/partner/referred-users');
+  assert.equal(partnerPortalPath('referral-status'), '/partner/referral-status');
+  assert.equal(partnerPortalPath('profile'), '/partner/profile');
 });
 
 // ---------------------------------------------------------------------------

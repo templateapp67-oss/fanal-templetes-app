@@ -57,6 +57,23 @@ export const ONBOARDING_MOCK_TITLE = 'Onboarding needs a live connection';
 export const ONBOARDING_MOCK_BODY =
   'Sign up, login and referral verification need Supabase Auth, which is not connected in this preview.';
 
+/**
+ * Read the `ref` query parameter of a partner's share link
+ * (`/onboarding/referral?ref=CODE`). Purely a pre-fill: the code is captured
+ * ONCE on mount (the router may redirect through the login screen, which
+ * drops the query) and the backend re-validates it on submit.
+ */
+export function readSharedReferralCode(): string {
+  if (typeof window === 'undefined' || !window.location) return '';
+  try {
+    const value = new URLSearchParams(window.location.search).get('ref') ?? '';
+    // Bounded for sanity only — real validation happens in link_my_growth_referral.
+    return value.trim().slice(0, 32);
+  } catch {
+    return '';
+  }
+}
+
 export const OnboardingBootLoading: React.FC = () => (
   <GatewayShell title="One moment…" subtitle="Restoring your session.">
     <div role="status" aria-label="Loading onboarding" className="py-6 text-center">
@@ -106,6 +123,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffError, setHandoffError] = useState('');
+  // A partner's share link (`?ref=CODE`) is captured once, before any
+  // login-redirect drops the query, and pre-fills the referral screen.
+  const [sharedReferralCode] = useState<string>(readSharedReferralCode);
   const handoffFlight = useRef(createSingleFlight());
   const mounted = useRef(true);
   useEffect(() => {
@@ -274,6 +294,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       <ReferralScreen
         client={sb}
         email={viewer?.email || ''}
+        initialCode={sharedReferralCode}
         onLinked={() => void handleAuthDone()}
         onLogout={() => void handleLogout()}
       />

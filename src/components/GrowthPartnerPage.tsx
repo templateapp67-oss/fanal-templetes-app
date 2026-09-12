@@ -29,12 +29,20 @@ import {
   matchPartnerPortalRoute,
   PARTNER_DASHBOARD_PATH,
   PARTNER_LOGIN_PATH,
-  partnerPortalPath,
   type GrowthPartnerSection,
+  type PartnerPortalSection,
 } from '../lib/router';
 import { PARTNER_PORTAL_UNAUTHORIZED_BODY } from '../lib/partnerPortalAuth';
 import { GrowthPartnerLogin } from './GrowthPartnerLogin';
 import { PartnerPortalLogin } from './PartnerPortalLogin';
+import {
+  PartnerPortalShell,
+  partnerPortalContentSection,
+} from './PartnerPortalShell';
+import {
+  PartnerReferralCodeSection,
+  PartnerReferralStatusSection,
+} from './PartnerPortalSections';
 import {
   GrowthPartnerCommission,
   GrowthPartnerCustomers,
@@ -283,8 +291,7 @@ export function GrowthPartnerSectionTabs({
   section: GrowthPartnerSection;
   navigate?: (to: string) => void;
   accentHex: string;
-  /** Section→URL resolver. Defaults to the legacy /growth-partner paths; the
-   *  /partner/* portal passes the partnerPortalPath resolver instead. */
+  /** Section→URL resolver. Defaults to the legacy /growth-partner paths. */
   pathFor?: (section: GrowthPartnerSection) => string;
 }) {
   const resolve = pathFor ?? growthPartnerPath;
@@ -394,12 +401,24 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   // `/growth-partner/...` routes and the canonical `/partner/...` portal.
   // Only the URLs differ; the auth, the backend reads and the gate are shared.
   const isPartnerNamespace = isPartnerPortalPath(path);
-  const section = isPartnerNamespace ? matchPartnerPortalRoute(path) : matchGrowthPartnerRoute(path);
+  const portalSection: PartnerPortalSection = matchPartnerPortalRoute(path);
+  const legacySection: GrowthPartnerSection = matchGrowthPartnerRoute(path);
+  const section = isPartnerNamespace ? portalSection : legacySection;
+  /**
+   * What the active section renders. The legacy namespace renders its
+   * section ids directly; the /partner/* portal maps its menu sections to the
+   * same content (referral-status → the filterable list, referral-code → the
+   * dedicated code + share-link section). Data effects key off this value, so
+   * each page fetches exactly what it shows.
+   */
+  const contentSection: GrowthPartnerSection | 'referral-code' = isPartnerNamespace
+    ? partnerPortalContentSection(portalSection)
+    : legacySection;
   const isLoginPath = isPartnerLoginPath(path) || isGrowthPartnerLoginPath(path);
   /** Login route for the active namespace (where the gate sends visitors). */
   const loginRoute = isPartnerNamespace ? PARTNER_LOGIN_PATH : growthPartnerLoginPath();
-  /** Section URLs inside the active namespace. */
-  const sectionPathFor = isPartnerNamespace ? partnerPortalPath : growthPartnerPath;
+  /** Section URLs for the legacy namespace's section tabs. */
+  const sectionPathFor = growthPartnerPath;
   const userId = user?.id || null;
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
@@ -493,8 +512,15 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return toSafePartnerSectionError(error).message;
   };
 
+  // The portal's Referral Status page also shows the KPI chips (total / in
+  // progress / completed), so it needs the dashboard RPC alongside the list.
+  const wantsDashboardData =
+    contentSection === 'dashboard' ||
+    contentSection === 'profile' ||
+    (isPartnerNamespace && portalSection === 'referral-status');
+
   useEffect(() => {
-    if (!ready || (section !== 'dashboard' && section !== 'profile')) return;
+    if (!ready || !wantsDashboardData) return;
     let cancelled = false;
     setDashboard((prev) => ({ ...prev, loading: true, error: null }));
     (async () => {
@@ -511,10 +537,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, section, reloadKey]);
+  }, [ready, wantsDashboardData, reloadKey]);
 
   useEffect(() => {
-    if (!ready || section !== 'referrals') return;
+    if (!ready || contentSection !== 'referrals') return;
     let cancelled = false;
     setReferralOwner(userId);
     setReferrals({ data: null, loading: true, error: null });
@@ -541,10 +567,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, section, userId, referralOffset, referralRefreshKey, reloadKey]);
+  }, [ready, contentSection, userId, referralOffset, referralRefreshKey, reloadKey]);
 
   useEffect(() => {
-    if (!ready || section !== 'customers') return;
+    if (!ready || contentSection !== 'customers') return;
     let cancelled = false;
     setCustomers((prev) => ({ ...prev, loading: true, error: null }));
     (async () => {
@@ -566,10 +592,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, section, customerFilter, customerSearch, customerOffset, reloadKey]);
+  }, [ready, contentSection, customerFilter, customerSearch, customerOffset, reloadKey]);
 
   useEffect(() => {
-    if (!ready || section !== 'performance') return;
+    if (!ready || contentSection !== 'performance') return;
     let cancelled = false;
     setPerformance((prev) => ({ ...prev, loading: true, error: null }));
     (async () => {
@@ -586,7 +612,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, section, reloadKey]);
+  }, [ready, contentSection, reloadKey]);
 
   // The login route is a separate surface of the same namespace: render the
   // dedicated login screen (email + password → backend role verification).
@@ -637,7 +663,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const retrySection = () => setReloadKey((key) => key + 1);
 
   const renderSection = () => {
-    switch (section) {
+    switch (contentSection) {
       case 'dashboard':
         if (dashboard.loading && !dashboard.data) return <SectionLoading label="Loading your dashboard…" />;
         if (dashboard.error && !dashboard.data)
@@ -652,6 +678,13 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             refreshing={dashboard.loading}
           />
         ) : null;
+      case 'referral-code':
+        return (
+          <PartnerReferralCodeSection
+            code={partner ? partner.referral_code : null}
+            isActive={partner ? partner.is_active : true}
+          />
+        );
       case 'referrals':
         return (
           <GrowthPartnerReferrals
@@ -662,8 +695,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             onRetry={() => setReferralRefreshKey((key) => key + 1)}
           />
         );
-      case 'customers':
-        return (
+      case 'customers': {
+        const customersSection = (
           <GrowthPartnerCustomers
             list={customers.data}
             loading={customers.loading}
@@ -683,6 +716,19 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             }}
           />
         );
+        // The portal's Referral Status page frames the same real list with
+        // KPI chips and a status legend; the legacy page keeps its layout.
+        return isPartnerNamespace ? (
+          <PartnerReferralStatusSection
+            dashboard={dashboard.data}
+            loading={dashboard.loading}
+          >
+            {customersSection}
+          </PartnerReferralStatusSection>
+        ) : (
+          customersSection
+        );
+      }
       case 'performance':
         return (
           <GrowthPartnerPerformance
@@ -711,6 +757,24 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     }
   };
 
+  // The /partner/* portal renders the Part 2.2 dashboard shell (sidebar +
+  // header + main; drawer on mobile). The legacy /growth-partner/* namespace
+  // keeps its original top-tabs shell — same content, same backend checks.
+  if (isPartnerNamespace) {
+    return (
+      <PartnerPortalShell
+        section={portalSection}
+        displayName={displayName}
+        email={email}
+        navigate={navigate ?? (() => {})}
+        onLogout={() => onLogout?.()}
+        accentHex={accentHex}
+      >
+        {renderSection()}
+      </PartnerPortalShell>
+    );
+  }
+
   return (
     <GrowthPartnerShell
       section={section}
@@ -720,7 +784,6 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       onLogout={onLogout}
       accentHex={accentHex}
       pathFor={sectionPathFor}
-      backLabel={isPartnerNamespace ? 'Back to app' : undefined}
     >
       {renderSection()}
     </GrowthPartnerShell>
