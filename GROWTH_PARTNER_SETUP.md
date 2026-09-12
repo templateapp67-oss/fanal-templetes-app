@@ -1,6 +1,6 @@
 # Growth Partner area — complete setup
 
-`/growth-partner` (Dashboard · Referrals · Customers · Performance · Commission · Profile).
+`/partner/dashboard` (Dashboard · Referrals · Customers · Performance · Commission · Profile), reached through the dedicated login page at **`/partner/login`** ("Growth Partner Login"). The older `/growth-partner/*` routes keep working as an alias of the same module — both namespaces share the same component, the same Supabase Auth and the same backend checks.
 
 The frontend, the backend RPCs and the tests are all in this repository. What a
 deployment must add is three things, in this order:
@@ -199,6 +199,52 @@ What it gives you:
 
 Sign-ups persist in `.local-db/` across restarts; delete that directory to start
 clean. `tests/localSupabaseGateway.test.ts` drives the gateway over real HTTP.
+
+## 7. The `/partner/*` portal (PART 2)
+
+`/partner/login` and `/partner/dashboard` are the canonical Growth Partner
+routes (the legacy `/growth-partner/*` namespace renders the same module and
+stays supported for existing links). No new backend objects are required — the
+portal uses the same Supabase Auth, the same migrations and the same RLS model
+as everything above.
+
+What the portal adds on top of the area:
+
+* **A dedicated login page** (`src/components/PartnerPortalLogin.tsx`) with the
+  platform logo, the `Growth Partner Login` heading, email + password fields, a
+  show/hide password toggle, **Remember me**, **Forgot Password**, loading and
+  error states, and a success redirect to `/partner/dashboard`.
+* **Authorization is still backend-only.** After every sign-in and session
+  restore the page reads the caller's own `growth_partners` row (RLS) plus
+  their own KYC application: an ACTIVE partner is forwarded to the dashboard;
+  `pending` → "under review", `rejected` → not approved, `is_active = false`
+  (inactive/suspended) → denied, and a normal customer/owner/admin gets
+  *"You do not have access to the Growth Partner portal."* Nothing settable
+  from the browser (role flags, localStorage, query parameters, partner ids)
+  is an input to that decision — `resolvePartnerPortalLogin()` accepts only
+  the session id and the backend rows.
+* **Remember me is real.** Checked (default): the session persists in
+  `localStorage` and the email is remembered for the next visit. Unchecked:
+  the session lives in `sessionStorage` (it dies with the browser) and any
+  older remembered session token is dropped so it cannot silently revive
+  (`src/lib/authRememberStorage.ts` supplies the storage supabase-js uses; a
+  failed sign-in reverts the choice). The remembered email is only a prefill —
+  never an access input.
+* **Forgot password is real.** The reset form calls Supabase Auth
+  `resetPasswordForEmail` with `redirectTo /partner/login`; the reset email's
+  link lands back here, the client's `detectSessionInUrl` establishes the
+  recovery session and fires `PASSWORD_RECOVERY`, and the page shows the
+  set-a-new-password form which completes via `updateUser`. With the local
+  gateway there is no email: the one-time recovery link (same implicit-grant
+  format) is printed to the dev-server console instead, and
+  `PUT /auth/v1/user` enforces the same password rules.
+
+Tests: `tests/partnerPortalLogin.test.ts` (routes, resolver, form elements,
+remember-me stores, reset flow, PGlite backend contract) and
+`tests/dom/partnerPortalLoginBrowserFlow.test.ts` (real clicks: show/hide,
+remember me, submit → error → success redirect, denial, forgot password,
+recovery). Gateway coverage for the reset endpoints lives in
+`tests/localSupabaseGateway.test.ts` (test 6).
 
 ## Troubleshooting
 

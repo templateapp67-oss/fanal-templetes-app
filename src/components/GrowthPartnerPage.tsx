@@ -23,10 +23,18 @@ import {
   growthPartnerLoginPath,
   growthPartnerPath,
   isGrowthPartnerLoginPath,
+  isPartnerLoginPath,
+  isPartnerPortalPath,
   matchGrowthPartnerRoute,
+  matchPartnerPortalRoute,
+  PARTNER_DASHBOARD_PATH,
+  PARTNER_LOGIN_PATH,
+  partnerPortalPath,
   type GrowthPartnerSection,
 } from '../lib/router';
+import { PARTNER_PORTAL_UNAUTHORIZED_BODY } from '../lib/partnerPortalAuth';
 import { GrowthPartnerLogin } from './GrowthPartnerLogin';
+import { PartnerPortalLogin } from './PartnerPortalLogin';
 import {
   GrowthPartnerCommission,
   GrowthPartnerCustomers,
@@ -39,7 +47,8 @@ import {
 } from './GrowthPartnerSections';
 
 // ============================================================================
-// Growth Partner area — `/growth-partner/...`.
+// Growth Partner area — `/partner/...` (PART 2 canonical) with the legacy
+// `/growth-partner/...` routes as an alias of the SAME module.
 //
 // Same Supabase Auth, same database, same backend as the Template App.
 // Authorization is enforced by the backend in two layers: the Phase 1 RLS
@@ -142,12 +151,16 @@ export const GrowthPartnerSignInPrompt: React.FC<{
   </main>
 );
 
-export const GrowthPartnerUnauthorized: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
+export const GrowthPartnerUnauthorized: React.FC<{
+  onBack?: () => void;
+  /** Namespace-specific denial copy (the /partner/* portal shows the spec's exact line). */
+  body?: string;
+}> = ({ onBack, body }) => (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_UNAUTHORIZED_TITLE}
-      body={GROWTH_PARTNER_UNAUTHORIZED_BODY}
+      body={body ?? GROWTH_PARTNER_UNAUTHORIZED_BODY}
     >
       <button
         type="button"
@@ -265,11 +278,16 @@ export function GrowthPartnerSectionTabs({
   section,
   navigate,
   accentHex,
+  pathFor,
 }: {
   section: GrowthPartnerSection;
   navigate?: (to: string) => void;
   accentHex: string;
+  /** Section→URL resolver. Defaults to the legacy /growth-partner paths; the
+   *  /partner/* portal passes the partnerPortalPath resolver instead. */
+  pathFor?: (section: GrowthPartnerSection) => string;
 }) {
+  const resolve = pathFor ?? growthPartnerPath;
   return (
     <nav aria-label="Growth Partner sections" className="mt-4 -mb-px flex gap-1 overflow-x-auto">
       {GROWTH_PARTNER_SECTIONS.map((key) => {
@@ -278,7 +296,7 @@ export function GrowthPartnerSectionTabs({
           <button
             key={key}
             type="button"
-            onClick={() => navigate?.(growthPartnerPath(key))}
+            onClick={() => navigate?.(resolve(key))}
             aria-current={active ? 'page' : undefined}
             className={`shrink-0 px-4 py-2.5 rounded-t-xl text-sm font-bold cursor-pointer border-b-2 transition-colors ${
               active
@@ -309,8 +327,12 @@ export const GrowthPartnerShell: React.FC<{
   onBack?: () => void;
   onLogout?: () => void;
   accentHex?: string;
+  /** Section→URL resolver for the tab links (see GrowthPartnerSectionTabs). */
+  pathFor?: (section: GrowthPartnerSection) => string;
+  /** Label of the back link (the /partner/* portal says "Back to app"). */
+  backLabel?: string;
   children?: React.ReactNode;
-}> = ({ section, displayName, navigate, onBack, onLogout, accentHex = '#C20E5A', children }) => (
+}> = ({ section, displayName, navigate, onBack, onLogout, accentHex = '#C20E5A', pathFor, backLabel = 'Back to dashboard', children }) => (
   <main className="max-w-6xl mx-auto px-4 py-8">
     <header className="mb-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -321,7 +343,7 @@ export const GrowthPartnerShell: React.FC<{
             className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back to dashboard
+            {backLabel}
           </button>
           <h1 className="mt-2 text-2xl font-bold text-slate-900">Growth Partner</h1>
           <p className="mt-1 text-sm text-slate-600">
@@ -340,7 +362,7 @@ export const GrowthPartnerShell: React.FC<{
           </button>
         )}
       </div>
-      <GrowthPartnerSectionTabs section={section} navigate={navigate} accentHex={accentHex} />
+      <GrowthPartnerSectionTabs section={section} navigate={navigate} accentHex={accentHex} pathFor={pathFor} />
     </header>
 
     <div className="mt-4">{children}</div>
@@ -368,8 +390,16 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   onLogout,
   accentHex = '#C20E5A',
 }) => {
-  const section = matchGrowthPartnerRoute(path);
-  const isLoginPath = isGrowthPartnerLoginPath(path);
+  // PART 2: the same component serves two namespaces — the legacy
+  // `/growth-partner/...` routes and the canonical `/partner/...` portal.
+  // Only the URLs differ; the auth, the backend reads and the gate are shared.
+  const isPartnerNamespace = isPartnerPortalPath(path);
+  const section = isPartnerNamespace ? matchPartnerPortalRoute(path) : matchGrowthPartnerRoute(path);
+  const isLoginPath = isPartnerLoginPath(path) || isGrowthPartnerLoginPath(path);
+  /** Login route for the active namespace (where the gate sends visitors). */
+  const loginRoute = isPartnerNamespace ? PARTNER_LOGIN_PATH : growthPartnerLoginPath();
+  /** Section URLs inside the active namespace. */
+  const sectionPathFor = isPartnerNamespace ? partnerPortalPath : growthPartnerPath;
   const userId = user?.id || null;
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
@@ -435,13 +465,22 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const ready = gate === 'ready';
 
   // Unauthenticated visitors to the protected area are sent to the dedicated
-  // login route. The login route renders its own screen (and only forwards
-  // ACTIVE partners back to the area), so the two never chase each other.
+  // login route of the ACTIVE namespace. The login route renders its own
+  // screen (and only forwards ACTIVE partners back to the area), so the two
+  // never chase each other.
   useEffect(() => {
     if (!isLoginPath && gate === 'unauthenticated') {
-      navigate?.(growthPartnerLoginPath());
+      navigate?.(loginRoute);
     }
-  }, [isLoginPath, gate, navigate]);
+  }, [isLoginPath, gate, loginRoute, navigate]);
+
+  // Canonicalize the bare portal root to the dashboard URL, so `/partner`
+  // and `/partner/dashboard` are one screen with one shareable address.
+  useEffect(() => {
+    if (isPartnerNamespace && path === '/partner') {
+      navigate?.(PARTNER_DASHBOARD_PATH);
+    }
+  }, [isPartnerNamespace, path, navigate]);
 
   // A session dying mid-section returns to the page-level session gate instead
   // of stranding the section on an error card.
@@ -551,13 +590,25 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
 
   // The login route is a separate surface of the same namespace: render the
   // dedicated login screen (email + password → backend role verification).
+  // The /partner/* portal uses the PART 2 login page (logo, show/hide
+  // password, Remember me, Forgot Password, success redirect to
+  // /partner/dashboard); the legacy namespace keeps its original screen.
   if (isLoginPath) {
+    if (isPartnerNamespace) {
+      return <PartnerPortalLogin user={user} navigate={navigate} onBack={onBack} accentHex={accentHex} />;
+    }
     return <GrowthPartnerLogin user={user} navigate={navigate} onBack={onBack} accentHex={accentHex} />;
   }
 
   if (gate === 'loading') return <GrowthPartnerLoading />;
   if (gate === 'unauthenticated') return <GrowthPartnerLoading />; // redirects to the login route (effect above)
-  if (gate === 'unauthorized') return <GrowthPartnerUnauthorized onBack={onBack} />;
+  if (gate === 'unauthorized')
+    return (
+      <GrowthPartnerUnauthorized
+        onBack={onBack}
+        body={isPartnerNamespace ? PARTNER_PORTAL_UNAUTHORIZED_BODY : undefined}
+      />
+    );
   if (gate === 'inactive') return <GrowthPartnerInactive onBack={onBack} />;
   if (gate === 'mock-mode') return <GrowthPartnerMockNotice onBack={onBack} />;
   if (gate === 'session-expired')
@@ -566,7 +617,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         title={GROWTH_PARTNER_SESSION_TITLE}
         body={GROWTH_PARTNER_SESSION_BODY}
         actionLabel="Sign in again"
-        onAction={() => navigate?.(growthPartnerLoginPath())}
+        onAction={() => navigate?.(loginRoute)}
       />
     );
   if (gate === 'error')
@@ -668,6 +719,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       onBack={onBack}
       onLogout={onLogout}
       accentHex={accentHex}
+      pathFor={sectionPathFor}
+      backLabel={isPartnerNamespace ? 'Back to app' : undefined}
     >
       {renderSection()}
     </GrowthPartnerShell>

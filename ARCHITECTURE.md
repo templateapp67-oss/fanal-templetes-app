@@ -58,7 +58,7 @@ owned service (legacy). `complete_template_onboarding()` advances the
 session caller idempotently with server timestamps; the legacy stepper's
 complete-branch enforces the same check (no bypass).
 
-## Partner dashboard (`20260915`, `/growth-partner/*`)
+## Partner dashboard (`20260915`, `/partner/*` — alias `/growth-partner/*`)
 
 Six sections (Dashboard, Referrals, Customers, Performance, Commission,
 Profile) read through three session-scoped RPCs
@@ -66,6 +66,16 @@ Profile) read through three session-scoped RPCs
 `get_my_partner_performance`) — no partner/user id parameters, server-side
 filter/search/pagination/aggregation, display-name-only disclosure with
 masked refs. Page gate + RPC gate both backend-enforce partner-only access.
+
+The dedicated `/partner/login` page (PART 2) is the portal's entry: Supabase
+Auth sign-in, then the same backend-only authorization (own `growth_partners`
+row + own KYC application: active → `/partner/dashboard`; pending/rejected/
+inactive → held or denied; everyone else → "You do not have access to the
+Growth Partner portal."). Remember me chooses which browser store holds the
+session (localStorage vs sessionStorage — `src/lib/authRememberStorage.ts`);
+forgot password goes through Supabase Auth
+`resetPasswordForEmail`/`updateUser` with `PASSWORD_RECOVERY` handled on
+`/partner/login`.
 
 ## Commission source of truth
 

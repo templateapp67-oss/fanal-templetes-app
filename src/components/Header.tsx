@@ -51,9 +51,11 @@ export const HEADER_NAV_ENTRIES: HeaderNavEntry[] = [
     icon: 'dashboard',
     activeViews: ['dashboard', 'staffPerformance', 'staffCommission'],
   },
-  // Growth Partner area — `/growth-partner`. Same routing as every other entry:
-  // `setCurrentView('growthPartner')` pushes the route, and the page itself
-  // decides sign-in / partner-only / ready, so the entry is safe to show to
+  // Growth Partner area — `/partner/dashboard` (PART 2 canonical route; the
+  // legacy `/growth-partner` alias keeps working). Same routing as every other
+  // entry: `setCurrentView('growthPartner')` pushes the route, and the page
+  // itself decides sign-in / partner-only / ready (unauthenticated visitors
+  // are redirected to `/partner/login`), so the entry is safe to show to
   // every visitor.
   {
     view: 'growthPartner',

@@ -311,3 +311,86 @@ test('5. the area\'s own table read is RLS-scoped: callers see only their own ap
     await gateway.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// PART 2 — password reset over the local gateway (/auth/v1/recover + PUT /user)
+// ---------------------------------------------------------------------------
+
+test('6. the partner forgot-password flow works end to end over HTTP', async () => {
+  const logs: string[] = [];
+  const app = express();
+  app.use(express.json());
+  const gateway = await registerLocalSupabaseGateway(app, { log: (line: string) => logs.push(line) });
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const session = await signUp(origin, 'partner-reset@example.com', 'Str0ngPass!1', 'Reset Partner');
+
+    // 1) Request the reset for the account. The response never reveals
+    //    existence — the same 200 comes back for an unknown email.
+    const requested = await fetch(`${origin}/auth/v1/recover?redirect_to=/partner/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', apikey: 'local-dev-key' },
+      body: JSON.stringify({ email: 'partner-reset@example.com' }),
+    });
+    assert.equal(requested.status, 200);
+    assert.deepEqual(await requested.json(), {});
+    const unknown = await fetch(`${origin}/auth/v1/recover`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', apikey: 'local-dev-key' },
+      body: JSON.stringify({ email: 'nobody@example.com' }),
+    });
+    assert.equal(unknown.status, 200);
+    assert.deepEqual(await unknown.json(), {});
+
+    // 2) The logged dev link uses Supabase's implicit recovery format, lands
+    //    on /partner/login and carries a token the gateway itself accepts.
+    const linkLine = logs.find((line) => line.includes('/partner/login#'));
+    assert.ok(linkLine, 'the gateway must log the one-time recovery link');
+    assert.match(linkLine, /access_token=[^&]+/);
+    assert.match(linkLine, /token_type=recovery/);
+    assert.match(linkLine, /type=recovery/);
+    assert.match(linkLine, /refresh_token=/);
+    const recoveryToken = /access_token=([^&]+)/.exec(linkLine)![1];
+    const me = await fetch(`${origin}/auth/v1/user`, {
+      headers: { authorization: `Bearer ${recoveryToken}` },
+    });
+    assert.equal(me.status, 200, 'the recovery token must resolve to a real session');
+    assert.equal((await me.json() as any).email, 'partner-reset@example.com');
+
+    // 3) Set the new password through PUT /auth/v1/user (what updateUser sends).
+    const weak = await fetch(`${origin}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', apikey: 'local-dev-key', authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ password: 'short' }),
+    });
+    assert.equal(weak.status, 422);
+    assert.equal((await weak.json() as any).error, 'weak_password');
+
+    const anonymous = await fetch(`${origin}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', apikey: 'local-dev-key' },
+      body: JSON.stringify({ password: 'BrandNewPass!2' }),
+    });
+    assert.equal(anonymous.status, 401, 'a bearer token is required');
+
+    const updated = await fetch(`${origin}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', apikey: 'local-dev-key', authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ password: 'BrandNewPass!2' }),
+    });
+    assert.equal(updated.status, 200);
+    assert.equal((await updated.json() as any).email, 'partner-reset@example.com');
+
+    // 4) The old password is gone; the new one signs in.
+    const oldSignIn = await signIn(origin, 'partner-reset@example.com', 'Str0ngPass!1');
+    assert.equal(oldSignIn.status, 400, 'the old password must stop working');
+    const newSignIn = await signIn(origin, 'partner-reset@example.com', 'BrandNewPass!2');
+    assert.equal(newSignIn.status, 200);
+    assert.ok(newSignIn.body.access_token);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await gateway.close();
+  }
+});

@@ -214,6 +214,58 @@ export function growthPartnerPath(section: GrowthPartnerSection = 'dashboard'): 
 }
 
 // ---------------------------------------------------------------------------
+// Partner portal (`/partner/...`) — the PART 2 canonical Growth Partner routes.
+// ---------------------------------------------------------------------------
+// A second, shorter alias namespace over the SAME area: `/partner/login` is the
+// dedicated login page (Growth Partner Login) and `/partner/dashboard` is where
+// a verified, active partner lands after signing in. The legacy
+// `/growth-partner/...` routes keep working unchanged — both namespaces render
+// the same component, the same Supabase Auth and the same backend RLS checks.
+export const PARTNER_PORTAL_ROOT = '/partner';
+export const PARTNER_LOGIN_PATH = '/partner/login';
+export const PARTNER_DASHBOARD_PATH = '/partner/dashboard';
+
+/** True when the path belongs to the partner portal at all (`/partner`, `/partner/...`). */
+export function isPartnerPortalPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === PARTNER_PORTAL_ROOT || path.startsWith(`${PARTNER_PORTAL_ROOT}/`);
+}
+
+/**
+ * True when the path is the dedicated partner LOGIN route. Unauthenticated
+ * visitors to any `/partner/*` route are sent here; a signed-in, verified,
+ * ACTIVE partner landing here is forwarded to `/partner/dashboard` without
+ * being asked to log in again.
+ */
+export function isPartnerLoginPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === PARTNER_LOGIN_PATH;
+}
+
+/**
+ * Section for `/partner` (dashboard), `/partner/dashboard` and
+ * `/partner/:section`. Unknown sub-paths fall back to `dashboard` rather than a
+ * blank screen — the authorization gate still runs, so an unauthenticated
+ * visitor is redirected to the login route and a non-partner still gets the
+ * access-denied state (an unknown path is never a bypass).
+ */
+export function matchPartnerPortalRoute(pathname: string): GrowthPartnerSection {
+  const segments = normalizePath(pathname)
+    .split('/')
+    .filter((segment) => segment.length > 0);
+  if (segments[0]?.toLowerCase() !== 'partner') return 'dashboard';
+  const raw = String(segments[1] || '').toLowerCase();
+  if (raw === 'dashboard') return 'dashboard';
+  return (GROWTH_PARTNER_SECTIONS as string[]).includes(raw)
+    ? (raw as GrowthPartnerSection)
+    : 'dashboard';
+}
+
+/** Canonical URL for a partner-portal section (always `/partner/<section>`). */
+export function partnerPortalPath(section: GrowthPartnerSection = 'dashboard'): string {
+  return `${PARTNER_PORTAL_ROOT}/${section}`;
+}
+
+// ---------------------------------------------------------------------------
 // Onboarding App (`/onboarding/...`)
 // ---------------------------------------------------------------------------
 // A separate frontend surface of the same deployment — same Supabase project,
