@@ -47,10 +47,12 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* View Switcher Navigation */}
-        <nav className="hidden lg:flex items-center gap-1 bg-surface-variant/30 p-1 rounded-full border border-outline-variant/30">
+        {/* The row scrolls sideways (scrollbar hidden) instead of overflowing the
+            header, so every entry stays reachable at the `lg` breakpoint. */}
+        <nav className="hidden lg:flex items-center gap-1 bg-surface-variant/30 p-1 rounded-full border border-outline-variant/30 min-w-0 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <button
             onClick={() => setCurrentView('landing')}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
               currentView === 'landing'
                 ? 'bg-[#C20E5A] text-white shadow-sm'
                 : 'text-on-surface-variant hover:text-[#C20E5A]'
@@ -68,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
                 setCurrentView('wizard');
               }
             }}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
               currentView === 'preview' || currentView === 'wizard'
                 ? 'bg-[#C20E5A] text-white shadow-sm'
                 : 'text-on-surface-variant hover:text-[#C20E5A]'
@@ -83,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => setCurrentView('dashboard')}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
               currentView === 'dashboard' || currentView === 'staffPerformance' || currentView === 'staffCommission'
                 ? 'bg-[#C20E5A] text-white shadow-sm'
                 : 'text-on-surface-variant hover:text-[#C20E5A]'
@@ -93,9 +95,26 @@ export const Header: React.FC<HeaderProps> = ({
             SaaS Dashboard
           </button>
 
+          {/* Growth Partner area — `/growth-partner`. Same routing as the other
+              entries: `setCurrentView('growthPartner')` pushes the route, and the
+              page itself decides sign-in / partner-only / ready, so the entry is
+              safe to show to every visitor. */}
+          <button
+            onClick={() => setCurrentView('growthPartner')}
+            aria-current={currentView === 'growthPartner' ? 'page' : undefined}
+            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              currentView === 'growthPartner'
+                ? 'bg-[#C20E5A] text-white shadow-sm'
+                : 'text-on-surface-variant hover:text-[#C20E5A]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">handshake</span>
+            Growth Partner
+          </button>
+
           <button
             onClick={() => setCurrentView('bookings')}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
               currentView === 'bookings'
                 ? 'bg-[#C20E5A] text-white shadow-sm'
                 : 'text-on-surface-variant hover:text-[#C20E5A]'
