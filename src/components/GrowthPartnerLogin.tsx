@@ -410,6 +410,7 @@ export const GrowthPartnerLogin: React.FC<{
   // injected client supplies its own role read; otherwise the default
   // RLS SELECT-own-row query is used (they are the same client in production).
   const readPartnerRow = client?.fetchPartnerRow ?? fetchMyGrowthPartnerRow;
+  const readApplicationRow = client?.fetchApplicationRow ?? fetchMyGrowthPartnerApplication;
 
   // Session source of truth for this route: seed from the app's restored user
   // for first paint, then re-verify against the live Supabase session so a
@@ -484,7 +485,7 @@ export const GrowthPartnerLogin: React.FC<{
           // No partner row yet: tell "applied, under review" apart from
           // "never applied". A failed lookup is never an access grant, so it
           // falls back to the plain unauthorized card.
-          const pending = await fetchMyGrowthPartnerApplication().catch(() => null);
+          const pending = (await readApplicationRow().catch(() => null)) as GrowthPartnerApplicationRow | null;
           if (!cancelled) setApplication(pending);
         }
       } catch (error) {
@@ -498,7 +499,7 @@ export const GrowthPartnerLogin: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [sessionUser?.id, attempt, readPartnerRow, client]);
+  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, client]);
 
   const state: GrowthPartnerLoginState = resolveGrowthPartnerLogin({
     loading: verifying,

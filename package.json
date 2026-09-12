@@ -19,7 +19,8 @@
     "verify:growth-partner": "node scripts/verify-growth-partner.mjs",
     "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs",
     "validate:staff-commission": "node --import tsx scripts/validate_staff_commission_payouts_migration.mjs",
-    "validate:staff-notifications": "node --import tsx scripts/validate_staff_performance_notifications_migration.mjs"
+    "validate:staff-notifications": "node --import tsx scripts/validate_staff_performance_notifications_migration.mjs",
+    "test:dom": "node --import tsx --test --test-force-exit tests/dom/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -45,6 +46,7 @@
     "@types/qrcode": "^1.5.6",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
