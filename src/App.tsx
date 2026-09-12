@@ -61,8 +61,6 @@ import { CustomerApp } from './customer/CustomerApp';
 import { OnboardingApp } from './onboarding/OnboardingApp';
 import { TemplateHandoffPage } from './components/TemplateHandoffPage';
 import { BookingDetailPage } from './components/BookingDetailPage';
-import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
-import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
 import { GrowthPartnerPage } from './components/GrowthPartnerPage';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
@@ -262,11 +260,13 @@ export default function App() {
       return;
     }
     if (isStaffCommissionPath(path)) {
-      setCurrentViewState((view) => (view === 'staffCommission' ? view : 'staffCommission'));
+      navigate('/growth-partner');
+      setCurrentViewState('growthPartner');
       return;
     }
     if (isStaffPerformancePath(path)) {
-      setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
+      navigate('/growth-partner');
+      setCurrentViewState('growthPartner');
       return;
     }
     if (isGrowthPartnerPath(path)) {
@@ -1625,34 +1625,9 @@ export default function App() {
           siteUrl={getSiteUrl(profile)}
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
-          onNavigateToStaffPerformance={() => setCurrentView('staffPerformance')}
-          onNavigateToStaffCommission={() => setCurrentView('staffCommission')}
         />
       )}
 
-      {currentView === 'staffPerformance' && (
-        <StaffPerformanceDashboard
-          user={user}
-          onRequireAuth={openBookingAuth}
-          onBackToDashboard={() => setCurrentView('dashboard')}
-          onOpenCommission={() => setCurrentView('staffCommission')}
-          primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
-          currencySymbol={profile.currency || '₹'}
-          salonName={profile.businessName}
-        />
-      )}
-
-      {currentView === 'staffCommission' && (
-        <StaffCommissionDashboard
-          user={user}
-          onRequireAuth={openBookingAuth}
-          onBackToDashboard={() => setCurrentView('dashboard')}
-          onOpenStaffPerformance={() => setCurrentView('staffPerformance')}
-          primaryAccentColor={ACCENT_PALETTES[profile.themeAccentKey as AccentPaletteKey]?.primaryHex}
-          currencySymbol={profile.currency || '₹'}
-          salonName={profile.businessName}
-        />
-      )}
 
       {currentView === 'growthPartner' && (
         <GrowthPartnerPage
