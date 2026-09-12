@@ -173,6 +173,32 @@ export async function updateMyOnboardingProgress(
 //     from the browser, and counts/rates are computed on the server.
 // ============================================================================
 
+/** One row of the signed-in user's own KYC application, as RLS lets them see it. */
+export interface GrowthPartnerApplicationRow {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  kyc_status: string | null;
+  created_at: string;
+}
+
+/**
+ * The caller's own application row. The committed policy
+ * `growth_partner_applications_self_select` allows exactly this read, so it
+ * tells "your application is under review" apart from "you never applied".
+ * Returns null when there is no application (or the read is unavailable) —
+ * never a guess about access.
+ */
+export async function fetchMyGrowthPartnerApplication(): Promise<GrowthPartnerApplicationRow | null> {
+  const { data, error } = await supabase
+    .from('growth_partner_applications')
+    .select('id, status, kyc_status, created_at')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw rpcError('Partner application lookup failed', error);
+  const rows = (data ?? []) as unknown as GrowthPartnerApplicationRow[];
+  return rows[0] ?? null;
+}
+
 /**
  * The signed-in user's own Growth Partner row, or null when the account is
  * not a partner. RLS decides — the frontend only renders the outcome.

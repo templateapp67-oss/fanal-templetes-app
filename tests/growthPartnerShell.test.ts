@@ -225,7 +225,8 @@ function sessionClient(sessionUserId: string | null): GrowthPartnerAuthClient {
 
 test('5. refresh restores the session and the dashboard stays accessible', async () => {
   const viewer = await loadGrowthPartnerSession(sessionClient(PARTNER_A));
-  assert.deepEqual(viewer, { id: PARTNER_A, email: 'anita@example.com' });
+  // isAdmin is part of the viewer contract now (false for a normal partner).
+  assert.deepEqual(viewer, { id: PARTNER_A, email: 'anita@example.com', isAdmin: false });
   // The restored session plus the active backend row → ready (shell).
   assert.equal(
     resolveGrowthPartnerGate({

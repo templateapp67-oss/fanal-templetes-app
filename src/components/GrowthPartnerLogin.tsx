@@ -1,13 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertCircle, Loader2, ShieldAlert } from 'lucide-react';
+import { AlertCircle, Check, Hourglass, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
+  fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
   type GrowthPartner,
+  type GrowthPartnerApplicationRow,
 } from '../lib/growthPartner';
+import {
+  decideGrowthPartnerApplication,
+  listGrowthPartnerApplications,
+  type GrowthPartnerApplicationQueueRow,
+} from '../lib/growthPartnerAdmin';
 import {
   loadGrowthPartnerSession,
   resolveGrowthPartnerLogin,
@@ -49,6 +56,11 @@ export const GROWTH_PARTNER_LOGIN_SESSION_BODY = 'Please sign in again to contin
 export const GROWTH_PARTNER_LOGIN_ERROR_TITLE = 'Could not verify your Growth Partner access';
 export const GROWTH_PARTNER_LOGIN_ERROR_BODY = 'Please try again.';
 export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Application submitted. We will review it and email you after approval.';
+export const GROWTH_PARTNER_LOGIN_PENDING_TITLE = 'Application under review';
+export const GROWTH_PARTNER_LOGIN_PENDING_BODY =
+  'Your Growth Partner application is with our team. You will get access here as soon as it is approved.';
+export const GROWTH_PARTNER_ADMIN_QUEUE_TITLE = 'Growth Partner applications';
+export const GROWTH_PARTNER_ADMIN_QUEUE_EMPTY = 'No applications are waiting for review.';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -216,6 +228,134 @@ export const GrowthPartnerLoginUnauthorized: React.FC<{
   </main>
 );
 
+export const GrowthPartnerLoginPendingReview: React.FC<{
+  submittedAt?: string | null;
+  onBack?: () => void;
+  onCheckAgain?: () => void;
+  onSwitchAccount?: () => void;
+}> = ({ submittedAt, onBack, onCheckAgain, onSwitchAccount }) => {
+  const submittedLabel = (() => {
+    if (!submittedAt) return '';
+    const parsed = new Date(submittedAt);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+  })();
+  return (
+    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+      <StateCard
+        icon={<Hourglass className="w-7 h-7 text-slate-400" />}
+        title={GROWTH_PARTNER_LOGIN_PENDING_TITLE}
+        body={GROWTH_PARTNER_LOGIN_PENDING_BODY}
+      >
+        {submittedLabel ? (
+          <p className="mt-3 text-xs text-slate-500" data-testid="growth-partner-pending-submitted">
+            Submitted {submittedLabel}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => onCheckAgain?.()}
+          className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90"
+        >
+          <span className="inline-flex items-center gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Check again
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onBack?.()}
+          className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
+        >
+          Back to app
+        </button>
+        <button
+          type="button"
+          onClick={() => onSwitchAccount?.()}
+          className="mt-3 w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+        >
+          Sign in with a different account
+        </button>
+      </StateCard>
+    </main>
+  );
+};
+
+/**
+ * Admin-only review queue, shown on the login route to an account the auth
+ * provider marks as an admin. It is a convenience for operating the approval
+ * flow; the database decides whether the call is allowed.
+ */
+export const GrowthPartnerAdminReviewPanel: React.FC<{
+  rows: GrowthPartnerApplicationQueueRow[];
+  busyId?: string | null;
+  error?: string;
+  onRefresh?: () => void;
+  onDecide?: (row: GrowthPartnerApplicationQueueRow, approve: boolean) => void;
+}> = ({ rows, busyId = null, error = '', onRefresh, onDecide }) => (
+  <section
+    aria-label={GROWTH_PARTNER_ADMIN_QUEUE_TITLE}
+    className="max-w-md w-full mx-auto text-left bg-white rounded-3xl border border-slate-200 shadow-sm p-6"
+  >
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Admin</p>
+        <h2 className="mt-1 text-lg font-bold text-slate-900">{GROWTH_PARTNER_ADMIN_QUEUE_TITLE}</h2>
+      </div>
+      <button
+        type="button"
+        aria-label="Refresh application queue"
+        onClick={() => onRefresh?.()}
+        className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+      >
+        <RefreshCw className="w-4 h-4" />
+      </button>
+    </div>
+
+    {error ? <FormAlert tone="error">{error}</FormAlert> : null}
+
+    {rows.length === 0 ? (
+      <p className="mt-4 text-sm text-slate-500">{GROWTH_PARTNER_ADMIN_QUEUE_EMPTY}</p>
+    ) : (
+      <ul className="mt-4 space-y-3">
+        {rows.map((row) => (
+          <li key={row.id} className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-sm font-bold text-slate-900">{row.applicant_name || '(no name)'}</p>
+            <p className="text-xs text-slate-500 break-all">{row.applicant_email}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {row.kyc_document_type ? `${row.kyc_document_type} · ` : ''}
+              {row.kyc_document_reference || 'no reference'}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                disabled={busyId === row.id}
+                onClick={() => onDecide?.(row, true)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold cursor-pointer bg-slate-900 text-white disabled:opacity-60"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" />
+                  Approve
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={busyId === row.id}
+                onClick={() => onDecide?.(row, false)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold cursor-pointer bg-slate-100 text-slate-700 disabled:opacity-60"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <X className="w-3.5 h-3.5" />
+                  Reject
+                </span>
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
+);
+
 export const GrowthPartnerLoginInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
     <StateCard
@@ -279,6 +419,12 @@ export const GrowthPartnerLogin: React.FC<{
   );
   const [partnerRow, setPartnerRow] = useState<GrowthPartner | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  // The caller's own application, so "waiting for review" is a distinct screen
+  // from "you never applied". Admin-only review queue state follows it.
+  const [application, setApplication] = useState<GrowthPartnerApplicationRow | null>(null);
+  const [queue, setQueue] = useState<GrowthPartnerApplicationQueueRow[]>([]);
+  const [queueBusyId, setQueueBusyId] = useState<string | null>(null);
+  const [queueError, setQueueError] = useState('');
   // If a session user is already seeded (deep link / already-signed-in), the
   // role check is about to run — start in the "verifying" state so the first
   // paint never flashes the "unauthorized" card for a valid partner.
@@ -332,6 +478,15 @@ export const GrowthPartnerLogin: React.FC<{
         if (cancelled) return;
         setPartnerRow(row);
         setLoadError(null);
+        if (row) {
+          if (!cancelled) setApplication(null);
+        } else {
+          // No partner row yet: tell "applied, under review" apart from
+          // "never applied". A failed lookup is never an access grant, so it
+          // falls back to the plain unauthorized card.
+          const pending = await fetchMyGrowthPartnerApplication().catch(() => null);
+          if (!cancelled) setApplication(pending);
+        }
       } catch (error) {
         if (cancelled) return;
         setPartnerRow(null);
@@ -351,7 +506,54 @@ export const GrowthPartnerLogin: React.FC<{
     userId: sessionUser?.id ?? null,
     partnerRow,
     loadError,
+    applicationStatus: application?.status ?? null,
   });
+
+  // 2b) Load the admin review queue for an admin account. The backend refuses
+  //     non-admins, so this is only ever data an admin is allowed to see.
+  useEffect(() => {
+    if (!sessionUser?.isAdmin) {
+      setQueue([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listGrowthPartnerApplications('pending');
+        if (!cancelled) {
+          setQueue(rows);
+          setQueueError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setQueue([]);
+          setQueueError(error instanceof Error ? error.message : 'Could not load the application queue');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUser?.isAdmin, attempt]);
+
+  const handleDecide = (row: GrowthPartnerApplicationQueueRow, approve: boolean) => {
+    setQueueBusyId(row.id);
+    setQueueError('');
+    void decideGrowthPartnerApplication({
+      applicationId: row.id,
+      approve,
+      note: approve ? 'Approved' : 'Rejected',
+    })
+      .then(() => {
+        setQueue((current) => current.filter((item) => item.id !== row.id));
+        // If the applicant is signed in on this device, re-check their access.
+        setAttempt((value) => value + 1);
+      })
+      .catch((error: unknown) => {
+        setQueueError(error instanceof Error ? error.message : 'Could not update that application');
+      })
+      .finally(() => setQueueBusyId(null));
+  };
 
   // 3) An active Growth Partner never sees the login form twice: forward to the
   //    area (the area re-verifies too). Loop-free: the area is a different path.
@@ -363,6 +565,7 @@ export const GrowthPartnerLogin: React.FC<{
     await signOutGrowthPartner(sb);
     setSessionUser(null);
     setPartnerRow(null);
+    setApplication(null);
     setLoadError(null);
     setFormError('');
     setFieldErrors({});
@@ -413,8 +616,32 @@ export const GrowthPartnerLogin: React.FC<{
         onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
       />
     );
+  if (state === 'pending-review')
+    return (
+      <GrowthPartnerLoginPendingReview
+        submittedAt={application?.created_at ?? null}
+        onBack={onBack}
+        onCheckAgain={() => setAttempt((value) => value + 1)}
+        onSwitchAccount={() => void clearSession()}
+      />
+    );
   if (state === 'unauthorized')
-    return <GrowthPartnerLoginUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} />;
+    return (
+      <>
+        {sessionUser?.isAdmin ? (
+          <div className="pt-16 px-4">
+            <GrowthPartnerAdminReviewPanel
+              rows={queue}
+              busyId={queueBusyId}
+              error={queueError}
+              onRefresh={() => setAttempt((value) => value + 1)}
+              onDecide={handleDecide}
+            />
+          </div>
+        ) : null}
+        <GrowthPartnerLoginUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} />
+      </>
+    );
   if (state === 'inactive') return <GrowthPartnerLoginInactive onBack={onBack} />;
   if (state === 'session-expired')
     return (

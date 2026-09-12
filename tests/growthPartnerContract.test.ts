@@ -32,6 +32,7 @@ const MIGRATIONS = [
   '20260917_part1b_link_atomicity.sql',
   '20260918_partner_dashboard_inactive_guard.sql',
   '20260919_growth_partner_area_contract_alignment.sql',
+  '20260920_growth_partner_application_queue.sql',
 ];
 
 /** Every `rpc('<name>'` the Growth Partner client surface can issue. */
@@ -110,6 +111,7 @@ test('the admin-only functions are not reachable from a browser session', async 
       'review_growth_partner_application',
       'provision_growth_partner',
       'provision_growth_partner_by_email',
+      'list_growth_partner_applications',
     ]) {
       const granted = await db.query(
         `select has_function_privilege('authenticated', p.oid, 'EXECUTE') as client_can_call
@@ -187,6 +189,49 @@ test('no client call passes a partner or user id (the backend derives the caller
       call.payload,
       /(growth_)?partner_id|user_id/,
       `${call.file} → ${call.fn}() must not send an identity: ${call.payload.trim()}`
+    );
+  }
+});
+
+const ADMIN_MODULE = '../src/lib/growthPartnerAdmin.ts';
+
+test('the admin module only calls admin-only functions and never sends an identity', async () => {
+  const src = readFileSync(new URL(ADMIN_MODULE, import.meta.url), 'utf8');
+  const calls = [...src.matchAll(/\.rpc\(\s*'([a-z0-9_]+)'\s*,\s*\{([^{}]*)\}/g)].map(
+    (match) => ({ fn: match[1], payload: match[2] })
+  );
+  const fns = [...new Set(calls.map((call) => call.fn))].sort();
+  assert.deepEqual(fns, [
+    'list_growth_partner_applications',
+    'review_growth_partner_application',
+  ], 'the admin module must only issue admin RPCs');
+
+  const db = await setup();
+  try {
+    for (const fn of fns) {
+      const priv = await db.query(
+        `select has_function_privilege('authenticated', p.oid, 'EXECUTE') as client_can_call,
+                has_function_privilege('anon', p.oid, 'EXECUTE') as anon_can_call,
+                has_function_privilege('service_role', p.oid, 'EXECUTE') as admin_can_call
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = $1`,
+        [fn]
+      );
+      assert.ok(priv.rows.length > 0, `public.${fn}() must exist in the committed chain`);
+      assert.equal(priv.rows[0].client_can_call, false, `public.${fn}() must be unreachable from a browser session`);
+      assert.equal(priv.rows[0].anon_can_call, false, `public.${fn}() must be unreachable anonymously`);
+      assert.equal(priv.rows[0].admin_can_call, true, `public.${fn}() must stay usable by the admin role`);
+    }
+  } finally {
+    await db.close();
+  }
+
+  // The reviewer's identity comes from auth.uid(); the payload must not carry one.
+  for (const call of calls) {
+    assert.doesNotMatch(
+      call.payload,
+      /(growth_)?partner_id|user_id|reviewed_by/,
+      `${call.fn}() must not send an identity: ${call.payload.trim()}`
     );
   }
 });

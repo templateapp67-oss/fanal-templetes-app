@@ -853,6 +853,25 @@ Return strictly JSON with the following keys:
     });
   });
 
+  // --------------------------------------------------------------------------
+  // LOCAL SUPABASE-COMPATIBLE GATEWAY (development only).
+  // Serves /auth/v1 + /rest/v1 from PGlite running the real migrations, so the
+  // Growth Partner area is usable without a cloud project. Mounted only when
+  // explicitly enabled AND no real project is configured, so it can never
+  // shadow a production connection. See server/localSupabase.ts.
+  // --------------------------------------------------------------------------
+  const localSupabaseEnabled =
+    process.env.NODE_ENV !== "production" &&
+    process.env.VITE_LOCAL_SUPABASE === "true" &&
+    !process.env.SUPABASE_URL &&
+    !process.env.VITE_SUPABASE_URL;
+  if (localSupabaseEnabled) {
+    const { registerLocalSupabaseGateway } = await import("./server/localSupabase.js");
+    await registerLocalSupabaseGateway(app, {
+      dataDir: path.join(process.cwd(), ".local-db"),
+    });
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

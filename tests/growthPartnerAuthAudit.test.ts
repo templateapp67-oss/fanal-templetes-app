@@ -129,7 +129,9 @@ test('the login route reads the role through the same injected client as auth', 
 test('auth: valid login yields the viewer; wrong password is rejected; logout clears; refresh restores', async () => {
   const good = clientWith({ signInWithPassword: async () => sessionOf(PARTNER_A, 'anita@example.com') });
   const viewer = await signInGrowthPartner(good, { email: 'anita@example.com', password: 'pw' });
-  assert.deepEqual(viewer, { id: PARTNER_A, email: 'anita@example.com' });
+  // isAdmin is part of the viewer contract: false unless the auth provider
+  // marks the account as an admin (it only unlocks the local review queue).
+  assert.deepEqual(viewer, { id: PARTNER_A, email: 'anita@example.com', isAdmin: false });
 
   const bad = clientWith({ signInWithPassword: async () => ({ data: {}, error: { message: 'Invalid login credentials' } }) });
   await assert.rejects(signInGrowthPartner(bad, { email: 'x@x.com', password: 'nope' }), /Invalid email or password/);
@@ -140,7 +142,7 @@ test('auth: valid login yields the viewer; wrong password is rejected; logout cl
   assert.equal(signedOut, true);
 
   const restored = await loadGrowthPartnerSession(clientWith({ getSession: async () => sessionOf(PARTNER_A, 'anita@example.com') }));
-  assert.deepEqual(restored, { id: PARTNER_A, email: 'anita@example.com' });
+  assert.deepEqual(restored, { id: PARTNER_A, email: 'anita@example.com', isAdmin: false });
 });
 
 test('access: active allowed, normal denied, inactive denied (pure resolvers agree)', () => {

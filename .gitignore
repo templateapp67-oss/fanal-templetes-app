@@ -13,3 +13,6 @@ supabase/.branches/
 .vercel
 node_modules
 package-lock.json
+
+# Local development database for the local Supabase gateway
+.local-db/

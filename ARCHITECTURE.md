@@ -100,7 +100,7 @@ production unless explicitly forced.
 Supabase dashboard: Auth URL allow-list (production + preview domains),
 email provider/limits; apply migrations in filename order (growth chain
 `20260911094853 → 20260911101201 → 20260912 → 20260913 → 20260914 →
-20260915 → 20260916 → 20260917 → 20260918 → 20260919`, where
+20260915 → 20260916 → 20260917 → 20260918 → 20260919 → 20260920`, where
 `20260916` converges Part 1 objects and guards ordering/shape (it never
 redefines later-phase RPC bodies) and `20260919` aligns the application →
 KYC review → partner-read chain with the shipped `growth_partners`

@@ -87,6 +87,7 @@ file is idempotent:
 | 6 | `20260917_part1b_link_atomicity.sql` | atomic single-winner referral link |
 | 7 | `20260918_partner_dashboard_inactive_guard.sql` | paused partners denied by the backend |
 | 8 | `20260919_growth_partner_area_contract_alignment.sql` | **required** — see below |
+| 9 | `20260920_growth_partner_application_queue.sql` | `list_growth_partner_applications` — the admin review queue (admin-only) |
 
 **Do not apply `20260911092650_growth_partner_referred_users_production.sql` or
 `20260911092959_bind_growth_partner_referrals_private_wrapper.sql` to a project
@@ -161,6 +162,43 @@ migrations on PGlite):
 npx tsx --test tests/growthPartnerApproval.test.ts   # apply → approve → area reads
 npx tsx --test tests/growthPartner.test.ts tests/growthPartnerDashboard.test.ts
 ```
+
+## 6. Running it locally with no Supabase project
+
+For local development this repository ships a small Supabase-compatible gateway
+(`server/localSupabase.ts`) that serves `/auth/v1` and `/rest/v1` from PGlite and
+applies the same migrations above, so the Growth Partner flow can be exercised
+end to end without a cloud project.
+
+```bash
+# .env  (git-ignored; .env.example documents the same block)
+VITE_LOCAL_SUPABASE=true
+LOCAL_SUPABASE=true
+SUPABASE_ANON_KEY=local-dev-anon-key
+VITE_SUPABASE_ANON_KEY=local-dev-anon-key
+
+npm run dev
+```
+
+What it gives you:
+
+* **Dev + no real `SUPABASE_URL` only.** The gateway mounts when
+  `NODE_ENV !== production`, the local flag is on, and no real project URL is
+  configured. Point `SUPABASE_URL` at a real project and it steps aside.
+* A **seeded admin account**, printed once on boot: `admin@nexora.local` /
+  `Admin#12345` (local database only, never a production credential). Signing in
+  with it shows the review queue on the login route so approvals are clickable.
+* Sign-up, password sign-in, session restore and logout; the KYC submit →
+  admin review → partner area path; and the area's own table read
+  (`growth_partner_applications`), which stays RLS-scoped to the caller.
+* Admin claims map to `service_role`, so admin-only RPCs behave as they do in a
+  real project (a browser session cannot call them).
+* **Honest failures instead of fake data.** Table reads outside the Growth
+  Partner area (owner/booking screens, which need the normalized production
+  schema) answer `501`, and unknown functions answer `PGRST202`.
+
+Sign-ups persist in `.local-db/` across restarts; delete that directory to start
+clean. `tests/localSupabaseGateway.test.ts` drives the gateway over real HTTP.
 
 ## Troubleshooting
 

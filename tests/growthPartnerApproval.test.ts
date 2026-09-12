@@ -57,6 +57,7 @@ const MIGRATIONS = [
   '20260917_part1b_link_atomicity.sql',
   '20260918_partner_dashboard_inactive_guard.sql',
   '20260919_growth_partner_area_contract_alignment.sql',
+  '20260920_growth_partner_application_queue.sql',
 ];
 
 async function setup() {
@@ -79,7 +80,7 @@ async function setup() {
     grant usage on schema auth to authenticated, anon;
 
     -- Reused by the partner RPCs for display names.
-    create table public.profiles(id uuid primary key, full_name text, subdomain text, salon_name text);
+    create table public.profiles(id uuid primary key, full_name text, email text, subdomain text, salon_name text);
     create table public.services(id uuid primary key, owner_id uuid);
 
     -- Production defines private.is_admin() outside this repository (the
@@ -94,8 +95,10 @@ async function setup() {
 
     insert into auth.users(id) values
       ('${APPLICANT}'), ('${APPLICANT_2}'), ('${ADMIN}'), ('${APPLICANT_NO_PROFILE}');
-    insert into public.profiles(id, full_name) values
-      ('${APPLICANT}', 'Asha Sharma'), ('${APPLICANT_2}', 'Ravi Kumar'), ('${ADMIN}', 'Platform Admin');
+    insert into public.profiles(id, full_name, email) values
+      ('${APPLICANT}', 'Asha Sharma', 'asha@example.com'),
+      ('${APPLICANT_2}', 'Ravi Kumar', 'ravi@example.com'),
+      ('${ADMIN}', 'Platform Admin', 'admin@example.com');
   `);
 
   for (const file of MIGRATIONS) {
@@ -128,6 +131,22 @@ async function rpcAsAdmin(db: any, adminId: string, fn: string, args: any[] = []
   try {
     const res = await db.query(`select public.${fn}(${placeholders}) as result`, args);
     return res.rows[0].result;
+  } finally {
+    await db.exec('reset role');
+    await db.query("select set_config('request.jwt.claim.sub', '', false)");
+    await db.query("select set_config('app.is_admin', '', false)");
+  }
+}
+
+/** Call a set-returning admin RPC in FROM so real rows come back. */
+async function rowsAsAdmin(db: any, adminId: string, fn: string, args: any[] = []) {
+  const placeholders = args.map((_, i) => `$${i + 1}`).join(', ');
+  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [adminId]);
+  await db.query("select set_config('app.is_admin', 'true', false)");
+  await db.exec('set role service_role');
+  try {
+    const res = await db.query(`select * from public.${fn}(${placeholders})`, args);
+    return res.rows as any[];
   } finally {
     await db.exec('reset role');
     await db.query("select set_config('request.jwt.claim.sub', '', false)");
@@ -557,6 +576,72 @@ test('12. the older "production" partner read cannot be applied to this schema',
     // prosecdef false = SECURITY INVOKER (pg_get_functiondef omits the default),
     // so the SELECT-own-row RLS policy stays the access control.
     assert.equal(owner.rows[0].prosecdef, false, 'RLS must stay the access control');
+  } finally {
+    await db.close();
+  }
+});
+
+test('13. the admin queue lists waiting applications and stays closed to non-admins', async () => {
+  const db = await setup();
+  try {
+    await rpc(db, APPLICANT, 'submit_growth_partner_application', [
+      'Asha Sharma',
+      '9876543210',
+      'pan',
+      'ABCDE1234F',
+    ]);
+    await rpc(db, APPLICANT_2, 'submit_growth_partner_application', [
+      'Ravi Kumar',
+      '9876500000',
+      'aadhaar',
+      '1234 1234 1234',
+    ]);
+
+    const pending = await rowsAsAdmin(db, ADMIN, 'list_growth_partner_applications', ['pending', 50]);
+    assert.equal(pending.length, 2, 'both submissions must be waiting');
+    assert.deepEqual(
+      pending.map((row: any) => row.status),
+      ['pending', 'pending']
+    );
+    for (const row of pending) {
+      assert.ok(row.id, 'each row carries the application id the review RPC needs');
+      assert.ok(row.applicant_name && row.applicant_email, 'a reviewer needs to know who applied');
+      assert.equal(row.kyc_document_type && typeof row.kyc_document_type, 'string');
+      // A reviewer must never receive credential or session material.
+      for (const banned of ['password', 'access_token', 'raw_app_meta_data', 'encrypted_password']) {
+        assert.ok(!(banned in row), `the queue must not expose ${banned}`);
+      }
+    }
+
+    // Deciding on one removes it from the pending queue and files it under approved.
+    const target = pending[0];
+    await rpcAsAdmin(db, ADMIN, 'review_growth_partner_application', [target.id, true, 'KYC verified']);
+    const stillPending = await rowsAsAdmin(db, ADMIN, 'list_growth_partner_applications', [
+      'pending',
+      50,
+    ]);
+    assert.equal(stillPending.length, 1);
+    assert.notEqual(stillPending[0].id, target.id);
+
+    const approved = await rowsAsAdmin(db, ADMIN, 'list_growth_partner_applications', ['approved', 50]);
+    assert.equal(approved.length, 1);
+    assert.equal(approved[0].id, target.id);
+    assert.equal(approved[0].review_note, 'KYC verified');
+
+    // No filter + the documented defaults return the whole queue.
+    const everything = await rowsAsAdmin(db, ADMIN, 'list_growth_partner_applications');
+    assert.equal(everything.length, 2);
+
+    const badStatus = await captureError(
+      rowsAsAdmin(db, ADMIN, 'list_growth_partner_applications', ['bogus', 50])
+    );
+    assert.equal(badStatus.code, '22023');
+
+    // An applicant is neither service_role nor an admin: the queue stays shut.
+    const notAdmin = await captureError(
+      db.query("select * from public.list_growth_partner_applications('pending', 50)")
+    );
+    assert.match(String(notAdmin.message), /permission denied|administrators/i);
   } finally {
     await db.close();
   }
