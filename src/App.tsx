@@ -49,10 +49,13 @@ import {
   isStaffPerformancePath,
   isStaffCommissionPath,
   isGrowthPartnerPath,
+  isPartnerPortalPath,
   MY_BOOKINGS_PATH,
   STAFF_PERFORMANCE_PATH,
   STAFF_COMMISSION_PATH,
   GROWTH_PARTNER_PATH,
+  PARTNER_DASHBOARD_PATH,
+  PARTNER_LOGIN_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
@@ -265,6 +268,10 @@ export default function App() {
       setCurrentViewState((view) => (view === 'staffPerformance' ? view : 'staffPerformance'));
       return;
     }
+    if (isPartnerPortalPath(path)) {
+      setCurrentViewState((view) => (view === 'growthPartner' ? view : 'growthPartner'));
+      return;
+    }
     if (isGrowthPartnerPath(path)) {
       setCurrentViewState((view) => (view === 'growthPartner' ? view : 'growthPartner'));
       return;
@@ -293,7 +300,11 @@ export default function App() {
       } else if (view === 'staffCommission') {
         navigate(STAFF_COMMISSION_PATH);
       } else if (view === 'growthPartner') {
-        navigate(GROWTH_PARTNER_PATH);
+        // PART 2: the header entry points at the canonical /partner/dashboard
+        // portal route (unauthenticated visitors are redirected from there to
+        // /partner/login by the area's gate). The legacy /growth-partner
+        // namespace keeps working for existing links.
+        navigate(PARTNER_DASHBOARD_PATH);
       } else {
         navigate('/');
       }
@@ -461,6 +472,10 @@ export default function App() {
   // the same deployment: same Supabase Auth/project/database/RPCs/RLS, its own
   // screens. Like the Customer App, the owner effects below stay silent on it.
   const isOnboardingApp = isOnboardingPath(path);
+  // The Growth Partner PORTAL (`/partner/...`, PART 2) is a standalone surface
+  // too: the dedicated login page and the partner dashboard render without the
+  // owner app's chrome, and the owner effects below must stay silent on it.
+  const isPartnerPortal = isPartnerPortalPath(path);
   // The handoff page lives under /onboarding/* but is a Template App route, so
   // it must be matched BEFORE the Onboarding App branch below.
   const isTemplateHandoff = isTemplateHandoffPath(path);
@@ -1225,6 +1240,7 @@ export default function App() {
     if (isPublicSite) return; // visitors on a public salon site never save
     if (isCustomerApp) return; // …and neither does anyone in the Customer App
     if (isOnboardingApp) return; // …or in the Onboarding App
+    if (isPartnerPortal) return; // …or in the standalone Growth Partner portal
     if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
     setSaveStatus('pending');
     hasPendingSaveRef.current = true;
@@ -1246,6 +1262,7 @@ export default function App() {
     isPublicSite,
     isCustomerApp,
     isOnboardingApp,
+    isPartnerPortal,
     persistSalonState,
   ]);
 
@@ -1389,7 +1406,7 @@ export default function App() {
     // The customer app must never append to the owner's `appointments`/`clients`
     // either: a customer booking arrives through /api/customer/* and is written
     // against their own rows.
-    if (isMockSupabase || isPublicSite || isCustomerApp || isOnboardingApp) return;
+    if (isMockSupabase || isPublicSite || isCustomerApp || isOnboardingApp || isPartnerPortal) return;
 
     const ownerId = user?.id ?? profile.ownerId;
     if (!ownerId) {
@@ -1484,6 +1501,36 @@ export default function App() {
         tenantSubdomain={siteTenant?.isTenant && siteTenant.found ? siteTenant.subdomain || '' : ''}
         tenantName={siteTenant?.isTenant && siteTenant.found ? siteTenant.profile?.businessName || '' : ''}
       />
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // GROWTH PARTNER PORTAL RENDER (PART 2)
+  //
+  // `/partner/...` is the dedicated, standalone Growth Partner surface: the
+  // login page (`/partner/login`) and the partner dashboard
+  // (`/partner/dashboard`) render with the platform brand and WITHOUT the
+  // owner app's chrome, exactly like the Onboarding App. Same Supabase Auth,
+  // same database, same backend RLS checks — the page itself decides
+  // sign-in / partner-only / active-partner, and redirects unauthenticated
+  // visitors to the portal login route.
+  // -------------------------------------------------------------------------
+  if (isPartnerPortal) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900">
+        <GrowthPartnerPage
+          user={user}
+          onRequireAuth={() => navigate(PARTNER_LOGIN_PATH)}
+          onBack={() => navigate('/')}
+          path={path}
+          navigate={navigate}
+          onLogout={() => {
+            // Existing Supabase Auth logout; the auth observer clears `user`
+            // and the gate then redirects to the partner login route.
+            void supabase.auth.signOut();
+          }}
+        />
+      </div>
     );
   }
 

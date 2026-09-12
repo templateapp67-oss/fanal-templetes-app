@@ -47,10 +47,15 @@ export const ReferralForm: React.FC<{
 export const ReferralScreen: React.FC<{
   client?: OnboardingSupabaseClient;
   email?: string;
+  /**
+   * Code from a partner's share link (`/onboarding/referral?ref=CODE`).
+   * Pre-fills the form only — the backend re-validates on submit.
+   */
+  initialCode?: string;
   onLinked?: () => void;
   onLogout?: () => void;
-}> = ({ client, email, onLinked, onLogout }) => {
-  const [code, setCode] = useState('');
+}> = ({ client, email, initialCode = '', onLinked, onLogout }) => {
+  const [code, setCode] = useState(() => (typeof initialCode === 'string' ? initialCode : ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const flight = useRef(createSingleFlight());

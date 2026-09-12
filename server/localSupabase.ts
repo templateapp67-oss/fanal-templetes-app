@@ -476,6 +476,68 @@ export async function registerLocalSupabaseGateway(
     res.status(200).json({ external: {}, disable_signup: false, mailer_autoconfirm: true })
   );
 
+  // Password reset (GoTrue /recover semantics; local database only).
+  // No email is sent in local development: the one-time recovery link is
+  // logged to the server console instead, using the SAME implicit-grant hash
+  // format Supabase's reset email uses, so supabase-js detectSessionInUrl
+  // accepts it and fires PASSWORD_RECOVERY on /partner/login. The response
+  // never reveals whether the email has an account.
+  app.post('/auth/v1/recover', async (req: Request, res: Response) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const respond = () => res.status(200).json({});
+    if (!email) return respond();
+    const found = await local.db.query('select * from auth.users where email = $1', [email]);
+    const row: any = found.rows[0];
+    if (!row) return respond();
+
+    // Only same-origin paths are honoured, so the logged link can never be an
+    // open redirect through the dev console.
+    const requested = String(req.query?.redirect_to || '');
+    const redirectTo = /^\/(\/|$)/.test(requested) ? requested : '/partner/login';
+    const origin =
+      (typeof req.headers.origin === 'string' && req.headers.origin) ||
+      `${req.protocol}://${req.get('host') || `127.0.0.1:${process.env.PORT || 3000}`}`;
+    const session = sessionFor(row);
+    const link =
+      `${origin}${redirectTo}` +
+      `#access_token=${encodeURIComponent(session.access_token)}` +
+      `&expires_in=${session.expires_in}` +
+      `&refresh_token=${encodeURIComponent(session.refresh_token)}` +
+      `&token_type=recovery&type=recovery`;
+    log(
+      `[local-supabase] password reset link for ${email} (local database only — no email is sent):\n` +
+        `  ${link}`
+    );
+    return respond();
+  });
+
+  // Password update during a recovery session (GoTrue PUT /user). Only the
+  // `password` attribute is honoured; the caller must present a valid bearer
+  // token, which the recovery link established.
+  app.put('/auth/v1/user', async (req: Request, res: Response) => {
+    const claims = verifyLocalToken(bearerOf(req));
+    if (!claims) {
+      return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    }
+    const password = String(req.body?.password || '');
+    if (password) {
+      if (password.length < 8) {
+        return res
+          .status(422)
+          .json({ error: 'weak_password', error_description: 'Password should be at least 8 characters.' });
+      }
+      await local.db.query('update auth.users set encrypted_password = $2 where id = $1', [
+        claims.sub,
+        hashPassword(password),
+      ]);
+    }
+    const found = await local.db.query('select * from auth.users where id = $1', [claims.sub]);
+    if (found.rows.length === 0) {
+      return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    }
+    return res.status(200).json(publicUser(found.rows[0]));
+  });
+
   // ---------------- PostgREST RPC -----------------------------------------
   app.post('/rest/v1/rpc/:fn', async (req: Request, res: Response) => {
     const fn = String(req.params.fn || '');

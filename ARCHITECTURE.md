@@ -58,7 +58,7 @@ owned service (legacy). `complete_template_onboarding()` advances the
 session caller idempotently with server timestamps; the legacy stepper's
 complete-branch enforces the same check (no bypass).
 
-## Partner dashboard (`20260915`, `/growth-partner/*`)
+## Partner dashboard (`20260915`, `/partner/*` — alias `/growth-partner/*`)
 
 Six sections (Dashboard, Referrals, Customers, Performance, Commission,
 Profile) read through three session-scoped RPCs
@@ -66,6 +66,35 @@ Profile) read through three session-scoped RPCs
 `get_my_partner_performance`) — no partner/user id parameters, server-side
 filter/search/pagination/aggregation, display-name-only disclosure with
 masked refs. Page gate + RPC gate both backend-enforce partner-only access.
+
+The dedicated `/partner/login` page (PART 2) is the portal's entry: Supabase
+Auth sign-in, then the same backend-only authorization (own `growth_partners`
+row + own KYC application: active → `/partner/dashboard`; pending/rejected/
+inactive → held or denied; everyone else → "You do not have access to the
+Growth Partner portal."). Remember me chooses which browser store holds the
+session (localStorage vs sessionStorage — `src/lib/authRememberStorage.ts`);
+forgot password goes through Supabase Auth
+`resetPasswordForEmail`/`updateUser` with `PASSWORD_RECOVERY` handled on
+`/partner/login`.
+
+The portal dashboard shell (`PartnerPortalShell.tsx`, PART 2.2) renders the
+sidebar + top header + main layout on desktop and a hamburger drawer on
+mobile. The menu is registry-driven (live sections + planned "Soon" slots for
+Earnings, Commission, Withdrawals, Marketing Materials, Partner Levels,
+Leaderboards, Notifications, Support), so new modules plug in without
+redesigning the shell. Menu sections: Dashboard, My Referral Code (own code +
+share link `/onboarding/referral?ref=CODE`, which pre-fills the onboarding
+referral screen — backend still re-validates on submit), Referred Users,
+Referral Status (KPI chips + legend around the server-filtered list), Profile;
+Logout is an action, not a section. Legacy `/partner/referrals` and
+`/partner/customers` aliases resolve to Referred Users / Referral Status.
+
+The header (PART 2.3) shows the page title, the partner's name and Partner ID
+(their own auth id, display-only), the notifications dropdown (the real
+recent-activity feed from `get_my_partner_dashboard` — the portal reads that
+RPC on every section), and the profile avatar's dropdown: My Profile,
+Account Settings (a disabled "Soon" slot until that module exists) and
+Logout. On phones the header is hamburger + logo + avatar.
 
 ## Commission source of truth
 

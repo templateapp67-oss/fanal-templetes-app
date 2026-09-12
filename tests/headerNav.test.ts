@@ -10,8 +10,10 @@
 //   • The entry is highlighted (and marked `aria-current="page"`) only while
 //     the Growth Partner view is the current one.
 //   • Clicking it goes through the same routing as every other entry:
-//     `setCurrentView('growthPartner')` → `/growth-partner`, which the router
-//     resolves back to the dashboard section on refresh/deep links.
+//     `setCurrentView('growthPartner')` → `/partner/dashboard` (the PART 2
+//     canonical portal route; the legacy `/growth-partner` alias keeps
+//     working), which the router resolves back to the dashboard section on
+//     refresh/deep links.
 // ============================================================================
 
 import assert from 'node:assert/strict';
@@ -23,7 +25,13 @@ import { HEADER_NAV_ENTRIES, Header, isHeaderNavEntryActive } from '../src/compo
 import {
   GROWTH_PARTNER_PATH,
   isGrowthPartnerPath,
+  isPartnerLoginPath,
+  isPartnerPortalPath,
   matchGrowthPartnerRoute,
+  matchPartnerPortalRoute,
+  PARTNER_DASHBOARD_PATH,
+  PARTNER_LOGIN_PATH,
+  partnerPortalPath,
 } from '../src/lib/router';
 import type { AppView } from '../src/types';
 
@@ -177,7 +185,9 @@ test('7. clicking the entry routes to the Growth Partner area', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
 
   assert.ok(header.includes('setCurrentView(entry.view)'), 'entries switch the app view');
-  assert.ok(app.includes('navigate(GROWTH_PARTNER_PATH)'), 'that view must push the area route');
+  // PART 2: the header entry pushes the canonical /partner/dashboard portal
+  // route; the legacy /growth-partner namespace keeps working as an alias.
+  assert.ok(app.includes('navigate(PARTNER_DASHBOARD_PATH)'), 'that view must push the canonical portal route');
   assert.ok(
     app.includes("currentView === 'growthPartner'") && app.includes('<GrowthPartnerPage'),
     'that view must mount the Growth Partner page',
@@ -185,4 +195,26 @@ test('7. clicking the entry routes to the Growth Partner area', () => {
   assert.equal(GROWTH_PARTNER_PATH, '/growth-partner');
   assert.equal(isGrowthPartnerPath(GROWTH_PARTNER_PATH), true);
   assert.equal(matchGrowthPartnerRoute(GROWTH_PARTNER_PATH), 'dashboard');
+});
+
+test('7b. the /partner/* portal routes resolve to the same area', () => {
+  assert.equal(PARTNER_LOGIN_PATH, '/partner/login');
+  assert.equal(PARTNER_DASHBOARD_PATH, '/partner/dashboard');
+  assert.equal(isPartnerPortalPath('/partner'), true);
+  assert.equal(isPartnerPortalPath('/partner/dashboard'), true);
+  assert.equal(isPartnerPortalPath('/partner/login'), true);
+  assert.equal(isPartnerPortalPath('/partners'), false, 'no prefix accidents');
+  assert.equal(isPartnerLoginPath('/partner/login'), true);
+  assert.equal(isPartnerLoginPath('/partner/dashboard'), false);
+  assert.equal(matchPartnerPortalRoute('/partner'), 'dashboard');
+  assert.equal(matchPartnerPortalRoute('/partner/dashboard'), 'dashboard');
+  assert.equal(matchPartnerPortalRoute('/partner/referred-users'), 'referred-users');
+  assert.equal(matchPartnerPortalRoute('/partner/referral-status'), 'referral-status');
+  assert.equal(matchPartnerPortalRoute('/partner/referrals'), 'referred-users', 'legacy alias resolves');
+  assert.equal(matchPartnerPortalRoute('/partner/customers'), 'referral-status', 'legacy alias resolves');
+  assert.equal(matchPartnerPortalRoute('/partner/performance'), 'performance');
+  assert.equal(matchPartnerPortalRoute('/partner/unknown-section'), 'dashboard', 'never a blank screen');
+  assert.equal(partnerPortalPath('dashboard'), '/partner/dashboard');
+  assert.equal(partnerPortalPath('referred-users'), '/partner/referred-users');
+  assert.equal(partnerPortalPath('referral-status'), '/partner/referral-status');
 });

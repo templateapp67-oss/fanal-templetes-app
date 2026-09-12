@@ -1,6 +1,6 @@
 # Growth Partner area — complete setup
 
-`/growth-partner` (Dashboard · Referrals · Customers · Performance · Commission · Profile).
+`/partner/dashboard` (Dashboard · My Referral Code · Referred Users · Referral Status · Profile), reached through the dedicated login page at **`/partner/login`** ("Growth Partner Login"). The older `/growth-partner/*` routes keep working as an alias of the same module — both namespaces share the same component, the same Supabase Auth and the same backend checks.
 
 The frontend, the backend RPCs and the tests are all in this repository. What a
 deployment must add is three things, in this order:
@@ -199,6 +199,119 @@ What it gives you:
 
 Sign-ups persist in `.local-db/` across restarts; delete that directory to start
 clean. `tests/localSupabaseGateway.test.ts` drives the gateway over real HTTP.
+
+## 7. The `/partner/*` portal (PART 2)
+
+`/partner/login` and `/partner/dashboard` are the canonical Growth Partner
+routes (the legacy `/growth-partner/*` namespace renders the same module and
+stays supported for existing links). No new backend objects are required — the
+portal uses the same Supabase Auth, the same migrations and the same RLS model
+as everything above.
+
+What the portal adds on top of the area:
+
+* **A dedicated login page** (`src/components/PartnerPortalLogin.tsx`) with the
+  platform logo, the `Growth Partner Login` heading, email + password fields, a
+  show/hide password toggle, **Remember me**, **Forgot Password**, loading and
+  error states, and a success redirect to `/partner/dashboard`.
+* **Authorization is still backend-only.** After every sign-in and session
+  restore the page reads the caller's own `growth_partners` row (RLS) plus
+  their own KYC application: an ACTIVE partner is forwarded to the dashboard;
+  `pending` → "under review", `rejected` → not approved, `is_active = false`
+  (inactive/suspended) → denied, and a normal customer/owner/admin gets
+  *"You do not have access to the Growth Partner portal."* Nothing settable
+  from the browser (role flags, localStorage, query parameters, partner ids)
+  is an input to that decision — `resolvePartnerPortalLogin()` accepts only
+  the session id and the backend rows.
+* **Remember me is real.** Checked (default): the session persists in
+  `localStorage` and the email is remembered for the next visit. Unchecked:
+  the session lives in `sessionStorage` (it dies with the browser) and any
+  older remembered session token is dropped so it cannot silently revive
+  (`src/lib/authRememberStorage.ts` supplies the storage supabase-js uses; a
+  failed sign-in reverts the choice). The remembered email is only a prefill —
+  never an access input.
+* **Forgot password is real.** The reset form calls Supabase Auth
+  `resetPasswordForEmail` with `redirectTo /partner/login`; the reset email's
+  link lands back here, the client's `detectSessionInUrl` establishes the
+  recovery session and fires `PASSWORD_RECOVERY`, and the page shows the
+  set-a-new-password form which completes via `updateUser`. With the local
+  gateway there is no email: the one-time recovery link (same implicit-grant
+  format) is printed to the dev-server console instead, and
+  `PUT /auth/v1/user` enforces the same password rules.
+
+Tests: `tests/partnerPortalLogin.test.ts` (routes, resolver, form elements,
+remember-me stores, reset flow, PGlite backend contract) and
+`tests/dom/partnerPortalLoginBrowserFlow.test.ts` (real clicks: show/hide,
+remember me, submit → error → success redirect, denial, forgot password,
+recovery). Gateway coverage for the reset endpoints lives in
+`tests/localSupabaseGateway.test.ts` (test 6).
+
+### 7.1 The partner dashboard shell (Part 2, section 2)
+
+After login, `/partner/dashboard` renders the professional portal shell
+(`src/components/PartnerPortalShell.tsx`): on desktop a **fixed sidebar + top
+header + main content** column; on mobile a collapsible navigation **drawer**
+(hamburger button, backdrop click and Escape both close it, a navigation tap
+closes it too).
+
+* **The sidebar menu is exactly** Dashboard, My Referral Code, Referred Users,
+  Referral Status, Profile and Logout (bottom of the sidebar, also in the
+  header). `aria-current="page"` marks the active section; the header shows
+  the partner's name, email and a logout action.
+* **My Referral Code** (`/partner/referral-code`) shows the caller's own code
+  (from their `growth_partners` row — never editable in the UI) with one-click
+  copy and a ready-to-share onboarding link:
+  `<origin>/onboarding/referral?ref=CODE`. Opening that link lands the new
+  user on the onboarding referral screen with the code pre-filled
+  (`readSharedReferralCode()` in `src/onboarding/OnboardingApp.tsx`); the
+  backend still re-validates the code on submit, so the prefill is UX only.
+  A paused partner sees an honest "paused" note instead.
+* **Referred Users** (`/partner/referred-users`) is the plain referrals roll;
+  **Referral Status** (`/partner/referral-status`) frames the same real,
+  server-filtered/searchable list with KPI chips (Total / In Progress /
+  Completed, from `get_my_partner_dashboard`) and a plain-language legend of
+  the three statuses. **Profile** (`/partner/profile`) stays read-only.
+* **Expandable by design.** The sidebar is data-driven from two registries in
+  the shell: `PARTNER_PORTAL_NAV` (live menu items) and `PARTNER_PORTAL_PLANNED`
+  (future modules, rendered as disabled "Soon" slots — never fake links). The
+  eight planned slots are Earnings, Commission, Withdrawals, Marketing
+  Materials, Partner Levels, Leaderboards, Notifications and Support: adding a
+  real module later means adding a router section + content renderer and moving
+  the entry from the planned registry to the nav registry — no shell redesign.
+  `/partner/performance` and `/partner/commission` remain URL-reachable (their
+  real content) without being menu items yet. Legacy aliases
+  `/partner/referrals` → Referred Users and `/partner/customers` → Referral
+  Status keep working.
+
+Tests: `tests/partnerPortalShell.test.ts` (menu contract, layout SSR, planned
+slots, referral-code page, share-link helper, status page, prefill wiring) and
+`tests/dom/partnerPortalShellBrowserFlow.test.ts` (real clicks through the
+stubbed-but-real Supabase REST layer: boot → shell → section navigation,
+drawer open/close, logout, `?ref=` prefill).
+
+### 7.2 The dashboard header (Part 2, section 3)
+
+The portal header carries: the **page title**, the **partner name** and
+**Partner ID** (the signed-in partner's own auth id — a display value from the
+session, shown in a compact form with the full id in the tooltip), the
+**notification icon**, the **profile avatar** with a **profile dropdown**
+(My Profile → `/partner/profile`; Account Settings — a planned slot shown
+disabled with a "Soon" badge until an account-settings module exists; Logout),
+and a quick **Logout** button (sm+ screens). On phones the header is the
+hamburger menu, the logo and the partner avatar (the avatar opens the same
+profile dropdown, where Logout lives).
+
+The **notifications dropdown** shows what is real today: the recent-activity
+feed from `get_my_partner_dashboard` (referral added / website started /
+website completed, with masked refs). Empty and loading states are honest —
+there is no notifications backend yet, so there are no unread counts or
+badges to fake; the portal therefore reads the dashboard RPC on every section
+(it also feeds the page KPIs). Dropdowns close on outside click, Escape and
+after an action, and both are keyboard/AT-labelled (`aria-expanded`,
+`aria-haspopup`, `role="menu"`).
+
+Tests: the Section 2 suites above cover the header too (header structure,
+profile menu, notifications panel, `shortPartnerId`, and the click flows).
 
 ## Troubleshooting
 

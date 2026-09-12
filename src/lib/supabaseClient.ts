@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createRememberAwareAuthStorage } from './authRememberStorage.js';
 
 // ---------------------------------------------------------------------------
 // Read env vars safely in both Vite (client) and Node.js (server).
@@ -176,6 +177,13 @@ function createClientSafely(url: string, key: string, options: Record<string, an
 
 // Public (anon) client — used by the browser for auth + owner-scoped queries.
 // RLS policies scoped to auth.uid() protect the data.
+//
+// The browser passes a remember-me aware storage (authRememberStorage.ts): by
+// default it behaves exactly like localStorage (sessions survive browser
+// restarts); when a Growth Partner signs in with "Remember me" unchecked, the
+// login flow marks the session lifetime and the same storage keeps the session
+// in sessionStorage instead. Node/SSR keep the supabase-js default storage.
+const browserAuthStorage = createRememberAwareAuthStorage();
 export const supabase: SupabaseClient = createClientSafely(
   isRealSupabase ? SUPABASE_URL : PLACEHOLDER_URL,
   isRealSupabase ? resolvedDefaultKey : PLACEHOLDER_KEY,
@@ -183,6 +191,7 @@ export const supabase: SupabaseClient = createClientSafely(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      ...(browserAuthStorage ? { storage: browserAuthStorage } : {}),
     },
   }
 );
