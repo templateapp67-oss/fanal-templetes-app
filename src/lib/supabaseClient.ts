@@ -207,7 +207,13 @@ export function getSupabaseAdmin(): SupabaseClient | null {
 // Convenience singleton for the Express server (server.ts).
 export const supabaseAdmin = getSupabaseAdmin();
 
-if (typeof console !== 'undefined') {
+// Boot-time environment notice. Suppressed during a test run (`npm test`
+// imports this module from dozens of files, and the notice describes the
+// developer environment rather than the code under test). Logic and exported
+// values are identical either way.
+const quietBootLogs = typeof process !== 'undefined' && process.env?.NEXORA_TEST_RUN === '1';
+
+if (typeof console !== 'undefined' && !quietBootLogs) {
   if (isMockSupabase) {
     console.warn(
       'Supabase keys are missing or using placeholders. App will run in mock mode with limited persistence.' +

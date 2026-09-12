@@ -116,20 +116,24 @@ if (!isMockSupabase && !admin) {
   // Modes: live / test (real keys), mock (no keys, non-production runtime —
   // payments are simulated end-to-end), disabled (no keys in production).
   const gateway = describeRazorpayGateway();
-  if (gateway.mode === 'live' || gateway.mode === 'test') {
-    console.log(`[Razorpay] ${gateway.summary}`);
-  } else {
-    console.warn(`[Razorpay] ${gateway.summary}`);
-  }
-  for (const warning of gateway.warnings) console.warn(`[Razorpay] WARNING: ${warning}`);
+  // Environment banner: identical resolution and summary, but a test run does
+  // not print it (this entry point is imported by the API tests).
+  if (process.env.NEXORA_TEST_RUN !== '1') {
+    if (gateway.mode === 'live' || gateway.mode === 'test') {
+      console.log(`[Razorpay] ${gateway.summary}`);
+    } else {
+      console.warn(`[Razorpay] ${gateway.summary}`);
+    }
+    for (const warning of gateway.warnings) console.warn(`[Razorpay] WARNING: ${warning}`);
 
-  if (isWebhookConfigured()) {
-    console.log('[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).');
-  } else {
-    console.warn(
-      '[Razorpay] RAZORPAY_WEBHOOK_SECRET is not set — incoming webhooks will be rejected with 503. ' +
-        'Use the same secret you entered in the Razorpay dashboard (Settings → Webhooks).'
-    );
+    if (isWebhookConfigured()) {
+      console.log('[Razorpay] Webhook signature verification ready (POST /api/payments/razorpay/webhook).');
+    } else {
+      console.warn(
+        '[Razorpay] RAZORPAY_WEBHOOK_SECRET is not set — incoming webhooks will be rejected with 503. ' +
+          'Use the same secret you entered in the Razorpay dashboard (Settings → Webhooks).'
+      );
+    }
   }
 }
 

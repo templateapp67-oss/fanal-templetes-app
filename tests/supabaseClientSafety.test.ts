@@ -51,6 +51,10 @@ function importWithEnv(env: Record<string, string>): { ok: boolean; output: stri
         env: {
           PATH: process.env.PATH,
           NODE_ENV: 'test',
+          // This IS a test run: keep the child's environment notice out of the
+          // suite output. The assertions below read the child's JSON on stdout,
+          // so suppressing the console notice cannot change any result.
+          NEXORA_TEST_RUN: '1',
           // Neutralize the committed dev env file so each case is deterministic.
           DOTENV_CONFIG_QUIET: 'true',
           ...env,

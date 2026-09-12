@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "node --import ./scripts/testEnv.mjs --import tsx --test --disable-warning=ExperimentalWarning tests/*.test.ts",
     "setup:env": "node scripts/setup-env.mjs",
     "check:razorpay": "node scripts/check-razorpay.mjs",
     "verify": "node --import tsx scripts/verify-supabase-connection.mjs",
@@ -20,7 +20,7 @@
     "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs",
     "validate:staff-commission": "node --import tsx scripts/validate_staff_commission_payouts_migration.mjs",
     "validate:staff-notifications": "node --import tsx scripts/validate_staff_performance_notifications_migration.mjs",
-    "test:dom": "node --import tsx --test --test-force-exit tests/dom/*.test.ts"
+    "test:dom": "node --import ./scripts/testEnv.mjs --import tsx --test --disable-warning=ExperimentalWarning --test-force-exit tests/dom/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
