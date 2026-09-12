@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppView, SalonProfile } from '../types';
 import { PartnerProfileModal } from './PartnerProfileModal';
 import { NotificationBell } from './NotificationBell';
@@ -17,6 +17,57 @@ interface HeaderProps {
   openAuth: (mode: 'login' | 'signup') => void;
 }
 
+// ---------------------------------------------------------------------------
+// The view switcher.
+//
+// One list feeds both the desktop pill row and the mobile menu, so a new
+// surface is added in exactly one place and shows up at every screen size.
+// `activeViews` lists the views in which an entry counts as the current one
+// (e.g. the staff dashboards belong to "SaaS Dashboard").
+// ---------------------------------------------------------------------------
+export interface HeaderNavEntry {
+  /** View this entry switches to. */
+  view: AppView;
+  label: string;
+  /** Material Symbols ligature. */
+  icon: string;
+  activeViews: AppView[];
+  /** Optional trailing badge, e.g. the "Live" chip on Explore Templates. */
+  badge?: string;
+}
+
+export const HEADER_NAV_ENTRIES: HeaderNavEntry[] = [
+  { view: 'landing', label: 'Home', icon: 'home', activeViews: ['landing'] },
+  {
+    view: 'wizard',
+    label: 'Explore Templates',
+    icon: 'devices',
+    activeViews: ['preview', 'wizard'],
+    badge: 'Live',
+  },
+  {
+    view: 'dashboard',
+    label: 'SaaS Dashboard',
+    icon: 'dashboard',
+    activeViews: ['dashboard', 'staffPerformance', 'staffCommission'],
+  },
+  // Growth Partner area — `/growth-partner`. Same routing as every other entry:
+  // `setCurrentView('growthPartner')` pushes the route, and the page itself
+  // decides sign-in / partner-only / ready, so the entry is safe to show to
+  // every visitor.
+  {
+    view: 'growthPartner',
+    label: 'Growth Partner',
+    icon: 'handshake',
+    activeViews: ['growthPartner'],
+  },
+  { view: 'bookings', label: 'My Bookings', icon: 'event_available', activeViews: ['bookings'] },
+];
+
+export function isHeaderNavEntryActive(entry: HeaderNavEntry, currentView: AppView): boolean {
+  return entry.activeViews.includes(currentView);
+}
+
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   setCurrentView,
@@ -29,8 +80,31 @@ export const Header: React.FC<HeaderProps> = ({
   onProfileSaved,
 }) => {
   const [profileOpen, setProfileOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // The menu is an overlay on top of the page, so Escape has to close it —
+  // there is no backdrop element to click away on.
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileNavOpen]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  /** One handler for both layouts; the mobile menu closes after the switch. */
+  const openNavEntry = (entry: HeaderNavEntry) => {
+    setMobileNavOpen(false);
+    if (entry.view === 'wizard' && onBuildWebsiteClick) {
+      onBuildWebsiteClick();
+      return;
+    }
+    setCurrentView(entry.view);
   };
 
   return (
@@ -46,83 +120,35 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="font-display-lg text-display-lg-mobile tracking-tighter text-[#C20E5A]">Nexora</span>
         </div>
 
-        {/* View Switcher Navigation */}
+        {/* View Switcher Navigation (lg and up) */}
         {/* The row scrolls sideways (scrollbar hidden) instead of overflowing the
-            header, so every entry stays reachable at the `lg` breakpoint. */}
+            header, so every entry stays reachable at the `lg` breakpoint. Below
+            `lg` the same entries live in the menu behind the button on the
+            right, since a pill row of five does not fit next to the brand. */}
         <nav className="hidden lg:flex items-center gap-1 bg-surface-variant/30 p-1 rounded-full border border-outline-variant/30 min-w-0 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <button
-            onClick={() => setCurrentView('landing')}
-            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'landing'
-                ? 'bg-[#C20E5A] text-white shadow-sm'
-                : 'text-on-surface-variant hover:text-[#C20E5A]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">home</span>
-            Home
-          </button>
-          
-          <button
-            onClick={() => {
-              if (onBuildWebsiteClick) {
-                onBuildWebsiteClick();
-              } else {
-                setCurrentView('wizard');
-              }
-            }}
-            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'preview' || currentView === 'wizard'
-                ? 'bg-[#C20E5A] text-white shadow-sm'
-                : 'text-on-surface-variant hover:text-[#C20E5A]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">devices</span>
-            <span>Explore Templates</span>
-            <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
-              Live
-            </span>
-          </button>
-
-          <button
-            onClick={() => setCurrentView('dashboard')}
-            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'dashboard' || currentView === 'staffPerformance' || currentView === 'staffCommission'
-                ? 'bg-[#C20E5A] text-white shadow-sm'
-                : 'text-on-surface-variant hover:text-[#C20E5A]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">dashboard</span>
-            SaaS Dashboard
-          </button>
-
-          {/* Growth Partner area — `/growth-partner`. Same routing as the other
-              entries: `setCurrentView('growthPartner')` pushes the route, and the
-              page itself decides sign-in / partner-only / ready, so the entry is
-              safe to show to every visitor. */}
-          <button
-            onClick={() => setCurrentView('growthPartner')}
-            aria-current={currentView === 'growthPartner' ? 'page' : undefined}
-            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'growthPartner'
-                ? 'bg-[#C20E5A] text-white shadow-sm'
-                : 'text-on-surface-variant hover:text-[#C20E5A]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">handshake</span>
-            Growth Partner
-          </button>
-
-          <button
-            onClick={() => setCurrentView('bookings')}
-            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              currentView === 'bookings'
-                ? 'bg-[#C20E5A] text-white shadow-sm'
-                : 'text-on-surface-variant hover:text-[#C20E5A]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">event_available</span>
-            My Bookings
-          </button>
+          {HEADER_NAV_ENTRIES.map((entry) => {
+            const active = isHeaderNavEntryActive(entry, currentView);
+            return (
+              <button
+                key={entry.view}
+                onClick={() => openNavEntry(entry)}
+                aria-current={active ? 'page' : undefined}
+                className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-[#C20E5A] text-white shadow-sm'
+                    : 'text-on-surface-variant hover:text-[#C20E5A]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">{entry.icon}</span>
+                <span>{entry.label}</span>
+                {entry.badge && (
+                  <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
+                    {entry.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Actions */}
@@ -168,10 +194,57 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
           )}
+
+          {/* Mobile menu trigger (below `lg`). */}
+          <button
+            onClick={() => setMobileNavOpen((open) => !open)}
+            aria-expanded={mobileNavOpen}
+            aria-controls="global-nav-mobile"
+            aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            title={mobileNavOpen ? 'Close menu' : 'Menu'}
+            className="lg:hidden w-10 h-10 shrink-0 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:text-[#C20E5A] hover:bg-pink-50 transition-all"
+          >
+            <span className="material-symbols-outlined text-xl">{mobileNavOpen ? 'close' : 'menu'}</span>
+          </button>
         </div>
+      </div>
+
+      {/* Mobile menu (below `lg`). Kept mounted and toggled with `hidden` so the
+          entries exist in the markup at every width; `display: none` also keeps
+          them out of the accessibility tree while closed. */}
+      <div
+        id="global-nav-mobile"
+        className={`lg:hidden absolute left-0 top-20 w-full border-b border-outline-variant/30 bg-surface/95 backdrop-blur-md shadow-xl ${
+          mobileNavOpen ? 'block' : 'hidden'
+        }`}
+      >
+        <nav className="flex flex-col gap-1 p-4" aria-label="Main navigation">
+          {HEADER_NAV_ENTRIES.map((entry) => {
+            const active = isHeaderNavEntryActive(entry, currentView);
+            return (
+              <button
+                key={entry.view}
+                onClick={() => openNavEntry(entry)}
+                aria-current={active ? 'page' : undefined}
+                className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-left transition-colors ${
+                  active
+                    ? 'bg-[#C20E5A] text-white shadow-sm'
+                    : 'text-on-surface-variant hover:bg-surface-variant/60 hover:text-[#C20E5A]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">{entry.icon}</span>
+                <span>{entry.label}</span>
+                {entry.badge && (
+                  <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
+                    {entry.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
       </div>
       {profileOpen && <PartnerProfileModal editable profile={profile} onSaved={onProfileSaved} onClose={() => setProfileOpen(false)} />}
     </header>
   );
 };
-
