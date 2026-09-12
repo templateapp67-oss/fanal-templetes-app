@@ -289,6 +289,30 @@ slots, referral-code page, share-link helper, status page, prefill wiring) and
 stubbed-but-real Supabase REST layer: boot → shell → section navigation,
 drawer open/close, logout, `?ref=` prefill).
 
+### 7.2 The dashboard header (Part 2, section 3)
+
+The portal header carries: the **page title**, the **partner name** and
+**Partner ID** (the signed-in partner's own auth id — a display value from the
+session, shown in a compact form with the full id in the tooltip), the
+**notification icon**, the **profile avatar** with a **profile dropdown**
+(My Profile → `/partner/profile`; Account Settings — a planned slot shown
+disabled with a "Soon" badge until an account-settings module exists; Logout),
+and a quick **Logout** button (sm+ screens). On phones the header is the
+hamburger menu, the logo and the partner avatar (the avatar opens the same
+profile dropdown, where Logout lives).
+
+The **notifications dropdown** shows what is real today: the recent-activity
+feed from `get_my_partner_dashboard` (referral added / website started /
+website completed, with masked refs). Empty and loading states are honest —
+there is no notifications backend yet, so there are no unread counts or
+badges to fake; the portal therefore reads the dashboard RPC on every section
+(it also feeds the page KPIs). Dropdowns close on outside click, Escape and
+after an action, and both are keyboard/AT-labelled (`aria-expanded`,
+`aria-haspopup`, `role="menu"`).
+
+Tests: the Section 2 suites above cover the header too (header structure,
+profile menu, notifications panel, `shortPartnerId`, and the click flows).
+
 ## Troubleshooting
 
 | What you see | Cause | Fix |

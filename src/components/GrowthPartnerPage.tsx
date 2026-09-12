@@ -512,12 +512,13 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return toSafePartnerSectionError(error).message;
   };
 
-  // The portal's Referral Status page also shows the KPI chips (total / in
-  // progress / completed), so it needs the dashboard RPC alongside the list.
-  const wantsDashboardData =
-    contentSection === 'dashboard' ||
-    contentSection === 'profile' ||
-    (isPartnerNamespace && portalSection === 'referral-status');
+  // In the /partner/* portal the dashboard RPC is read on every section: it
+  // feeds the page content (dashboard/profile), the Referral Status KPI chips
+  // AND the header's notifications dropdown (recent activity). The legacy
+  // namespace keeps its per-section fetches.
+  const wantsDashboardData = isPartnerNamespace
+    ? true
+    : contentSection === 'dashboard' || contentSection === 'profile';
 
   useEffect(() => {
     if (!ready || !wantsDashboardData) return;
@@ -766,6 +767,12 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         section={portalSection}
         displayName={displayName}
         email={email}
+        // The Partner ID shown in the header is the signed-in partner's own
+        // auth id (the growth_partners row is keyed by it) — a display value
+        // from the session, never an input to any backend read.
+        partnerId={userId ?? undefined}
+        notifications={dashboard.data ? dashboard.data.recent_activity : []}
+        notificationsLoading={dashboard.loading && !dashboard.data}
         navigate={navigate ?? (() => {})}
         onLogout={() => onLogout?.()}
         accentHex={accentHex}

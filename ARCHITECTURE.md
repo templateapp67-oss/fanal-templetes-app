@@ -89,6 +89,13 @@ Referral Status (KPI chips + legend around the server-filtered list), Profile;
 Logout is an action, not a section. Legacy `/partner/referrals` and
 `/partner/customers` aliases resolve to Referred Users / Referral Status.
 
+The header (PART 2.3) shows the page title, the partner's name and Partner ID
+(their own auth id, display-only), the notifications dropdown (the real
+recent-activity feed from `get_my_partner_dashboard` — the portal reads that
+RPC on every section), and the profile avatar's dropdown: My Profile,
+Account Settings (a disabled "Soon" slot until that module exists) and
+Logout. On phones the header is hamburger + logo + avatar.
+
 ## Commission source of truth
 
 - **Staff (salon payroll):** `calculate_staff_commission` (canonical 5-arg;

@@ -33,8 +33,11 @@ import {
   PARTNER_PORTAL_NAV,
   PARTNER_PORTAL_PLANNED,
   PARTNER_PORTAL_SECTION_TITLES,
+  PartnerNotificationsPanel,
   PartnerPortalShell,
+  PartnerProfileMenu,
   partnerPortalContentSection,
+  shortPartnerId,
 } from '../src/components/PartnerPortalShell';
 import {
   PartnerReferralCodeSection,
@@ -42,7 +45,7 @@ import {
   PartnerReferralStatusSection,
 } from '../src/components/PartnerPortalSections';
 import { ReferralScreen } from '../src/onboarding/screens/ReferralScreen';
-import type { PartnerDashboardData } from '../src/lib/growthPartner';
+import type { PartnerActivityEntry, PartnerDashboardData } from '../src/lib/growthPartner';
 
 const render = (element: React.ReactElement) => renderToStaticMarkup(element);
 
@@ -135,6 +138,8 @@ test('the planned-module registry holds the eight future sections without faking
 
 const noop = () => {};
 
+const SHELL_PARTNER_ID = 'a18d0df6-58b5-4bdc-a518-3a597d5b7195';
+
 function renderShell(section: (typeof PARTNER_PORTAL_SECTIONS)[number], children?: React.ReactNode) {
   return render(
     React.createElement(
@@ -143,6 +148,11 @@ function renderShell(section: (typeof PARTNER_PORTAL_SECTIONS)[number], children
         section,
         displayName: 'Meera Partner',
         email: 'meera@example.com',
+        partnerId: SHELL_PARTNER_ID,
+        notifications: [
+          { type: 'website_completed', ref: '…00000001', display_name: 'User One', at: '2026-09-10T10:00:00Z' },
+          { type: 'referral_added', ref: '…00000002', display_name: null, at: '2026-09-11T10:00:00Z' },
+        ],
         navigate: noop,
         onLogout: noop,
         accentHex: '#C20E5A',
@@ -168,7 +178,6 @@ test('the shell renders the professional dashboard layout (sidebar, header, main
   assert.match(html, /Growth Partner<\/p>/);
   assert.match(html, /<h1[^>]*>Dashboard<\/h1>/);
   assert.match(html, /Meera Partner/);
-  assert.match(html, /meera@example\.com/);
   assert.match(html, /aria-label="Logout"/);
   // Main content slot renders the section content.
   assert.match(html, /<main id="partner-portal-main"[^>]*>/);
@@ -177,6 +186,101 @@ test('the shell renders the professional dashboard layout (sidebar, header, main
   const active = html.match(/<button[^>]*data-partner-nav="dashboard"[^>]*>/);
   assert.ok(active, 'the dashboard nav button exists');
   assert.match(active![0], /aria-current="page"/);
+});
+
+test('the header carries the page title, partner name, partner id, bell, avatar and dropdowns (closed)', () => {
+  const html = renderShell('dashboard');
+  // Page title.
+  assert.match(html, /<h1[^>]*>Dashboard<\/h1>/);
+  // Partner name + partner id next to the avatar (compact form, full id in
+  // the tooltip), exactly as the header spec lists them.
+  const profileButton = html.match(/<button[^>]*data-partner-profile-button[^>]*>/);
+  assert.ok(profileButton, 'the profile (avatar) button exists');
+  assert.match(profileButton![0], /aria-haspopup="menu"/);
+  assert.match(profileButton![0], /aria-expanded="false"/, 'dropdown starts closed');
+  assert.match(profileButton![0], /aria-controls="partner-profile-menu"/);
+  const profileSegment = html.slice(html.indexOf('data-partner-profile-button'));
+  assert.match(profileSegment, /Meera Partner/, 'the partner name is in the header identity');
+  assert.match(profileSegment, /ID a18d0df6…7195/, 'the compact partner id is displayed');
+  assert.match(profileSegment, new RegExp(`title="Partner ID: ${SHELL_PARTNER_ID}"`), 'the full id is a tooltip');
+  // Notification icon (bell) with its controlled panel id.
+  const bell = html.match(/<button[^>]*data-partner-notifications[^>]*>/);
+  assert.ok(bell, 'the notifications bell exists');
+  assert.match(bell![0], /aria-label="Notifications"/);
+  assert.match(bell![0], /aria-expanded="false"/);
+  assert.match(bell![0], /aria-controls="partner-notifications-panel"/);
+  // Logout affordance in the header.
+  assert.match(html, /aria-label="Logout"/);
+  // Closed dropdowns render neither panel nor backdrop.
+  assert.doesNotMatch(html, /data-partner-profile-menu/);
+  assert.doesNotMatch(html, /data-partner-notifications-panel/);
+  assert.doesNotMatch(html, /data-partner-menu-backdrop/);
+  // Mobile: hamburger + logo + avatar (the title block and quick logout are
+  // sm+, the sidebar brand is lg+ — the header logo fills the gap).
+  assert.match(html, /data-partner-mobile-logo/);
+  const mobileLogo = html.slice(html.indexOf('data-partner-mobile-logo'));
+  assert.match(mobileLogo.slice(0, 400), /Nexora/, 'the mobile header shows the logo');
+});
+
+test('the profile dropdown offers My Profile, a planned Account Settings slot and Logout', () => {
+  const html = render(
+    React.createElement(PartnerProfileMenu, {
+      displayName: 'Meera Partner',
+      email: 'meera@example.com',
+      partnerId: SHELL_PARTNER_ID,
+      onNavigateProfile: noop,
+      onLogout: noop,
+    })
+  );
+  // User card: real identity — name, email, full partner id.
+  assert.match(html, /Meera Partner/);
+  assert.match(html, /meera@example\.com/);
+  assert.match(html, new RegExp(`Partner ID: ${SHELL_PARTNER_ID}`));
+  // Menu items in spec order.
+  const profileItem = html.match(/<button[^>]*data-partner-menu-item="profile"[^>]*>/);
+  assert.ok(profileItem, 'My Profile is a real button');
+  assert.match(html, /My Profile/);
+  // Account Settings: no module exists yet — a disabled "Soon" slot, never a link.
+  const settings = html.match(/<span[^>]*data-partner-menu-item="account-settings"[^>]*>/);
+  assert.ok(settings, 'Account Settings has a slot');
+  assert.match(settings![0], /aria-disabled="true"/);
+  assert.match(html, /Account Settings/);
+  assert.match(html, /Soon/);
+  assert.doesNotMatch(html, /href="\/partner\/account-settings/);
+  // Logout action.
+  assert.match(html, /Logout/);
+  const logoutItems = html.match(/<button[^>]*data-partner-logout[^>]*>/);
+  assert.ok(logoutItems, 'the dropdown logout is a real button');
+});
+
+test('the notifications panel shows the real recent-activity feed, empty and loading states', () => {
+  const entries: PartnerActivityEntry[] = [
+    { type: 'website_completed', ref: '…00000001', display_name: 'User One', at: '2026-09-10T10:00:00Z' },
+    { type: 'referral_added', ref: '…00000002', display_name: null, at: '2026-09-11T10:00:00Z' },
+  ];
+  const html = render(React.createElement(PartnerNotificationsPanel, { entries }));
+  assert.match(html, /Notifications/);
+  assert.match(html, /Recent activity from your referrals/);
+  // Backend event labels + who they refer to (name or masked ref).
+  assert.match(html, /Website completed/);
+  assert.match(html, /User One/);
+  assert.match(html, /New referral added/);
+  assert.match(html, /Referred user …00000002/);
+  // Honest empty state — never invented notifications.
+  const empty = render(React.createElement(PartnerNotificationsPanel, { entries: [] }));
+  assert.match(empty, /No notifications yet/);
+  assert.match(empty, /Activity from your referrals will appear here\./);
+  // Loading says so instead of showing stale or fake entries.
+  const loading = render(React.createElement(PartnerNotificationsPanel, { entries: [], loading: true }));
+  assert.match(loading, /Loading your notifications…/);
+});
+
+test('shortPartnerId formats the id for display without losing the original', () => {
+  assert.equal(shortPartnerId('a18d0df6-58b5-4bdc-a518-3a597d5b7195'), 'a18d0df6…7195');
+  assert.equal(shortPartnerId('short-id'), 'short-id', 'short ids stay intact');
+  assert.equal(shortPartnerId('  a18d0df6-58b5-4bdc-a518-3a597d5b7195  '), 'a18d0df6…7195', 'trimmed');
+  assert.equal(shortPartnerId(null), '', 'no id → no display');
+  assert.equal(shortPartnerId(''), '');
 });
 
 test('each portal section renders its own header title and active menu item', () => {

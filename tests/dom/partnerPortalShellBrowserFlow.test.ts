@@ -210,8 +210,20 @@ test('the dashboard boots through the real gate and renders the shell with backe
     // The shell: sidebar brand, header title, identity.
     assert.ok(byText('p', 'Nexora'), 'the sidebar brand renders');
     assert.ok(byText('h1', 'Dashboard'), 'the header title renders');
-    assert.ok(byText('span', 'Meera Partner'), 'the partner identity renders');
-    assert.ok(byText('span', 'meera@example.com'), 'the partner email renders');
+    const profileButton = document.querySelector('[data-partner-profile-button]');
+    assert.ok(profileButton, 'the profile (avatar) button renders');
+    assert.ok((profileButton!.textContent || '').includes('Meera Partner'), 'the partner name renders');
+    assert.ok(
+      (profileButton!.textContent || '').includes('a0000000…0001'),
+      'the compact partner id renders next to the name'
+    );
+    assert.match(
+      profileButton!.querySelector('span[title]')?.getAttribute('title') || '',
+      /^Partner ID: a0000000-0000-4000-8000-000000000001$/,
+      'the full partner id is available on the identity block'
+    );
+    assert.ok(document.querySelector('[data-partner-notifications]'), 'the notifications bell renders');
+    assert.ok(document.querySelector('[data-partner-mobile-logo]'), 'the mobile header logo renders');
 
     // Backend KPIs (get_my_partner_dashboard) surface in the content.
     await waitFor(() => !!byText('*', 'Total Referrals'), 'the dashboard KPIs');
@@ -320,6 +332,92 @@ test('the mobile drawer opens via the hamburger, closes via backdrop and Escape,
     await click(toggle(), 'the hamburger');
     await click(document.querySelector('[data-partner-nav-close]'), 'the drawer close button');
     assert.equal(toggle()!.getAttribute('aria-expanded'), 'false');
+  } finally {
+    await app.unmount();
+    restoreFetch();
+  }
+});
+
+test('the profile dropdown opens, navigates to My Profile and logs out', async () => {
+  const restoreFetch = stubSupabaseFetch();
+  let loggedOut = 0;
+  const app = await mountPortalApp(PARTNER_DASHBOARD_PATH, () => {
+    loggedOut += 1;
+  });
+  try {
+    await waitFor(() => !!document.querySelector('[data-partner-profile-button]'), 'the header to render');
+    const button = () => document.querySelector('[data-partner-profile-button]') as HTMLButtonElement | null;
+    assert.equal(button()!.getAttribute('aria-expanded'), 'false', 'dropdown starts closed');
+    assert.equal(document.querySelector('[data-partner-profile-menu]'), null, 'no menu rendered while closed');
+
+    // Open the dropdown from the avatar.
+    await click(button(), 'the profile button');
+    assert.equal(button()!.getAttribute('aria-expanded'), 'true');
+    const menu = document.querySelector('[data-partner-profile-menu]');
+    assert.ok(menu, 'the profile menu renders');
+    // User card: real identity + the full partner id.
+    assert.ok((menu!.textContent || '').includes('Meera Partner'), 'the name is in the user card');
+    assert.ok((menu!.textContent || '').includes('meera@example.com'), 'the email is in the user card');
+    assert.ok((menu!.textContent || '').includes(PARTNER_ID), 'the full partner id is in the user card');
+    // Account Settings is an honest "Soon" slot, not a fake link.
+    const settings = menu!.querySelector('[data-partner-menu-item="account-settings"]');
+    assert.ok(settings, 'Account Settings has a slot');
+    assert.equal(settings!.getAttribute('aria-disabled'), 'true');
+    assert.equal(settings!.querySelector('a,button'), null, 'the planned slot is not clickable');
+    assert.ok((settings!.textContent || '').includes('Soon'));
+
+    // My Profile navigates to the profile section and closes the menu.
+    await click(menu!.querySelector('[data-partner-menu-item="profile"]'), 'the My Profile item');
+    assert.deepEqual(app.navigated.slice(-1), ['/partner/profile']);
+    assert.equal(button()!.getAttribute('aria-expanded'), 'false', 'navigating closes the dropdown');
+
+    // Reopen; the dropdown Logout runs the real action.
+    await click(button(), 'the profile button');
+    await click(
+      document.querySelector('[data-partner-profile-menu] [data-partner-logout]'),
+      'the dropdown logout'
+    );
+    assert.equal(loggedOut, 1);
+    assert.equal(button()!.getAttribute('aria-expanded'), 'false', 'logging out closes the dropdown');
+
+    // Backdrop and Escape close it too.
+    await click(button(), 'the profile button');
+    await click(document.querySelector('[data-partner-menu-backdrop]'), 'the menu backdrop');
+    assert.equal(button()!.getAttribute('aria-expanded'), 'false');
+    await click(button(), 'the profile button');
+    await pressEscape();
+    assert.equal(button()!.getAttribute('aria-expanded'), 'false');
+  } finally {
+    await app.unmount();
+    restoreFetch();
+  }
+});
+
+test('the notifications dropdown shows the real recent-activity feed', async () => {
+  const restoreFetch = stubSupabaseFetch();
+  const app = await mountPortalApp(PARTNER_DASHBOARD_PATH, () => {});
+  try {
+    await waitFor(() => !!document.querySelector('[data-partner-notifications]'), 'the bell');
+    // Wait for the dashboard RPC (it feeds both the KPIs and the bell panel).
+    await waitFor(() => !!byText('*', 'Total Referrals'), 'the dashboard data');
+
+    const bell = () => document.querySelector('[data-partner-notifications]') as HTMLButtonElement | null;
+    assert.equal(bell()!.getAttribute('aria-expanded'), 'false');
+    assert.equal(document.querySelector('[data-partner-notifications-panel]'), null, 'no panel while closed');
+
+    await click(bell(), 'the notifications bell');
+    assert.equal(bell()!.getAttribute('aria-expanded'), 'true');
+    const panel = document.querySelector('[data-partner-notifications-panel]');
+    assert.ok(panel, 'the notifications panel renders');
+    assert.ok((panel!.textContent || '').includes('Recent activity from your referrals'));
+    // The feed is the backend's recent_activity — labels + masked refs, real data.
+    assert.ok((panel!.textContent || '').includes('New referral added'), 'real activity label from the RPC');
+    assert.ok((panel!.textContent || '').includes('Referred user …00000002'), 'the referred user (masked ref)');
+
+    // Backdrop closes the dropdown.
+    await click(document.querySelector('[data-partner-menu-backdrop]'), 'the menu backdrop');
+    assert.equal(bell()!.getAttribute('aria-expanded'), 'false');
+    assert.equal(document.querySelector('[data-partner-notifications-panel]'), null, 'panel removed on close');
   } finally {
     await app.unmount();
     restoreFetch();
