@@ -211,9 +211,19 @@ test('loading, error, session-expired and mock states never render blank screens
   assert.match(expired, new RegExp(GROWTH_PARTNER_SESSION_TITLE));
   assert.match(expired, /Sign in again/);
 
-  const mock = render(React.createElement(GrowthPartnerMockNotice, { onBack: () => {} }));
+  const mock = render(
+    React.createElement(GrowthPartnerMockNotice, {
+      onBack: () => {},
+      issues: ['SUPABASE_URL is missing or a placeholder.'],
+    })
+  );
   assert.match(mock, new RegExp(GROWTH_PARTNER_MOCK_TITLE));
   assert.match(mock, new RegExp(GROWTH_PARTNER_MOCK_BODY));
+  // The mock state is a setup instruction, not a dead end: it names the missing
+  // configuration and the exact next steps.
+  assert.match(mock, /SUPABASE_URL is missing or a placeholder\./);
+  assert.match(mock, /GROWTH_PARTNER_SETUP\.md/);
+  assert.match(mock, /verify:growth-partner/);
 });
 
 test('the page container renders its loading state on first paint', () => {

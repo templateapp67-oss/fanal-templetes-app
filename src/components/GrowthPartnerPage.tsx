@@ -17,7 +17,7 @@ import {
   type PartnerReferralFilter,
   type PartnerReferralList,
 } from '../lib/growthPartner';
-import { isMockSupabase } from '../lib/supabaseClient';
+import { isMockSupabase, supabaseConfig } from '../lib/supabaseClient';
 import {
   GROWTH_PARTNER_SECTIONS,
   growthPartnerLoginPath,
@@ -198,13 +198,45 @@ export const GrowthPartnerLoadError: React.FC<{
   </main>
 );
 
-export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
+export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void; issues?: string[] }> = ({
+  onBack,
+  issues = supabaseConfig.issues,
+}) => (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
     <StateCard
       icon={<AlertCircle className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_MOCK_TITLE}
       body={GROWTH_PARTNER_MOCK_BODY}
     >
+      {/* Actionable, not a dead end: name what is missing and the exact next
+          step, so this screen is a setup instruction rather than a shrug. */}
+      {issues.length > 0 && (
+        <ul className="mt-5 space-y-1.5 text-left text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3">
+          {issues.map((issue) => (
+            <li key={issue} className="flex gap-2">
+              <span aria-hidden="true">•</span>
+              <span className="break-words">{issue}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-4 text-left text-xs text-slate-600">
+        <p className="font-bold text-slate-800">To finish the setup</p>
+        <ol className="mt-1.5 space-y-1 list-decimal list-inside">
+          <li>
+            Fill in the Supabase variables from <code className="font-mono">.env.example</code> in{' '}
+            <code className="font-mono">.env</code>, then restart the app.
+          </li>
+          <li>
+            Apply the Growth Partner migrations (order matters — see{' '}
+            <code className="font-mono">GROWTH_PARTNER_SETUP.md</code>).
+          </li>
+          <li>
+            Check it with <code className="font-mono">npm run verify:growth-partner</code>, then
+            approve your account so the area unlocks.
+          </li>
+        </ol>
+      </div>
       <button
         type="button"
         onClick={() => onBack?.()}

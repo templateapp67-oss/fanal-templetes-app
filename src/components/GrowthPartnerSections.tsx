@@ -38,6 +38,8 @@ import {
 // ============================================================================
 
 export const GROWTH_PARTNER_NO_REFERRALS_TITLE = 'No referrals yet.';
+/** Referred-users list (the Referrals section) — same meaning, section wording. */
+export const GROWTH_PARTNER_NO_REFERRED_USERS_TITLE = 'No referred users yet.';
 export const GROWTH_PARTNER_NO_REFERRALS_BODY =
   'Your referrals will appear here once users join with your referral code.';
 export const GROWTH_PARTNER_NO_COMMISSION_TITLE = 'No commission earned yet.';
@@ -465,6 +467,8 @@ export const GrowthPartnerReferrals: React.FC<
           type="button"
           onClick={onRetry}
           disabled={loading}
+          aria-label="Refresh referred users"
+          title="Refresh referred users"
           className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -478,7 +482,10 @@ export const GrowthPartnerReferrals: React.FC<
       ) : !list ? (
         <SectionLoading label="Loading referred users…" />
       ) : list.total === 0 ? (
-        <SectionEmpty title="No referred users yet." body={GROWTH_PARTNER_NO_REFERRALS_BODY} />
+        <SectionEmpty
+          title={GROWTH_PARTNER_NO_REFERRED_USERS_TITLE}
+          body={GROWTH_PARTNER_NO_REFERRALS_BODY}
+        />
       ) : (
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <ul aria-label="Referred user list" className="divide-y divide-slate-100">
