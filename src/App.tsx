@@ -1,5 +1,6 @@
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
 import { normalizePath } from './lib/router';
+import { mergeHydratedSalonState } from './lib/hydrationMerge';
 import {
   decideOwnerEntry,
   describeOwnerEntry,
@@ -933,19 +934,37 @@ export default function App() {
           if (error) throw error;
           if (hydrationUserRef.current === userId) {
             if (saved) {
-              const current = salonStateRef.current;
-              const mergedProfile = { ...current.profile, ...saved.profile, ownerId: userId };
-              // Preserve only edits made while this read was in flight. Local
-              // startup defaults must never prevent the saved profile loading.
-              for (const key of Object.keys(current.profile)) {
-                if (JSON.stringify(current.profile[key]) !== JSON.stringify(beforeRead.profile[key])) mergedProfile[key] = current.profile[key];
+              // PHASE 3.2 — the cloud row is the authoritative onboarding state
+              // and every field of it is restored, including the template the
+              // owner picked. `selectedTemplateId` used to be skipped, which
+              // silently restarted onboarding on one dimension: on a new device
+              // it falls back to INITIAL_SALON_PROFILE's default (loadSalonState
+              // is per-device), so the app believed the owner was on the default
+              // template while `profile.businessType` said otherwise — and the
+              // next auto-save persisted that regression over their real choice.
+              // The merge itself is a pure function so the "cloud wins, except
+              // for edits made mid-read" rule is testable on its own.
+              const next = mergeHydratedSalonState({
+                current: salonStateRef.current,
+                beforeRead,
+                saved,
+                userId,
+              });
+              if (next) {
+                salonStateRef.current = next;
+                setProfile(next.profile);
+                setServices(next.services);
+                setStylists(next.stylists);
+                setLoyaltyConfig(next.loyaltyConfig);
+                setSelectedTemplateId(next.selectedTemplateId as BusinessTypeId);
+                // Keep the "previous template" that mergeTemplatePreservingUserData
+                // compares against in step immediately. Without this there is a
+                // one-render window where previousTemplateIdRef still holds the
+                // default, and picking a template in it would treat the owner's
+                // restored values as the OLD template's defaults and replace
+                // them — the exact data loss this is meant to prevent.
+                previousTemplateIdRef.current = next.selectedTemplateId as BusinessTypeId;
               }
-              const next = { ...current, profile: mergedProfile,
-                services: current.services !== beforeRead.services ? current.services : saved.services ?? current.services,
-                stylists: current.stylists !== beforeRead.stylists ? current.stylists : saved.stylists ?? current.stylists,
-                loyaltyConfig: current.loyaltyConfig !== beforeRead.loyaltyConfig ? current.loyaltyConfig : saved.loyaltyConfig ?? current.loyaltyConfig };
-              salonStateRef.current = next;
-              setProfile(next.profile); setServices(next.services); setStylists(next.stylists); setLoyaltyConfig(next.loyaltyConfig);
             }
             hydratedForUserRef.current = true;
             hydrationErrorRef.current = null;

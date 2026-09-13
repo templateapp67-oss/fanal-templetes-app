@@ -359,3 +359,115 @@ npm run build          OK, routing present in the production bundle
   provisions) before `navigate('/')`. That is correct and unchanged: the
   handoff *is* the provisioning boundary. The routing added here runs after it
   and only reads.
+
+---
+
+## PART D — PHASE 3.2: resume existing onboarding
+
+`signup → partial setup → logout → login again` must continue from the existing
+authoritative state, not restart from zero.
+
+### D.1 What was already right
+
+Two of the three resume surfaces already worked, and were verified rather than
+assumed:
+
+* **The funnel** routes on `get_my_onboarding_status`
+  (`resolveOnboardingRoute` → `referral` only when `phase === 'pending'`), so a
+  linked owner is never asked for a code twice.
+* **Saves cannot outrun hydration.** `persistSalonState:1036` blocks on
+  `startHydration` when `hydratedForUserRef` is false, so a login can never
+  write a half-loaded state over the saved one.
+
+### D.2 The defect: one field of the saved state was never restored
+
+`startHydration` merged `profile`, `services`, `stylists` and `loyaltyConfig`
+out of `get_owner_editor_state` — and silently dropped `selectedTemplateId`.
+Two facts made that destructive rather than cosmetic:
+
+* `setSelectedTemplateId` was called in **exactly one place** in the whole app:
+  `handleSelectTemplate`, a user click. Nothing restored it on login.
+* The save payload sends `state.selectedTemplateId` (`App.tsx:1041` and
+  `:1092`).
+
+So on a device with no localStorage — a new phone, a cleared browser, an
+incognito window — `selectedTemplateId` initialised to
+`INITIAL_SALON_PROFILE.businessType` (`'hair_salon'`) and stayed there. The
+owner's `profile.businessType` said one thing and `selectedTemplateId` said
+another, and the first auto-save wrote the default over their real choice.
+
+Worse, `previousTemplateIdRef` tracks `selectedTemplateId`, and
+`mergeTemplatePreservingUserData(prev, catId, prevTmplId, …)` uses that value to
+decide which current fields are template defaults (safe to replace) and which
+are the owner's own (must keep). With the wrong previous id, the next template
+change could treat the owner's restored values as the *old* template's defaults
+and replace them.
+
+### D.3 The fix
+
+The merge was inline in the hydration callback, so the rule that matters —
+*the cloud row is authoritative, except for edits made while the read was in
+flight* — could not be tested without mounting a 1700-line component. It is now
+`src/lib/hydrationMerge.ts` → `mergeHydratedSalonState()`, a pure function with
+exactly the semantics the callback had, plus the template id.
+
+| Field | Rule |
+|---|---|
+| `profile` | cloud wins, except keys whose value differs from `beforeRead` |
+| `services` / `stylists` / `loyaltyConfig` | cloud wins unless the reference changed during the read |
+| `selectedTemplateId` | cloud wins unless it changed during the read; **a missing or blank saved id is ignored, never applied** |
+
+`App.tsx` applies the result and sets `previousTemplateIdRef` in the same block,
+so there is no render where the two disagree.
+
+`beforeRead` is the snapshot taken immediately before the read; "differs from
+`beforeRead`" is what separates a keystroke made during the read from a startup
+default. On a fresh device *every* profile key differs from the cloud row and
+none of them are edits — that distinction is the whole reason resume works.
+
+### D.4 Verification
+
+`tests/hydrationResume.test.ts` (14) — the fresh-device restore, the template id
+specifically (asserted **not** equal to the default, so skipping it again fails),
+the profile/`businessType` pair agreeing, a legacy row with no template id, blank
+and whitespace-only ids, mid-read edits to a profile key / the arrays / the
+template, re-login being a no-op the second time, and purity.
+
+**A bug the test found:** a whitespace-only saved id (`'   '`) passed the
+`typeof === 'string' && truthy` check and was applied. Now trimmed and rejected.
+
+`tests/dom/resumeOnboardingBrowserFlow.test.ts` runs the literal flow from the
+brief — real components, real HTTP, real Supabase Auth, real RPC/RLS on
+disk-backed PostgreSQL:
+
+```
+signup            -> session, profiles.full_name = 'Uma Rao'
+link referral     -> growth_onboarding.linked = true, referral_code = NEXORA-…
+logout            -> getSession() === null
+login again       -> same user.id, not a new account
+authoritative row -> byte-identical to before the logout
+funnel            -> status screen showing their code, and
+                     #onboarding-referral-code is NOT present
+navigate to /onboarding/referral -> still not re-asked for a code
+```
+
+**Positive control:** making `resolveOnboardingRoute` return `'referral'`
+unconditionally fails the test with *"UI settled: the status screen showing
+their code"*; restoring it passes. The assertion waits on the owner's own
+referral code, not on generic page copy that both screens contain.
+
+```
+tsc --noEmit (5.8.3)   exit 0
+npm test               1315 tests, 1312 pass, 0 fail, 3 skipped
+npm run test:dom         63 tests,   63 pass, 0 fail
+npm run build          OK
+```
+
+### D.5 Noted, not changed
+
+`lastPersistedSnapshotRef` is not re-baselined after hydration, so on a fresh
+device `hasUnsavedEdits()` reads true until the first save lands and
+`App.tsx:1256` re-baselines it. That costs one redundant write of state the
+cloud already has, and it predates this phase. I drafted the re-baseline and
+then removed it: it changes auto-save behaviour beyond the reported bug and I
+did not verify it independently, so it is recorded here rather than shipped.
