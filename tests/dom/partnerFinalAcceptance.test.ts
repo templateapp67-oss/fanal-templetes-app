@@ -139,7 +139,7 @@ test('Section 40: all fifteen acceptance steps through React, real HTTP/Auth/RPC
     // A real remount without ?ref keeps the capability in the visitor cookie jar.
     await render(React.createElement(VisitorBrowser,{initialPath:'/onboarding/signup'}));
     await wait(()=>!!host.querySelector('#onboarding-signup-email'),'signup after navigation');
-    await fill('#onboarding-signup-email','new.visitor@example.com');await fill('#onboarding-signup-password','VisitorPass!42');await fill('#onboarding-signup-confirm','VisitorPass!42');await submit();
+    await fill('#onboarding-signup-full-name','New Visitor');await fill('#onboarding-signup-email','new.visitor@example.com');await fill('#onboarding-signup-phone','+919845077654');await fill('#onboarding-signup-password','VisitorPass!42');await fill('#onboarding-signup-confirm','VisitorPass!42');await submit();
     await wait(()=>!!host.textContent?.includes('Linked with code'),'attributed signup status');
     const visitorUser=await visitor.auth.getUser();assert.ok(visitorUser.data.user?.id);passed(8);
     const ledger=await partnerSeed.from('partner_referrals').select('*').eq('referred_user_id',visitorUser.data.user!.id);
@@ -160,7 +160,11 @@ test('Section 40: all fifteen acceptance steps through React, real HTTP/Auth/RPC
     await fill('input[type="search"]','new.visitor@example.com');await submit('form[aria-label="Search and filter referrals"]');
     await wait(()=>requests.some(r=>r.args?.p_search==='new.visitor@example.com'),'server search');
     await wait(()=>host.querySelectorAll('tbody tr').length===1,'filtered referral result');passed(12);
-    await click(host.querySelector('[aria-label="View referral details for referred user"]'));
+    // PHASE 2: signup now records the owner's full name, so the partner's
+    // referral row is labelled with it instead of the anonymous fallback.
+    const detailsButton=host.querySelector('[aria-label^="View referral details for "]');
+    assert.equal(detailsButton?.getAttribute('aria-label'),'View referral details for New Visitor');
+    await click(detailsButton);
     await wait(()=>!!document.querySelector('dialog')?.textContent?.includes('Status timeline'),'referral details');
     assert.ok(document.querySelector('dialog')!.textContent!.includes(code));
     assert.ok(!document.querySelector('dialog')!.textContent!.includes('new.visitor@example.com'),'contact is masked');passed(13);

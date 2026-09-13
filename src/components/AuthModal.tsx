@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import { supabase, allowMockAuth, isMockSupabase } from '../lib/supabaseClient';
 import { setStoredAuthenticatedProfile } from '../lib/salonStore';
 
 interface AuthModalProps {
@@ -44,8 +44,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     setError(null);
 
-    // Mock Mode Handling
-    if (isMockSupabase) {
+    // Offline-preview mode ONLY. This fabricates a session, so it is gated on
+    // allowMockAuth (never a production bundle) rather than isMockSupabase --
+    // mirroring the server's `allowMockBookingAuth = isMockSupabase &&
+    // !isVercelRuntime`. Demo data elsewhere still keys off isMockSupabase.
+    if (isMockSupabase && !allowMockAuth) {
+      setError(
+        'Accounts are not connected to a database in this deployment. Set the Supabase environment variables to enable sign up and sign in.'
+      );
+      setLoading(false);
+      return;
+    }
+
+    if (allowMockAuth) {
       setTimeout(() => {
         const mockUser = {
           id: 'mock-user-123',

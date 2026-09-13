@@ -185,13 +185,31 @@ test('PART 3 journey: share link → sign up → referral link → handoff → T
     assert.equal(attributionCookie!.sameSite, 'lax');
 
     // --- 2. Sign Up ---------------------------------------------------------
+    await fill('#onboarding-signup-full-name', 'Journey Visitor');
     await fill('#onboarding-signup-email', 'journey.visitor@example.com');
+    await fill('#onboarding-signup-phone', '+91 (98450) 77654');
     await fill('#onboarding-signup-password', 'VisitorPass!42');
     await fill('#onboarding-signup-confirm', 'VisitorPass!42');
     await submit();
     await wait(() => !!host.textContent?.includes('Linked with code'), 'the verified-referral status screen');
     assert.ok(host.textContent!.includes(code), 'the status screen names the linked code');
     assert.ok(host.textContent!.includes('Journey Partner'), 'the status screen names the partner');
+
+    // PHASE 2: the identity fields the gateway collected were carried in signup
+    // metadata and written into `profiles` by the shipped handle_new_user()
+    // trigger — no second client write, no second signup path.
+    const { data: profileRow, error: profileError } = await visitor
+      .from('profiles')
+      .select('id,full_name,phone_number,owner_role,email')
+      .single();
+    assert.equal(profileError, null, `profile read failed: ${JSON.stringify(profileError)}`);
+    assert.equal(profileRow.full_name, 'Journey Visitor');
+    assert.equal(profileRow.phone_number, '+919845077654');
+    // NOT seeded: the canonical owner role is organization_members.role
+    // (granted by ensure_owner_workspace, asserted further down this test),
+    // and profiles.owner_role is a display title owned by the template layer.
+    assert.equal(profileRow.owner_role, null);
+    assert.equal(profileRow.email, 'journey.visitor@example.com');
 
     // The relationship is in the database, not in the component: read it back
     // through the same RPC the routing decision uses.

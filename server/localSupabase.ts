@@ -66,6 +66,11 @@ export const LOCAL_GROWTH_CHAIN = [
   // ensure_owner_workspace() the Template App entry gate calls, so the
   // handoff → workspace → save → completion chain is exercisable locally.
   '20261002_owner_workspace_provisioning.sql',
+  // Signup profile fields (PHASE 2). Replaces handle_new_user() so the local
+  // gateway persists full_name / phone_number exactly the way the production
+  // trigger does. It deliberately does not seed owner_role - see the header
+  // of the migration for why that column belongs to the template/editor.
+  '20261003_signup_profile_fields.sql',
 ];
 
 /**
@@ -117,21 +122,43 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
   create or replace function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 
+  -- Mirrors the 00001_init columns the signup path touches. Still a stand-in:
+  -- the full production profile is ~50 columns, and only these are read by
+  -- the growth/onboarding chain this gateway exists to exercise.
+  -- owner_role is here because 00001 declares it, but handle_new_user does
+  -- NOT seed it: it is a display title owned by the template/editor, and the
+  -- canonical owner role is organization_members.role (see 20261003).
   create table if not exists public.profiles (
     id uuid primary key references auth.users(id) on delete cascade,
     full_name text,
     email text,
+    phone_number text,
+    owner_role text,
     subdomain text,
     salon_name text
   );
+  -- Same access shape production has (00001_init): RLS on, and the signed-in
+  -- owner reads their own row. Without this the gateway served the profiles
+  -- table with no table privileges at all, so an owner could not read back
+  -- the row their own signup created.
+  alter table public.profiles enable row level security;
+  grant select on public.profiles to authenticated;
+  drop policy if exists profiles_select_owner on public.profiles;
+  create policy profiles_select_owner on public.profiles
+    for select using (id = auth.uid());
   create table if not exists public.services (id uuid primary key, owner_id uuid);
 
   -- Same trigger production uses (00001_init): every auth user gets a profile.
   create or replace function public.handle_new_user()
   returns trigger language plpgsql security definer set search_path = public as $$
   begin
-    insert into public.profiles(id, full_name, email)
-    values (new.id, new.raw_user_meta_data ->> 'full_name', new.email)
+    insert into public.profiles(id, full_name, email, phone_number)
+    values (
+      new.id,
+      coalesce(nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''), ''),
+      new.email,
+      nullif(btrim(new.raw_user_meta_data ->> 'phone_number'), '')
+    )
     on conflict (id) do nothing;
     return new;
   end $$;
@@ -463,6 +490,11 @@ export async function registerLocalSupabaseGateway(
     for (const [key,value] of refreshSessions) if (value.userId === userId) refreshSessions.delete(key);
     for (const [key,value] of accessSessions) if (value.userId === userId) accessSessions.delete(key);
   };
+  // Opt-in: mirror a project whose Auth settings require email confirmation,
+  // so the "check your inbox" branch is exercisable end to end. Default off —
+  // the local gateway has always auto-confirmed.
+  const requireEmailConfirmation = process.env.LOCAL_SUPABASE_REQUIRE_EMAIL_CONFIRMATION === 'true';
+
   const issueSession = (row: any) => {
     pruneSessions();
     const refreshToken = randomBytes(32).toString('hex');
@@ -499,10 +531,16 @@ export async function registerLocalSupabaseGateway(
     }
     const created = await local.ownerQuery(
       `insert into auth.users(email, encrypted_password, email_confirmed_at, raw_user_meta_data)
-       values ($1, $2, now(), $3::jsonb)
+       values ($1, $2, ${requireEmailConfirmation ? 'null' : 'now()'}, $3::jsonb)
        returning *`,
       [email, hashPassword(password), JSON.stringify(req.body?.data || {})]
     );
+    // GoTrue shape for a project with "Confirm email" ON: a user, no session.
+    // That is the branch signUpWithEmail() reports as confirmationRequired.
+    if (requireEmailConfirmation) {
+      log(`[local-supabase] signup for ${email} requires email confirmation (no email is sent locally)`);
+      return res.status(200).json({ user: publicUser(created.rows[0]) });
+    }
     return res.status(200).json(issueSession(created.rows[0]));
   });
 
@@ -534,6 +572,13 @@ export async function registerLocalSupabaseGateway(
         .status(400)
         .json({ error: 'invalid_grant', error_description: 'Invalid login credentials' });
     }
+    // With confirmation required, an unverified address has no session to
+    // refresh and must not be able to log in — GoTrue answers 400
+    // `email_not_confirmed`, which toSafeAuthError maps to "verify your email".
+    // A no-op when the gateway auto-confirms, because email_confirmed_at is set.
+    if (requireEmailConfirmation && !row.email_confirmed_at) {
+      return res.status(400).json({ error: 'email_not_confirmed', error_description: 'Email not confirmed' });
+    }
     await local.ownerQuery('update auth.users set last_sign_in_at = now() where id = $1', [row.id]);
     return res.status(200).json(issueSession(row));
   });
@@ -554,8 +599,30 @@ export async function registerLocalSupabaseGateway(
     return res.status(204).end();
   });
   app.get('/auth/v1/settings', (_req: Request, res: Response) =>
-    res.status(200).json({ external: {}, disable_signup: false, mailer_autoconfirm: true })
+    res.status(200).json({
+      external: {},
+      disable_signup: false,
+      mailer_autoconfirm: !requireEmailConfirmation,
+    })
   );
+
+  // GoTrue POST /resend (type=signup|recovery). No email is sent locally, and
+  // the response is identical whether or not the address exists, so account
+  // existence is never revealed — same contract as /recover.
+  app.post('/auth/v1/resend', async (req: Request, res: Response) => {
+    const type = String(req.body?.type || '');
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (type !== 'signup' && type !== 'recovery') {
+      return res.status(422).json({ error: 'invalid_request', error_description: 'type must be signup or recovery' });
+    }
+    if (!email) return res.status(200).json({});
+    const found = await local.ownerQuery('select id from auth.users where email = $1', [email]);
+    log(
+      `[local-supabase] ${type} email requested for ${email} ` +
+        `(${found.rows.length ? 'account exists' : 'no such account'} — nothing is sent locally)`
+    );
+    return res.status(200).json({});
+  });
 
   // Password reset (GoTrue /recover semantics; local database only).
   // No email is sent in local development: the one-time recovery link is

@@ -1,6 +1,8 @@
 import { supabase } from '../../lib/supabaseClient';
 import { normalizeGrowthReferralCode } from '../../lib/growthPartner';
 import {
+  isValidEmail,
+  normalizePhone,
   OnboardingError,
   phaseFromOnboardingState,
   toSafeAuthError,
@@ -35,6 +37,8 @@ export interface OnboardingSupabaseClient {
     getSession: () => Promise<{ data: { session: any }; error: any }>;
     /** Present on the real client; used to finish a PASSWORD_RECOVERY reset. */
     updateUser?: (attrs: { password: string }) => Promise<{ data: any; error: any }>;
+    /** Present on the real client; re-sends the "confirm your email" mail. */
+    resend?: (args: Record<string, any>) => Promise<{ data: any; error: any }>;
     onAuthStateChange: (cb: (event: string, session: any) => void) => {
       data: { subscription: { unsubscribe: () => void } };
     };
@@ -61,7 +65,25 @@ function viewerFromUser(user: any): OnboardingViewer | null {
 }
 
 function firstValidationMessage(errors: Record<string, string | undefined>): string {
-  return errors.email || errors.password || errors.confirm || 'Please check the form and try again.';
+  return (
+    errors.fullName ||
+    errors.email ||
+    errors.phone ||
+    errors.password ||
+    errors.confirm ||
+    'Please check the form and try again.'
+  );
+}
+
+/**
+ * Same-origin URL Supabase Auth appends to its confirmation / reset emails.
+ * Kept identical for both so the Auth "Redirect URLs" allow-list only needs
+ * one entry, and so a confirmed account lands back inside the funnel.
+ */
+export function onboardingAuthRedirectTo(): string | undefined {
+  return typeof window !== 'undefined' && window.location?.origin
+    ? `${window.location.origin}/onboarding/login`
+    : undefined;
 }
 
 /**
@@ -72,18 +94,62 @@ function firstValidationMessage(errors: Record<string, string | undefined>): str
  */
 export async function signUpWithEmail(
   client: OnboardingSupabaseClient = supabase as unknown as OnboardingSupabaseClient,
-  input: { email: string; password: string; confirm: string; attributionToken?: string }
+  input: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+    confirm: string;
+    attributionToken?: string;
+  }
 ): Promise<{ viewer: OnboardingViewer | null; confirmationRequired: boolean }> {
   const validation = validateSignup(input);
   if (!validation.ok) throw new OnboardingError('validation', firstValidationMessage(validation.errors));
   const email = input.email.trim();
+  const redirectTo = onboardingAuthRedirectTo();
   const { data, error } = await client.auth.signUp({
-    email, password: input.password,
-    ...(input.attributionToken ? { options: { data: { growth_referral_token: input.attributionToken } } } : {}),
+    email,
+    password: input.password,
+    options: {
+      ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
+      // `full_name` + `phone_number` are read straight out of
+      // `raw_user_meta_data` by the `handle_new_user()` trigger, so the new
+      // owner's `profiles` row is complete without a second client write.
+      data: {
+        full_name: input.fullName.trim(),
+        phone_number: normalizePhone(input.phone),
+        ...(input.attributionToken ? { growth_referral_token: input.attributionToken } : {}),
+      },
+    },
   });
   if (error) throw toSafeAuthError(error, 'signup');
   if (!data?.user) throw toSafeAuthError(new Error('signup failed'), 'signup');
   return { viewer: viewerFromUser(data.user), confirmationRequired: !data.session };
+}
+
+/**
+ * Re-send the "confirm your email" mail for an account whose signup returned a
+ * user but no session. Supabase Auth rate-limits this server-side; the response
+ * is identical whether or not the address exists, so nothing is revealed.
+ */
+export async function resendSignupConfirmation(
+  client: OnboardingSupabaseClient = supabase as unknown as OnboardingSupabaseClient,
+  email: string
+): Promise<void> {
+  const trimmed = String(email || '').trim();
+  if (!isValidEmail(trimmed)) {
+    throw new OnboardingError('validation', 'Enter a valid email address.');
+  }
+  if (typeof client.auth.resend !== 'function') {
+    throw new OnboardingError('unknown', 'Confirmation emails cannot be resent right now. Please try again later.');
+  }
+  const redirectTo = onboardingAuthRedirectTo();
+  const { error } = await client.auth.resend({
+    type: 'signup',
+    email: trimmed,
+    ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
+  });
+  if (error) throw toSafeAuthError(error, 'resend');
 }
 
 /** Sign in with email + password via Supabase Auth. */
@@ -116,10 +182,7 @@ export async function sendPasswordReset(
   if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     throw new OnboardingError('validation', 'Enter a valid email address.');
   }
-  const redirectTo =
-    typeof window !== 'undefined' && window.location?.origin
-      ? `${window.location.origin}/onboarding/login`
-      : undefined;
+  const redirectTo = onboardingAuthRedirectTo();
   const { error } = await client.auth.resetPasswordForEmail(
     trimmed,
     redirectTo ? { redirectTo } : undefined
@@ -141,7 +204,15 @@ export async function setNewPassword(
   password: string,
   confirm: string
 ): Promise<void> {
-  const validation = validateSignup({ email: 'reset@in.recovery', password, confirm });
+  // Only the password rules apply here — the recovery session already proved
+  // the email, and name/phone are not part of setting a new password.
+  const validation = validateSignup({
+    fullName: 'Recovery',
+    email: 'reset@in.recovery',
+    phone: '+910000000000',
+    password,
+    confirm,
+  });
   if (validation.errors.password) throw new OnboardingError('validation', validation.errors.password);
   if (validation.errors.confirm) throw new OnboardingError('validation', validation.errors.confirm);
   if (!client.auth.updateUser) {

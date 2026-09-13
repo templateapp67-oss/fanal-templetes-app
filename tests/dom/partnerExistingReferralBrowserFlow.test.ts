@@ -64,7 +64,7 @@ test('register validates before redirect, shows invalid-code recovery and hides 
     assert.doesNotMatch(host.textContent!,/SUPERSECRET|secret_table|SQL/);
     mode='valid';
     await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent==='Retry')!.click());
-    await wait(() => host.querySelectorAll('input').length===3);
+    await wait(() => host.querySelectorAll('input').length===5);
     assert.equal(captured,true);
   } finally { await act(async () => root.unmount()); host.remove(); globalThis.fetch=oldFetch; }
 });

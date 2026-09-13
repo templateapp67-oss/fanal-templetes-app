@@ -72,22 +72,79 @@ export function resolveOnboardingRoute(input: {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const MIN_PASSWORD_LENGTH = 6;
+/**
+ * Supabase Auth hashes passwords with bcrypt, which only reads the first 72
+ * bytes of its input. Anything longer is silently truncated server-side, so
+ * rejecting it here beats letting the user believe a 200-character password is
+ * protecting the account.
+ */
+export const MAX_PASSWORD_LENGTH = 72;
+/** Full name is stored in `profiles.full_name` (plain text column). */
+export const MAX_FULL_NAME_LENGTH = 120;
+/** Digits only after separators are stripped; optional leading `+`. */
+const PHONE_RE = /^\+?[0-9]{7,15}$/;
 
 export function isValidEmail(value: unknown): boolean {
   return typeof value === 'string' && EMAIL_RE.test(value.trim());
 }
 
-export interface SignupValidation {
-  ok: boolean;
-  errors: { email?: string; password?: string; confirm?: string };
+/**
+ * Phone shape check (UX only — the column is free text). Accepts the Indian
+ * `+91 98450 77654` / `9845077654` forms plus any 7–15 digit international
+ * number; spaces, dashes, dots and parentheses are ignored.
+ */
+export function isValidPhone(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const compact = value.trim().replace(/[\s().-]/g, '');
+  return compact.length > 0 && PHONE_RE.test(compact);
 }
 
-export function validateSignup(input: { email: string; password: string; confirm: string }): SignupValidation {
+/** Digits-plus-`+` form of a phone number, for storage in `user_metadata`. */
+export function normalizePhone(value: string): string {
+  return String(value || '').trim().replace(/[\s().-]/g, '');
+}
+
+export interface SignupValidation {
+  ok: boolean;
+  errors: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+    confirm?: string;
+  };
+}
+
+/**
+ * Client-side signup validation. `full_name` and `phone_number` are the two
+ * identity columns `handle_new_user()` persists into `profiles`, so the
+ * gateway collects them instead of leaving the new owner's profile blank.
+ * Supabase Auth re-validates the password server-side.
+ */
+export function validateSignup(input: {
+  fullName: string;
+  email: string;
+  phone: string;
+  password: string;
+  confirm: string;
+}): SignupValidation {
   const errors: SignupValidation['errors'] = {};
+  const fullName = typeof input.fullName === 'string' ? input.fullName.trim() : '';
+  if (!fullName) errors.fullName = 'Enter your full name.';
+  else if (fullName.length > MAX_FULL_NAME_LENGTH)
+    errors.fullName = `Full name must be ${MAX_FULL_NAME_LENGTH} characters or fewer.`;
   if (!isValidEmail(input.email)) errors.email = 'Enter a valid email address.';
-  if (!input.password) errors.password = 'Enter a password.';
-  else if (input.password.length < MIN_PASSWORD_LENGTH)
+  const phone = typeof input.phone === 'string' ? input.phone.trim() : '';
+  if (!phone) errors.phone = 'Enter a phone number.';
+  else if (!isValidPhone(phone)) errors.phone = 'Enter a valid phone number (7–15 digits).';
+  const password = typeof input.password === 'string' ? input.password : '';
+  if (!password) errors.password = 'Enter a password.';
+  else if (password.length < MIN_PASSWORD_LENGTH)
     errors.password = `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  else if (password.length > MAX_PASSWORD_LENGTH)
+    errors.password = `Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`;
+  else if (isValidEmail(input.email) && password.toLowerCase() === input.email.trim().toLowerCase())
+    errors.password = 'Password cannot be the same as your email.';
   if (!input.confirm) errors.confirm = 'Confirm your password.';
   else if (input.confirm !== input.password) errors.confirm = 'Passwords do not match.';
   return { ok: Object.keys(errors).length === 0, errors };
@@ -144,7 +201,10 @@ function messageOf(error: unknown): string {
  * Map a Supabase Auth failure to a safe message. Unknown shapes fall back to
  * the generic message — raw database/driver text is never surfaced.
  */
-export function toSafeAuthError(error: unknown, action: 'signup' | 'login' | 'reset' = 'login'): OnboardingError {
+export function toSafeAuthError(
+  error: unknown,
+  action: 'signup' | 'login' | 'reset' | 'resend' = 'login'
+): OnboardingError {
   if (error instanceof OnboardingError) return error;
   const message = messageOf(error);
   if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) return new OnboardingError('unknown', 'Your account is suspended. Contact support for help.');
@@ -157,10 +217,13 @@ export function toSafeAuthError(error: unknown, action: 'signup' | 'login' | 're
   if (/user already registered|already exists|already been registered/i.test(message)) {
     return new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
   }
+  if (/password.*(too long|maximum length|exceed)/i.test(message)) {
+    return new OnboardingError('validation', `Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
+  }
   if (/password.*(short|weak|at least 6|6 characters)/i.test(message)) {
     return new OnboardingError('validation', `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
-  if (/rate limit|too many|over request/i.test(message)) {
+  if (/rate limit|too many|over request|for security purposes|only request this after/i.test(message)) {
     return new OnboardingError('unknown', 'Too many attempts. Please wait a moment and try again.');
   }
   if (/failed to fetch|network|fetch failed|connection/i.test(message)) {
@@ -171,7 +234,9 @@ export function toSafeAuthError(error: unknown, action: 'signup' | 'login' | 're
       ? 'Account creation failed. Please try again.'
       : action === 'reset'
         ? 'Password reset failed. Please try again.'
-        : 'Login failed. Please try again.';
+        : action === 'resend'
+          ? 'The confirmation email could not be resent. Please try again later.'
+          : 'Login failed. Please try again.';
   return new OnboardingError('unknown', fallback);
 }
 

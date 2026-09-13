@@ -40,6 +40,8 @@ import {
   toSafeAuthError,
   toSafeReferralError,
   validateLogin,
+  isValidPhone,
+  normalizePhone,
   validateSignup,
 } from '../src/onboarding/lib/flow';
 import {
@@ -115,21 +117,47 @@ test('email + signup validation enforces the gateway minimums', () => {
     assert.equal(isValidEmail(bad), false);
   }
   assert.ok(MIN_PASSWORD_LENGTH >= 6);
-  assert.deepEqual(validateSignup({ email: 'you@example.com', password: 'secret1', confirm: 'secret1' }), {
+  const base = { fullName: 'Uma Rao', email: 'you@example.com', phone: '+91 98450 77654' };
+  assert.deepEqual(validateSignup({ ...base, password: 'secret1', confirm: 'secret1' }), {
     ok: true,
     errors: {},
   });
   // Invalid email is rejected with a field error.
-  const badEmail = validateSignup({ email: 'nope', password: 'secret1', confirm: 'secret1' });
+  const badEmail = validateSignup({ ...base, email: 'nope', password: 'secret1', confirm: 'secret1' });
   assert.equal(badEmail.ok, false);
   assert.match(badEmail.errors.email || '', /valid email/);
   // Mismatched passwords are rejected.
-  const mismatch = validateSignup({ email: 'you@example.com', password: 'secret1', confirm: 'secret2' });
+  const mismatch = validateSignup({ ...base, password: 'secret1', confirm: 'secret2' });
   assert.equal(mismatch.ok, false);
   assert.match(mismatch.errors.confirm || '', /do not match/);
   // Missing / short passwords are rejected.
-  assert.equal(validateSignup({ email: 'you@example.com', password: '', confirm: '' }).ok, false);
-  assert.equal(validateSignup({ email: 'you@example.com', password: '12345', confirm: '12345' }).ok, false);
+  assert.equal(validateSignup({ ...base, password: '', confirm: '' }).ok, false);
+  assert.equal(validateSignup({ ...base, password: '12345', confirm: '12345' }).ok, false);
+
+  // PHASE 2 — identity fields the `handle_new_user()` trigger persists.
+  assert.match(validateSignup({ ...base, fullName: '   ', password: 'secret1', confirm: 'secret1' }).errors.fullName || '', /full name/i);
+  assert.match(validateSignup({ ...base, fullName: 'x'.repeat(121), password: 'secret1', confirm: 'secret1' }).errors.fullName || '', /120 characters/);
+  assert.match(validateSignup({ ...base, phone: '', password: 'secret1', confirm: 'secret1' }).errors.phone || '', /phone number/i);
+  assert.match(validateSignup({ ...base, phone: '12345', password: 'secret1', confirm: 'secret1' }).errors.phone || '', /valid phone/);
+  assert.equal(validateSignup({ ...base, phone: '9845077654', password: 'secret1', confirm: 'secret1' }).ok, true);
+  assert.equal(validateSignup({ ...base, phone: '+91 (98450) 77-654', password: 'secret1', confirm: 'secret1' }).ok, true);
+  // bcrypt truncates above 72 bytes; the gateway rejects instead of lying.
+  assert.match(validateSignup({ ...base, password: 'a'.repeat(73), confirm: 'a'.repeat(73) }).errors.password || '', /72 characters or fewer/);
+  assert.equal(validateSignup({ ...base, password: 'a'.repeat(72), confirm: 'a'.repeat(72) }).ok, true);
+  // An email-shaped password is rejected outright.
+  assert.match(validateSignup({ ...base, password: 'you@example.com', confirm: 'you@example.com' }).errors.password || '', /same as your email/);
+  // Phone shape helper: separators ignored, + optional, 7-15 digits.
+  for (const good of ['+919845077654', '9845077654', '+44 20 7946 0958', '1234567']) {
+    assert.equal(isValidPhone(good), true, good);
+  }
+  // Too short, too long, non-digits, or a misplaced `+` are rejected. A number
+  // with separators around a leading `+` is NOT: '+ 91 984 50' normalises to
+  // '+9198450', a real 8-digit international form.
+  for (const bad of ['', 'abc', '123456', '+91984507765412345678', 'abc1234567', '++919845077654', '91+98450']) {
+    assert.equal(isValidPhone(bad), false, bad);
+  }
+  assert.equal(isValidPhone('+ 91 984 50'), true);
+  assert.equal(normalizePhone(' +91 (98450) 77-654 '), '+919845077654');
   // Login requires both fields.
   assert.equal(validateLogin({ email: 'you@example.com', password: 'secret1' }).ok, true);
   assert.equal(validateLogin({ email: 'bad', password: 'secret1' }).ok, false);
@@ -279,44 +307,83 @@ test('sign up succeeds with valid credentials and flags email confirmation', asy
     signUp: ok({ user: { id: 'u-1', email: 'you@example.com' }, session: { access_token: 't' } }),
   });
   const result = await signUpWithEmail({ auth, rpc: async () => ok(null) } as any, {
+    fullName: '  Uma Rao  ',
     email: '  you@example.com ',
+    phone: '+91 (98450) 77-654',
     password: 'secret1',
     confirm: 'secret1',
   });
   assert.deepEqual(result, { viewer: { id: 'u-1', email: 'you@example.com' }, confirmationRequired: false });
   assert.equal(calls.length, 1);
   // Passwords go to Supabase Auth only — trimmed email, no manual storage.
-  assert.deepEqual(calls[0].args[0], { email: 'you@example.com', password: 'secret1' });
+  // `full_name` / `phone_number` ride in signup metadata so the existing
+  // `handle_new_user()` trigger can complete the `profiles` row server-side.
+  assert.deepEqual(calls[0].args[0], {
+    email: 'you@example.com',
+    password: 'secret1',
+    options: { data: { full_name: 'Uma Rao', phone_number: '+919845077654' } },
+  });
 
   // User object without a session means "verify your email", not a login.
   const pending = fakeAuth({ signUp: ok({ user: { id: 'u-2', email: 'n@example.com' }, session: null }) });
   const confirmation = await signUpWithEmail({ auth: pending.auth, rpc: async () => ok(null) } as any, {
+    fullName: 'N Owner',
     email: 'n@example.com',
+    phone: '9845077654',
     password: 'secret1',
     confirm: 'secret1',
   });
   assert.equal(confirmation.confirmationRequired, true);
+
+  // The attribution capability still travels inside the same metadata object,
+  // and the redirect target brings a confirmed account back into the funnel.
+  const attributed = fakeAuth({ signUp: ok({ user: { id: 'u-3', email: 'a@example.com' }, session: {} }) });
+  await signUpWithEmail({ auth: attributed.auth, rpc: async () => ok(null) } as any, {
+    fullName: 'A Owner',
+    email: 'a@example.com',
+    phone: '9845077654',
+    password: 'secret1',
+    confirm: 'secret1',
+    attributionToken: 'token-abc',
+  });
+  assert.deepEqual(lastSignUpArgs(attributed), {
+    email: 'a@example.com',
+    password: 'secret1',
+    options: { data: { full_name: 'A Owner', phone_number: '9845077654', growth_referral_token: 'token-abc' } },
+  });
 });
 
 test('sign up rejects invalid email and mismatched passwords without calling Auth', async () => {
   const { calls, auth } = fakeAuth({ signUp: ok({}) });
   const client = { auth, rpc: async () => ok(null) } as any;
+  const ok3 = { fullName: 'Uma Rao', phone: '9845077654' };
   await assert.rejects(
-    signUpWithEmail(client, { email: 'bad', password: 'secret1', confirm: 'secret1' }),
+    signUpWithEmail(client, { ...ok3, email: 'bad', password: 'secret1', confirm: 'secret1' }),
     /valid email/
   );
   await assert.rejects(
-    signUpWithEmail(client, { email: 'you@example.com', password: 'secret1', confirm: 'secret2' }),
+    signUpWithEmail(client, { ...ok3, email: 'you@example.com', password: 'secret1', confirm: 'secret2' }),
     /do not match/
   );
   await assert.rejects(
-    signUpWithEmail(client, { email: 'you@example.com', password: '12345', confirm: '12345' }),
+    signUpWithEmail(client, { ...ok3, email: 'you@example.com', password: '12345', confirm: '12345' }),
     /at least 6/
+  );
+  // Validation short-circuits before Supabase Auth is ever reached, so a
+  // malformed form cannot create a half-built account.
+  await assert.rejects(
+    signUpWithEmail(client, { ...ok3, fullName: '', email: 'you@example.com', password: 'secret1', confirm: 'secret1' }),
+    /full name/i
+  );
+  await assert.rejects(
+    signUpWithEmail(client, { ...ok3, email: 'you@example.com', phone: 'nope', password: 'secret1', confirm: 'secret1' }),
+    /valid phone/
   );
   assert.equal(calls.length, 0);
   const taken = fakeAuth({ signUp: fail('User already registered') });
   await assert.rejects(
     signUpWithEmail({ auth: taken.auth, rpc: async () => ok(null) } as any, {
+      ...ok3,
       email: 'you@example.com',
       password: 'secret1',
       confirm: 'secret1',
@@ -482,19 +549,29 @@ function render(element: React.ReactElement): string {
   return renderToStaticMarkup(element);
 }
 
+function lastSignUpArgs(fake: { calls: { args: any[] }[] }): any {
+  return fake.calls[fake.calls.length - 1].args[0];
+}
+
 function countInputs(html: string): number {
   return (html.match(/<input/g) || []).length;
 }
 
-test('sign up renders email + password + confirm and nothing business-related', () => {
+// PHASE 2 contract change: the gateway now collects the two *identity* fields
+// `handle_new_user()` writes to `profiles` (full_name, phone_number). Business
+// fields — salon name, staff, address, GST, payments — still belong to the
+// Template App editor and must not appear here.
+test('sign up renders identity + credentials and nothing business-related', () => {
   const html = render(React.createElement(SignupScreen, {}));
   assert.match(html, new RegExp(SIGNUP_TITLE));
   assert.match(html, new RegExp(SIGNUP_SUBTITLE));
-  assert.equal(countInputs(html), 3);
+  assert.equal(countInputs(html), 5);
+  assert.match(html, /Full name/);
   assert.match(html, /type="email"/);
+  assert.match(html, /type="tel"/);
   assert.match(html, /Confirm password/);
   assert.match(html, /Log in/);
-  assert.doesNotMatch(html, /business|salon|staff|phone|address|GST|payment/i);
+  assert.doesNotMatch(html, /business|salon|staff|address|GST|payment/i);
 });
 
 test('login renders credentials, forgot password and a sign-up link', () => {

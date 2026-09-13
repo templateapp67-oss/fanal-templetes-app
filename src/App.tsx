@@ -1,6 +1,6 @@
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, isMockSupabase } from './lib/supabaseClient';
+import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
@@ -348,8 +348,13 @@ export default function App() {
   const authStatusRef = useRef(authStatus);
   authStatusRef.current = authStatus;
   const authRetryRef = useRef<() => void>(() => {});
+  // Offline-preview convenience ONLY. `allowMockAuth` is false in a production
+  // bundle, so a cached user object can never be an authentication authority
+  // there -- the SDK session restored below is the only one (see the
+  // observeAuthSession effect). Demo data elsewhere still keys off
+  // isMockSupabase, so previews keep working.
   const [user, setUser] = useState<any>(() => {
-    if (!isMockSupabase) return null;
+    if (!allowMockAuth) return null;
     try {
       const raw = localStorage.getItem('nexora_auth_user_v1');
       if (raw) return JSON.parse(raw);
