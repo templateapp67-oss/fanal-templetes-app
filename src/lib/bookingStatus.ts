@@ -1,4 +1,10 @@
-import { STATUS_TONE_CLASSES as TONE_CLASSES, type StatusTone } from './statusTheme';
+// NOTE: the explicit `.js` extension is load-bearing. This module is reachable
+// from the serverless entry (`api/index.ts` → server/bookingRoutes.ts,
+// server/bookingCreate.ts, server/bookingMine.ts, server/bookingOps.ts), and
+// that graph is executed by native Node ESM on Vercel, which does NOT resolve
+// extensionless relative specifiers. tests/apiEsmImports.test.ts walks the
+// whole graph and fails on any extensionless import.
+import { STATUS_TONE_CLASSES as TONE_CLASSES, type StatusTone } from './statusTheme.js';
 // ============================================================================
 // Booking lifecycle statuses — ONE source of truth for:
 //   • the statuses a booking can hold,

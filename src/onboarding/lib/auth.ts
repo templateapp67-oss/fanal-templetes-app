@@ -33,6 +33,8 @@ export interface OnboardingSupabaseClient {
     resetPasswordForEmail: (email: string, opts?: Record<string, any>) => Promise<{ data: any; error: any }>;
     signOut: () => Promise<{ error: any }>;
     getSession: () => Promise<{ data: { session: any }; error: any }>;
+    /** Present on the real client; used to finish a PASSWORD_RECOVERY reset. */
+    updateUser?: (attrs: { password: string }) => Promise<{ data: any; error: any }>;
     onAuthStateChange: (cb: (event: string, session: any) => void) => {
       data: { subscription: { unsubscribe: () => void } };
     };
@@ -122,6 +124,30 @@ export async function sendPasswordReset(
     trimmed,
     redirectTo ? { redirectTo } : undefined
   );
+  if (error) throw toSafeAuthError(error, 'reset');
+}
+
+/**
+ * Finish a password reset inside a live PASSWORD_RECOVERY session.
+ *
+ * The reset email links back to `/onboarding/login`; Supabase Auth exchanges
+ * the token there and emits PASSWORD_RECOVERY with a real (recovery) session.
+ * Without this the user lands on the login form holding a session they cannot
+ * use and no way to set a password — the reset flow dead-ends. Same contract
+ * as the partner portal's `completePartnerPasswordReset`.
+ */
+export async function setNewPassword(
+  client: OnboardingSupabaseClient = supabase as unknown as OnboardingSupabaseClient,
+  password: string,
+  confirm: string
+): Promise<void> {
+  const validation = validateSignup({ email: 'reset@in.recovery', password, confirm });
+  if (validation.errors.password) throw new OnboardingError('validation', validation.errors.password);
+  if (validation.errors.confirm) throw new OnboardingError('validation', validation.errors.confirm);
+  if (!client.auth.updateUser) {
+    throw new OnboardingError('unknown', 'Could not update the password. Please try again.');
+  }
+  const { error } = await client.auth.updateUser({ password });
   if (error) throw toSafeAuthError(error, 'reset');
 }
 

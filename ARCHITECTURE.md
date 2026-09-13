@@ -83,8 +83,10 @@ mobile. The menu is registry-driven (live sections + planned "Soon" slots for
 Earnings, Commission, Withdrawals, Marketing Materials, Partner Levels,
 Leaderboards, Notifications, Support), so new modules plug in without
 redesigning the shell. Menu sections: Dashboard, My Referral Code (own code +
-share link `/onboarding/referral?ref=CODE`, which pre-fills the onboarding
-referral screen — backend still re-validates on submit), Referred Users,
+share link `/signup?ref=CODE` — the canonical form built by
+`src/lib/partnerReferralLink.ts`; `/onboarding/referral?ref=CODE` is also
+accepted by the router — which pre-fills the onboarding
+referral screen, backend still re-validates on submit), Referred Users,
 Referral Status (KPI chips + legend around the server-filtered list), Profile;
 Logout is an action, not a section. Legacy `/partner/referrals` and
 `/partner/customers` aliases resolve to Referred Users / Referral Status.
@@ -134,7 +136,15 @@ email provider/limits; apply migrations in filename order (growth chain
 redefines later-phase RPC bodies) and `20260919` aligns the application →
 KYC review → partner-read chain with the shipped `growth_partners`
 schema — without it the area applies cleanly and then fails at runtime;
-staff chain honors the in-file ordering guard); provision partners via
+staff chain honors the in-file ordering guard). `20261002_owner_workspace_
+provisioning.sql` closes the PART 3 workspace gap: it creates
+`organizations` / `organization_members` / `salons` /
+`nexora_owner_salon_ids()` **only when they are absent** (on a project that
+already has the normalized generation it is a no-op) and adds the idempotent
+`ensure_owner_workspace()` + `get_my_owner_workspace()` that the Template App
+entry gate calls. Scheduled cleanup of expired
+`public.growth_referral_attributions` rows is an owner action (clients have
+no grant on that table). Otherwise: provision partners via
 `provision_growth_partner` or `provision_growth_partner_by_email`
 (SQL Editor / service_role only — revoked from all clients; omitted code
 keeps the current code, explicit code rotates intentionally), or approve a

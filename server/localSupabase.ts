@@ -61,6 +61,11 @@ export const LOCAL_GROWTH_CHAIN = [
   '20260929_partner_referral_events_rls.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
+  // Owner/salon workspace resolution (PART 3). Creates the normalized
+  // organizations / organization_members / salons objects and the idempotent
+  // ensure_owner_workspace() the Template App entry gate calls, so the
+  // handoff → workspace → save → completion chain is exercisable locally.
+  '20261002_owner_workspace_provisioning.sql',
 ];
 
 /**

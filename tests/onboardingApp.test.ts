@@ -47,11 +47,16 @@ import {
   linkReferralCode,
   loadViewer,
   sendPasswordReset,
+  setNewPassword,
   signInWithEmail,
   signOutViewer,
   signUpWithEmail,
 } from '../src/onboarding/lib/auth';
-import { OnboardingApp } from '../src/onboarding/OnboardingApp';
+import { OnboardingApp, OnboardingBootError } from '../src/onboarding/OnboardingApp';
+import {
+  SET_PASSWORD_TITLE,
+  SetPasswordScreen,
+} from '../src/onboarding/screens/SetPasswordScreen';
 import { SIGNUP_SUBTITLE, SIGNUP_TITLE, SignupScreen } from '../src/onboarding/screens/SignupScreen';
 import { LOGIN_SUBTITLE, LOGIN_TITLE, LoginScreen } from '../src/onboarding/screens/LoginScreen';
 import {
@@ -66,7 +71,11 @@ import {
   ReferralForm,
   ReferralScreen,
 } from '../src/onboarding/screens/ReferralScreen';
-import { STATUS_VERIFIED_TITLE, StatusScreen } from '../src/onboarding/screens/StatusScreen';
+import {
+  STATUS_VERIFIED_TITLE,
+  STATUS_VERIFIED_WAITING_BODY,
+  StatusScreen,
+} from '../src/onboarding/screens/StatusScreen';
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -548,7 +557,7 @@ test('the referral form disables Continue and shows progress while verifying', (
   assert.match(withError, /Invalid referral code\. Please check and try again\./);
 });
 
-test('the status screen confirms verification and performs no Template App handoff', () => {
+test('the status screen confirms verification and stays read-only without a handoff handler', () => {
   const html = render(
     React.createElement(StatusScreen, {
       phase: 'referral_added',
@@ -562,8 +571,24 @@ test('the status screen confirms verification and performs no Template App hando
   assert.match(html, /ALPHA01/);
   assert.match(html, /Partner Anita/);
   assert.match(html, /Sign out/);
-  assert.doesNotMatch(html, /vercel\.app|handoff|template app|fanal-templetes/i);
   assert.match(html, new RegExp(STATUS_VERIFIED_TITLE));
+  // No handoff handler → no handoff affordance at all: no button, no link to
+  // another deployment, and no hardcoded host anywhere in the markup.
+  assert.doesNotMatch(html, /Continue to Template App/);
+  assert.doesNotMatch(html, /vercel\.app|fanal-templetes|https?:\/\//i);
+  // The waiting copy only appears when there is no call to action; showing it
+  // next to the handoff button would contradict it.
+  assert.match(html, new RegExp(STATUS_VERIFIED_WAITING_BODY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const withHandoff = render(
+    React.createElement(StatusScreen, {
+      phase: 'referral_added',
+      referralCode: 'ALPHA01',
+      onContinueToTemplateApp: () => {},
+    })
+  );
+  assert.match(withHandoff, /Continue to Template App/);
+  assert.doesNotMatch(withHandoff, /Nothing more to do/);
 });
 
 test('boot, error and mock states render instead of blank screens', () => {
@@ -719,4 +744,66 @@ test('no privileged Supabase key is exposed in the onboarding frontend', () => {
   const authSrc = readFileSync(new URL('../src/onboarding/lib/auth.ts', import.meta.url), 'utf8');
   assert.match(authSrc, /VITE_SUPABASE_URL|supabaseClient/);
   assert.doesNotMatch(authSrc.replace(/\/\*[\s\S]*?\*\//g, ''), /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+// ---------------------------------------------------------------------------
+// Forgot Password, second half. The reset email links to /onboarding/login,
+// where Supabase Auth exchanges the token and emits PASSWORD_RECOVERY. Without
+// a set-a-new-password screen the user lands on the login form holding a
+// recovery session they cannot use — the flow dead-ends there.
+// ---------------------------------------------------------------------------
+
+test('setNewPassword validates, calls Auth updateUser and maps failures safely', async () => {
+  const calls: any[] = [];
+  const client: any = {
+    auth: {
+      updateUser: async (attrs: any) => {
+        calls.push(attrs);
+        return { data: {}, error: null };
+      },
+    },
+  };
+  await setNewPassword(client, 'NewPassword!42', 'NewPassword!42');
+  assert.deepEqual(calls, [{ password: 'NewPassword!42' }]);
+
+  await assert.rejects(setNewPassword(client, 'abc', 'abc'), /at least 6 characters/);
+  await assert.rejects(setNewPassword(client, 'NewPassword!42', 'Different!42'), /do not match/);
+  assert.equal(calls.length, 1, 'invalid input never reaches Supabase Auth');
+
+  const failing: any = { auth: { updateUser: async () => ({ data: null, error: new Error('Invalid login credentials') }) } };
+  const mapped = await setNewPassword(failing, 'NewPassword!42', 'NewPassword!42').then(
+    () => null,
+    (error: any) => error
+  );
+  assert.equal(mapped.code, 'invalid-credentials');
+  assert.doesNotMatch(mapped.message, /Invalid login credentials/, 'raw driver text never surfaces');
+
+  const legacy: any = { auth: {} };
+  await assert.rejects(setNewPassword(legacy, 'NewPassword!42', 'NewPassword!42'), /Could not update the password/);
+});
+
+test('the set-password screen renders both fields and nothing else', () => {
+  const html = render(React.createElement(SetPasswordScreen, {}));
+  assert.match(html, new RegExp(SET_PASSWORD_TITLE));
+  assert.match(html, /id="onboarding-reset-password"/);
+  assert.match(html, /id="onboarding-reset-confirm"/);
+  assert.match(html, /Update password/);
+  assert.match(html, /Cancel and sign in/);
+  // It is a password reset, not a sign-up: no email field, no business fields.
+  assert.doesNotMatch(html, /onboarding-signup-email|Referral Code|Business|GST/);
+});
+
+test('the boot error keeps Retry next to the escape hatch, because retry can succeed', () => {
+  // An invalid code is not always permanent: the backend may have blipped, or
+  // a partner may have been reactivated. Retry re-runs the capture, so it must
+  // stay available alongside "Continue without a referral" — which is exactly
+  // what tests/dom/partnerExistingReferralBrowserFlow.test.ts drives.
+  const html = render(
+    React.createElement(OnboardingBootError, {
+      message: 'Invalid referral code. Please check and try again.',
+      onRetry: () => {},
+    })
+  );
+  assert.match(html, /Retry/);
+  assert.match(html, /Invalid referral code\./);
 });

@@ -8,6 +8,7 @@ import {
   createSingleFlight,
 } from '../onboarding/lib/flow';
 import type { OnboardingSupabaseClient } from '../onboarding/lib/auth';
+import { resolveOwnerWorkspace } from '../lib/ownerWorkspace';
 import {
   buildOnboardingLoginUrl,
   clearHandoffState,
@@ -155,9 +156,20 @@ export const TemplateHandoffPage: React.FC<{
       setMessage(mapped.message);
     };
 
-    const enter = () => {
+    const enter = async () => {
       if (cancelled) return;
       clearHandoffState();
+      // Owner/salon workspace resolution. The exchange proved WHO this is and
+      // recorded template_started; before the editor can save anything it
+      // needs an organization + membership + salon to save INTO, which a
+      // freshly signed-up owner does not have yet. Idempotent, scoped to
+      // auth.uid(), and best-effort: resolveOwnerWorkspace never throws, so a
+      // project whose database predates the migration still enters normally.
+      const workspace = await resolveOwnerWorkspace(sb);
+      if (cancelled) return;
+      if (workspace.provisioned) {
+        console.info('[Handoff] Owner workspace provisioned:', workspace.slug ?? workspace.salonId);
+      }
       // Scrub the token from the address bar BEFORE entering: replace (not
       // push) so back/forward can never resurface the credential.
       try {
@@ -189,7 +201,7 @@ export const TemplateHandoffPage: React.FC<{
         if (cancelled) return;
         if (exchanged === null) return; // duplicate submit while busy — ignored
         setStatus('success');
-        enter();
+        await enter();
       } catch (error) {
         // Refresh-during-verify tolerance: if OUR earlier attempt already won
         // the race (token consumed) and the backend shows entry recorded,
@@ -200,7 +212,7 @@ export const TemplateHandoffPage: React.FC<{
             if (cancelled) return;
             if (isEnteredOnboardingStatus(data?.status)) {
               setStatus('success');
-              enter();
+              await enter();
               return;
             }
           } catch {

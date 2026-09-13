@@ -521,8 +521,14 @@ test('base URLs come from env with a same-origin default and strict validation',
     'https://onb.example'
   );
   assert.equal(onboardingAppBaseUrl({ envVar: '', origin: 'https://same.example' }), 'https://same.example');
+  // The shipped example must NOT pre-fill a deployment host. An operator who
+  // copies .env.example verbatim would otherwise redirect every handoff to
+  // somebody else's domain, and — because the anti-CSRF state lives in
+  // sessionStorage, which is per-origin — the Template App would read a state
+  // it can never see. Empty means "current origin", which is the safe default.
   const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
-  assert.match(example, /VITE_TEMPLATE_APP_URL="https:\/\/fanal-templetes-app\.vercel\.app"/);
+  assert.match(example, /^VITE_TEMPLATE_APP_URL=""$/m);
+  assert.doesNotMatch(example, /^VITE_TEMPLATE_APP_URL="https?:\/\//m);
 });
 
 test('handoff state is unpredictable and compared strictly', () => {

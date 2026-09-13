@@ -31,6 +31,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { ReferralScreen } from './screens/ReferralScreen';
 import { StatusScreen } from './screens/StatusScreen';
+import { SetPasswordScreen } from './screens/SetPasswordScreen';
 
 // ============================================================================
 // Onboarding App (`/onboarding/...`) — auth + referral gateway on the SHARED
@@ -129,6 +130,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [sharedReferralCode, setSharedReferralCode] = useState<string>(readSharedReferralCode);
   const [existingAccountNotice, setExistingAccountNotice] = useState(false);
   const [invalidReferral, setInvalidReferral] = useState(false);
+  // Forgot Password, second half: Supabase Auth emits PASSWORD_RECOVERY when
+  // it exchanges the reset-link token, and the user must set a new password
+  // before the funnel means anything again.
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [skipLinkPrefill, setSkipLinkPrefill] = useState(false);
   const captureFlight = useRef<Promise<string> | null>(null);
   const handoffFlight = useRef(createSingleFlight());
@@ -219,15 +224,26 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     if (isMockSupabase && !client) return;
     const { data } = sb.auth.onAuthStateChange((event, session) => {
       if (!mounted.current) return;
+      // The reset link lands on /onboarding/login with a recovery session.
+      // Show the set-a-new-password screen instead of the funnel; the session
+      // is real, so on success the resolver routes onward like any sign-in.
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+        setBoot('ready');
+        if (session?.user) setViewer({ id: String(session.user.id), email: session.user.email || '' });
+        return;
+      }
       if (event === 'SIGNED_OUT' || !session?.user) {
         if (event === 'SIGNED_OUT') {
           setViewer(null);
           setSnapshot(null);
           setExistingAccountNotice(false);
+          setPasswordRecovery(false);
         }
         return;
       }
       setViewer({ id: String(session.user.id), email: session.user.email || '' });
+      if (event === 'SIGNED_IN') setPasswordRecovery(false);
       setRefreshing(true);
       void refreshSnapshot().catch(error => {
         if (mounted.current) { setBootError(toSafeReferralError(error).message); setBoot('error'); }
@@ -244,10 +260,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
 
   // Sync the URL to the resolved route (converges in one step — no loops).
   useEffect(() => {
-    if (boot !== 'ready' || existingAccountNotice) return;
+    if (boot !== 'ready' || existingAccountNotice || passwordRecovery) return;
     const canonical = onboardingPath(resolved);
     if (normalizePath(path) !== normalizePath(canonical)) navigate(canonical);
-  }, [boot, resolved, path, navigate, existingAccountNotice]);
+  }, [boot, resolved, path, navigate, existingAccountNotice, passwordRecovery]);
 
   const handleAuthDone = useCallback(async () => {
     try {
@@ -307,6 +323,24 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     <button type="button" className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white" onClick={() => { setExistingAccountNotice(false); setSharedReferralCode(''); }}>Continue to your account</button>
   </GatewayShell>;
 
+  if (passwordRecovery) {
+    return (
+      <SetPasswordScreen
+        client={sb}
+        onDone={() => {
+          setPasswordRecovery(false);
+          void handleAuthDone();
+        }}
+        onCancel={() => {
+          setPasswordRecovery(false);
+          void signOutViewer(sb);
+          setViewer(null);
+          setSnapshot(null);
+          navigate(onboardingPath('login'));
+        }}
+      />
+    );
+  }
   if (resolved === 'signup') {
     return (
       <SignupScreen

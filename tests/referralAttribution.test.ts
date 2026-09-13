@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createLocalDatabase } from '../server/localSupabase';
-import { registerReferralAttributionRoutes } from '../server/referralAttribution';
+import { createReferralRateLimiter, registerReferralAttributionRoutes } from '../server/referralAttribution';
 
 // Real Postgres migrations + trigger, not a mocked attribution store.
 test('attribution is validated anonymously, consumed on account creation and immutable', async () => {
@@ -105,4 +105,75 @@ test('cookie API protects capability, preserves expiry and fails safely', async 
     assert.doesNotMatch(JSON.stringify(failure), /SQL|secret_table|SECRET-CAPABILITY/);
     assert.equal(response.headers.get('set-cookie'), null, 'outage does not erase attribution');
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+});
+
+// ---------------------------------------------------------------------------
+// Rate limiting. This endpoint is the funnel's only unauthenticated writer:
+// each valid POST makes capture_growth_referral INSERT a growth_referral_
+// attributions row and hand back a fresh one-use capability, so an unlimited
+// client can grow that table without bound and brute-force codes at line
+// speed. The limiter must therefore sit in front of the RPC, not behind it.
+// ---------------------------------------------------------------------------
+
+test('referral attribution is rate limited per client and never reaches the database once limited', async () => {
+  const app = express();
+  app.use(express.json());
+  let rpcCalls = 0;
+  const limiter = createReferralRateLimiter({ max: 3, windowMs: 60_000 });
+  registerReferralAttributionRoutes(
+    app,
+    async () => {
+      rpcCalls += 1;
+      return { error: null, data: { valid: false } };
+    },
+    limiter
+  );
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const endpoint = `${origin}/api/referral-attribution`;
+  const post = (code: string) =>
+    fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) });
+  try {
+    for (let i = 0; i < 3; i += 1) assert.equal((await post('NEXORA-RAHUL25')).status, 200);
+    assert.equal(rpcCalls, 3);
+    const limited = await post('NEXORA-RAHUL25');
+    assert.equal(limited.status, 429);
+    assert.match((await limited.json()).error, /Too many requests/);
+    const retryAfter = Number(limited.headers.get('retry-after'));
+    assert.ok(retryAfter > 0 && retryAfter <= 60, `Retry-After is a sane window remainder, got ${retryAfter}`);
+    assert.equal(rpcCalls, 3, 'a limited request never reaches the RPC');
+
+    // A rejected cross-origin request is refused before the limiter, so it
+    // cannot be used to exhaust an honest client's budget.
+    const before = rpcCalls;
+    assert.equal((await fetch(endpoint, { headers: { origin: 'https://evil.example' } })).status, 403);
+    assert.equal(rpcCalls, before);
+
+    // The limiter keys on the client, not the process: the window resets when
+    // it elapses, so a genuine visitor is never locked out permanently.
+    const rolling = createReferralRateLimiter({ max: 1, windowMs: 1000 });
+    let clock = 1_000_000;
+    assert.equal(rolling.hit('ip', clock).allowed, true);
+    assert.equal(rolling.hit('ip', clock + 1).allowed, false);
+    assert.equal(rolling.hit('other-ip', clock + 1).allowed, true);
+    assert.equal(rolling.hit('ip', clock + 1001).allowed, true);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('the rate limiter caps its own memory instead of tracking clients forever', () => {
+  const limiter = createReferralRateLimiter({ max: 5, windowMs: 60_000, maxKeys: 16 });
+  const clock = 1_000_000;
+  for (let i = 0; i < 500; i += 1) assert.equal(limiter.hit(`client-${i}`, clock).allowed, true);
+  // Still enforcing for a key inserted inside the retained window…
+  assert.equal(limiter.hit('client-499', clock + 1).allowed, true);
+  assert.equal(limiter.hit('client-499', clock + 1).allowed, true);
+  // …and expired buckets are reclaimed rather than accumulating.
+  const rolling = createReferralRateLimiter({ max: 2, windowMs: 1000, maxKeys: 16 });
+  for (let i = 0; i < 100; i += 1) rolling.hit(`old-${i}`, clock);
+  assert.equal(rolling.hit('fresh', clock + 5000).allowed, true);
+  assert.equal(rolling.hit('fresh', clock + 5001).allowed, true);
+  assert.equal(rolling.hit('fresh', clock + 5002).allowed, false);
 });
