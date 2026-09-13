@@ -16,6 +16,7 @@ import {
   LOCAL_DEV_ADMIN_EMAIL,
   LOCAL_DEV_ADMIN_PASSWORD,
   registerLocalSupabaseGateway,
+  createLocalSupabaseGateway,
   signLocalToken,
   verifyLocalToken,
 } from '../server/localSupabase';
@@ -148,7 +149,7 @@ test('2. the full partner journey works over HTTP: apply → review → area', a
     );
     assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body));
     assert.equal(reviewed.body.status, 'approved');
-    assert.match(reviewed.body.referral_code, /^[A-Z0-9]{6,12}$/);
+    assert.match(reviewed.body.referral_code, /^NEXORA-[A-Z0-9]{12}$/);
 
     // The partner area now opens and its reads return real (empty) numbers.
     const after = await rpc(gateway.origin, 'get_my_growth_partner', {}, partner.access_token);
@@ -393,4 +394,88 @@ test('6. the partner forgot-password flow works end to end over HTTP', async () 
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await gateway.close();
   }
+});
+
+test('7. local gateway never pretends to complete a secure email change', async () => {
+  const gateway = await startGateway();
+  try {
+    const session = await signUp(gateway.origin, 'unchanged@example.com', 'Str0ngPass!1', 'Partner');
+    const response = await fetch(`${gateway.origin}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ email: 'unverified@example.com' }),
+    });
+    assert.equal(response.status, 501);
+    assert.match((await response.json() as any).error_description, /live Supabase Auth/);
+    const current = await fetch(`${gateway.origin}/auth/v1/user`, { headers: { authorization: `Bearer ${session.access_token}` } });
+    assert.equal((await current.json() as any).email, 'unchanged@example.com');
+  } finally { await gateway.close(); }
+});
+
+test('session spoofing audit: opaque refresh, rotation, replay/logout denial and untrusted role metadata', async () => {
+  const gateway = await startGateway();
+  const post = async (path: string, body: any, token?: string) => {
+    const response = await fetch(`${gateway.origin}${path}`, {method:'POST',headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)});
+    return {status:response.status,body:await response.json().catch(()=>null)};
+  };
+  try {
+    const created = await post('/auth/v1/signup',{email:'spoof-a@example.com',password:'Str0ngPass!1',role:'service_role',app_metadata:{is_admin:true},data:{full_name:'A',is_admin:true,role:'service_role'}});
+    assert.equal(created.status,200);
+    const a=created.body;
+    assert.equal(verifyLocalToken(a.access_token)?.isAdmin,false);
+    assert.match(a.refresh_token,/^[a-f0-9]{64}$/);
+    const b=await signUp(gateway.origin,'spoof-b@example.com','Str0ngPass!1','B');
+    const admin=await signIn(gateway.origin,LOCAL_DEV_ADMIN_EMAIL,LOCAL_DEV_ADMIN_PASSWORD);
+    for(const target of [a.user.id,b.user.id,admin.body.user.id]) {
+      for(const token of [target,`local-refresh-${target}`]) assert.equal((await post('/auth/v1/token?grant_type=refresh_token',{refresh_token:token})).status,400,'IDs never serve as refresh credentials');
+    }
+    const elevated=await rpc(gateway.origin,'provision_growth_partner',{p_user_id:a.user.id,p_code:'NEXORA-SPOOFA'},a.access_token);
+    assert.equal(elevated.status,403,'user metadata cannot authorize provisioning');
+    assert.equal((await rpc(gateway.origin,'provision_growth_partner',{p_user_id:a.user.id,p_code:'NEXORA-SPOOFA'},admin.body.access_token)).status,200);
+    assert.equal((await rpc(gateway.origin,'get_my_partner_dashboard',{},a.access_token)).status,200);
+    for(const key of ['partner_id','user_id','role','status']) assert.notEqual((await rpc(gateway.origin,'get_my_partner_dashboard',{[key]:b.user.id},a.access_token)).status,200,'caller identifiers/status are not accepted dashboard arguments');
+    const forged=a.access_token.split('.');
+    const payload=JSON.parse(Buffer.from(forged[1],'base64url').toString());payload.sub=admin.body.user.id;payload.app_metadata.is_admin=true;
+    forged[1]=Buffer.from(JSON.stringify(payload)).toString('base64url');
+    assert.equal((await rpc(gateway.origin,'get_my_partner_dashboard',{},forged.join('.'))).status,403);
+    const rotated=await post('/auth/v1/token?grant_type=refresh_token',{refresh_token:a.refresh_token});
+    assert.equal(rotated.status,200);assert.notEqual(rotated.body.refresh_token,a.refresh_token);
+    assert.equal((await post('/auth/v1/token?grant_type=refresh_token',{refresh_token:a.refresh_token})).status,400);
+    assert.equal((await rpc(gateway.origin,'get_my_partner_dashboard',{},a.access_token)).status,403,'rotated access token is revoked');
+    const fresh=rotated.body;
+    assert.equal((await rpc(gateway.origin,'get_my_partner_dashboard',{},fresh.access_token)).status,200);
+    assert.equal((await post('/auth/v1/logout',{},fresh.access_token)).status,204);
+    assert.equal((await post('/auth/v1/token?grant_type=refresh_token',{refresh_token:fresh.refresh_token})).status,400);
+    assert.equal((await rpc(gateway.origin,'get_my_partner_dashboard',{},fresh.access_token)).status,403);
+    // A signed token not issued by this gateway is also insufficient.
+    const unissued=signLocalToken({sub:admin.body.user.id,email:LOCAL_DEV_ADMIN_EMAIL,isAdmin:true,fullName:'forged'}).accessToken;
+    assert.equal((await rpc(gateway.origin,'list_growth_partner_applications',{},unissued)).status,403);
+  } finally {await gateway.close();}
+});
+
+test('concurrent role-scoped and Auth reads cannot share another request context', async () => {
+  const gateway=await startGateway();
+  try {
+    const a=await signUp(gateway.origin,'concurrent-a@example.com','Str0ngPass!1','A');
+    const b=await signUp(gateway.origin,'concurrent-b@example.com','Str0ngPass!1','B');
+    const admin=await signIn(gateway.origin,LOCAL_DEV_ADMIN_EMAIL,LOCAL_DEV_ADMIN_PASSWORD);
+    for(const [account,code] of [[a,'NEXORA-CONCURA'],[b,'NEXORA-CONCURB']] as const) await rpc(gateway.origin,'provision_growth_partner',{p_user_id:account.user.id,p_code:code},admin.body.access_token);
+    await Promise.all(Array.from({length:12},async(_,i)=>{
+      const account=i%2?a:b;
+      const [own,me]=await Promise.all([
+        rpc(gateway.origin,'get_my_partner_dashboard',{},account.access_token),
+        fetch(`${gateway.origin}/auth/v1/user`,{headers:{authorization:`Bearer ${account.access_token}`}}),
+      ]);
+      assert.equal(own.status,200);assert.equal(own.body.partner.referral_code,i%2?'NEXORA-CONCURA':'NEXORA-CONCURB');
+      assert.equal(me.status,200);assert.equal((await me.json()).id,account.user.id);
+    }));
+  } finally {await gateway.close();}
+});
+
+
+test('development Auth gateway refuses production before opening a database', async () => {
+  const previous=process.env.NODE_ENV;
+  process.env.NODE_ENV='production';
+  try {await assert.rejects(createLocalSupabaseGateway({seedAdmin:false}),/cannot run in production/);}
+  finally {if(previous===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previous;}
 });

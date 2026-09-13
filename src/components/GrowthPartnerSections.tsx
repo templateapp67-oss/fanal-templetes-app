@@ -1,4 +1,20 @@
-import React, { useCallback, useState } from 'react';
+import { ReferralTable } from './ReferralTable';
+import { formatPartnerDate, referralTitle } from '../lib/partnerPresentation';
+export { formatPartnerDate } from '../lib/partnerPresentation';
+import { PartnerStatCard as KpiCard } from './PartnerStatCard';
+export { PartnerStatCard as KpiCard } from './PartnerStatCard';
+import { ReferralStatusPill } from './ReferralStatusPill';
+export { ReferralStatusPill } from './ReferralStatusPill';
+import { usePartnerClipboard } from '../lib/usePartnerClipboard';
+import { PartnerReferralActivity } from './PartnerReferralActivity';
+import { PartnerToast } from './PartnerToast';
+import { PartnerLoading } from './PartnerLoading';
+import { ReferralEmptyState } from './ReferralEmptyState';
+import { ReferralSearchControls } from './ReferralSearchControls';
+import { ReferralDetailsDrawer } from './ReferralDetailsDrawer';
+import { DEFAULT_REFERRAL_FILTERS, type ReferralFilters } from '../lib/referralFilters';
+import { referralStatusDescriptor, REFERRAL_STATUS_TABS, type ReferralStatusTab, type ReferralStatusCounts } from '../lib/referralStatus';
+import React, { useCallback, useState, useId } from 'react';
 import { motion } from 'motion/react';
 import {
   AlertCircle,
@@ -12,12 +28,9 @@ import {
   Search,
 } from 'lucide-react';
 import {
-  copyReferralCodeToClipboard,
   GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE,
-  growthReferralStatusLabel,
   PARTNER_ACTIVITY_LABELS,
   PARTNER_REFERRAL_FILTER_LABELS,
-  type GrowthOnboardingStatusValue,
   type PartnerActivityEntry,
   type PartnerDashboardData,
   type PartnerPerformanceData,
@@ -33,27 +46,20 @@ import {
 // card, KPI counts, referral rows, activity, performance aggregates). The
 // components never compute business totals, never touch partner/user ids
 // (rows carry masked refs only), and map statuses through the single shared
-// growthReferralStatusLabel. Each section owns loading / error / empty /
+// referralStatusDescriptor. Each section owns loading / error / empty /
 // success states; data fetching lives in GrowthPartnerPage.
 // ============================================================================
 
 export const GROWTH_PARTNER_NO_REFERRALS_TITLE = 'No referrals yet.';
 /** Referred-users list (the Referrals section) — same meaning, section wording. */
-export const GROWTH_PARTNER_NO_REFERRED_USERS_TITLE = 'No referred users yet.';
+export const GROWTH_PARTNER_NO_REFERRED_USERS_TITLE = 'No referrals yet.';
 export const GROWTH_PARTNER_NO_REFERRALS_BODY =
-  'Your referrals will appear here once users join with your referral code.';
+  'Start sharing your referral link to grow your network.';
 export const GROWTH_PARTNER_NO_COMMISSION_TITLE = 'No commission earned yet.';
 export const GROWTH_PARTNER_NO_COMMISSION_BODY =
   'Partner commissions are not configured yet. When a commission model is available, earned amounts and history will appear here.';
 export const GROWTH_PARTNER_NO_PERFORMANCE_TITLE = 'No performance data yet.';
 export const GROWTH_PARTNER_NO_PERFORMANCE_BODY = 'Performance data will appear as referrals progress.';
-
-export function formatPartnerDate(value: string | null): string {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '—';
-  return parsed.toLocaleDateString();
-}
 
 function formatMonthLabel(month: string): string {
   const parsed = new Date(`${month}-01T00:00:00`);
@@ -65,39 +71,13 @@ function activityLabel(type: string): string {
   return (PARTNER_ACTIVITY_LABELS as Record<string, string>)[type] ?? 'Referral update';
 }
 
-function referralTitle(row: Pick<PartnerReferralEntry, 'ref' | 'display_name'>): string {
-  const name = (row.display_name || '').trim();
-  return name || `Referred user ${row.ref}`;
-}
-
 // ---------------------------------------------------------------------------
 // Shared atoms
 // ---------------------------------------------------------------------------
 
 /** Status pill — the single place referral statuses become UI (one mapping). */
-export function ReferralStatusPill({ status }: { status: GrowthOnboardingStatusValue | null }) {
-  const tone =
-    status === 'template_completed'
-      ? 'bg-emerald-100 text-emerald-800'
-      : status === 'template_started'
-        ? 'bg-sky-100 text-sky-800'
-        : status === 'linked'
-          ? 'bg-amber-100 text-amber-800'
-          : 'bg-slate-100 text-slate-600';
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${tone}`}>
-      {growthReferralStatusLabel(status)}
-    </span>
-  );
-}
-
 export function SectionLoading({ label }: { label: string }) {
-  return (
-    <div role="status" aria-label={label} className="text-center bg-white rounded-3xl border border-slate-200 shadow-sm px-6 py-14">
-      <Loader2 className="w-8 h-8 text-slate-400 animate-spin mx-auto mb-4" />
-      <p className="text-sm font-bold text-slate-700">{label}</p>
-    </div>
-  );
+  return <PartnerLoading label={label} kind={label.includes('dashboard') ? 'dashboard' : 'table'} />;
 }
 
 export function SectionError({ message, onRetry }: { message: string; onRetry?: () => void }) {
@@ -130,16 +110,6 @@ export function SectionEmpty({ title, body }: { title: string; body: string }) {
       </div>
       <h2 className="text-lg font-bold text-slate-900">{title}</h2>
       <p className="text-sm text-slate-600 mt-1.5">{body}</p>
-    </div>
-  );
-}
-
-export function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-      <p className="text-3xl font-black text-slate-900">{value}</p>
-      <p className="mt-1 text-sm font-bold text-slate-600">{label}</p>
-      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -228,25 +198,16 @@ function initialsFor(name: string): string {
 }
 
 export function ReferralCodeCard({ code }: { code?: string | null }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, copied, error: copyError, notice } = usePartnerClipboard();
   const value = typeof code === 'string' ? code.trim() : '';
-  const copy = useCallback(async () => {
-    // Copies ONLY the referral code — never ids, links or metadata. The helper
-    // reports whether the write actually happened, so a missing/rejected
-    // clipboard never shows a fake "Copied" state.
-    const ok = await copyReferralCodeToClipboard(value);
-    if (ok) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    }
-  }, [value]);
 
   if (!value) {
     return (
       <section aria-label="Your referral code" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">Your referral code</h2>
         <p className="mt-3 text-sm font-bold text-slate-700">{GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE}</p>
-        <p className="mt-3 text-xs text-slate-500">
+        {copyError && <p role="alert" className="mt-3 text-sm text-rose-700">Could not copy. Select and copy the code manually.</p>}
+      <p className="mt-3 text-xs text-slate-500">
           Your code is managed by the platform and cannot be changed here.
         </p>
       </section>
@@ -256,17 +217,19 @@ export function ReferralCodeCard({ code }: { code?: string | null }) {
   return (
     <section aria-label="Your referral code" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">Your referral code</h2>
+      <PartnerToast noticeId={notice.id} message={notice.message} />
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <code className="text-2xl font-black tracking-[0.2em] text-slate-900 select-all">{value}</code>
+        <code className="min-w-0 break-all text-2xl font-black tracking-[0.2em] text-slate-900 select-all">{value}</code>
         <button
           type="button"
-          onClick={() => void copy()}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
+          onClick={() => void copy(value, 'code')}
+          className="inline-flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
         >
           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 w-4" />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? 'Copied' : 'Copy Code'}
         </button>
       </div>
+      {copyError && <p role="alert" className="mt-3 text-sm text-rose-700">Could not copy. Select and copy the code manually.</p>}
       <p className="mt-3 text-xs text-slate-500">
         New users who join with this code are linked to you. Your code is managed by the platform and cannot be
         changed here.
@@ -358,7 +321,8 @@ export const GrowthPartnerDashboard: React.FC<{
   accentHex?: string;
   onRetry?: () => void;
   refreshing?: boolean;
-}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false }) => (
+  refreshError?: string | null;
+}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false, refreshError }) => (
   <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-base font-bold text-slate-900">Dashboard</h2>
@@ -375,6 +339,7 @@ export const GrowthPartnerDashboard: React.FC<{
         </button>
       )}
     </div>
+    {refreshError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{refreshError} Showing previously loaded totals. Use Refresh to retry.</p>}
     {refreshing && <p className="text-xs font-bold text-slate-500">Refreshing…</p>}
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -382,11 +347,16 @@ export const GrowthPartnerDashboard: React.FC<{
       <ReferralCodeCard code={dashboard.partner.referral_code} />
     </div>
 
-    <section aria-label="Referral summary" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <KpiCard label="Total Referrals" value={String(dashboard.kpis.total_referrals)} />
-      <KpiCard label="Active Onboarding" value={String(dashboard.kpis.active_onboarding ?? '—')} />
-      <KpiCard label="Completed Customers" value={String(dashboard.kpis.completed ?? '—')} />
+    <section aria-label="Referral summary" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <KpiCard label="Total Referrals" value={String(dashboard.totalReferrals ?? dashboard.kpis.total_referrals)} />
+      <KpiCard label="Active Referrals" value={String(dashboard.activeReferrals ?? dashboard.referral_status_counts?.active ?? '—')} />
+      <KpiCard label="Pending Referrals" value={String(dashboard.pendingReferrals ?? dashboard.referral_status_counts?.pending ?? '—')} />
+      <KpiCard label="Converted Referrals" value={String(dashboard.convertedReferrals ?? dashboard.referral_status_counts?.converted ?? '—')} />
     </section>
+
+    <p className="text-xs text-slate-500">Registered accounts only. Inactive, cancelled and rejected referrals remain in the total but are excluded from active, pending and converted counts.</p>
+
+    <PartnerReferralActivity activity={dashboard.referralActivity} />
 
     <section aria-label="Recent activity" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-base font-bold text-slate-900">Recent activity</h2>
@@ -399,52 +369,6 @@ export const GrowthPartnerDashboard: React.FC<{
 // Referrals + Customers (same backend rows, different presentations)
 // ---------------------------------------------------------------------------
 
-function ReferralTable({ rows, showStarted }: { rows: PartnerReferralEntry[]; showStarted: boolean }) {
-  return (
-    <div className="overflow-x-auto -mx-1 px-1">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead>
-          <tr className="text-xs uppercase tracking-widest text-slate-500 border-b border-slate-100">
-            <th scope="col" className="py-2 pr-4 font-bold">
-              {showStarted ? 'Referral' : 'Customer'}
-            </th>
-            <th scope="col" className="py-2 pr-4 font-bold">
-              Status
-            </th>
-            <th scope="col" className="py-2 pr-4 font-bold">
-              {showStarted ? 'Linked' : 'Joined'}
-            </th>
-            {showStarted && (
-              <th scope="col" className="py-2 pr-4 font-bold">
-                Website started
-              </th>
-            )}
-            <th scope="col" className="py-2 font-bold">
-              Completed
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => (
-            <tr key={`${row.ref}-${row.linked_at ?? 'na'}`}>
-              <td className="py-3 pr-4">
-                <p className="font-bold text-slate-900">{referralTitle(row)}</p>
-                {row.display_name?.trim() && <p className="font-mono text-xs text-slate-500">{row.ref}</p>}
-              </td>
-              <td className="py-3 pr-4">
-                <ReferralStatusPill status={row.status} />
-              </td>
-              <td className="py-3 pr-4 text-slate-600">{formatPartnerDate(row.linked_at)}</td>
-              {showStarted && <td className="py-3 pr-4 text-slate-600">{formatPartnerDate(row.template_started_at)}</td>}
-              <td className="py-3 text-slate-600">{formatPartnerDate(row.template_completed_at)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export interface PartnerListSectionProps {
   list: PartnerReferralList | null;
   loading: boolean;
@@ -455,10 +379,53 @@ export interface PartnerListSectionProps {
   onRetry: () => void;
 }
 
-// Referred users deliberately omit onboarding status and milestone UI (Part 2.5).
+/** Accessible count tabs; arrow keys/Home/End move focus and activate a filter. */
+export function ReferralStatusTabs({ value, counts, onChange, panelId }: {
+  value: ReferralStatusTab;
+  counts?: ReferralStatusCounts;
+  onChange?: (next: ReferralStatusTab) => void;
+  panelId: string;
+}) {
+  return (
+    <div role="tablist" aria-label="Referral status" className="flex flex-wrap gap-2">
+      {REFERRAL_STATUS_TABS.map((status, index) => (
+        <button key={status} type="button" role="tab" id={`${panelId}-tab-${status}`}
+          aria-controls={panelId} aria-selected={value === status} tabIndex={value === status ? 0 : -1}
+          disabled={!onChange}
+          onClick={() => onChange?.(status)}
+          onKeyDown={event => {
+            let next: number;
+            if (event.key === 'ArrowRight') next = (index + 1) % REFERRAL_STATUS_TABS.length;
+            else if (event.key === 'ArrowLeft') next = (index + REFERRAL_STATUS_TABS.length - 1) % REFERRAL_STATUS_TABS.length;
+            else if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = REFERRAL_STATUS_TABS.length - 1;
+            else return;
+            event.preventDefault();
+            document.getElementById(`${panelId}-tab-${REFERRAL_STATUS_TABS[next]}`)?.focus();
+            onChange?.(REFERRAL_STATUS_TABS[next]);
+          }}
+          className={`rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${value === status ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+          {status === 'all' ? 'All' : referralStatusDescriptor(status).label} ({counts?.[status] ?? '—'})
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Responsive, privacy-minimized referred users table (Sections 9–10).
 export const GrowthPartnerReferrals: React.FC<
-  Omit<PartnerListSectionProps, 'filter' | 'onFilterChange'>
-> = ({ list, loading, error, onPage, onRetry }) => {
+  Omit<PartnerListSectionProps, 'filter' | 'onFilterChange'> & {
+    referralCode?: string | null;
+    filtersActive?: boolean;
+    onApplyFilters?: (filters: ReferralFilters, clearStatus?: boolean) => void;
+    statusTab?: ReferralStatusTab;
+    onStatusTabChange?: (next: ReferralStatusTab) => void;
+  }
+> = ({ list, loading, error, onPage, onRetry, statusTab = 'all' as ReferralStatusTab, onStatusTabChange, filtersActive = false, onApplyFilters, referralCode }) => {
+  const [filtersResetKey, setFiltersResetKey] = useState(0);
+  const [selectedReferral, setSelectedReferral] = useState<string | null>(null);
+  const closeDetails = useCallback(() => setSelectedReferral(null), []);
+  const panelId = useId();
   return (
     <section aria-label="Referred users" aria-busy={loading} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -475,6 +442,9 @@ export const GrowthPartnerReferrals: React.FC<
           Refresh
         </button>
       </div>
+      {onApplyFilters && <ReferralSearchControls onApply={onApplyFilters} resetKey={filtersResetKey} />}
+      <ReferralStatusTabs value={statusTab} counts={list?.status_counts} onChange={onStatusTabChange} panelId={panelId} />
+      <div role="tabpanel" id={panelId} aria-labelledby={`${panelId}-tab-${statusTab}`} aria-busy={loading} tabIndex={0}>
       {loading ? (
         <SectionLoading label="Loading referred users…" />
       ) : error ? (
@@ -482,28 +452,24 @@ export const GrowthPartnerReferrals: React.FC<
       ) : !list ? (
         <SectionLoading label="Loading referred users…" />
       ) : list.total === 0 ? (
-        <SectionEmpty
-          title={GROWTH_PARTNER_NO_REFERRED_USERS_TITLE}
-          body={GROWTH_PARTNER_NO_REFERRALS_BODY}
+        <ReferralEmptyState
+          filtered={filtersActive || statusTab !== 'all'}
+          referralCode={referralCode}
+          onClear={onApplyFilters || onStatusTabChange ? () => {
+            setFiltersResetKey(value => value + 1);
+            if (onApplyFilters) onApplyFilters({ ...DEFAULT_REFERRAL_FILTERS }, true);
+            else onStatusTabChange?.('all');
+          } : undefined}
         />
       ) : (
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-          <ul aria-label="Referred user list" className="divide-y divide-slate-100">
-            {list.rows.map((row) => (
-              <li key={row.ref + '-' + row.linked_at} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                <div className="min-w-0">
-                  <p className="break-words font-bold text-slate-900">{referralTitle(row)}</p>
-                  <p className="font-mono text-xs text-slate-500">Reference: {row.ref}</p>
-                </div>
-                <p className="shrink-0 text-sm text-slate-600">
-                  Referred: {formatPartnerDate(row.linked_at)}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <p className="mb-4 text-xs text-slate-500">Contact details are masked for privacy. Converted means the user completed their website, not a payment. Last activity shows referral milestones only.</p>
+          <ReferralTable rows={list.rows} onOpenDetails={setSelectedReferral} />
           <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
         </div>
       )}
+      </div>
+      {selectedReferral && <ReferralDetailsDrawer referralId={selectedReferral} onClose={closeDetails} />}
     </section>
   );
 };
@@ -641,7 +607,7 @@ export const GrowthPartnerCommission: React.FC = () => (
 );
 
 // ---------------------------------------------------------------------------
-// Profile (read-only — the existing model has no partner-editable fields)
+// Legacy presentational profile summary; the live route uses GrowthPartnerProfilePage.
 // ---------------------------------------------------------------------------
 
 export const GrowthPartnerProfile: React.FC<{

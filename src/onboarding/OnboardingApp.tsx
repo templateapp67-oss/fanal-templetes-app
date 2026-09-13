@@ -1,3 +1,4 @@
+import { captureSignupReferral, prepareSignupAttribution } from './lib/referralAttribution';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { isSessionExpiredError } from '../lib/growthPartner';
@@ -7,7 +8,7 @@ import {
   onboardingPath,
   type OnboardingSection,
 } from '../lib/router';
-import { createSingleFlight, resolveOnboardingRoute, type OnboardingPhase } from './lib/flow';
+import { createSingleFlight, resolveOnboardingRoute, toSafeReferralError, type OnboardingPhase } from './lib/flow';
 import {
   fetchOnboardingSnapshot,
   loadViewer,
@@ -59,7 +60,7 @@ export const ONBOARDING_MOCK_BODY =
 
 /**
  * Read the `ref` query parameter of a partner's share link
- * (`/onboarding/referral?ref=CODE`). Purely a pre-fill: the code is captured
+ * (`/signup?ref=CODE`). The code is captured
  * ONCE on mount (the router may redirect through the login screen, which
  * drops the query) and the backend re-validates it on submit.
  */
@@ -67,8 +68,8 @@ export function readSharedReferralCode(): string {
   if (typeof window === 'undefined' || !window.location) return '';
   try {
     const value = new URLSearchParams(window.location.search).get('ref') ?? '';
-    // Bounded for sanity only — real validation happens in link_my_growth_referral.
-    return value.trim().slice(0, 32);
+    // Never truncate a malformed code into a different, valid referral.
+    return value.trim().length <= 64 ? value.trim() : '';
   } catch {
     return '';
   }
@@ -125,7 +126,11 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [handoffError, setHandoffError] = useState('');
   // A partner's share link (`?ref=CODE`) is captured once, before any
   // login-redirect drops the query, and pre-fills the referral screen.
-  const [sharedReferralCode] = useState<string>(readSharedReferralCode);
+  const [sharedReferralCode, setSharedReferralCode] = useState<string>(readSharedReferralCode);
+  const [existingAccountNotice, setExistingAccountNotice] = useState(false);
+  const [invalidReferral, setInvalidReferral] = useState(false);
+  const [skipLinkPrefill, setSkipLinkPrefill] = useState(false);
+  const captureFlight = useRef<Promise<string> | null>(null);
   const handoffFlight = useRef(createSingleFlight());
   const mounted = useRef(true);
   useEffect(() => {
@@ -147,6 +152,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         if (mounted.current) {
           setViewer(null);
           setSnapshot(null);
+          setExistingAccountNotice(false);
         }
         return null;
       }
@@ -165,7 +171,23 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     setBootError('');
     (async () => {
       try {
+        // Restore the session first. A referral URL must not capture a new
+        // capability or prefill reassignment for an existing signed-in account.
         const restored = await loadViewer(sb);
+        if (cancelled || !mounted.current) return;
+        if (sharedReferralCode && restored) {
+          setExistingAccountNotice(true);
+          setSkipLinkPrefill(true);
+        } else if (sharedReferralCode) {
+          if (!captureFlight.current) captureFlight.current = captureSignupReferral(sharedReferralCode);
+          try {
+            const code = await captureFlight.current;
+            if (!code) {
+              setInvalidReferral(true);
+              throw new Error('Invalid referral code. Please check and try again.');
+            }
+          } catch (error) { captureFlight.current = null; throw error; }
+        }
         if (cancelled || !mounted.current) return;
         setViewer(restored);
         if (restored) {
@@ -173,7 +195,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
             await refreshSnapshot();
           } catch (error) {
             if (cancelled || !mounted.current) return;
-            setBootError(error instanceof Error ? error.message : 'Please try again.');
+            setBootError(toSafeReferralError(error).message);
             setBoot('error');
             return;
           }
@@ -183,14 +205,14 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         if (!cancelled && mounted.current) setBoot('ready');
       } catch (error) {
         if (cancelled || !mounted.current) return;
-        setBootError(error instanceof Error ? error.message : 'Please try again.');
+        setBootError(toSafeReferralError(error).message);
         setBoot('error');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sb, bootKey, refreshSnapshot, client]);
+  }, [sb, bootKey, refreshSnapshot, client, sharedReferralCode]);
 
   // Live auth events: sign-out clears everything; sign-in refreshes state.
   useEffect(() => {
@@ -201,12 +223,15 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         if (event === 'SIGNED_OUT') {
           setViewer(null);
           setSnapshot(null);
+          setExistingAccountNotice(false);
         }
         return;
       }
       setViewer({ id: String(session.user.id), email: session.user.email || '' });
       setRefreshing(true);
-      void refreshSnapshot().finally(() => {
+      void refreshSnapshot().catch(error => {
+        if (mounted.current) { setBootError(toSafeReferralError(error).message); setBoot('error'); }
+      }).finally(() => {
         if (mounted.current) setRefreshing(false);
       });
     });
@@ -219,10 +244,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
 
   // Sync the URL to the resolved route (converges in one step — no loops).
   useEffect(() => {
-    if (boot !== 'ready') return;
+    if (boot !== 'ready' || existingAccountNotice) return;
     const canonical = onboardingPath(resolved);
     if (normalizePath(path) !== normalizePath(canonical)) navigate(canonical);
-  }, [boot, resolved, path, navigate]);
+  }, [boot, resolved, path, navigate, existingAccountNotice]);
 
   const handleAuthDone = useCallback(async () => {
     try {
@@ -265,7 +290,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         },
         (error: unknown) => {
           if (!mounted.current) return;
-          setHandoffError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
+          setHandoffError(toSafeReferralError(error).message);
           setHandoffBusy(false);
         }
       );
@@ -274,12 +299,18 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   if (isMockSupabase && !client) return <OnboardingMockNotice />;
   if (boot === 'loading' || (refreshing && !snapshot && !!viewer)) return <OnboardingBootLoading />;
   if (boot === 'error') {
-    return <OnboardingBootError message={bootError} onRetry={() => setBootKey((key) => key + 1)} />;
+    return <><OnboardingBootError message={bootError} onRetry={() => setBootKey((key) => key + 1)} />
+      {invalidReferral && <div className="mx-auto max-w-md px-6 pb-8"><button type="button" className="min-h-11 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold" onClick={() => { setInvalidReferral(false); setSharedReferralCode(''); captureFlight.current = null; setBootKey(key => key + 1); }}>Continue without a referral</button></div>}</>;
   }
+
+  if (existingAccountNotice) return <GatewayShell title="This account is already registered." subtitle="Opening a referral link does not change your existing attribution.">
+    <button type="button" className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white" onClick={() => { setExistingAccountNotice(false); setSharedReferralCode(''); }}>Continue to your account</button>
+  </GatewayShell>;
 
   if (resolved === 'signup') {
     return (
       <SignupScreen
+        prepareAttribution={prepareSignupAttribution}
         client={sb}
         onDone={() => void handleAuthDone()}
         onGoLogin={() => navigate(onboardingPath('login'))}
@@ -294,7 +325,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       <ReferralScreen
         client={sb}
         email={viewer?.email || ''}
-        initialCode={sharedReferralCode}
+        initialCode={skipLinkPrefill ? '' : sharedReferralCode}
         onLinked={() => void handleAuthDone()}
         onLogout={() => void handleLogout()}
       />

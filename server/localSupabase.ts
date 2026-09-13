@@ -1,3 +1,4 @@
+import { logPartnerFailure, safeGatewayFailure } from './partnerErrorLog.js';
 // ============================================================================
 // Local Supabase-compatible gateway — DEVELOPMENT ONLY.
 //
@@ -17,8 +18,8 @@
 //
 // Guarded three ways so it can never serve production traffic:
 //   • mounted only when NODE_ENV !== 'production'
-//   • mounted only when LOCAL_SUPABASE=true (see .env.example)
-//   • the module refuses to start if a real SUPABASE_URL is configured
+//   • mounted only when VITE_LOCAL_SUPABASE=true (see .env.example)
+//   • the application mount guard refuses a configured real Supabase URL
 //
 // Scope: the Growth Partner + onboarding surface (RPCs). The owner dashboard /
 // booking surfaces read the normalized production schema, which no committed
@@ -27,7 +28,7 @@
 // ============================================================================
 
 import { PGlite } from '@electric-sql/pglite';
-import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Express, Request, Response } from 'express';
@@ -49,6 +50,17 @@ export const LOCAL_GROWTH_CHAIN = [
   '20260918_partner_dashboard_inactive_guard.sql',
   '20260919_growth_partner_area_contract_alignment.sql',
   '20260920_growth_partner_application_queue.sql',
+  '20260921_public_partner_referral_codes.sql',
+  '20260922_referral_link_attribution.sql',
+  '20260923_referral_fraud_privacy.sql',
+  '20260924_referral_lifecycle.sql',
+  '20260925_referral_status_tabs.sql',
+  '20260926_referral_search_details.sql',
+  '20260927_growth_partner_profile.sql',
+  '20260928_partner_referrals_table.sql',
+  '20260929_partner_referral_events_rls.sql',
+  '20260930_partner_dashboard_metrics.sql',
+  '20261001_partner_dashboard_activity.sql',
 ];
 
 /**
@@ -57,19 +69,25 @@ export const LOCAL_GROWTH_CHAIN = [
  * schema, which no committed migration creates.
  */
 export const LOCAL_TABLE_ALLOWLIST = [
+  'partner_referral_events',
+  'partner_referrals',
   'growth_partner_applications',
   'growth_partners',
   'growth_onboarding',
   'profiles',
 ];
 
-const JWT_SECRET = process.env.LOCAL_SUPABASE_JWT_SECRET || 'local-dev-only-secret';
+const configuredJwtSecret = process.env.LOCAL_SUPABASE_JWT_SECRET;
+if (configuredJwtSecret && Buffer.byteLength(configuredJwtSecret) < 32) {
+  throw new Error('LOCAL_SUPABASE_JWT_SECRET must contain at least 32 bytes.');
+}
+const JWT_SECRET = configuredJwtSecret || randomBytes(32).toString('hex');
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 // ---------------------------------------------------------------------------
 // Schema bootstrap — the slice of 00001_init the Growth Partner chain needs.
 // ---------------------------------------------------------------------------
-const BOOTSTRAP = `
+export const LOCAL_DATABASE_BOOTSTRAP = `
   do $$ begin
     if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
     if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
@@ -130,7 +148,9 @@ const BOOTSTRAP = `
 // ---------------------------------------------------------------------------
 
 export interface LocalDatabase {
+  /** Setup/tests only. HTTP operations use the shared request/owner queue. */
   db: any;
+  ownerQuery: (sql: string, params?: any[]) => Promise<any>;
   /** Run one statement with the request's role + claims applied (serialized). */
   asRequest: <T>(context: RequestContext, fn: (db: any) => Promise<T>) => Promise<T>;
   close: () => Promise<void>;
@@ -152,7 +172,7 @@ export function roleFor(context: RequestContext): 'service_role' | 'authenticate
 export async function createLocalDatabase(dataDir?: string): Promise<LocalDatabase> {
   const db: any = dataDir ? new PGlite(dataDir) : new PGlite();
 
-  await db.exec(BOOTSTRAP);
+  await db.exec(LOCAL_DATABASE_BOOTSTRAP);
   for (const file of LOCAL_GROWTH_CHAIN) {
     await db.exec(
       readFileSync(path.join(process.cwd(), 'supabase', 'migrations', file), 'utf8')
@@ -178,7 +198,14 @@ export async function createLocalDatabase(dataDir?: string): Promise<LocalDataba
     return run as Promise<T>;
   };
 
-  return { db, asRequest, close: () => db.close() };
+  // Auth queries and catalog inspection must share the same queue: running
+  // them on the raw connection could inherit another request's SET ROLE/GUCs.
+  const ownerQuery = (sql: string, params?: any[]) => {
+    const run = queue.then(() => db.query(sql, params));
+    queue = run.catch(() => undefined);
+    return run;
+  };
+  return { db, asRequest, ownerQuery, close: async () => { await queue; await db.close(); } };
 }
 
 // ---------------------------------------------------------------------------
@@ -230,21 +257,25 @@ export function signLocalToken(claims: LocalClaims): { accessToken: string; expi
 }
 
 export function verifyLocalToken(token: string | null | undefined): LocalClaims | null {
-  if (!token) return null;
+  if (!token || token.length > 8192) return null;
   const parts = String(token).split('.');
   if (parts.length !== 3) return null;
   const expected = createHmac('sha256', JWT_SECRET)
     .update(`${parts[0]}.${parts[1]}`)
     .digest('base64url');
-  if (expected !== parts[2]) return null;
+  if (!/^[A-Za-z0-9_-]{43}$/.test(parts[2]) || !timingSafeEqual(Buffer.from(expected), Buffer.from(parts[2]))) return null;
   let payload: any;
   try {
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    if (header.alg !== 'HS256' || header.typ !== 'JWT') return null;
     payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
   } catch {
     return null;
   }
-  if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) return null;
-  if (!payload.sub) return null;
+  if (!payload || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || payload.exp * 1000 <= Date.now()) return null;
+  if (typeof payload.iat !== 'number' || !Number.isFinite(payload.iat) || payload.iat * 1000 > Date.now() + 30000 || payload.exp <= payload.iat) return null;
+  if (payload.aud !== 'authenticated' || payload.role !== 'authenticated') return null;
+  if (typeof payload.sub !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(payload.sub)) return null;
   return {
     sub: String(payload.sub),
     email: String(payload.email || ''),
@@ -283,7 +314,7 @@ function publicUser(row: any) {
   };
 }
 
-function sessionFor(row: any) {
+function sessionFor(row: any, refreshToken: string) {
   const claims: LocalClaims = {
     sub: row.id,
     email: row.email,
@@ -297,7 +328,7 @@ function sessionFor(row: any) {
     token_type: 'bearer',
     expires_in: TOKEN_TTL_SECONDS,
     expires_at: expiresAt,
-    refresh_token: `local-refresh-${row.id}`,
+    refresh_token: refreshToken,
     user,
   };
 }
@@ -376,15 +407,16 @@ export interface LocalGatewayOptions {
 }
 
 export async function createLocalSupabaseGateway(options: LocalGatewayOptions = {}) {
+  if (process.env.NODE_ENV === 'production') throw new Error('The local authentication gateway cannot run in production.');
   const local = await createLocalDatabase(options.dataDir);
   const log = options.log ?? ((line: string) => console.log(line));
 
   if (options.seedAdmin !== false) {
-    const existing = await local.db.query('select id from auth.users where email = $1', [
+    const existing = await local.ownerQuery('select id from auth.users where email = $1', [
       LOCAL_DEV_ADMIN_EMAIL,
     ]);
     if (existing.rows.length === 0) {
-      await local.db.query(
+      await local.ownerQuery(
         `insert into auth.users(email, encrypted_password, email_confirmed_at, raw_user_meta_data, raw_app_meta_data)
          values ($1, $2, now(), $3::jsonb, $4::jsonb)`,
         [
@@ -412,6 +444,41 @@ export async function registerLocalSupabaseGateway(
     `[local-supabase] serving /auth/v1 + /rest/v1 from PGlite with ${LOCAL_GROWTH_CHAIN.length} real migrations`
   );
 
+  // Process-local sessions deliberately expire on restart, even with a persisted
+  // database. No user ID or frontend metadata is a refresh credential.
+  type SessionRecord = { userId: string; expiresAt: number; accessHash: string };
+  const refreshSessions = new Map<string, SessionRecord>();
+  const accessSessions = new Map<string, SessionRecord>();
+  const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+  const pruneSessions = () => {
+    for (const [key, value] of refreshSessions) if (value.expiresAt <= Date.now()) refreshSessions.delete(key);
+    for (const [key, value] of accessSessions) if (value.expiresAt <= Date.now()) accessSessions.delete(key);
+  };
+  const revokeUser = (userId: string) => {
+    for (const [key,value] of refreshSessions) if (value.userId === userId) refreshSessions.delete(key);
+    for (const [key,value] of accessSessions) if (value.userId === userId) accessSessions.delete(key);
+  };
+  const issueSession = (row: any) => {
+    pruneSessions();
+    const refreshToken = randomBytes(32).toString('hex');
+    const session = sessionFor(row, refreshToken);
+    const record = { userId: row.id, expiresAt: session.expires_at * 1000, accessHash: digest(session.access_token) };
+    refreshSessions.set(digest(refreshToken),record);
+    accessSessions.set(record.accessHash,record);
+    return session;
+  };
+  const authenticate = async (req: Request): Promise<LocalClaims | null> => {
+    pruneSessions();
+    const token = bearerOf(req);
+    const claims = verifyLocalToken(token);
+    if (!token || !claims || !accessSessions.has(digest(token))) return null;
+    const row = (await local.ownerQuery('select raw_app_meta_data from auth.users where id=$1',[claims.sub])).rows[0];
+    if (!row) return null;
+    // Re-check trusted database metadata, so demotion takes effect immediately.
+    return {...claims, isAdmin: row.raw_app_meta_data?.is_admin === true};
+  };
+  app.use('/auth/v1', (_req, res, next) => { res.set('Cache-Control','no-store'); next(); });
+
   // ---------------- auth ---------------------------------------------------
   app.post('/auth/v1/signup', async (req: Request, res: Response) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -419,36 +486,41 @@ export async function registerLocalSupabaseGateway(
     if (!email || !password) {
       return res.status(422).json({ error: 'invalid_request', error_description: 'Email and password are required.' });
     }
-    const taken = await local.db.query('select id from auth.users where email = $1', [email]);
+    const taken = await local.ownerQuery('select id from auth.users where email = $1', [email]);
     if (taken.rows.length > 0) {
       return res
         .status(422)
         .json({ error: 'user_already_exists', error_description: 'User already registered' });
     }
-    const created = await local.db.query(
+    const created = await local.ownerQuery(
       `insert into auth.users(email, encrypted_password, email_confirmed_at, raw_user_meta_data)
        values ($1, $2, now(), $3::jsonb)
        returning *`,
       [email, hashPassword(password), JSON.stringify(req.body?.data || {})]
     );
-    return res.status(200).json(sessionFor(created.rows[0]));
+    return res.status(200).json(issueSession(created.rows[0]));
   });
 
   app.post('/auth/v1/token', async (req: Request, res: Response) => {
     const grant = String(req.query.grant_type || 'password');
     if (grant === 'refresh_token') {
       const refreshToken = String(req.body?.refresh_token || '');
-      const userId = refreshToken.replace(/^local-refresh-/, '');
-      const found = await local.db.query('select * from auth.users where id = $1', [userId]);
-      if (found.rows.length === 0) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid Refresh Token' });
-      }
-      return res.status(200).json(sessionFor(found.rows[0]));
+      pruneSessions();
+      const key = digest(refreshToken);
+      const record = /^[a-f0-9]{64}$/.test(refreshToken) ? refreshSessions.get(key) : undefined;
+      if (!record) return res.status(400).json({error:'invalid_grant',error_description:'Invalid Refresh Token'});
+      // Consume before the first await: concurrent replays cannot both rotate.
+      refreshSessions.delete(key);
+      accessSessions.delete(record.accessHash);
+      const found = await local.ownerQuery('select * from auth.users where id=$1',[record.userId]);
+      if (!found.rows.length) return res.status(400).json({error:'invalid_grant',error_description:'Invalid Refresh Token'});
+      return res.status(200).json(issueSession(found.rows[0]));
     }
+    if (grant !== 'password') return res.status(400).json({error:'unsupported_grant_type'});
 
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
-    const found = await local.db.query('select * from auth.users where email = $1', [email]);
+    const found = await local.ownerQuery('select * from auth.users where email = $1', [email]);
     const row: any = found.rows[0];
     if (!row || !verifyPassword(password, row.encrypted_password)) {
       // Same wording GoTrue uses — src/lib/growthPartnerLogin.ts maps it to a
@@ -457,21 +529,25 @@ export async function registerLocalSupabaseGateway(
         .status(400)
         .json({ error: 'invalid_grant', error_description: 'Invalid login credentials' });
     }
-    await local.db.query('update auth.users set last_sign_in_at = now() where id = $1', [row.id]);
-    return res.status(200).json(sessionFor(row));
+    await local.ownerQuery('update auth.users set last_sign_in_at = now() where id = $1', [row.id]);
+    return res.status(200).json(issueSession(row));
   });
 
   app.get('/auth/v1/user', async (req: Request, res: Response) => {
-    const claims = verifyLocalToken(bearerOf(req));
+    const claims = await authenticate(req);
     if (!claims) return res.status(401).json({ error: 'invalid_token', error_description: 'Sign in required' });
-    const found = await local.db.query('select * from auth.users where id = $1', [claims.sub]);
+    const found = await local.ownerQuery('select * from auth.users where id = $1', [claims.sub]);
     if (found.rows.length === 0) {
       return res.status(401).json({ error: 'invalid_token', error_description: 'Sign in required' });
     }
     return res.status(200).json(publicUser(found.rows[0]));
   });
 
-  app.post('/auth/v1/logout', (_req: Request, res: Response) => res.status(204).end());
+  app.post('/auth/v1/logout', async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (claims) revokeUser(claims.sub);
+    return res.status(204).end();
+  });
   app.get('/auth/v1/settings', (_req: Request, res: Response) =>
     res.status(200).json({ external: {}, disable_signup: false, mailer_autoconfirm: true })
   );
@@ -486,7 +562,7 @@ export async function registerLocalSupabaseGateway(
     const email = String(req.body?.email || '').trim().toLowerCase();
     const respond = () => res.status(200).json({});
     if (!email) return respond();
-    const found = await local.db.query('select * from auth.users where email = $1', [email]);
+    const found = await local.ownerQuery('select * from auth.users where email = $1', [email]);
     const row: any = found.rows[0];
     if (!row) return respond();
 
@@ -497,7 +573,7 @@ export async function registerLocalSupabaseGateway(
     const origin =
       (typeof req.headers.origin === 'string' && req.headers.origin) ||
       `${req.protocol}://${req.get('host') || `127.0.0.1:${process.env.PORT || 3000}`}`;
-    const session = sessionFor(row);
+    const session = issueSession(row);
     const link =
       `${origin}${redirectTo}` +
       `#access_token=${encodeURIComponent(session.access_token)}` +
@@ -515,9 +591,12 @@ export async function registerLocalSupabaseGateway(
   // `password` attribute is honoured; the caller must present a valid bearer
   // token, which the recovery link established.
   app.put('/auth/v1/user', async (req: Request, res: Response) => {
-    const claims = verifyLocalToken(bearerOf(req));
+    const claims = await authenticate(req);
     if (!claims) {
       return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    }
+    if (req.body?.email !== undefined) {
+      return res.status(501).json({ error: 'not_supported', error_description: 'Email changes require a live Supabase Auth connection.' });
     }
     const password = String(req.body?.password || '');
     if (password) {
@@ -526,12 +605,13 @@ export async function registerLocalSupabaseGateway(
           .status(422)
           .json({ error: 'weak_password', error_description: 'Password should be at least 8 characters.' });
       }
-      await local.db.query('update auth.users set encrypted_password = $2 where id = $1', [
+      await local.ownerQuery('update auth.users set encrypted_password = $2 where id = $1', [
         claims.sub,
         hashPassword(password),
       ]);
+      revokeUser(claims.sub);
     }
-    const found = await local.db.query('select * from auth.users where id = $1', [claims.sub]);
+    const found = await local.ownerQuery('select * from auth.users where id = $1', [claims.sub]);
     if (found.rows.length === 0) {
       return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
     }
@@ -543,22 +623,22 @@ export async function registerLocalSupabaseGateway(
     const fn = String(req.params.fn || '');
     if (!/^[a-z0-9_]+$/i.test(fn)) return res.status(404).json({ code: 'PGRST202', message: 'Function not found' });
 
-    const claims = verifyLocalToken(bearerOf(req));
-    const resolved = await resolveRpc(local.db, fn, (req.body || {}) as Record<string, unknown>);
-    if ('missing' in resolved) {
-      return res.status(404).json({
-        code: 'PGRST202',
-        message: `Could not find the function public.${fn} in the schema cache`,
-      });
-    }
-    if ('ambiguous' in resolved) {
-      return res.status(300).json({
-        code: 'PGRST203',
-        message: `Could not choose the best candidate function for ${fn}. Try a request with one of these parameter signatures: ${resolved.ambiguous.join(' | ')}`,
-      });
-    }
-
+    const claims = await authenticate(req);
     try {
+      const resolved = await resolveRpc({query: local.ownerQuery}, fn, (req.body || {}) as Record<string, unknown>);
+      if ('missing' in resolved) {
+        return res.status(404).json({
+          code: 'PGRST202',
+          message: 'This service is unavailable. Please try again later.',
+        });
+      }
+      if ('ambiguous' in resolved) {
+        return res.status(300).json({
+          code: 'PGRST203',
+          message: 'This request could not be processed. Please try again.',
+        });
+      }
+
       const result = await local.asRequest(
         { sub: claims?.sub ?? null, isAdmin: claims?.isAdmin ?? false },
         async (db) => {
@@ -568,11 +648,13 @@ export async function registerLocalSupabaseGateway(
       );
       return res.status(200).json(result);
     } catch (error: any) {
+      const requestId = logPartnerFailure(`rpc.${fn}`, error, log);
+      res.set('X-Request-ID', requestId);
       const code = String(error?.code || 'XX000');
       const status = code === '42501' ? 403 : code === '42883' ? 404 : code === '22023' ? 400 : 400;
       return res.status(status).json({
         code,
-        message: error?.message || 'Function call failed',
+        message: safeGatewayFailure(error),
         details: null,
         hint: null,
       });
@@ -588,7 +670,7 @@ export async function registerLocalSupabaseGateway(
     const table = String(req.params.table || '');
     if (!LOCAL_TABLE_ALLOWLIST.includes(table)) return tableReadUnavailable(req, res);
 
-    const columns = await local.db.query(
+    const columns = await local.ownerQuery(
       `select column_name from information_schema.columns
         where table_schema = 'public' and table_name = $1`,
       [table]
@@ -626,7 +708,7 @@ export async function registerLocalSupabaseGateway(
     const limit = Number.parseInt(String(req.query.limit ?? ''), 10);
     if (Number.isFinite(limit) && limit >= 0) tail += ` limit ${Math.min(limit, 1000)}`;
 
-    const claims = verifyLocalToken(bearerOf(req));
+    const claims = await authenticate(req);
     try {
       const rows = await local.asRequest(
         { sub: claims?.sub ?? null, isAdmin: claims?.isAdmin ?? false },
@@ -650,16 +732,18 @@ export async function registerLocalSupabaseGateway(
       }
       return res.status(200).json(rows);
     } catch (error: any) {
+      const requestId = logPartnerFailure(`table.${table}`, error, log);
+      res.set('X-Request-ID', requestId);
       return res.status(400).json({
         code: String(error?.code || 'XX000'),
-        message: error?.message || 'Query failed',
+        message: safeGatewayFailure(error),
       });
     }
   });
 
   app.all('/rest/v1/:table', (req: Request, res: Response) => tableReadUnavailable(req, res));
 
-  return { close: () => local.close() };
+  return { close: () => { refreshSessions.clear(); accessSessions.clear(); return local.close(); } };
 }
 
 /** Honest 501 for the surfaces this gateway does not serve. */

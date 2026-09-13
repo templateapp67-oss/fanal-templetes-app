@@ -538,8 +538,11 @@ test('filter and activity labels are single reusable mappings with exact copy', 
   assert.deepEqual(PARTNER_REFERRAL_FILTER_LABELS, {
     all: 'All',
     pending: 'Pending',
-    in_progress: 'In Progress',
-    completed: 'Completed',
+    in_progress: 'Active',
+    completed: 'Converted',
+    inactive: 'Inactive',
+    cancelled: 'Cancelled',
+    rejected: 'Rejected',
   });
   assert.deepEqual(PARTNER_ACTIVITY_LABELS, {
     referral_added: 'New referral added',
@@ -631,14 +634,14 @@ const SAMPLE_PERFORMANCE: PartnerPerformanceData = {
 const noop = () => {};
 
 test('status pills render every funnel label through the shared mapping', () => {
-  assert.match(render(React.createElement(ReferralStatusPill, { status: 'linked' })), /Referral Added/);
+  assert.match(render(React.createElement(ReferralStatusPill, { status: 'linked' })), /Pending/);
   assert.match(
     render(React.createElement(ReferralStatusPill, { status: 'template_started' })),
-    /Website Started/
+    /Active/
   );
   assert.match(
     render(React.createElement(ReferralStatusPill, { status: 'template_completed' })),
-    /Completed/
+    /Converted/
   );
   assert.match(render(React.createElement(ReferralStatusPill, { status: 'not_started' })), /Pending/);
 });
@@ -655,9 +658,9 @@ test('the referred-users section renders rows, dates, the pager and its states',
   );
   assert.match(html, /Referred Users/);
   assert.match(html, /Asha Sharma/);
-  assert.match(html, /Referred user …00000003/);
-  assert.match(html, /Reference: …00000001/);
-  assert.match(html, /Referred: /);
+  assert.match(html, /Referred user/);
+  assert.doesNotMatch(html, /Reference:|…00000001/);
+  assert.match(html, /Joined Date/);
   assert.match(html, /Showing 1–2 of 2/);
   assert.match(html, /aria-label="Refresh referred users"/);
   // Status filtering belongs to the Customers section (server-side). This list
@@ -719,7 +722,7 @@ test('the customers section adds server-side search to the shared referral rows'
   assert.match(html, /<form/);
   // The status filter pills live here (and only here): all four backend buckets.
   assert.match(html, /Filter by status/);
-  for (const label of ['All', 'Pending', 'In Progress', 'Completed']) {
+  for (const label of ['All', 'Pending', 'Active', 'Converted', 'Inactive', 'Cancelled', 'Rejected']) {
     assert.match(html, new RegExp(label));
   }
   assert.match(html, /Asha Sharma/);
@@ -801,8 +804,12 @@ test('the pager turns server pages and disables correctly at the bounds', () => 
 
 test('section code copies only the referral code and keeps no browser-side state', () => {
   const source = readFileSync(new URL('../src/components/GrowthPartnerSections.tsx', import.meta.url), 'utf8');
-  // The card delegates to the single shared clipboard helper (Part 2.3).
-  assert.match(source, /copyReferralCodeToClipboard/);
+  // The card delegates through the shared notification hook to the clipboard.
+  assert.match(source, /usePartnerClipboard/);
+  assert.match(source, /copy\(value, 'code'\)/);
+  const hook = readFileSync(new URL('../src/lib/usePartnerClipboard.ts', import.meta.url), 'utf8');
+  assert.match(hook, /copyReferralCodeToClipboard\(value\)/);
+  assert.doesNotMatch(stripComments(hook), /localStorage|sessionStorage/);
   assert.doesNotMatch(stripComments(source), /localStorage|sessionStorage/);
   // No client-side business math: rates, totals and payouts never computed here.
   assert.doesNotMatch(stripComments(source), /completion_rate_pct\s*=[^=]/);

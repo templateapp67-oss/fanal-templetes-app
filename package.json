@@ -20,7 +20,9 @@
     "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs",
     "validate:staff-commission": "node --import tsx scripts/validate_staff_commission_payouts_migration.mjs",
     "validate:staff-notifications": "node --import tsx scripts/validate_staff_performance_notifications_migration.mjs",
-    "test:dom": "node --import ./scripts/testEnv.mjs --import tsx --test --disable-warning=ExperimentalWarning --test-force-exit tests/dom/*.test.ts"
+    "test:dom": "node --import ./scripts/testEnv.mjs --import tsx --test --disable-warning=ExperimentalWarning --test-force-exit tests/dom/*.test.ts",
+    "test:partner": "node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit --test-concurrency=2 tests/growthPartner*.test.ts tests/partner*.test.ts tests/referral*.test.ts tests/publicPartnerReferral.test.ts tests/localSupabaseGateway.test.ts tests/part1*.test.ts tests/onboardingApp.test.ts tests/templateCompletion.test.ts tests/templateHandoff.test.ts tests/dom/*.test.ts",
+    "test:partner:acceptance": "node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit tests/dom/partnerFinalAcceptance.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

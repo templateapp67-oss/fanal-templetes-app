@@ -215,6 +215,6 @@ test('7b. the /partner/* portal routes resolve to the same area', () => {
   assert.equal(matchPartnerPortalRoute('/partner/performance'), 'performance');
   assert.equal(matchPartnerPortalRoute('/partner/unknown-section'), 'dashboard', 'never a blank screen');
   assert.equal(partnerPortalPath('dashboard'), '/partner/dashboard');
-  assert.equal(partnerPortalPath('referred-users'), '/partner/referred-users');
+  assert.equal(partnerPortalPath('referred-users'), '/partner/referrals');
   assert.equal(partnerPortalPath('referral-status'), '/partner/referral-status');
 });

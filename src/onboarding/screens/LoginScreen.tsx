@@ -1,3 +1,4 @@
+import { toSafeAuthError } from '../lib/flow';
 import React, { useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { signInWithEmail, type OnboardingSupabaseClient } from '../lib/auth';
@@ -45,7 +46,7 @@ export const LoginScreen: React.FC<{
           setFormError('');
           void signInWithEmail(client as OnboardingSupabaseClient, { email, password }).then(
             () => onDone?.(),
-            (error: Error) => setFormError(error?.message || 'Login failed. Please try again.')
+            (error: Error) => setFormError(toSafeAuthError(error, 'login').message)
           ).finally(() => setBusy(false));
         }}
       >

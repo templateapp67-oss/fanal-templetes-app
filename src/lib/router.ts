@@ -281,8 +281,8 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
 /** Canonical URL for each partner-portal section. */
 const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   dashboard: PARTNER_DASHBOARD_PATH,
-  'referral-code': `${PARTNER_PORTAL_ROOT}/referral-code`,
-  'referred-users': `${PARTNER_PORTAL_ROOT}/referred-users`,
+  'referral-code': `${PARTNER_PORTAL_ROOT}/referral`,
+  'referred-users': `${PARTNER_PORTAL_ROOT}/referrals`,
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
   performance: `${PARTNER_PORTAL_ROOT}/performance`,
@@ -296,6 +296,7 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
  * menu sections.
  */
 const PARTNER_PORTAL_ALIASES: Record<string, PartnerPortalSection> = {
+  referral: 'referral-code',
   referrals: 'referred-users',
   customers: 'referral-status',
 };
@@ -348,11 +349,12 @@ export const ONBOARDING_SECTIONS: OnboardingSection[] = [
 /** True when the path belongs to the Onboarding App at all. */
 export function isOnboardingPath(pathname: string): boolean {
   const path = normalizePath(pathname).toLowerCase();
-  return path === ONBOARDING_PATH || path.startsWith(`${ONBOARDING_PATH}/`);
+  return path === '/signup' || path === '/register' || path === ONBOARDING_PATH || path.startsWith(`${ONBOARDING_PATH}/`);
 }
 
 /** Section for `/onboarding` (login) and `/onboarding/:section`. */
 export function matchOnboardingRoute(pathname: string): OnboardingSection {
+  if (['/signup', '/register'].includes(normalizePath(pathname).toLowerCase())) return 'signup';
   const segments = normalizePath(pathname)
     .split('/')
     .filter((segment) => segment.length > 0);

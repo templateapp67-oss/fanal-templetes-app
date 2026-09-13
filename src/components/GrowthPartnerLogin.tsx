@@ -1,3 +1,4 @@
+import { safePartnerErrorMessage } from '../lib/partnerUiErrors';
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { AlertCircle, Check, Hourglass, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-react';
@@ -528,7 +529,7 @@ export const GrowthPartnerLogin: React.FC<{
       } catch (error) {
         if (!cancelled) {
           setQueue([]);
-          setQueueError(error instanceof Error ? error.message : 'Could not load the application queue');
+          setQueueError(safePartnerErrorMessage(error, 'Could not load the application queue'));
         }
       }
     })();
@@ -551,7 +552,7 @@ export const GrowthPartnerLogin: React.FC<{
         setAttempt((value) => value + 1);
       })
       .catch((error: unknown) => {
-        setQueueError(error instanceof Error ? error.message : 'Could not update that application');
+        setQueueError(safePartnerErrorMessage(error, 'Could not update that application'));
       })
       .finally(() => setQueueBusyId(null));
   };
@@ -584,7 +585,7 @@ export const GrowthPartnerLogin: React.FC<{
     setFormError('');
     void signInGrowthPartner(sb, { email, password }).then(
       (viewer) => setSessionUser(viewer),
-      (error: Error) => setFormError(error?.message || 'Login failed. Please try again.')
+      (error: Error) => setFormError(safePartnerErrorMessage(error, 'Login failed. Please try again.'))
     ).finally(() => setBusy(false));
   };
 
@@ -595,7 +596,7 @@ export const GrowthPartnerLogin: React.FC<{
     setBusy(true); setFormError(''); setSignupSuccess('');
     void signUpGrowthPartner(sb, input).then((result) => {
       setSignupSuccess(result.confirmed ? GROWTH_PARTNER_SIGNUP_SUCCESS : 'Account created. Verify your email, then return here to sign in and submit your application.');
-    }, (error: Error) => setFormError(error.message || 'Signup failed. Please try again.')).finally(() => setBusy(false));
+    }, (error: Error) => setFormError(safePartnerErrorMessage(error, 'Signup failed. Please try again.'))).finally(() => setBusy(false));
   };
 
   if (state === 'mock-mode') return <GrowthPartnerLoginMockNotice onBack={onBack} />;

@@ -1,11 +1,16 @@
-import React, { useCallback, useState } from 'react';
+import { usePartnerClipboard } from '../lib/usePartnerClipboard';
+import { PartnerToast } from './PartnerToast';
+import { PartnerLoading } from './PartnerLoading';
+import { partnerReferralShareLink } from '../lib/partnerReferralLink';
+import React from 'react';
 import { Check, Copy, Link2, PauseCircle } from 'lucide-react';
 import {
-  copyReferralCodeToClipboard,
   GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE,
   PartnerDashboardData,
 } from '../lib/growthPartner';
-import { KpiCard } from './GrowthPartnerSections';
+import { PartnerStatCard as KpiCard } from './PartnerStatCard';
+import { ReferralStatusPill } from './ReferralStatusPill';
+import { PRIMARY_REFERRAL_STATUSES, REFERRAL_STATUS_DESCRIPTORS, type ReferralStatus } from '../lib/referralStatus';
 
 /**
  * Partner-portal sections that are new in the Part 2.2 shell (the other pages
@@ -14,23 +19,7 @@ import { KpiCard } from './GrowthPartnerSections';
  * growth_partners row and the share link is a plain URL built from it.
  */
 
-/** Resolve the app origin for share links (empty outside a browser context). */
-export function partnerShareOrigin(): string {
-  try {
-    if (typeof window === 'undefined' || !window.location) return '';
-    return window.location.origin;
-  } catch {
-    return '';
-  }
-}
-
-/** The onboarding link a partner shares: /onboarding/referral?ref=CODE. */
-export function partnerReferralShareLink(code: string, origin?: string): string {
-  const base = (origin ?? partnerShareOrigin()).replace(/\/+$/, '');
-  const value = code.trim();
-  if (!base || !value) return '';
-  return `${base}/onboarding/referral?ref=${encodeURIComponent(value)}`;
-}
+export { partnerShareOrigin, partnerReferralShareLink } from '../lib/partnerReferralLink';
 
 /**
  * "My Referral Code" page — the hero surface of the referral funnel: the code
@@ -42,30 +31,28 @@ export const PartnerReferralCodeSection: React.FC<{
   code: string | null | undefined;
   isActive?: boolean;
   origin?: string;
-}> = ({ code, isActive = true, origin }) => {
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
+  loading?: boolean;
+}> = ({ code, isActive = true, origin, loading = false }) => {
+  const { copy, copied, error: copyError, notice } = usePartnerClipboard();
+  const copiedCode = copied === 'code', copiedLink = copied === 'link';
   const value = typeof code === 'string' ? code.trim() : '';
   const shareLink = value ? partnerReferralShareLink(value, origin) : '';
+  const copyCode = () => copy(value, 'code');
+  const copyLink = () => copy(shareLink, 'link');
 
-  const copyValue = useCallback(async (text: string): Promise<boolean> => {
-    const ok = await copyReferralCodeToClipboard(text);
-    return ok;
-  }, []);
-
-  const copyCode = useCallback(async () => {
-    if (await copyValue(value)) {
-      setCopiedCode(true);
-      window.setTimeout(() => setCopiedCode(false), 2000);
+  const share = async () => {
+    if (typeof navigator === 'undefined' || !navigator.share) {
+      await copyLink();
+      return;
     }
-  }, [copyValue, value]);
-
-  const copyLink = useCallback(async () => {
-    if (await copyValue(shareLink)) {
-      setCopiedLink(true);
-      window.setTimeout(() => setCopiedLink(false), 2000);
+    try {
+      await navigator.share({ title: 'Join Nexora', text: `Join using my referral code ${value}`, url: shareLink });
+    } catch (error) {
+      if ((error as { name?: string })?.name !== 'AbortError') await copyLink();
     }
-  }, [copyValue, shareLink]);
+  };
+
+  if (loading) return <PartnerLoading label="Loading your referral link…" kind="link" />;
 
   if (!value) {
     return (
@@ -87,7 +74,8 @@ export const PartnerReferralCodeSection: React.FC<{
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
+      <PartnerToast noticeId={notice.id} message={notice.message} />
       {!isActive ? (
         <div
           role="status"
@@ -110,7 +98,7 @@ export const PartnerReferralCodeSection: React.FC<{
         </h2>
         <div className="mt-4 flex flex-wrap items-center gap-4">
           <code
-            className="select-all rounded-2xl bg-slate-900 px-5 py-3 text-3xl font-black tracking-[0.25em] text-white sm:text-4xl"
+            className="select-all rounded-2xl bg-slate-900 px-5 py-3 break-all text-xl font-black tracking-wider text-white sm:text-3xl"
             data-referral-code={value}
           >
             {value}
@@ -118,12 +106,13 @@ export const PartnerReferralCodeSection: React.FC<{
           <button
             type="button"
             onClick={() => void copyCode()}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 transition-opacity hover:opacity-90"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 transition-opacity hover:opacity-90"
           >
             {copiedCode ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copiedCode ? 'Copied' : 'Copy code'}
+            {copiedCode ? 'Copied' : 'Copy Code'}
           </button>
         </div>
+        {shareLink && <button type="button" onClick={() => void copyLink()} className="mt-4 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold">Copy Referral Link</button>}
         <p className="mt-4 text-xs text-slate-500">
           New users who join with this code are linked to you. Your code is managed by the platform
           and cannot be changed here.
@@ -156,12 +145,18 @@ export const PartnerReferralCodeSection: React.FC<{
             <button
               type="button"
               onClick={() => void copyLink()}
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
+              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
             >
               {copiedLink ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              {copiedLink ? 'Copied' : 'Copy link'}
+              {copiedLink ? 'Copied' : 'Copy Link'}
             </button>
           </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <a className="rounded-xl bg-green-50 px-4 py-2.5 text-sm font-bold text-green-800" href={`https://wa.me/?text=${encodeURIComponent(`Join using my referral code ${value}: ${shareLink}`)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+            <a className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold" href={`mailto:?subject=${encodeURIComponent('Join Nexora')}&body=${encodeURIComponent(`Join using my referral code ${value}: ${shareLink}`)}`}>Email</a>
+            <button type="button" onClick={() => void share()} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold">Share</button>
+          </div>
+          <p role={copyError ? "alert" : undefined} className="mt-3 text-sm text-slate-600">{copyError || notice.message}</p>
         </section>
       ) : null}
 
@@ -218,20 +213,12 @@ export const PartnerReferralStatusSection: React.FC<{
 }> = ({ dashboard, loading = false, children }) => (
   <div className="space-y-4">
     <section aria-label="Referral status summary" aria-busy={loading}>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KpiCard
-          label="Total Referrals"
-          value={dashboard ? String(dashboard.kpis.total_referrals) : '—'}
-        />
-        <KpiCard
-          label="In Progress"
-          value={dashboard ? String(dashboard.kpis.active_onboarding ?? 0) : '—'}
-        />
-        <KpiCard
-          label="Completed"
-          value={dashboard ? String(dashboard.kpis.completed ?? 0) : '—'}
-        />
-      </div>
+      {loading && !dashboard ? <PartnerLoading label="Loading referral totals…" kind="dashboard" /> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <KpiCard label="Total Referrals" value={dashboard ? String(dashboard.kpis.total_referrals) : '—'} />
+        {PRIMARY_REFERRAL_STATUSES.map(status => (
+          <div key={status}><KpiCard label={REFERRAL_STATUS_DESCRIPTORS[status].label} value={String(dashboard?.referral_status_counts?.[status] ?? '—')} /></div>
+        ))}
+      </div>}
     </section>
     <section
       aria-label="What each status means"
@@ -240,21 +227,13 @@ export const PartnerReferralStatusSection: React.FC<{
       <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">
         What each status means
       </h2>
-      <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl bg-slate-50 p-4">
-          <dt className="text-sm font-bold text-slate-900">Pending</dt>
-          <dd className="mt-1 text-xs text-slate-600">
-            Signed up with your code — onboarding not started yet.
-          </dd>
-        </div>
-        <div className="rounded-2xl bg-slate-50 p-4">
-          <dt className="text-sm font-bold text-slate-900">In Progress</dt>
-          <dd className="mt-1 text-xs text-slate-600">Onboarding started — the website is underway.</dd>
-        </div>
-        <div className="rounded-2xl bg-slate-50 p-4">
-          <dt className="text-sm font-bold text-slate-900">Completed</dt>
-          <dd className="mt-1 text-xs text-slate-600">The referred user’s website is completed.</dd>
-        </div>
+      <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {([...PRIMARY_REFERRAL_STATUSES, 'cancelled', 'rejected'] as ReferralStatus[]).map(status => (
+          <div key={status} className="rounded-2xl bg-slate-50 p-4">
+            <dt><ReferralStatusPill status={status} /></dt>
+            <dd className="mt-2 text-xs text-slate-600">{REFERRAL_STATUS_DESCRIPTORS[status].description}</dd>
+          </div>
+        ))}
       </dl>
     </section>
     {children}

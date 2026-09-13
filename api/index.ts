@@ -1,3 +1,4 @@
+import { registerReferralAttributionRoutes } from '../server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from '../server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from '../server/ownerDashboard.js';
 // Loads process env > .env > .env.development (see server/env.ts).
@@ -73,6 +74,7 @@ app.use(
 // Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
 // catch-all — that is exactly the "404 / blocked by CORS" failure mode.
 app.use(nexoraCors);
+registerReferralAttributionRoutes(app);
 
 /** Owner email for booking notifications, resolved from the profiles row. */
 async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?: number): Promise<string> {

@@ -1,3 +1,4 @@
+import { toSafeAuthError } from '../lib/flow';
 import React, { useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { signUpWithEmail, type OnboardingSupabaseClient } from '../lib/auth';
@@ -16,9 +17,10 @@ export const SIGNUP_CONFIRM_BODY =
 
 export const SignupScreen: React.FC<{
   client?: OnboardingSupabaseClient;
+  prepareAttribution?: () => Promise<string | undefined>;
   onDone?: () => void;
   onGoLogin?: () => void;
-}> = ({ client, onDone, onGoLogin }) => {
+}> = ({ client, onDone, onGoLogin, prepareAttribution }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -63,7 +65,10 @@ export const SignupScreen: React.FC<{
           if (!validation.ok) return;
           setBusy(true);
           setFormError('');
-          void signUpWithEmail(client as OnboardingSupabaseClient, { email, password, confirm }).then(
+          void (async () => {
+            const attributionToken = await prepareAttribution?.();
+            return signUpWithEmail(client as OnboardingSupabaseClient, { email, password, confirm, attributionToken });
+          })().then(
             (result) => {
               if (result.confirmationRequired) {
                 setConfirmationSent(true);
@@ -71,7 +76,7 @@ export const SignupScreen: React.FC<{
               }
               onDone?.();
             },
-            (error: Error) => setFormError(error?.message || 'Account creation failed. Please try again.')
+            (error: Error) => setFormError(toSafeAuthError(error, 'signup').message)
           ).finally(() => setBusy(false));
         }}
       >

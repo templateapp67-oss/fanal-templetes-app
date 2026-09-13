@@ -310,7 +310,10 @@ test('the shell and page share the single gate resolver and never reference the 
   const src = readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8');
   const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
   // One gate, one row lookup — no second authorization guard.
-  assert.match(src, /resolveGrowthPartnerGate/);
+  assert.match(src, /usePartnerRouteGuard/);
+  const guard = readFileSync(new URL('../src/components/PartnerRouteGuard.tsx', import.meta.url), 'utf8');
+  assert.match(guard, /resolveGrowthPartnerGate/);
+  assert.doesNotMatch(guard, /localStorage|sessionStorage|SERVICE_ROLE/);
   assert.match(src, /fetchMyGrowthPartnerRow/);
   assert.doesNotMatch(codeOnly, /service_role|SERVICE_ROLE|getSupabaseAdmin|supabaseAdmin/);
   // No frontend role/storage/URL trust in the page.

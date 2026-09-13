@@ -82,7 +82,7 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
   assert.equal(partnerPortalContentSection('commission'), 'commission');
   // Canonical paths for every section.
   for (const section of PARTNER_PORTAL_SECTIONS) {
-    assert.equal(partnerPortalPath(section), `/partner/${section}`);
+    assert.equal(partnerPortalPath(section), `/partner/${section === 'referral-code' ? 'referral' : section === 'referred-users' ? 'referrals' : section}`);
   }
   // Legacy aliases keep resolving (no broken links from the earlier model).
   assert.equal(matchPartnerPortalRoute('/partner/referrals'), 'referred-users');
@@ -346,10 +346,10 @@ test('the referral code page shows the real code big, copy actions and the funne
   assert.match(html, /ALPHA01/);
   assert.match(html, /Your referral code/);
   // Copy affordances (code + link) — real clipboard use, no fake success.
-  assert.match(html, /Copy code/);
-  assert.match(html, /Copy link/);
+  assert.match(html, /Copy Code/);
+  assert.match(html, /Copy Link/);
   // The share link is a plain URL built from the partner's own code.
-  assert.match(html, /https:\/\/app\.example\/onboarding\/referral\?ref=ALPHA01/);
+  assert.match(html, /https:\/\/app\.example\/signup\?ref=ALPHA01/);
   // Honest copy: the code is platform-managed.
   assert.match(html, /cannot be changed here/);
   // The funnel explanation.
@@ -372,28 +372,28 @@ test('the referral code page adapts to paused partners and missing codes honestl
   const missing = render(React.createElement(PartnerReferralCodeSection, { code: null }));
   assert.match(missing, /Referral code not available\./);
   assert.doesNotMatch(missing, /data-referral-code=/);
-  assert.doesNotMatch(missing, /Copy link/);
+  assert.doesNotMatch(missing, /Copy Link/);
 });
 
 test('the share link helper builds a clean onboarding URL and degrades safely', () => {
-  assert.equal(partnerReferralShareLink('ALPHA01', 'https://app.example'), 'https://app.example/onboarding/referral?ref=ALPHA01');
+  assert.equal(partnerReferralShareLink('ALPHA01', 'https://app.example'), 'https://app.example/signup?ref=ALPHA01');
   assert.equal(
     partnerReferralShareLink('ALPHA01', 'https://app.example/'),
-    'https://app.example/onboarding/referral?ref=ALPHA01',
+    'https://app.example/signup?ref=ALPHA01',
     'trailing slashes on the origin are normalized'
   );
-  assert.equal(partnerReferralShareLink('  ALPHA01  ', 'https://app.example'), 'https://app.example/onboarding/referral?ref=ALPHA01');
+  assert.equal(partnerReferralShareLink('  ALPHA01  ', 'https://app.example'), 'https://app.example/signup?ref=ALPHA01');
   // No origin (SSR/no browser) or no code → no link, never a broken one.
   assert.equal(partnerReferralShareLink('ALPHA01', ''), '');
   assert.equal(partnerReferralShareLink('', 'https://app.example'), '');
   // Codes with unusual characters are URL-encoded, not interpolated raw.
-  assert.equal(partnerReferralShareLink('A B/01', 'https://app.example'), 'https://app.example/onboarding/referral?ref=A%20B%2F01');
+  assert.equal(partnerReferralShareLink('A B/01', 'https://app.example'), 'https://app.example/signup?ref=A%20B%2F01');
 });
 
 test('without a browser origin the code page omits the link block instead of faking one', () => {
   const html = render(React.createElement(PartnerReferralCodeSection, { code: 'ALPHA01' }));
   assert.match(html, /ALPHA01/);
-  assert.match(html, /Copy code/);
+  assert.match(html, /Copy Code/);
   assert.doesNotMatch(html, /Share your link/);
   assert.doesNotMatch(html, /onboarding\/referral/);
 });
@@ -403,6 +403,7 @@ test('without a browser origin the code page omits the link block instead of fak
 // ---------------------------------------------------------------------------
 
 const DASHBOARD_SAMPLE: PartnerDashboardData = {
+  referral_status_counts: { pending: 0, active: 2, converted: 1, inactive: 0 },
   partner: { referral_code: 'ALPHA01', is_active: true, partner_since: '2026-09-01T00:00:00.000Z' },
   kpis: { total_referrals: 3, active_onboarding: 2, completed: 1 },
   recent_activity: [],
@@ -418,16 +419,16 @@ test('the referral status page shows backend KPIs, a status legend and the list'
   );
   // KPI chips carry the server counts.
   assert.match(html, /Total Referrals/);
-  assert.match(html, /In Progress/);
-  assert.match(html, /Completed/);
+  assert.match(html, /Active/);
+  assert.match(html, /Converted/);
   assert.match(html, />3</);
   assert.match(html, />2</);
   assert.match(html, />1</);
   // The legend explains each status in plain words.
   assert.match(html, /What each status means/);
-  assert.match(html, /onboarding not started yet/);
-  assert.match(html, /the website is underway/);
-  assert.match(html, /website is completed/);
+  assert.match(html, /onboarding has not started/);
+  assert.match(html, /Website onboarding is underway/);
+  assert.match(html, /completed their website/);
   // The real list is rendered inside the page.
   assert.match(html, /THE LIST/);
 });
@@ -440,8 +441,9 @@ test('the referral status KPIs show placeholders, never invented numbers, while 
       React.createElement('p', null, 'THE LIST')
     )
   );
-  assert.match(html, /Total Referrals/);
-  assert.match(html, /—/);
+  assert.match(html, /Loading referral totals/);
+  assert.match(html, /data-partner-skeleton="dashboard"/);
+  assert.doesNotMatch(html, />0</);
   assert.match(html, /THE LIST/);
 });
 
@@ -463,7 +465,7 @@ test('the onboarding app captures the ?ref= parameter once and passes it to the 
   const source = readFileSync(new URL('../src/onboarding/OnboardingApp.tsx', import.meta.url), 'utf8');
   assert.match(source, /readSharedReferralCode/, 'the app reads the shared code');
   assert.match(source, /useState<string>\(readSharedReferralCode\)/, 'captured once on mount, before any login redirect drops the query');
-  assert.match(source, /initialCode=\{sharedReferralCode\}/, 'the referral screen receives the captured code');
+  assert.match(source, /initialCode=\{skipLinkPrefill \? '' : sharedReferralCode\}/, 'URL prefill is suppressed for existing authenticated accounts');
   // The backend re-validates: the pre-fill must never be trusted as linked.
   assert.match(source, /re-validates (?:it )?on submit/);
 });

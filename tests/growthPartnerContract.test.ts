@@ -13,26 +13,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PGlite } from '@electric-sql/pglite';
+import { createLocalDatabase } from '../server/localSupabase';
 
 const CLIENT_MODULES = [
   '../src/lib/growthPartner.ts',
   '../src/lib/growthPartnerLogin.ts',
   '../src/onboarding/lib/flow.ts',
-];
-
-const MIGRATIONS = [
-  '20260911094853_growth_partner_signup_approval.sql',
-  '20260911101201_growth_partner_kyc_approval.sql',
-  '20260912_growth_partner_onboarding.sql',
-  '20260913_template_handoff.sql',
-  '20260914_template_completion.sql',
-  '20260915_growth_partner_dashboard.sql',
-  '20260916_part1_referral_hardening.sql',
-  '20260917_part1b_link_atomicity.sql',
-  '20260918_partner_dashboard_inactive_guard.sql',
-  '20260919_growth_partner_area_contract_alignment.sql',
-  '20260920_growth_partner_application_queue.sql',
 ];
 
 /** Every `rpc('<name>'` the Growth Partner client surface can issue. */
@@ -47,32 +33,7 @@ function clientRpcNames(): string[] {
 }
 
 async function setup() {
-  const db: any = new PGlite();
-  await db.exec(`
-    create role anon;
-    create role authenticated;
-    create role service_role;
-    alter default privileges in schema public grant execute on functions to service_role;
-    create schema auth;
-    create table auth.users(id uuid primary key, email text);
-    create function auth.uid() returns uuid language sql stable as
-      $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-    grant usage on schema auth to authenticated, anon;
-
-    create table public.profiles(
-      id uuid primary key, full_name text, subdomain text, salon_name text, email text
-    );
-    create table public.services(id uuid primary key, owner_id uuid);
-
-    create schema private;
-    create function private.is_admin() returns boolean language sql stable as
-      $$ select coalesce(nullif(current_setting('app.is_admin', true), ''), 'false') = 'true' $$;
-    grant usage on schema private to authenticated, anon;
-  `);
-  for (const file of MIGRATIONS) {
-    await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
-  }
-  return db;
+  return (await createLocalDatabase()).db;
 }
 
 test('every RPC the Growth Partner client calls exists and is callable by authenticated', async () => {
@@ -134,7 +95,7 @@ test('the admin-only functions are not reachable from a browser session', async 
 test('the area tables exist with row level security enabled', async () => {
   const db = await setup();
   try {
-    for (const table of ['growth_partners', 'growth_onboarding', 'growth_partner_applications']) {
+    for (const table of ['growth_partners', 'growth_onboarding', 'growth_partner_applications', 'partner_referrals', 'partner_referral_events']) {
       const res = await db.query(
         `select c.relrowsecurity as rls,
                 (select count(*)::int from pg_policies p

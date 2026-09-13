@@ -12,6 +12,10 @@
 
 import { JSDOM } from 'jsdom';
 
+// Integration tests may explicitly opt into this transport for a local HTTP
+// server. Unit DOM tests remain network-disabled by default below.
+export const nativeFetch = globalThis.fetch.bind(globalThis);
+
 // Creating a Supabase client immediately tries to recover a session over the
 // network. Against the placeholder host that DNS lookup never resolves, and the
 // in-flight socket keeps the test process alive for minutes. Point it at a port
@@ -76,7 +80,7 @@ define('IntersectionObserver', class {
 });
 (dom.window as any).Element.prototype.scrollIntoView = noop;
 
-// No DOM test may reach the network: the mock Supabase client would otherwise
+// Unit DOM tests must not reach the network: the mock Supabase client would otherwise
 // open a real socket to the placeholder host and keep the event loop alive.
 const noNetwork = () => Promise.reject(new Error('network disabled in DOM tests'));
 define('fetch', noNetwork);

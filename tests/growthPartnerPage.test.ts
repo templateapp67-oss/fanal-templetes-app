@@ -178,7 +178,8 @@ test('inactive partners are denied with a safe paused message, never partner dat
   const html = render(React.createElement(GrowthPartnerInactive, { onBack: () => {} }));
   assert.match(html, new RegExp(GROWTH_PARTNER_INACTIVE_TITLE));
   assert.match(html, new RegExp(GROWTH_PARTNER_INACTIVE_BODY));
-  assert.match(html, /safe/);
+  assert.match(html, /currently suspended/);
+  assert.match(html, /contact support/);
   assert.doesNotMatch(html, /Your referral code/);
   assert.doesNotMatch(html, /ALPHA01/);
   assert.doesNotMatch(html, /Total referred/);
@@ -234,6 +235,7 @@ test('the page container renders its loading state on first paint', () => {
 });
 
 const DASHBOARD_SAMPLE: PartnerDashboardData = {
+  totalReferrals: 3, activeReferrals: 1, pendingReferrals: 1, convertedReferrals: 1,
   partner: { referral_code: 'ALPHA01', is_active: true, partner_since: '2026-09-01T00:00:00.000Z' },
   kpis: { total_referrals: 3, active_onboarding: 2, completed: 1 },
   recent_activity: [
@@ -260,13 +262,13 @@ test('the dashboard shows the real referral code, profile, counts and activity',
   assert.match(html, /Partner Anita/);
   assert.match(html, /anita@example\.com/);
   assert.match(html, /Active/);
-  // 5. Server KPI counts: 3 total, 2 onboarding, 1 completed.
+  // 5. Server lifecycle counts: 3 total, one each active/pending/converted.
   assert.match(html, /Total Referrals/);
-  assert.match(html, /Active Onboarding/);
+  assert.match(html, /Active Referrals/);
   assert.match(html, />3</);
-  assert.match(html, />2</);
+  assert.match(html, /Pending Referrals/);
   assert.match(html, />1</);
-  assert.match(html, /Completed Customers/);
+  assert.match(html, /Converted Referrals/);
   // Recent activity carries backend event labels, never another partner's code.
   assert.match(html, /Website completed/);
   assert.match(html, /User started website/);
@@ -332,6 +334,7 @@ test('7. the empty state renders when the partner has no referrals', () => {
     React.createElement(GrowthPartnerDashboard, {
       dashboard: {
         ...DASHBOARD_SAMPLE,
+        totalReferrals: 0, activeReferrals: 0, pendingReferrals: 0, convertedReferrals: 0,
         kpis: { total_referrals: 0, active_onboarding: 0, completed: 0 },
         recent_activity: [],
       },

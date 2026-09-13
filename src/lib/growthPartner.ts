@@ -1,3 +1,4 @@
+import type { ReferralStatus, ReferralStatusCounts } from './referralStatus';
 import { supabase } from './supabaseClient';
 
 // ============================================================================
@@ -84,8 +85,8 @@ export interface ValidateReferralResult {
   referral_code: string | null;
 }
 
-/** Server-side code format: 6-12 uppercase alphanumerics (no NX- prefix). */
-const GROWTH_CODE_RE = /^[A-Z0-9]{6,12}$/;
+/** Server-side code format: Legacy alphanumerics or public NEXORA-prefixed codes. */
+const GROWTH_CODE_RE = /^(?:[A-Z0-9]{6,12}|NEXORA-[A-Z0-9]{4,24})$/;
 
 /**
  * Client-side normalization (trim + uppercase) for UX only.
@@ -100,10 +101,10 @@ export function isGrowthReferralCodeFormat(code: unknown): boolean {
   return GROWTH_CODE_RE.test(normalizeGrowthReferralCode(code));
 }
 
-function rpcError(context: string, error: { message?: string; code?: string } | null): Error {
+function rpcError(context: string, error: { message?: string; code?: string; status?: number } | null): Error {
   const detail = error?.message || 'Unknown database error';
   const code = error?.code ? ` (${error.code})` : '';
-  return new Error(`${context}${code}: ${detail}`);
+  return Object.assign(new Error(`${context}${code}: ${detail}`), { code: error?.code, status: error?.status });
 }
 
 /**
@@ -259,7 +260,12 @@ export function isSessionExpiredError(error: unknown): boolean {
   const anyErr = error as { status?: number; code?: string; message?: string };
   if (anyErr.status === 401 || anyErr.code === 'PGRST301') return true;
   const message = String((error as Error)?.message || anyErr || '');
-  return /jwt expired|invalid jwt|session.*expired|not authenticated|auth.*required/i.test(message);
+  return /jwt expired|invalid jwt|session.*expired|not authenticated|auth.*required|sign in required/i.test(message);
+}
+
+/** Includes mid-request revocation, not just the initial partner gate read. */
+export function isPartnerSuspendedError(error: unknown): boolean {
+  return /(?:partner|account|access).*(?:inactive|paused|suspended)/i.test(String((error as Error)?.message || ''));
 }
 
 /** Page-level gate states for the Growth Partner area. */
@@ -268,6 +274,8 @@ export type GrowthPartnerGate =
   | 'mock-mode'
   | 'unauthenticated'
   | 'unauthorized'
+  | 'pending'
+  | 'rejected'
   | 'inactive'
   | 'session-expired'
   | 'error'
@@ -286,12 +294,17 @@ export function resolveGrowthPartnerGate(input: {
   isMockMode: boolean;
   partnerRow: GrowthPartner | null;
   loadError: unknown;
+  applicationStatus?: string | null;
 }): GrowthPartnerGate {
   if (input.loading) return 'loading';
   if (!input.userId) return 'unauthenticated';
   if (input.isMockMode) return 'mock-mode';
-  if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
-  if (!input.partnerRow) return 'unauthorized';
+  if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : isPartnerSuspendedError(input.loadError) ? 'inactive' : 'error';
+  if (!input.partnerRow) {
+    if (input.applicationStatus === 'pending') return 'pending';
+    if (input.applicationStatus === 'rejected') return 'rejected';
+    return 'unauthorized';
+  }
   if (input.partnerRow.is_active === false) return 'inactive';
   return 'ready';
 }
@@ -299,7 +312,7 @@ export function resolveGrowthPartnerGate(input: {
 /** Inactive partner denial copy (shared by the area gate and the login page). */
 export const GROWTH_PARTNER_INACTIVE_TITLE = 'Growth Partner access is paused';
 export const GROWTH_PARTNER_INACTIVE_BODY =
-  'Your Growth Partner account is currently inactive. Your account and historical data are safe — contact the platform to reactivate partner access.';
+  'Your Growth Partner account is currently suspended. Please contact support for assistance.';
 
 /** Human label for a referral's onboarding status (the ONE reusable mapping). */
 export function growthReferralStatusLabel(status: GrowthOnboardingStatusValue | null): string {
@@ -384,18 +397,32 @@ export function toCompletionError(error: unknown): Error {
 // ============================================================================
 
 /** Server-side status filter accepted by get_my_partner_referrals. */
-export type PartnerReferralFilter = 'all' | 'pending' | 'in_progress' | 'completed';
+export type PartnerReferralFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'inactive' | 'cancelled' | 'rejected';
 
 /** UI labels for the referral status filter (single reusable mapping). */
 export const PARTNER_REFERRAL_FILTER_LABELS: Record<PartnerReferralFilter, string> = {
   all: 'All',
   pending: 'Pending',
-  in_progress: 'In Progress',
-  completed: 'Completed',
+  in_progress: 'Active',
+  completed: 'Converted',
+  inactive: 'Inactive',
+  cancelled: 'Cancelled',
+  rejected: 'Rejected',
 };
 
 /** One referral row for the caller's OWN referrals (masked ref, no ids). */
 export interface PartnerReferralEntry {
+  /** Opaque referral-record identifier, never the auth user ID. */
+  referral_id?: string;
+  referral_clicked_at?: string | null;
+  referral_status?: ReferralStatus;
+  /** Masked in the backend; raw contact details are never returned. */
+  masked_contact?: string | null;
+  joined_at?: string | null;
+  referral_code?: string | null;
+  conversion_status?: 'converted' | 'not_converted' | null;
+  /** Latest referral milestone, not private login/authentication activity. */
+  last_activity_at?: string | null;
   /** Masked reference ('…' + last 8 id chars) — never the full user id. */
   ref: string;
   /** Display name from profiles, or null when unavailable. */
@@ -408,6 +435,8 @@ export interface PartnerReferralEntry {
 
 /** Paginated referral list with a server-side total for the pager. */
 export interface PartnerReferralList {
+  /** All matching referrals, independent of selected status and pagination. */
+  status_counts?: ReferralStatusCounts;
   total: number;
   limit: number;
   offset: number;
@@ -431,7 +460,22 @@ export interface PartnerActivityEntry {
   at: string | null;
 }
 
+export interface PartnerReferralActivity {
+  recentReferrals: { referralId: string; name: string; date: string; status: ReferralStatus }[];
+  last7DaysReferrals: number;
+  dailyReferrals: { date: string; count: number }[];
+  window: { from: string; asOf: string; timeZone: 'UTC' };
+}
+
 export interface PartnerDashboardData {
+  /** Backend-owned analytics; absent only during a rolling schema upgrade. */
+  referralActivity?: PartnerReferralActivity;
+  /** Authoritative registered-referral aggregates; optional for rolling upgrades. */
+  totalReferrals?: number;
+  activeReferrals?: number;
+  pendingReferrals?: number;
+  convertedReferrals?: number;
+  referral_status_counts?: Partial<Record<ReferralStatus, number>>;
   partner: { referral_code: string; is_active: boolean; partner_since: string };
   kpis: { total_referrals: number; active_onboarding: number | null; completed: number | null };
   recent_activity: PartnerActivityEntry[];
@@ -466,8 +510,20 @@ export async function fetchMyPartnerReferrals(input: {
   search?: string;
   limit?: number;
   offset?: number;
+  joinedFrom?: string;
+  joinedBefore?: string;
+  conversion?: 'all' | 'converted' | 'not_converted';
+  sort?: 'newest' | 'oldest' | 'recently_active';
 }): Promise<PartnerReferralList> {
-  const { data, error } = await supabase.rpc('get_my_partner_referrals', {
+  const extended = !!(input.joinedFrom || input.joinedBefore || (input.conversion && input.conversion !== 'all') || (input.sort && input.sort !== 'newest'));
+  const args = {
+    p_status_filter: input.status ?? 'all', p_search: input.search ?? null,
+    p_limit: input.limit ?? 20, p_offset: input.offset ?? 0,
+  };
+  const { data, error } = extended ? await supabase.rpc('get_my_partner_referrals_filtered', {
+    ...args, p_joined_from: input.joinedFrom ?? null, p_joined_before: input.joinedBefore ?? null,
+    p_conversion: input.conversion ?? 'all', p_sort: input.sort ?? 'newest',
+  }) : await supabase.rpc('get_my_partner_referrals', {
     p_status_filter: input.status ?? 'all',
     p_search: input.search ?? null,
     p_limit: input.limit ?? 20,
@@ -494,7 +550,17 @@ export const PARTNER_SECTION_ERROR_MESSAGE = 'Could not load this section. Pleas
  */
 export function toSafePartnerSectionError(error: unknown): Error {
   const message = String((error as Error)?.message || error || '');
+  if (isPartnerSuspendedError(error)) return new Error('Your Growth Partner access is paused. Contact support to reactivate it.');
+  if (/network|failed to fetch|fetch failed|connection|timeout/i.test(message)) return new Error('Network error. Check your connection and try again.');
+  if (isSessionExpiredError(error) && !/sign in required/i.test(message)) return new Error('Your session expired. Please sign in again.');
   const safe = message.match(/Growth Partner access required|Sign in required|Unknown referral filter/i);
   if (safe) return new Error(safe[0]);
   return new Error(PARTNER_SECTION_ERROR_MESSAGE);
+}
+
+/** Read-only, own-partner detail lookup. Null also covers another partner's ID. */
+export async function fetchMyPartnerReferralDetail(referralId: string): Promise<PartnerReferralEntry | null> {
+  const { data, error } = await supabase.rpc('get_my_partner_referral_detail', { p_referral_id: referralId });
+  if (error) throw toSafePartnerSectionError(error);
+  return data as PartnerReferralEntry | null;
 }

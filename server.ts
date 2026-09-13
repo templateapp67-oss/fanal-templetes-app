@@ -1,3 +1,4 @@
+import { registerReferralAttributionRoutes } from './server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from './server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from './server/ownerDashboard.js';
 // Loads process env > .env > .env.development (see server/env.ts).
@@ -235,6 +236,7 @@ async function startServer() {
   // untouched. Mounted before the routes so OPTIONS preflights for
   // /api/* (incl. /api/website/save) get a 204 instead of a 404.
   app.use(nexoraCors);
+  registerReferralAttributionRoutes(app);
 
   // API Routes
   // Configuration + connectivity diagnostics. `?deep=1` also round-trips the
