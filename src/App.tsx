@@ -1,4 +1,11 @@
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
+import { normalizePath } from './lib/router';
+import {
+  decideOwnerEntry,
+  describeOwnerEntry,
+  readOwnerEntryFacts,
+  type OwnerEntryStage,
+} from './lib/ownerEntryRoute';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
@@ -670,6 +677,54 @@ export default function App() {
       window.removeEventListener('online', observer.retry);
     };
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // PHASE 3.1 — LOGIN ROUTING
+  //
+  // A signed-in owner lands on the step their own state implies, not on one
+  // hard-coded screen. Before this, every `setCurrentView` call in the app was
+  // a user click, so a returning owner who had already published a website saw
+  // the same marketing landing page as a first-time visitor.
+  //
+  //   • READ-ONLY: it calls get_my_owner_workspace() (STABLE), never
+  //     ensure_owner_workspace(). Logging in still provisions nothing.
+  //   • ONCE PER OWNER: keyed on user.id, so a token refresh or a re-render
+  //     cannot yank the owner off a screen they navigated to.
+  //   • ENTRY POINT ONLY: it acts only while the URL is '/'. A deep link
+  //     (/my-bookings, /partner/dashboard, /customer/booking/…) and any
+  //     deliberate navigation are left alone.
+  //   • NEVER GUESSES: an unreadable state resolves to 'landing' and the owner
+  //     stays exactly where they were.
+  // ---------------------------------------------------------------------------
+  const entryRoutedForRef = useRef<string | null>(null);
+  const ownerEntryStageRef = useRef<OwnerEntryStage | null>(null);
+  useEffect(() => {
+    if (isMockSupabase || !user?.id || authStatus !== 'ready') return;
+    if (entryRoutedForRef.current === user.id) return;
+    if (normalizePath(path) !== '/') return;
+    const ownerId = user.id;
+    // Claimed before the read so a second run cannot race the first.
+    entryRoutedForRef.current = ownerId;
+    let cancelled = false;
+    void readOwnerEntryFacts(supabase as any).then((facts) => {
+      if (cancelled || entryRoutedForRef.current !== ownerId) return;
+      // Every rule about when the owner may be moved lives in
+      // decideOwnerEntry, so it is testable without mounting this component.
+      const decision = decideOwnerEntry({ path, alreadyRouted: false, facts });
+      if (decision.stage) ownerEntryStageRef.current = decision.stage;
+      console.info(
+        '[Entry] %s -> %s',
+        describeOwnerEntry(decision.stage ?? 'unknown', facts),
+        decision.skip ?? decision.view
+      );
+      if (!decision.view) return;
+      if (decision.wizardStep !== null) setWizardStartingStep(decision.wizardStep);
+      setCurrentView(decision.view);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, authStatus, path, setCurrentView]);
 
   useEffect(() => {
     if (isMockSupabase) return;
@@ -1445,6 +1500,19 @@ export default function App() {
   };
 
   const handleBuildWebsiteClick = () => {
+    // The backend-derived stage wins when it is known. ONBOARDING_COMPLETED_KEY
+    // is per-device localStorage, so on a new phone it says "not completed" for
+    // an owner who published last week — the stage read at login does not.
+    const stage = ownerEntryStageRef.current;
+    if (stage === 'published') {
+      setCurrentView('preview');
+      return;
+    }
+    if (stage === 'template-selected' || stage === 'editor-started') {
+      setWizardStartingStep(2);
+      setCurrentView('wizard');
+      return;
+    }
     const wizardCompleted = localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true';
     if (wizardCompleted) {
       setCurrentView('preview');

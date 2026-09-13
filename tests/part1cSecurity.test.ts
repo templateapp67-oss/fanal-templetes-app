@@ -586,10 +586,22 @@ test('Part1C-C13: a production bundle can never fabricate or restore a session',
   // The two client sites that could invent or resurrect a session must both be
   // gated on allowMockAuth, never on isMockSupabase alone.
   const authModal = read('src/components/AuthModal.tsx');
-  assert.match(
-    authModal,
-    /if \(allowMockAuth\) \{\s*\n\s*setTimeout\(\(\) => \{\s*\n\s*const mockUser = \{\s*\n\s*id: 'mock-user-123'/,
-    'AuthModal must gate the fabricated user on allowMockAuth'
+  // Pinned by POSITION rather than by the surrounding syntax: the fabrication
+  // must sit inside the allowMockAuth branch, and the refusal branch must come
+  // first so a production bundle never reaches it. (An earlier version of this
+  // assertion matched the literal setTimeout wrapper and broke when the delay
+  // became awaitable — the invariant was unchanged, the spelling was not.)
+  const refusalAt = authModal.indexOf('if (isMockSupabase && !allowMockAuth) {');
+  const gateAt = authModal.indexOf('if (allowMockAuth) {');
+  const mockUserAt = authModal.indexOf("id: 'mock-user-123'");
+  // Positive control: if the marker ever disappears the three comparisons below
+  // would all pass vacuously.
+  assert.ok(refusalAt > -1, 'AuthModal still refuses when mock auth is unavailable');
+  assert.ok(gateAt > -1, 'AuthModal still has the allowMockAuth gate');
+  assert.ok(mockUserAt > -1, "the fabricated 'mock-user-123' is still present to be gated");
+  assert.ok(
+    refusalAt < gateAt && gateAt < mockUserAt,
+    `AuthModal must refuse before it fabricates: refusal@${refusalAt} gate@${gateAt} mockUser@${mockUserAt}`
   );
   assert.match(
     authModal,

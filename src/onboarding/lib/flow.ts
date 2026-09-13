@@ -207,26 +207,49 @@ export function toSafeAuthError(
 ): OnboardingError {
   if (error instanceof OnboardingError) return error;
   const message = messageOf(error);
-  if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) return new OnboardingError('unknown', 'Your account is suspended. Contact support for help.');
-  if (/invalid login credentials|invalid email or password/i.test(message)) {
+  // GoTrue answers with BOTH `error` ("email_not_confirmed",
+  // "user_already_exists") and `error_description` ("Email not confirmed",
+  // "User already registered"). The JS client prefers the description, but
+  // when it is absent the code form is what reaches us — and then a matcher
+  // written against the spaced spelling silently falls through to the generic
+  // message. Match both, so the copy an owner sees does not depend on which
+  // half of the response arrived.
+  const text = `${message} ${message.replace(/_/g, ' ')}`;
+  if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(text)) return new OnboardingError('unknown', 'Your account is suspended. Contact support for help.');
+  // An expired or revoked token is not a login failure — the owner did not do
+  // anything wrong, and "Login failed. Please try again." sends them back to a
+  // form that will fail the same way. GoTrue words this several ways
+  // ("Invalid Refresh Token", "Sign in required", "Token is expired"), and the
+  // gateway/`code` forms appear when the JS client surfaces `error` rather
+  // than `error_description`.
+  if (
+    // Spaced spellings only — `text` already folds underscores, so the code
+    // forms ('refresh_token_not_found', 'token_expired', 'invalid_token')
+    // match here too, and no token-looking identifier appears in this file.
+    /invalid refresh token|refresh token not found|session not found|token expired|token is expired|jwt expired|invalid token|sign in required|session expired/i.test(text) ||
+    (error as {code?: string})?.code === 'session_expired'
+  ) {
+    return new OnboardingError('session', 'Your session expired. Please sign in again.');
+  }
+  if (/invalid login credentials|invalid email or password/i.test(text)) {
     return new OnboardingError('invalid-credentials', 'Invalid email or password. Please try again.');
   }
-  if (/email not confirmed/i.test(message)) {
+  if (/email not confirmed/i.test(text)) {
     return new OnboardingError('email-not-confirmed', 'Please verify your email, then log in.');
   }
-  if (/user already registered|already exists|already been registered/i.test(message)) {
+  if (/user already registered|already exists|already been registered/i.test(text)) {
     return new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
   }
-  if (/password.*(too long|maximum length|exceed)/i.test(message)) {
+  if (/password.*(too long|maximum length|exceed)/i.test(text)) {
     return new OnboardingError('validation', `Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
   }
-  if (/password.*(short|weak|at least 6|6 characters)/i.test(message)) {
+  if (/password.*(short|weak|at least 6|6 characters)/i.test(text)) {
     return new OnboardingError('validation', `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
-  if (/rate limit|too many|over request|for security purposes|only request this after/i.test(message)) {
+  if (/rate limit|too many|over request|for security purposes|only request this after/i.test(text)) {
     return new OnboardingError('unknown', 'Too many attempts. Please wait a moment and try again.');
   }
-  if (/failed to fetch|network|fetch failed|connection/i.test(message)) {
+  if (/failed to fetch|network|fetch failed|connection/i.test(text)) {
     return new OnboardingError('network', 'Network error. Check your connection and try again.');
   }
   const fallback =

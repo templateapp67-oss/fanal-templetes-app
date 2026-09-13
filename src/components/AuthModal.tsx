@@ -1,7 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, allowMockAuth, isMockSupabase } from '../lib/supabaseClient';
 import { setStoredAuthenticatedProfile } from '../lib/salonStore';
+import {
+  createSingleFlight,
+  MAX_PASSWORD_LENGTH,
+  toSafeAuthError,
+} from '../onboarding/lib/flow';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -35,14 +40,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  // `loading` is React state, so two submit events landing in the same tick
+  // both read `loading === false` before the re-render — a double click fires
+  // two auth requests and burns two rate-limit slots. This ref is the real
+  // guard; the disabled button is only the visible half.
+  const authFlight = useRef(createSingleFlight());
   const [salonName, setSalonName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [city, setCity] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Ref-guarded single flight — see authFlight above.
+    await authFlight.current.run(async () => {
     setLoading(true);
     setError(null);
+
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      // GoTrue/bcrypt truncate above 72 bytes, so a longer password would
+      // silently become a different one rather than fail here.
+      setError(`Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
+      setLoading(false);
+      return;
+    }
 
     // Offline-preview mode ONLY. This fabricates a session, so it is gated on
     // allowMockAuth (never a production bundle) rather than isMockSupabase --
@@ -57,7 +77,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     if (allowMockAuth) {
-      setTimeout(() => {
+      // Awaited (not fire-and-forget) so the single-flight guard is held for
+      // the whole fabrication window and a double click cannot queue two.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      {
         const mockUser = {
           id: 'mock-user-123',
           email: email,
@@ -80,7 +103,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onSuccess(mockUser);
         onClose();
         setLoading(false);
-      }, 1000);
+      }
       return;
     }
 
@@ -101,8 +124,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         });
 
         if (signUpError) throw signUpError;
-        
+
         if (data.user) {
+          // Supabase may require email confirmation — and with confirmation on,
+          // signUp returns a user object with NO session for an address that
+          // already exists (GoTrue deliberately does not say which, to avoid
+          // enumerating accounts). So a user object is NOT proof this browser
+          // owns the account. Every write below waits on `data.session`;
+          // without one this form is unauthenticated and must not touch the
+          // stored profile or `profiles`, or an existing owner's details could
+          // be overwritten from the sign-up form.
+          if (!data.session) {
+            setError('Account created. Please verify your email, then log in to continue booking.');
+            return;
+          }
+
           if (!isCustomer) {
             setStoredAuthenticatedProfile({
               salonName: salonName || (data.user.user_metadata?.salon_name as string),
@@ -125,14 +161,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               });
 
             if (profileError) console.error('Profile creation error:', profileError);
-          }
-
-          // Supabase may require email confirmation. A user object without a
-          // session is not enough to authorize a booking, so keep the dialog
-          // open and ask the customer to verify before trying again.
-          if (!data.session) {
-            setError('Account created. Please verify your email, then log in to continue booking.');
-            return;
           }
 
           onSuccess(data.user);
@@ -161,10 +189,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during authentication');
+      // Mapped, never raw: GoTrue and Postgres text is not shown to the
+      // customer. Same contract as the onboarding funnel's screens.
+      setError(toSafeAuthError(err, mode === 'signup' ? 'signup' : 'login').message);
     } finally {
       setLoading(false);
     }
+    });
   };
 
   return (
