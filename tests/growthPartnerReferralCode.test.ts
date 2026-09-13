@@ -244,8 +244,8 @@ test('5. the rendered card carries a Copy button bound to the displayed code', (
   const html = render(React.createElement(ReferralCodeCard, { code: CODE_A }));
   assert.match(html, new RegExp(CODE_A));
   assert.match(html, /<code[^>]*>ALPHA01<\/code>/);
-  assert.match(html, />Copy<\/button>/);
-  // Initial state is "Copy", not "Copied".
+  assert.match(html, />Copy Code<\/button>/);
+  // Initial state is "Copy Code", not "Copied".
   assert.doesNotMatch(html, />Copied</);
   // The code is read-only (display only — no input).
   assert.doesNotMatch(html, /<input/);
@@ -260,7 +260,7 @@ test('6. a missing code shows the safe empty state and never invents a code', ()
     const html = render(React.createElement(ReferralCodeCard, { code: missing as any }));
     assert.match(html, new RegExp(GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE));
     assert.doesNotMatch(html, /<code/);
-    assert.doesNotMatch(html, />Copy<\/button>/);
+    assert.doesNotMatch(html, />Copy Code<\/button>/);
   }
 });
 

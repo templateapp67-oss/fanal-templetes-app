@@ -27,10 +27,8 @@ export interface GrowthPartnerApplicationQueueRow {
   reviewed_at: string | null;
 }
 
-function adminError(context: string, error: unknown): Error {
-  const message =
-    (error as { message?: unknown })?.message ?? (typeof error === 'string' ? error : '');
-  return new Error(message ? `${context}: ${message}` : context);
+function adminError(context: string, _error: unknown): Error {
+  return new Error(`${context}. Please retry.`);
 }
 
 /**

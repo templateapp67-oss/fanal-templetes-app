@@ -1,3 +1,4 @@
+import { toSafeAuthError } from '../lib/flow';
 import React, { useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { sendPasswordReset, type OnboardingSupabaseClient } from '../lib/auth';
@@ -49,7 +50,7 @@ export const ForgotPasswordScreen: React.FC<{
             setFormError('');
             void sendPasswordReset(client as OnboardingSupabaseClient, email).then(
               () => setSent(true),
-              (error: Error) => setFormError(error?.message || 'Password reset failed. Please try again.')
+              (error: Error) => setFormError(toSafeAuthError(error, 'reset').message)
             ).finally(() => setBusy(false));
           }}
         >

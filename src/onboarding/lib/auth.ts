@@ -70,12 +70,15 @@ function firstValidationMessage(errors: Record<string, string | undefined>): str
  */
 export async function signUpWithEmail(
   client: OnboardingSupabaseClient = supabase as unknown as OnboardingSupabaseClient,
-  input: { email: string; password: string; confirm: string }
+  input: { email: string; password: string; confirm: string; attributionToken?: string }
 ): Promise<{ viewer: OnboardingViewer | null; confirmationRequired: boolean }> {
   const validation = validateSignup(input);
   if (!validation.ok) throw new OnboardingError('validation', firstValidationMessage(validation.errors));
   const email = input.email.trim();
-  const { data, error } = await client.auth.signUp({ email, password: input.password });
+  const { data, error } = await client.auth.signUp({
+    email, password: input.password,
+    ...(input.attributionToken ? { options: { data: { growth_referral_token: input.attributionToken } } } : {}),
+  });
   if (error) throw toSafeAuthError(error, 'signup');
   if (!data?.user) throw toSafeAuthError(new Error('signup failed'), 'signup');
   return { viewer: viewerFromUser(data.user), confirmationRequired: !data.session };

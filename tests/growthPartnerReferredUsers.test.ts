@@ -234,7 +234,11 @@ test('4. no partner/user id can be passed by URL, query or body to reach another
     assert.doesNotMatch(gpPath, /search|URLSearchParams|query/i);
     // The page/component never read query params for authorization either.
     const pageSrc = stripComments(readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8'));
-    assert.doesNotMatch(pageSrc, /partner_id|user_id|URLSearchParams|searchParams/);
+    assert.doesNotMatch(pageSrc, /URLSearchParams|searchParams/);
+    // Returned profile ownership is checked locally; it is not a caller-supplied
+    // authorization identity. The RPC payload assertion above guards that seam.
+    assert.match(pageSrc, /saved\.partner_id === userId/);
+    assert.doesNotMatch(pageSrc, /\.rpc\([^;]*(?:p_partner_id|p_user_id)/);
   } finally {
     await db.close();
   }

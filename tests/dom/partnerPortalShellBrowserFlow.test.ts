@@ -8,7 +8,7 @@
 //
 //   • /partner/dashboard boots through the real gate (get_my_growth_partner)
 //     and renders the shell: sidebar + header + KPI content from the backend;
-//   • sidebar navigation drives the SPA (My Referral Code → /partner/referral-code,
+//   • sidebar navigation drives the SPA (My Referral Code → /partner/referral,
 //     Referred Users, Referral Status → KPI chips + list RPC) and the URL map
 //     matches the shell's menu;
 //   • the mobile drawer works: hamburger opens, backdrop + Escape close, a nav
@@ -227,7 +227,7 @@ test('the dashboard boots through the real gate and renders the shell with backe
 
     // Backend KPIs (get_my_partner_dashboard) surface in the content.
     await waitFor(() => !!byText('*', 'Total Referrals'), 'the dashboard KPIs');
-    assert.ok(byText('*', 'Completed Customers'), 'server counts render');
+    assert.ok(byText('*', 'Converted Referrals'), 'server counts render');
 
     // The menu: exactly the required live entries, active one marked.
     for (const [key, label] of [
@@ -264,7 +264,7 @@ test('sidebar navigation drives the SPA: My Referral Code shows the code and the
     await click(byData('partner-nav', 'referral-code')[0], 'the My Referral Code nav item');
     assert.deepEqual(
       app.navigated.slice(-1),
-      ['/partner/referral-code'],
+      ['/partner/referral'],
       'the nav item navigates to the canonical section URL'
     );
     // The app-level router would re-render at that URL — simulate it.
@@ -276,7 +276,7 @@ test('sidebar navigation drives the SPA: My Referral Code shows the code and the
     assert.ok(byText('h1', 'My Referral Code'), 'the header follows the section');
     const shareInput = document.querySelector('input[aria-label="Your referral link"]') as HTMLInputElement | null;
     assert.ok(shareInput, 'the share link input renders');
-    assert.equal(shareInput!.value, 'http://localhost:3000/onboarding/referral?ref=ALPHA01');
+    assert.equal(shareInput!.value, 'http://localhost:3000/signup?ref=ALPHA01');
 
     // Referred Users renders the real roll (rpc get_my_partner_referrals).
     await click(byData('partner-nav', 'referred-users')[0], 'the Referred Users nav item');
@@ -288,7 +288,7 @@ test('sidebar navigation drives the SPA: My Referral Code shows the code and the
     await click(byData('partner-nav', 'referral-status')[0], 'the Referral Status nav item');
     await app.rerender();
     await waitFor(() => !!byText('h2', 'What each status means'), 'the referral status page');
-    assert.ok(byText('*', 'In Progress'), 'the KPI chip renders');
+    assert.ok(byText('*', 'Active'), 'the KPI chip renders');
     assert.ok(byText('*', 'Search by customer name') || !!document.querySelector('input[type="search"]'), 'the search box renders');
   } finally {
     await app.unmount();
@@ -309,13 +309,24 @@ test('the mobile drawer opens via the hamburger, closes via backdrop and Escape,
     assert.equal(document.querySelector('[data-partner-nav-backdrop]'), null, 'no backdrop while closed');
 
     // Open.
+    toggle()!.focus();
     await click(toggle(), 'the hamburger');
     assert.equal(toggle()!.getAttribute('aria-expanded'), 'true');
     assert.ok(drawer()!.className.includes('translate-x-0'), 'the drawer slides in');
     assert.ok(document.querySelector('[data-partner-nav-backdrop]'), 'the backdrop appears');
 
+    assert.equal(document.activeElement, drawer(), 'focus moves into the drawer');
+    assert.equal(drawer()!.getAttribute('aria-modal'), 'true');
+    const focusable = [...drawer()!.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex="0"]')];
+    focusable.at(-1)!.focus();
+    await act(async () => { window.dispatchEvent(new (globalThis as any).KeyboardEvent('keydown', {key:'Tab',bubbles:true,cancelable:true})); });
+    assert.equal(document.activeElement, focusable[0], 'Tab wraps inside mobile navigation');
+    await act(async () => { window.dispatchEvent(new (globalThis as any).KeyboardEvent('keydown', {key:'Tab',shiftKey:true,bubbles:true,cancelable:true})); });
+    assert.equal(document.activeElement, focusable.at(-1), 'Shift+Tab wraps backwards');
+
     // Escape closes.
     await pressEscape();
+    assert.equal(document.activeElement, toggle(), 'closing restores hamburger focus');
     assert.equal(toggle()!.getAttribute('aria-expanded'), 'false');
     assert.ok(drawer()!.className.includes('-translate-x-full'));
     assert.equal(document.querySelector('[data-partner-nav-backdrop]'), null, 'backdrop removed on close');

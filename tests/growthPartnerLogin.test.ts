@@ -495,7 +495,8 @@ test('5. an inactive partner is denied with the shared paused copy, never partne
   const html = render(React.createElement(GrowthPartnerLoginInactive, { onBack: () => {} }));
   assert.match(html, new RegExp(GROWTH_PARTNER_INACTIVE_TITLE));
   assert.match(html, new RegExp(GROWTH_PARTNER_INACTIVE_BODY));
-  assert.match(html, /safe/);
+  assert.match(html, /currently suspended/);
+  assert.match(html, /contact support/);
   assert.doesNotMatch(html, /Your referral code/);
   assert.doesNotMatch(html, /ALPHA01/);
 });

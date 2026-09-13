@@ -1,3 +1,4 @@
+import { safePartnerErrorMessage } from '../lib/partnerUiErrors';
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -775,7 +776,7 @@ export const PartnerPortalLogin: React.FC<{
   useEffect(() => {
     const subscribe = sb.auth.onAuthStateChange;
     if (!subscribe) return;
-    const { data } = subscribe((event: string, session: any) => {
+    const { data } = subscribe.call(sb.auth, (event: string, session: any) => {
       if (event === 'PASSWORD_RECOVERY') {
         const viewer = viewerFromSessionUser(session?.user);
         if (viewer) {
@@ -874,7 +875,7 @@ export const PartnerPortalLogin: React.FC<{
       } catch (error) {
         if (!cancelled) {
           setQueue([]);
-          setQueueError(error instanceof Error ? error.message : 'Could not load the application queue');
+          setQueueError(safePartnerErrorMessage(error, 'Could not load the application queue'));
         }
       }
     })();
@@ -897,7 +898,7 @@ export const PartnerPortalLogin: React.FC<{
         setAttempt((value) => value + 1);
       })
       .catch((error: unknown) => {
-        setQueueError(error instanceof Error ? error.message : 'Could not update that application');
+        setQueueError(safePartnerErrorMessage(error, 'Could not update that application'));
       })
       .finally(() => setQueueBusyId(null));
   };
@@ -945,7 +946,7 @@ export const PartnerPortalLogin: React.FC<{
       },
       (error: Error) => {
         revertLifetime();
-        setFormError(error?.message || 'Login failed. Please try again.');
+        setFormError(safePartnerErrorMessage(error, 'Login failed. Please try again.'));
       }
     ).finally(() => setBusy(false));
   };
@@ -962,7 +963,7 @@ export const PartnerPortalLogin: React.FC<{
     setForgotBusy(true);
     void sendPartnerPasswordReset(sb, forgotEmail.trim()).then(
       () => setForgotSuccess(PARTNER_RESET_REQUESTED_MESSAGE),
-      (error: Error) => setForgotError(error?.message || 'Password reset failed. Please try again.')
+      (error: Error) => setForgotError(safePartnerErrorMessage(error, 'Password reset failed. Please try again.'))
     ).finally(() => setForgotBusy(false));
   };
 
@@ -986,7 +987,7 @@ export const PartnerPortalLogin: React.FC<{
         setNewPassword('');
         setNewPasswordConfirm('');
       },
-      (error: Error) => setResetError(error?.message || 'Could not update the password. Please try again.')
+      (error: Error) => setResetError(safePartnerErrorMessage(error, 'Could not update the password. Please try again.'))
     ).finally(() => setResetBusy(false));
   };
 
@@ -1019,7 +1020,7 @@ export const PartnerPortalLogin: React.FC<{
             : 'Account created. Verify your email, then return here to sign in and submit your application.'
         );
       },
-      (error: Error) => setFormError(error.message || 'Signup failed. Please try again.')
+      (error: Error) => setFormError(safePartnerErrorMessage(error, 'Signup failed. Please try again.'))
     ).finally(() => setBusy(false));
   };
 

@@ -145,7 +145,9 @@ function messageOf(error: unknown): string {
  * the generic message — raw database/driver text is never surfaced.
  */
 export function toSafeAuthError(error: unknown, action: 'signup' | 'login' | 'reset' = 'login'): OnboardingError {
+  if (error instanceof OnboardingError) return error;
   const message = messageOf(error);
+  if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) return new OnboardingError('unknown', 'Your account is suspended. Contact support for help.');
   if (/invalid login credentials|invalid email or password/i.test(message)) {
     return new OnboardingError('invalid-credentials', 'Invalid email or password. Please try again.');
   }
@@ -179,7 +181,10 @@ export function toSafeAuthError(error: unknown, action: 'signup' | 'login' | 're
  * and routes to status, since the relationship already exists server-side.
  */
 export function toSafeReferralError(error: unknown): OnboardingError {
+  if (error instanceof OnboardingError) return error;
+  if ((error as {status?: number})?.status === 401 || (error as {code?: string})?.code === 'PGRST301') return new OnboardingError('session', 'Your session expired. Please sign in again.');
   const message = messageOf(error);
+  if (/referral attribution could not be checked/i.test(message)) return new OnboardingError('unknown', 'Referral attribution could not be checked. Please retry.');
   if (/already linked to a Growth Partner/i.test(message)) {
     return new OnboardingError('already-linked', 'This account is already linked. Loading your status…');
   }

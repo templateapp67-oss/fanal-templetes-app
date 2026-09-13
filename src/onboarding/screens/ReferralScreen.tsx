@@ -1,3 +1,4 @@
+import { toSafeReferralError } from '../lib/flow';
 import React, { useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton } from './Shell';
 import { linkReferralCode, type OnboardingSupabaseClient } from '../lib/auth';
@@ -84,7 +85,7 @@ export const ReferralScreen: React.FC<{
           onLinked?.();
           return;
         }
-        setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+        setError(toSafeReferralError(err).message);
       })
       .finally(() => setBusy(false));
   };

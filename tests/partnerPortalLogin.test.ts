@@ -125,8 +125,8 @@ test('the partner portal routes live under /partner and never collide with the l
   assert.equal(matchPartnerPortalRoute('/partner/customers'), 'referral-status');
   assert.equal(matchPartnerPortalRoute('/partner/nonsense'), 'dashboard', 'unknown never blanks');
   assert.equal(partnerPortalPath('dashboard'), '/partner/dashboard');
-  assert.equal(partnerPortalPath('referral-code'), '/partner/referral-code');
-  assert.equal(partnerPortalPath('referred-users'), '/partner/referred-users');
+  assert.equal(partnerPortalPath('referral-code'), '/partner/referral');
+  assert.equal(partnerPortalPath('referred-users'), '/partner/referrals');
   assert.equal(partnerPortalPath('referral-status'), '/partner/referral-status');
   assert.equal(partnerPortalPath('profile'), '/partner/profile');
 });

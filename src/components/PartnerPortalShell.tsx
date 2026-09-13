@@ -26,7 +26,7 @@ import {
 } from '../lib/router';
 import { PARTNER_ACTIVITY_LABELS, type PartnerActivityEntry } from '../lib/growthPartner';
 import { PartnerBrandMark } from './PartnerPortalLogin';
-import { formatPartnerDate } from './GrowthPartnerSections';
+import { formatPartnerDate } from '../lib/partnerPresentation';
 
 /**
  * Partner portal shell (Part 2.2) — the professional dashboard frame for
@@ -414,6 +414,15 @@ export const PartnerPortalShell: React.FC<{
   useEffect(() => {
     if (!navOpen && !menusOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      if (navOpen && event.key === 'Tab') {
+        const nodes = [...(drawerRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex="0"]') ?? [])];
+        const first = nodes[0], last = nodes.at(-1);
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === drawerRef.current)) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first?.focus();
+        }
+      }
       if (event.key === 'Escape') {
         setNavOpen(false);
         setOpenMenu(null);
@@ -431,8 +440,20 @@ export const PartnerPortalShell: React.FC<{
 
   // Move focus into the drawer when it opens so keyboard/AT users land inside.
   useEffect(() => {
-    if (navOpen) drawerRef.current?.focus();
+    if (!navOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    drawerRef.current?.focus();
+    return () => { if (previousFocus?.isConnected) previousFocus.focus(); };
   }, [navOpen]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeOnDesktop = () => { if (desktop.matches) setNavOpen(false); };
+    closeOnDesktop();
+    desktop.addEventListener?.('change', closeOnDesktop);
+    return () => desktop.removeEventListener?.('change', closeOnDesktop);
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -469,8 +490,10 @@ export const PartnerPortalShell: React.FC<{
         tabIndex={-1}
         id="partner-portal-drawer"
         data-partner-drawer
+        role="dialog"
+        aria-modal={navOpen || undefined}
         aria-label="Growth Partner navigation"
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-white shadow-xl outline-none transition-[transform,visibility] duration-200 lg:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-white shadow-xl outline-none transition-[transform,visibility] duration-200 motion-reduce:transition-none lg:hidden ${
           navOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'
         }`}
       >
@@ -502,7 +525,7 @@ export const PartnerPortalShell: React.FC<{
       </div>
 
       {/* Content column (offset by the sidebar width on lg+). */}
-      <div className="lg:pl-64">
+      <div className="min-w-0 lg:pl-64" inert={navOpen}>
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
           {/* Click-catcher behind an open dropdown. It sits below the header
               (z-20) so the panels — children of the z-30 header — stay
@@ -562,7 +585,7 @@ export const PartnerPortalShell: React.FC<{
                 {openMenu === 'notifications' ? (
                   <div
                     id="partner-notifications-panel"
-                    className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[92vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+                    className="fixed right-4 top-16 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] sm:absolute sm:right-0 sm:top-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
                   >
                     <PartnerNotificationsPanel
                       entries={notifications}
@@ -590,7 +613,7 @@ export const PartnerPortalShell: React.FC<{
                   >
                     {displayName.slice(0, 1).toUpperCase()}
                   </span>
-                  <span className="hidden min-w-0 leading-tight sm:block">
+                  <span className="hidden min-w-0 max-w-40 leading-tight sm:block">
                     <span className="block truncate text-sm font-bold text-slate-900">
                       {displayName}
                     </span>
@@ -617,7 +640,7 @@ export const PartnerPortalShell: React.FC<{
                     id="partner-profile-menu"
                     role="menu"
                     aria-label="Profile menu"
-                    className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[92vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+                    className="fixed right-4 top-16 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] sm:absolute sm:right-0 sm:top-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
                   >
                     <PartnerProfileMenu
                       displayName={displayName}
@@ -649,7 +672,7 @@ export const PartnerPortalShell: React.FC<{
             </div>
           </div>
         </header>
-        <main id="partner-portal-main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+        <main id="partner-portal-main" className="mx-auto min-w-0 max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
           {children}
         </main>
       </div>

@@ -333,3 +333,621 @@ profile menu, notifications panel, `shortPartnerId`, and the click flows).
 * There is **no admin UI** for reviewing applications — review is SQL/service
   role by design (`review_growth_partner_application` has no EXECUTE grant for
   `authenticated`).
+
+### Public partner referral codes (Sections 5–6)
+
+Apply `supabase/migrations/20260921_public_partner_referral_codes.sql` after the
+20260920 migration. The local gateway includes it automatically. Existing codes
+stay unchanged; new approvals receive a random `NEXORA-` code independent of the
+partner's database ID. Admin-only provisioning accepts explicit codes such as
+`NEXORA-RAHUL25`. Validation trims and uppercases input, and database constraints
+prevent duplicate ownership. Provisioning is serialized to preserve codes across
+simultaneous approvals. Existing RLS and admin-only code-change permissions remain.
+
+The canonical page is `/partner/referral` (`/partner/referral-code` still works).
+It shares `/signup?ref=CODE` on the current origin, with copy, WhatsApp, email and
+native sharing. Unsupported or failed sharing falls back to copying; cancelling
+native sharing does not copy. Clipboard failures offer manual-copy guidance.
+
+### Referral link attribution (Section 7)
+
+Apply `supabase/migrations/20260922_referral_link_attribution.sql` after 20260921,
+then deploy both API and frontend. The local gateway applies the same migration.
+No additional signing secret or service-role key is needed for attribution.
+
+- Opening `/signup?ref=CODE` calls the same-origin `POST /api/referral-attribution`
+  before signup is rendered or the query is removed. The database normalizes and
+  validates the active partner, creates a random one-use capability and stores
+  its hash in the RLS-locked `growth_referral_attributions` table.
+- The cookie is host-only, HttpOnly, SameSite=Lax, Path=/, and Secure on HTTPS and
+  in production (plain HTTP is supported only for local development). The first
+  valid referral wins for **seven days**, without extending expiry on navigation.
+  An invalid later link does not replace a still-valid first attribution.
+- Signup preparation uses `GET /api/referral-attribution` to recover the cookie
+  capability, not a URL/localStorage value. Cross-origin requests are rejected;
+  responses are not cached. API/database failures show a retry error rather than
+  silently submitting a signup with missing attribution.
+- The capability is included in Supabase signup metadata. An `AFTER INSERT` trigger
+  on `auth.users` locks and consumes it in the same transaction as account
+  creation. Thus attribution is saved even when email confirmation is required,
+  before a browser has an authenticated session. A failed signup transaction
+  rolls back consumption. User-supplied partner IDs/codes are never trusted.
+- Expired, reused, forged, inactive-partner or rotated-code capabilities cannot
+  create a relationship. Metadata updates cannot change an existing relationship.
+  Accounts created without valid attribution retain the existing manual referral
+  flow. This mechanism applies to new accounts, not login to existing accounts.
+- Permanent storage reuses `growth_onboarding`: `user_id` = `referred_user_id`,
+  `growth_partner_id` = `partner_id`, `referral_code`, and `linked_at` = `referred_at`.
+  The RLS-respecting `partner_referral_attribution` view exposes those exact four
+  field names. Existing referral dashboards and handoff flows use the same data.
+
+Maintenance: periodically remove temporary records whose `expires_at < now()`
+using a trusted database maintenance job. This never removes permanent referral
+relationships. Configure normal signup/public-RPC abuse protections and request
+rate limits at the deployment/Supabase gateway; database expiry is authoritative.
+
+### Fraud safeguards and private referred-user table (Sections 8–10)
+
+Apply `supabase/migrations/20260923_referral_fraud_privacy.sql` after 20260922.
+Deploy the frontend after the migration; the local gateway includes it as well.
+
+- The existing user primary key and atomic linking/one-use signup capability
+  prevent duplicate referrals and completed-signup replays. A database CHECK
+  additionally rejects self-referrals. Existing self-referral rows, if any, make
+  migration validation fail rather than being silently reassigned.
+- A database trigger freezes the referred account, partner, referral code and
+  referral timestamp once linked. Ordinary milestone updates remain allowed
+  through the existing authorized RPCs. Clients have no direct write grants.
+  New attribution must match an active partner's database referral code; normal
+  frontend requests never choose a partner ID. The cookie API explicitly rejects
+  unexpected fields such as `partner_id`.
+- Exceptional corrections use
+  `admin_correct_growth_referral(p_referred_user_id, p_code, p_reason)` from a
+  **trusted administrative backend only**. The function requires both EXECUTE
+  access (not granted to anon/authenticated) and the existing `private.is_admin()`
+  check. It resolves the new partner by code, requires an audit reason, preserves
+  the signup referral timestamp and milestones, and writes a private audit row.
+  No administrative correction UI or client-writable admin flag is added.
+- `/partner/referrals` is now the canonical Referred Users link.
+  `/partner/referred-users` and `/growth-partner/referrals` still work. The table
+  supports horizontal scrolling on narrow screens, pagination, refresh and
+  loading/error/empty states. Columns: User, Email / masked contact, Joined Date,
+  Referral Code, Status, Conversion Status, Last Activity.
+- `get_my_partner_referrals` still derives identity **only from auth.uid()** and
+  rejects anonymous, non-partner and paused accounts. All filters, search and
+  pagination remain constrained to the caller's referrals. It returns an explicit
+  field allowlist; masking is done in SQL, not merely hidden in the UI.
+- Contact is masked email (e.g. `ra***@gmail.com`), or unavailable. Joined Date is
+  account creation; Last Activity is the latest referral/website milestone, not
+  authentication logs. Converted means **website/template completed**, not a sale
+  or payment. Internal IDs do not dominate the table, and no full auth records,
+  credentials, tokens, payment information, administrative audit records or other
+  partners' referrals are returned.
+
+Tests: `tests/referralFraudPrivacy.test.ts` runs the full local migration chain to
+verify self/repeat/completed-signup rejection, immutable ownership, audited admin
+correction, RLS isolation, masked payloads, pagination and the table contract.
+
+### Referral lifecycle and themed badges (Section 11)
+
+Apply `supabase/migrations/20260924_referral_lifecycle.sql` after 20260923 before
+releasing the updated portal. The local database includes the migration.
+
+Referral lifecycle is deliberately separate from the forward-only website
+onboarding state machine. Existing rows need no destructive status rewrite:
+
+| Referral status | Source | Shared semantic theme |
+| --- | --- | --- |
+| Pending | Registered/linked; website not started | Amber/yellow |
+| Active | `template_started` | Blue |
+| Converted | `template_completed` | Emerald/green |
+| Inactive | Explicit admin disposition | Slate/gray |
+| Cancelled | Explicit admin disposition | Slate/gray |
+| Rejected | Explicit admin disposition | Rose/red |
+
+`Clicked` and `Registered` have shared descriptors for future event surfaces.
+In v1 anonymous clicks remain temporary attribution records, not referred users;
+registered users appear as Pending. Inactivity is **not** guessed from elapsed
+time, and Converted continues to mean website completion, not a payment.
+
+The list RPC returns `referral_status` in addition to its legacy onboarding
+`status`. Filters, count queries and badges use the effective referral status.
+Old `in_progress`/`completed` filter keys remain compatible (Active/Converted).
+The Referral Status summary uses dedicated `referral_status_counts`; older
+website milestone KPI fields remain unchanged. Conversion Status in the referred
+users table still reports historical website completion, even if a referral is
+subsequently marked Inactive/Rejected.
+
+`admin_set_growth_referral_status(p_referred_user_id, p_status, p_reason)` is a
+trusted-backend-only operation, with both restricted EXECUTE permission and the
+existing `private.is_admin()` check. It accepts inactive/cancelled/rejected or
+NULL to resume the real milestone-derived lifecycle. A reason is mandatory;
+changes are recorded in the RLS-locked `growth_referral_status_audit` table.
+Partners cannot force conversion or set dispositions, and future website updates
+do not clear an admin disposition. Ownership and original referral date are
+never changed by this function.
+
+`src/lib/statusTheme.ts` centralizes the existing booking status palette, reused
+without changing booking colors. `src/lib/referralStatus.ts` owns referral labels,
+descriptions and theme-tone selection. All referral badges show text as well as
+color; unknown values render neutral “Unknown”, never a misleading success badge.
+
+### Counted status tabs on Referred Users (Section 12)
+
+Apply `supabase/migrations/20260925_referral_status_tabs.sql` after 20260924, then
+deploy the frontend. The local gateway applies it automatically.
+
+The primary Referred Users page (`/partner/referrals`) now includes **All,
+Pending, Active, Converted and Inactive** tabs, each with its database count.
+No separate page is needed. The existing detailed `/partner/referral-status`
+page remains available.
+
+`get_my_partner_referrals` now includes a `status_counts` object in the same
+snapshot as the selected rows and filtered `total`. Counts are scoped to the
+active partner from `auth.uid()`, respect name search when provided, and ignore
+the selected status and page offset/limit. All includes Cancelled and Rejected
+referrals too; those can still be viewed in All or the detailed status page.
+
+Tab selection re-queries the server and resets pagination to page one. Counts
+stay visible while switching tabs, loading another page or retrying a failed
+request; they are discarded when the viewer changes. Late responses cannot
+replace the currently selected tab. A missing count is shown as unavailable
+(`—`), not a fabricated zero. Zero-result tabs retain navigation and show a
+status-specific empty state. Tabs support Arrow Left/Right, Home and End keys,
+selected-state semantics, labelled panels and visible keyboard focus.
+
+Verification: `tests/referralStatusTabs.test.ts` covers real-database counts,
+filter/page independence, search, zero counts, refresh and partner isolation.
+`tests/dom/referralStatusTabsBrowserFlow.test.ts` exercises the real page's
+filter RPCs, pagination reset, keyboard controls, out-of-order responses and
+error/retry behavior.
+
+### Search, advanced filters and read-only details (Sections 13–14)
+
+Apply `supabase/migrations/20260926_referral_search_details.sql` after 20260925,
+then deploy the frontend. The local gateway includes the same migration.
+
+`/partner/referrals` now has an Apply/Clear search-and-filter form:
+
+- Case-insensitive literal substring search across **name, email and referral
+  code**. Email searching happens inside the database; returned contacts remain
+  masked. Search text is bounded to 254 characters; SQL/LIKE wildcard characters
+  are not interpolated into a query.
+- Existing status tabs plus Joined Date and Conversion Status (all / converted /
+  not converted). Today, Last 7 Days and Last 30 Days use local calendar days,
+  including today. Custom Range includes both chosen dates. The browser converts
+  local day boundaries to UTC; the database applies an inclusive start and
+  exclusive next-day boundary. Invalid/inverted ranges are rejected.
+- Newest and Oldest sort by **signup date**. Recently Active sorts by the latest
+  referral/website milestone, not private authentication activity. Every order
+  has a deterministic tie-breaker and pagination remains server-side.
+- Applying filters resets pagination. Counts reflect search/date/conversion
+  filters, but remain independent of the selected status and page. Clear filters
+  restores all dates, all conversions, newest-first and the All status tab.
+
+The new `get_my_partner_referrals_filtered` RPC implements these reads; the old
+four-argument `get_my_partner_referrals` delegates to it for compatibility. Both
+resolve the active partner solely from `auth.uid()`.
+
+Click a user's name for a **read-only details drawer**. It loads fresh data via
+`get_my_partner_referral_detail(p_referral_id)` using a random referral-record ID,
+not the account ID. The same generic unavailable result covers nonexistent and
+other partners' records. The drawer shows name, masked contact, referral/signup
+dates, current status, conversion status, last activity and code used. No status
+editing controls or partner write grants are added. Escape/backdrop/close dismiss
+it, keyboard focus is contained and restored, and failures have a retry action.
+
+The timeline uses recorded timestamps: Referral Clicked, Account Registered,
+Account Activated (website onboarding started), and Converted (website completed,
+not a payment). Missing events say “Not recorded”/“Not yet recorded”. New signup
+attribution copies its click timestamp into the permanent referral row; available
+older consumed-attribution timestamps are backfilled before temporary-record
+cleanup. Clicks already deleted before this migration cannot be reconstructed and
+are not fabricated. Status overrides and private administrator reasons are not
+presented as user activity.
+
+Tests: `tests/referralSearchDetails.test.ts` verifies filtering, ordering, date
+boundaries, pagination, masked payloads, durable click history and owner isolation.
+`tests/dom/referralSearchDetailsBrowserFlow.test.ts` exercises the actual form,
+server request parameters, drawer, timeline, no-edit contract, focus/escape and
+error/retry behavior.
+
+### Empty states and editable partner profile (Sections 15–16)
+
+Apply `supabase/migrations/20260927_growth_partner_profile.sql` after 20260926,
+then deploy the frontend. The local gateway includes this migration.
+
+The empty Referred Users page now shows “No referrals yet.” and “Start sharing
+your referral link to grow your network.” Its **Copy Referral Link** action uses
+the authenticated partner's saved code and the current app origin. Clipboard
+failures expose the link for manual copying instead of reporting success.
+Search/filter misses show “No matching referrals found.” and **Clear Filters**,
+which resets search/date/conversion/sort, status, pagination and the form controls.
+
+`/partner/profile` now loads fresh data from `get_my_growth_partner_profile`:
+name, Auth email, contact phone, partner ID, referral code, account status, partner
+joined date and profile photo. Role and approval status are read-only. The active
+partner gate remains enforced for both read and save operations.
+
+`save_my_growth_partner_profile(p_patch)` accepts **only** full_name, phone and
+photo_path. It derives identity from `auth.uid()` and never writes the partner
+record or authentication email. Unknown/protected keys are rejected atomically,
+not silently ignored. Name and phone use the existing `profiles` row; phone is a
+contact number, not a change to any phone-authentication credential. Displayed
+partner authority is derived from the approved partner row, never form data or
+user-editable auth metadata.
+
+Photo upload reuses `compressPartnerAvatar` (JPG/PNG/WebP, 5 MB maximum, 500px)
+and the existing public `partner-avatars` bucket. `profiles.partner_avatar_path`
+stores only the uploaded key. The server verifies an existing object in the
+caller's own UUID folder, rejecting external URLs, embedded data and other
+users' files. The UI derives its public URL from the configured Supabase project.
+The migration idempotently creates the bucket/owner policies if Storage exists.
+It does not change an existing bucket's administrative configuration. Failed,
+confirmed-uncommitted uploads are cleaned up; a committed photo is not deleted
+when the save response is lost. Uncertain/old uploads can be cleaned by a trusted
+maintenance job after checking current references.
+
+Email changes use the existing **Supabase Auth `updateUser({ email })`** flow,
+not any profile RPC. Keep **Secure Email Change** enabled in Supabase Auth and
+allow the deployed `/partner/profile` confirmation redirect. Confirmation and
+identity verification stay with Auth; the UI does not optimistically replace the
+current email. Profile reads always use `auth.users.email` after confirmation.
+
+Local development limitation: the SQL-only gateway has no Storage/email delivery
+service. Basic name/phone edits work there, but photo uploads require live
+Supabase Storage and email changes explicitly return HTTP 501 requiring live Auth
+(rather than the former misleading no-op success). No secret/service-role key is
+sent to the frontend.
+
+Tests: `tests/growthPartnerProfileBasics.test.ts` checks real SQL isolation,
+allowlisted fields, photo ownership, upload cleanup and Auth-only email requests.
+`tests/dom/partnerProfileEmptyStatesBrowserFlow.test.ts` covers read-only protected
+fields, form saves, photo removal/format validation, confirmation messaging,
+empty-state copy/fallback and Clear Filters wiring. Local HTTP tests verify that
+unsupported email changes do not modify the login email.
+
+### Physical partner referral ledger (Section 18)
+
+Apply `supabase/migrations/20260928_partner_referrals_table.sql` after 20260927.
+The local gateway includes the migration and exposes the table through its
+existing RLS-enforced read gateway. The migration is transactional and rerunnable.
+
+`public.partner_referrals` is a **table**, not a view, with the requested columns:
+`id`, `partner_id`, `referred_user_id`, `referral_code`, `status`,
+`conversion_status`, `first_clicked_at`, `registered_at`, `converted_at`,
+`last_activity_at`, `created_at`, and `updated_at`. Status/conversion/registration
+CHECK constraints reject inconsistent rows, and update timestamps are maintained
+by a database trigger.
+
+#### ID compatibility and foreign keys
+
+The existing partner schema has `user_id` as its primary key. This migration adds
+an independent, generated, immutable **`growth_partners.id` UUID with a unique
+index** without changing `user_id` or its existing foreign keys.
+
+- `partner_referrals.partner_id` → **`growth_partners.id`**.
+- `partner_referrals.referred_user_id` → **`auth.users.id`**, nullable before signup.
+- Existing `growth_onboarding.growth_partner_id` and temporary-attribution
+  `partner_id` still reference the partner's Auth `user_id` for compatibility.
+  The write-through adapter explicitly joins `growth_partners.user_id` to resolve
+  the new internal `id`; these two namespaces must not be confused.
+- Existing profile/login RPC contracts are unchanged. Referral detail IDs remain
+  `growth_onboarding.referral_id`, now also the physical ledger row's `id`.
+
+#### Population and uniqueness
+
+A newly validated anonymous attribution creates a `Clicked` row. Reusing its
+first-touch capability does not create another row. The Auth signup trigger
+promotes **that same row** with the referred account ID and registration timestamp
+in the account-creation transaction, including email-confirmation-required
+accounts. Failed signup transactions roll back promotion/consumption. Manual
+code linking creates a registered/Pending row with no fabricated click date.
+
+Existing registered referrals and unconsumed temporary attributions are
+backfilled. Existing detail IDs, historical codes and known click timestamps are
+preserved. Ordinary onboarding progress, conversion, admin disposition changes
+and authorized attribution corrections synchronize the ledger transactionally.
+There are no frontend write grants and no second independent attribution API:
+continue using the existing validated signup/link/progress/admin workflows, not
+independent edits to the ledger. The existing portal reads remain compatible.
+
+Indexes include:
+
+- Primary key on `id`.
+- **Global unique partial index on `referred_user_id WHERE referred_user_id IS NOT
+  NULL`**, preventing a second successful attribution for the same account even
+  under another partner or after a status change.
+- Unique temporary-capability-to-ledger reference, so one capability cannot
+  represent multiple ledger records.
+- Partner/status/registration-date, partner/creation-date and partner/activity-date
+  indexes for reporting and ordering.
+
+`referral_code` is deliberately **not unique** in this table: multiple legitimately
+referred accounts use the same partner code. Multiple anonymous visitors can also
+have separate rows; success becomes unique when an account ID is attached.
+
+RLS permits active partners to select only their own ledger rows, resolving
+ownership via `growth_partners.id` + `growth_partners.user_id = auth.uid()`.
+Anonymous and ordinary referred users cannot enumerate the table. All clients are
+denied direct inserts/updates/deletes and helper execution. Self-referrals and
+post-registration identity changes are also rejected by database guards.
+
+Temporary-attribution cleanup does not delete permanent ledger data. Auth account
+deletion cascades its registered referral consistently with the existing onboarding
+cleanup. Anonymous click history has independent retention; token expiry still
+controls whether signup may claim attribution, not the presence of a ledger row.
+
+`tests/partnerReferralsTable.test.ts` verifies the physical schema/FKs, ID mapping,
+nullable pre-signup rows, same-row promotion, duplicate rejection, transactional
+rollback, admin/milestone synchronization, RLS isolation, cleanup, backfill and
+migration rerun stability against the real Postgres engine used locally.
+
+### Sections 19–20 — Referral events and database ownership fences
+
+Deploy `supabase/migrations/20260929_partner_referral_events_rls.sql` **after
+20260928** and before deploying the updated referral-attribution API. It is
+transactional and rerunnable; the local gateway loads it automatically. No
+production migration is applied by the repository changes.
+
+`partner_referral_events` has the five requested columns: UUID `id`, UUID
+`referral_id` (FK to `partner_referrals.id`, cascading on deletion), checked text
+`event_type`, JSONB `event_metadata` (default `{}`), and finite `created_at`.
+All seven types are supported: `link_clicked`, `signup_started`,
+`signup_completed`, `account_activated`, `business_created`,
+`subscription_started`, and `converted`.
+
+Events are **first-occurrence funnel milestones**, not raw click counters or
+recurring subscription transactions. A unique `(referral_id, event_type)` key
+makes retries idempotent; indexes support referral timelines and event/time
+analytics. Updates are rejected by a database guard. Trusted retention deletes
+and cascading account deletion remain possible.
+
+- Validated attribution records the first known click.
+- GET `/api/referral-attribution` uses `prepare_growth_referral_signup(p_token)`
+  to record signup preparation once. This validates the live, unconsumed bearer
+  capability and its active partner/current code; callers cannot choose the
+  referral ID or metadata. Preparation is not proof of completed registration.
+- Successful signup, verified onboarding activation, and conversion record their
+  corresponding milestones transactionally. Failed signup rolls events back.
+- Existing known click, registration, activation and conversion timestamps are
+  backfilled with `source: "migration", backfilled: true`. Unknown signup-start,
+  business and subscription history is **not inferred**. Reruns preserve events.
+- `business_created` and `subscription_started` are future integration hooks;
+  this application has no authoritative source wired for those events yet.
+
+Trusted server integrations may call
+`record_partner_referral_event(p_referral_id, p_event_type, p_event_metadata,
+p_created_at)`. EXECUTE is restricted to `service_role` (and the database owner);
+never expose the service key or an arbitrary recorder proxy to clients. The
+recorder returns the existing event ID on retry, requires a registered referral
+for post-signup types, and accepts only metadata keys `source` (one of
+`attribution`, `signup`, `onboarding`, `business`, `subscription`, `migration`)
+and boolean `backfilled`. Do not store tokens, emails, payment payloads or other
+secrets in this partner-readable metadata. Richer future analytics should use an
+explicit reviewed schema extension, not unrestricted payload storage.
+
+RLS is enabled on `growth_partners`, `partner_referrals`,
+`partner_referral_events`, and legacy `growth_onboarding`. Authenticated clients
+receive SELECT only:
+
+- A partner can read only the gate/profile row with `user_id = auth.uid()`.
+- Referral ownership resolves through `partner_referrals.partner_id =
+  growth_partners.id`, then `growth_partners.user_id = auth.uid()`; the owned
+  partner must also be active. Events resolve through the same referral join.
+- A paused partner can read their own gate row, but not referrals/events.
+  Audited attribution corrections transfer event visibility with the referral;
+  no stale partner ID is copied into event metadata.
+- Legacy onboarding retains the ordinary user's own onboarding read; partner
+  access to other onboarding rows requires active ownership.
+
+Restrictive owner fences supplement permissive read policies. Restrictive
+anonymous and authenticated-write fences also block access if broad grants or
+permissive policies are accidentally added later. Isolation does not rely on
+frontend filters. Trusted database owners/security-definer workflows and the
+server service role remain the intentional bypass boundary; RLS is not forced
+on the owner. These credentials must never be browser-accessible.
+
+`tests/partnerReferralEventsRls.test.ts` exercises actual local PostgreSQL event
+transactions, metadata validation, retries, upgrade/backfill/rerun stability,
+cascades, ownership transfers, paused partners, and isolation under intentionally
+broad policies and grants. Existing attribution, ledger, profile and portal
+regression tests remain applicable.
+
+### Sections 23–26 — Dashboard metrics, responsive UI and loading states
+
+Apply `20260930_partner_dashboard_metrics.sql` after `20260929`. It replaces
+`get_my_partner_dashboard()` without changing its caller-derived authorization
+or removing existing response fields. It adds top-level numeric aggregates:
+
+```json
+{
+  "totalReferrals": 127,
+  "activeReferrals": 72,
+  "pendingReferrals": 13,
+  "convertedReferrals": 38
+}
+```
+
+These are illustrative values, not defaults. All four fields are computed by
+PostgreSQL for the authenticated active partner. `totalReferrals` counts registered
+accounts in the existing canonical onboarding relationship, not anonymous click
+rows or events. The other fields count the effective lifecycle status, including
+admin dispositions. Consequently, inactive/cancelled/rejected accounts remain in
+the total but not these three status counts; the three need not sum to the total.
+A historical conversion event or legacy `kpis.completed` can still exist for a
+currently inactive referral. These metrics do not represent paid subscriptions.
+
+The UI reads these fields directly. Rolling-upgrade fallbacks use only older
+backend aggregate fields, never the current list page or recent-activity array.
+Missing status aggregates display an em dash, not a fabricated zero. Initial
+requests show skeletons; refreshes retain previously loaded totals with a loading
+indicator, and failed refreshes label those totals as previously loaded and offer
+retry. Dashboard data is scoped to the current signed-in user in component state.
+
+The existing portal shell remains fixed-sidebar at `lg` (1024px+) and drawer
+below it. Mobile navigation locks background scrolling, keeps keyboard focus
+inside, supports Escape, restores focus on close, and closes when resized to
+desktop. Header menus are viewport-bounded on mobile. Cards stack at narrow
+widths; referral tables scroll within their own labelled region, not the page.
+Long codes/contact values wrap or truncate, filters wrap, and primary code/link
+copy controls retain at least 44px touch height. Status pills keep readable,
+non-wrapping labels and explanatory titles.
+
+`PartnerLoading` supplies accessible, decorative, reduced-motion-aware skeletons
+for dashboard cards, referral-link acquisition, the referral list, profile and
+referral details. Unavailable/error/empty states appear only after loading has
+settled. Copy and profile-save actions have non-blocking dismissible toast
+confirmations plus inline feedback; secure email confirmation behavior is
+unchanged. Components reuse the existing rounded cards, slate palette, semantic
+status colors and spacing, with no added animation dependency.
+
+Verification includes real local database aggregate/authorization tests and DOM
+tests with deliberately unresolved requests, refresh failures, mobile drawer
+focus cycling and copy confirmation. DOM tests verify behavior and responsive
+class contracts, not pixel rendering on physical devices.
+
+### Sections 27–30 — Safe failures, URL aliases and immutable ownership
+
+Both `/signup?ref=NEXORA-ABC123` and `/register?ref=NEXORA-ABC123` enter the
+same onboarding signup flow. Session restoration now happens **before** referral
+capture. Signed-out visitors finish validated cookie capture before the canonical
+onboarding redirect. The existing HttpOnly, SameSite=Lax, seven-day first-valid
+capability survives onboarding navigation/remounts; signup preparation retrieves
+it without trusting URL IDs, localStorage or caller-supplied partner metadata.
+Invalid codes show an actionable error and a “Continue without a referral” option;
+service/network failures offer retry and do not clear an existing cookie.
+
+A visitor who already has an authenticated session sees **“This account is already
+registered.”** Opening the link neither captures a new capability nor submits or
+prefills its code for that account. Continuing goes to the existing account's
+backend-resolved onboarding state. Existing manual code entry for an *unattributed*
+account remains an explicit action, not a URL side effect. If an account already
+has an owner, even manual relinking is rejected in the database.
+
+The verified lifecycle is unchanged:
+
+- Successful Auth insertion atomically promotes the captured ledger row to a
+  registered account (`registered_at`, `signup_completed`). The existing stored
+  and displayed lifecycle name at this stage remains **Pending**, not a new
+  incompatible `registered` status.
+- Verified onboarding start promotes it to **Active** (`account_activated`).
+- The application's currently configured conversion milestone is verified website
+  completion, promoting it to **Converted**. This does not imply payment or an
+  unimplemented business/subscription integration.
+
+Immutable onboarding identity guards, the physical ledger's global successful-
+account uniqueness, and same-row synchronization remain enforced by migrations
+20260923/20260928/20260929. Editing Auth metadata, clicking another URL, replaying a
+capability, or calling the link RPC cannot change a registered owner. The only
+supported exception remains `admin_correct_growth_referral`: trusted service-role
+execution **plus** administrator authorization, a required reason, and a durable
+old/new owner/code/actor audit. No browser grant or unaudited replacement path was
+added. The referred user ID and original registration time survive corrections.
+
+Error boundaries cover session expiry, absent/unauthorized partner access, paused
+or suspended access, invalid codes, RPC/database failures and transport failures.
+A missing partner row remains an access-required state rather than exposing any
+other account's existence. Profile, login, onboarding boot/forms, details and
+partner gate failures use fixed reviewed copy; rejected promises are sanitized
+as well as SDK `{ error }` results. Mid-request suspension returns to the paused
+access gate. Async Auth refresh failures are caught rather than leaking an
+unhandled rejection. Existing retry, close/sign-in and support actions remain.
+
+Server diagnostics:
+
+- Referral-cookie API failures return safe 503 copy plus `X-Request-ID`; no SQL,
+  Supabase details, stack, capability, or request payload reaches the UI.
+- The local gateway's RPC/table failures also emit a correlated server diagnostic
+  and fixed response copy rather than SQL text or schema/overload details.
+- `server/partnerErrorLog.ts` writes structured request ID, operation, SQLSTATE/
+  provider code, status, category, timestamp and a stable error fingerprint.
+  Messages, SQL, stacks, cookies, Authorization headers, arguments, Auth metadata
+  and contact information are **not logged**. A broken log sink cannot break the
+  safe response. Protect server log access and retention as operational data.
+- Production direct Supabase RPC/Auth/Storage calls run on Supabase, not this Node
+  gateway; use the project's restricted provider logs for server-side diagnosis.
+  No anonymous client-error ingestion endpoint or browser service credential was
+  introduced. Client-only offline failures cannot produce a server log because
+  they never reach the server.
+
+No new SQL migration is required for Sections 27–30. Deploy the application/server
+changes with the existing chain through `20260930_partner_dashboard_metrics.sql`.
+Tests cover both route aliases, existing linked/unlinked visitors, delayed and
+failed capture, safe error/log redaction, full verified lifecycle, and rejected
+reassignment followed by an explicitly audited correction.
+
+### Sections 31–34 — Basic analytics, sharing feedback and security review
+
+Apply **`20261001_partner_dashboard_activity.sql` after `20260930`**. Existing
+canonical onboarding/profile tables are reused; no analytics table is created.
+The dashboard RPC keeps all existing keys and adds:
+
+```ts
+referralActivity: {
+  recentReferrals: Array<{ referralId: string; name: string; date: string; status: string }>;
+  last7DaysReferrals: number;
+  dailyReferrals: Array<{ date: string; count: number }>;
+  window: { from: string; asOf: string; timeZone: 'UTC' };
+}
+```
+
+“Recent Referrals” shows the latest ten registered referred accounts, ordered by
+**credited/referral date (`linked_at`)**, then opaque referral ID for ties. Names
+come from the linked profile; missing names become “Referred user.” Contact/Auth
+fields are not included. Effective status honors administrator dispositions.
+
+“Last 7 Days Referrals” counts today and the preceding six **UTC calendar days**,
+with today counted only up to the database statement time. Null/unknown and future
+referral dates are excluded. This is a count of credited account relationships,
+not clicks, event rows or the ten-row preview. An existing account manually linked
+today is credited today, regardless of its original signup date. The SQL also
+returns seven zero-filled daily buckets with explicit bounds, ready for future
+graphs; the frontend does not derive authoritative metrics from displayed rows.
+Missing analytics during a rolling upgrade shows an em dash/unavailable state,
+not a synthetic zero. Loading continues to use the dashboard skeleton.
+
+Copy actions share one clipboard helper across the dashboard, referral-code page
+and empty states. Successful writes announce exactly **“Referral code copied”**
+or **“Referral link copied”** through the dismissible toast. Repeated copies can
+re-announce; stale asynchronous writes cannot overwrite the latest action's
+feedback. Failed writes show a safe inline error/manual-copy fallback, never a
+success toast or `alert()` popup.
+
+See `GROWTH_PARTNER_SECURITY_AUDIT.md` for the threat matrix, fixed development-
+gateway session weaknesses, local-vs-production boundaries, and deployment checks.
+Local refresh tokens now rotate, logout/password changes revoke local sessions,
+and gateway restarts require a fresh login. The optional
+`LOCAL_SUPABASE_JWT_SECRET` must have at least 32 bytes; without it a random
+process key is used. Supabase production authentication is unchanged.
+
+Migration upgrade/rerun tests preserve accounts, referrals, events and unrelated
+salon/booking/service rows. The new migration has no data rewrites or destructive
+DDL; deploy its ordinary index build in an appropriate maintenance window for
+large datasets. No production migration has been applied by these code changes.
+
+### Sections 38–39 — Reusable components and regression coverage
+
+The partner module now has dedicated `PartnerRouteGuard`, `PartnerStatusScreen`,
+`PartnerStatCard`, `ReferralTable` and shared presentation helpers, alongside the
+existing reusable layout/nav/header, badge, filters, details and profile surfaces.
+Legacy exports are preserved so existing callers do not need mass renames.
+See `GROWTH_PARTNER_TEST_PLAN.md` for the component map and scenario coverage.
+
+The common protected-page gate also completes the overlapping account-status
+behavior: the user's own pending application shows “Your Growth Partner
+application is under review.”; rejected shows “Your Growth Partner application
+was not approved.”; suspended shows “Your Growth Partner account is currently
+suspended. Please contact support for assistance.” None can trigger protected
+section queries. “Check status” re-verifies approval instead of changing local
+permissions. Unauthenticated and expired sessions redirect to the namespace's
+login route. A changed identity hides old data synchronously until reverified.
+
+Run `npm run test:partner` for the database/HTTP/DOM coverage in Section 39, then
+`npm run typecheck` and `npm run build`. No new SQL migration is needed for this
+component/guard work; existing Auth/RLS and migrations through 20261001 remain
+required. No production migration or data modification has been performed.
+
+### Sections 40–41 — final acceptance and scope
+
+Run `npm run test:partner:acceptance` for the integrated local 15-step journey, or `npm run test:partner` for all 364 partner-related tests. Evidence and remaining production/browser checks: `GROWTH_PARTNER_FINAL_ACCEPTANCE.md`. Financial/payout/ranking modules remain out of scope; no new migration was introduced for this acceptance work.

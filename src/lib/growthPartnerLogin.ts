@@ -108,6 +108,9 @@ function messageOf(error: unknown): string {
  */
 export function toGrowthPartnerLoginError(error: unknown): Error {
   const message = messageOf(error);
+  if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) {
+    return new Error('Your account is suspended. Contact support for help.');
+  }
   if (/invalid login credentials|invalid email or password|invalid grant/i.test(message)) {
     return new Error('Invalid email or password. Please try again.');
   }

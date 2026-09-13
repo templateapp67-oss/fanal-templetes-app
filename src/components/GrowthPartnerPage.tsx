@@ -1,15 +1,18 @@
+import { PartnerRouteGuard, usePartnerRouteGuard } from './PartnerRouteGuard';
+export * from './PartnerStatusScreen';
+import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
+import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
+import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
-import { AlertCircle, ArrowLeft, Loader2, LogIn, LogOut, RefreshCw, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, LogOut } from 'lucide-react';
 import {
   fetchMyGrowthPartnerRow,
+  fetchMyGrowthPartnerApplication,
   fetchMyPartnerDashboard,
   fetchMyPartnerPerformance,
   fetchMyPartnerReferrals,
-  GROWTH_PARTNER_INACTIVE_BODY,
-  GROWTH_PARTNER_INACTIVE_TITLE,
   isSessionExpiredError,
-  resolveGrowthPartnerGate,
+  isPartnerSuspendedError,
   toSafePartnerSectionError,
   type GrowthPartner,
   type PartnerDashboardData,
@@ -17,7 +20,7 @@ import {
   type PartnerReferralFilter,
   type PartnerReferralList,
 } from '../lib/growthPartner';
-import { isMockSupabase, supabaseConfig } from '../lib/supabaseClient';
+import { isMockSupabase } from '../lib/supabaseClient';
 import {
   GROWTH_PARTNER_SECTIONS,
   growthPartnerLoginPath,
@@ -48,7 +51,6 @@ import {
   GrowthPartnerCustomers,
   GrowthPartnerDashboard,
   GrowthPartnerPerformance,
-  GrowthPartnerProfile,
   GrowthPartnerReferrals,
   SectionError,
   SectionLoading,
@@ -83,19 +85,6 @@ export interface GrowthPartnerPageProps {
   accentHex?: string;
 }
 
-export const GROWTH_PARTNER_SIGNIN_TITLE = 'Sign in to open the Growth Partner area';
-export const GROWTH_PARTNER_SIGNIN_BODY =
-  'Growth Partner tools are tied to your account, so we can only show them once you are signed in.';
-export const GROWTH_PARTNER_UNAUTHORIZED_TITLE = 'Growth Partners only';
-export const GROWTH_PARTNER_UNAUTHORIZED_BODY =
-  'This account is not registered as a Growth Partner. If you were invited as one, sign in with that account.';
-export const GROWTH_PARTNER_ERROR_TITLE = 'Could not load the Growth Partner area';
-export const GROWTH_PARTNER_SESSION_TITLE = 'Your session expired';
-export const GROWTH_PARTNER_SESSION_BODY = 'Please sign in again to continue to the Growth Partner area.';
-export const GROWTH_PARTNER_MOCK_TITLE = 'Growth Partner area needs a live connection';
-export const GROWTH_PARTNER_MOCK_BODY =
-  'This area reads real partner data from Supabase, which is not connected in this preview. No demo numbers are shown.';
-
 export const GROWTH_PARTNER_SECTION_LABELS: Record<GrowthPartnerSection, string> = {
   dashboard: 'Dashboard',
   referrals: 'Referrals',
@@ -104,183 +93,6 @@ export const GROWTH_PARTNER_SECTION_LABELS: Record<GrowthPartnerSection, string>
   commission: 'Commission',
   profile: 'Profile',
 };
-
-function errorMessage(error: unknown): string {
-  const message = (error as { message?: string } | null)?.message;
-  return typeof message === 'string' && message ? message : 'Please try again.';
-}
-
-function StateCard({
-  icon,
-  title,
-  body,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-md w-full text-center bg-white rounded-3xl border border-slate-200 shadow-sm p-8"
-    >
-      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-        {icon}
-      </div>
-      <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-      <p className="text-sm text-slate-600 mt-2">{body}</p>
-      {children}
-    </motion.div>
-  );
-}
-
-export const GrowthPartnerSignInPrompt: React.FC<{
-  onRequireAuth?: (mode?: 'login' | 'signup') => void;
-  accentHex?: string;
-}> = ({ onRequireAuth, accentHex = '#C20E5A' }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <StateCard
-      icon={<LogIn className="w-7 h-7 text-slate-400" />}
-      title={GROWTH_PARTNER_SIGNIN_TITLE}
-      body={GROWTH_PARTNER_SIGNIN_BODY}
-    >
-      <button
-        type="button"
-        onClick={() => onRequireAuth?.('login')}
-        className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90"
-        style={{ backgroundColor: accentHex }}
-      >
-        Sign in
-      </button>
-    </StateCard>
-  </main>
-);
-
-export const GrowthPartnerUnauthorized: React.FC<{
-  onBack?: () => void;
-  /** Namespace-specific denial copy (the /partner/* portal shows the spec's exact line). */
-  body?: string;
-}> = ({ onBack, body }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <StateCard
-      icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
-      title={GROWTH_PARTNER_UNAUTHORIZED_TITLE}
-      body={body ?? GROWTH_PARTNER_UNAUTHORIZED_BODY}
-    >
-      <button
-        type="button"
-        onClick={() => onBack?.()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
-      >
-        Back to dashboard
-      </button>
-    </StateCard>
-  </main>
-);
-
-export const GrowthPartnerInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <StateCard
-      icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
-      title={GROWTH_PARTNER_INACTIVE_TITLE}
-      body={GROWTH_PARTNER_INACTIVE_BODY}
-    >
-      <button
-        type="button"
-        onClick={() => onBack?.()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
-      >
-        Back to dashboard
-      </button>
-    </StateCard>
-  </main>
-);
-
-export const GrowthPartnerLoadError: React.FC<{
-  title: string;
-  body: string;
-  actionLabel: string;
-  onAction?: () => void;
-}> = ({ title, body, actionLabel, onAction }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <StateCard icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
-      <button
-        type="button"
-        onClick={() => onAction?.()}
-        className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-slate-900"
-      >
-        <RefreshCw className="w-4 h-4" />
-        {actionLabel}
-      </button>
-    </StateCard>
-  </main>
-);
-
-export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void; issues?: string[] }> = ({
-  onBack,
-  issues = supabaseConfig.issues,
-}) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <StateCard
-      icon={<AlertCircle className="w-7 h-7 text-slate-400" />}
-      title={GROWTH_PARTNER_MOCK_TITLE}
-      body={GROWTH_PARTNER_MOCK_BODY}
-    >
-      {/* Actionable, not a dead end: name what is missing and the exact next
-          step, so this screen is a setup instruction rather than a shrug. */}
-      {issues.length > 0 && (
-        <ul className="mt-5 space-y-1.5 text-left text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3">
-          {issues.map((issue) => (
-            <li key={issue} className="flex gap-2">
-              <span aria-hidden="true">•</span>
-              <span className="break-words">{issue}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="mt-4 text-left text-xs text-slate-600">
-        <p className="font-bold text-slate-800">To finish the setup</p>
-        <ol className="mt-1.5 space-y-1 list-decimal list-inside">
-          <li>
-            Fill in the Supabase variables from <code className="font-mono">.env.example</code> in{' '}
-            <code className="font-mono">.env</code>, then restart the app.
-          </li>
-          <li>
-            Apply the Growth Partner migrations (order matters — see{' '}
-            <code className="font-mono">GROWTH_PARTNER_SETUP.md</code>).
-          </li>
-          <li>
-            Check it with <code className="font-mono">npm run verify:growth-partner</code>, then
-            approve your account so the area unlocks.
-          </li>
-        </ol>
-      </div>
-      <button
-        type="button"
-        onClick={() => onBack?.()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
-      >
-        Back to dashboard
-      </button>
-    </StateCard>
-  </main>
-);
-
-export const GrowthPartnerLoading: React.FC = () => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <div
-      role="status"
-      aria-label="Loading Growth Partner area"
-      className="max-w-md w-full text-center bg-white rounded-3xl border border-slate-200 shadow-sm p-8"
-    >
-      <Loader2 className="w-8 h-8 text-slate-400 animate-spin mx-auto mb-4" />
-      <p className="text-sm font-bold text-slate-700">Loading your partner area…</p>
-    </div>
-  </main>
-);
 
 export function GrowthPartnerSectionTabs({
   section,
@@ -340,7 +152,7 @@ export const GrowthPartnerShell: React.FC<{
   backLabel?: string;
   children?: React.ReactNode;
 }> = ({ section, displayName, navigate, onBack, onLogout, accentHex = '#C20E5A', pathFor, backLabel = 'Back to dashboard', children }) => (
-  <main className="max-w-6xl mx-auto px-4 py-8">
+  <main className="min-w-0 max-w-6xl mx-auto px-4 py-8">
     <header className="mb-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -422,13 +234,18 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const userId = user?.id || null;
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
+  const [savedProfileName, setSavedProfileName] = useState<{ owner: string; name: string } | null>(null);
   const [partner, setPartner] = useState<GrowthPartner | null>(null);
   const [gateLoading, setGateLoading] = useState(true);
+  const [verifiedFor, setVerifiedFor] = useState<string | null>(null);
+  const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   // Section data (each fetched once per visit from its backend RPC).
-  const [dashboard, setDashboard] = useState<SectionState<PartnerDashboardData>>(initialSectionState);
+  const [dashboardState, setDashboard] = useState<SectionState<PartnerDashboardData>>(initialSectionState);
+  const [dashboardOwner, setDashboardOwner] = useState<string | null>(null);
+  const dashboard = dashboardOwner === userId ? dashboardState : initialSectionState<PartnerDashboardData>();
   const [referrals, setReferrals] = useState<SectionState<PartnerReferralList>>(initialSectionState);
   const [customers, setCustomers] = useState<SectionState<PartnerReferralList>>(initialSectionState);
   const [performance, setPerformance] = useState<SectionState<PartnerPerformanceData>>(initialSectionState);
@@ -437,6 +254,15 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const [referralRefreshKey, setReferralRefreshKey] = useState(0);
   const [referralOwner, setReferralOwner] = useState<string | null>(null);
   const [referralOffset, setReferralOffset] = useState(0);
+  const [referralStatusTab, setReferralStatusTab] = useState<ReferralStatusTab>('all');
+  const [referralFilters, setReferralFilters] = useState<ReferralFilters>({ ...DEFAULT_REFERRAL_FILTERS });
+  useEffect(() => {
+    setReferralFilters({ ...DEFAULT_REFERRAL_FILTERS });
+    setReferralStatusTab('all');
+    setReferralOffset(0);
+    setCustomers(initialSectionState());
+    setPerformance(initialSectionState());
+  }, [userId]);
   const [customerFilter, setCustomerFilter] = useState<PartnerReferralFilter>('all');
   const [customerOffset, setCustomerOffset] = useState(0);
   const [customerSearchInput, setCustomerSearchInput] = useState('');
@@ -458,14 +284,17 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       try {
         const row = await fetchMyGrowthPartnerRow();
         if (cancelled) return;
+        const application = row ? null : await fetchMyGrowthPartnerApplication();
+        if (cancelled) return;
         setPartner(row);
+        setApplicationStatus(application?.status ?? null);
         setLoadError(null);
       } catch (err) {
         if (cancelled) return;
         setPartner(null);
         setLoadError(err);
       } finally {
-        if (!cancelled) setGateLoading(false);
+        if (!cancelled) { setVerifiedFor(userId); setGateLoading(false); }
       }
     })();
     return () => {
@@ -474,36 +303,28 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     // `onRequireAuth` is intentionally not a dependency (inline arrow at call site).
   }, [userId, reloadKey, isLoginPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const gate = resolveGrowthPartnerGate({
-    userId,
-    loading: gateLoading,
-    isMockMode: isMockSupabase,
-    partnerRow: partner,
-    loadError,
+  const gate = usePartnerRouteGuard({
+    userId, loading: gateLoading, isMockMode: isMockSupabase,
+    partnerRow: partner, loadError, applicationStatus, verifiedFor,
+    isLoginPath, loginRoute, navigate,
   });
   const ready = gate === 'ready';
-
-  // Unauthenticated visitors to the protected area are sent to the dedicated
-  // login route of the ACTIVE namespace. The login route renders its own
-  // screen (and only forwards ACTIVE partners back to the area), so the two
-  // never chase each other.
-  useEffect(() => {
-    if (!isLoginPath && gate === 'unauthenticated') {
-      navigate?.(loginRoute);
-    }
-  }, [isLoginPath, gate, loginRoute, navigate]);
 
   // Canonicalize the bare portal root to the dashboard URL, so `/partner`
   // and `/partner/dashboard` are one screen with one shareable address.
   useEffect(() => {
-    if (isPartnerNamespace && path === '/partner') {
+    if (ready && isPartnerNamespace && path === '/partner') {
       navigate?.(PARTNER_DASHBOARD_PATH);
     }
-  }, [isPartnerNamespace, path, navigate]);
+  }, [ready, isPartnerNamespace, path, navigate]);
 
   // A session dying mid-section returns to the page-level session gate instead
   // of stranding the section on an error card.
   const noteSectionFailure = (error: unknown): string | null => {
+    if (isPartnerSuspendedError(error)) {
+      setLoadError(error);
+      return null;
+    }
     if (isSessionExpiredError(error)) {
       setPartner(null);
       setLoadError(error);
@@ -523,7 +344,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   useEffect(() => {
     if (!ready || !wantsDashboardData) return;
     let cancelled = false;
-    setDashboard((prev) => ({ ...prev, loading: true, error: null }));
+    setDashboardOwner(userId);
+    setDashboard((prev) => ({ data: dashboardOwner === userId ? prev.data : null, loading: true, error: null }));
     (async () => {
       try {
         const data = await fetchMyPartnerDashboard();
@@ -538,16 +360,21 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, wantsDashboardData, reloadKey]);
+  }, [ready, wantsDashboardData, userId, reloadKey]);
 
   useEffect(() => {
     if (!ready || contentSection !== 'referrals') return;
     let cancelled = false;
     setReferralOwner(userId);
-    setReferrals({ data: null, loading: true, error: null });
+    // Preserve the last successful counts across filters/pages, never across owners.
+    setReferrals(prev => ({ data: referralOwner === userId ? prev.data : null, loading: true, error: null }));
     (async () => {
       try {
         const data = await fetchMyPartnerReferrals({
+          search: referralFilters.search || undefined,
+          conversion: referralFilters.conversion, sort: referralFilters.sort,
+          ...referralDateBounds(referralFilters),
+          status: referralStatusTab === 'active' ? 'in_progress' : referralStatusTab === 'converted' ? 'completed' : referralStatusTab,
           limit: LIST_PAGE_SIZE,
           offset: referralOffset,
         });
@@ -568,7 +395,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, contentSection, userId, referralOffset, referralRefreshKey, reloadKey]);
+  }, [ready, contentSection, userId, referralOffset, referralStatusTab, referralFilters, referralRefreshKey, reloadKey]);
 
   useEffect(() => {
     if (!ready || contentSection !== 'customers') return;
@@ -627,39 +454,17 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     return <GrowthPartnerLogin user={user} navigate={navigate} onBack={onBack} accentHex={accentHex} />;
   }
 
-  if (gate === 'loading') return <GrowthPartnerLoading />;
-  if (gate === 'unauthenticated') return <GrowthPartnerLoading />; // redirects to the login route (effect above)
-  if (gate === 'unauthorized')
-    return (
-      <GrowthPartnerUnauthorized
-        onBack={onBack}
-        body={isPartnerNamespace ? PARTNER_PORTAL_UNAUTHORIZED_BODY : undefined}
-      />
-    );
-  if (gate === 'inactive') return <GrowthPartnerInactive onBack={onBack} />;
-  if (gate === 'mock-mode') return <GrowthPartnerMockNotice onBack={onBack} />;
-  if (gate === 'session-expired')
-    return (
-      <GrowthPartnerLoadError
-        title={GROWTH_PARTNER_SESSION_TITLE}
-        body={GROWTH_PARTNER_SESSION_BODY}
-        actionLabel="Sign in again"
-        onAction={() => navigate?.(loginRoute)}
-      />
-    );
-  if (gate === 'error')
-    return (
-      <GrowthPartnerLoadError
-        title={GROWTH_PARTNER_ERROR_TITLE}
-        body={errorMessage(loadError)}
-        actionLabel="Retry"
-        onAction={() => setReloadKey((key) => key + 1)}
-      />
-    );
+  if (gate !== 'ready') return <PartnerRouteGuard
+    gate={gate} loadingReferralLink={contentSection === 'referral-code'}
+    onBack={onBack} onRetry={() => setReloadKey(key => key + 1)}
+    onSignIn={() => navigate?.(loginRoute)} error={loadError}
+    unauthorizedBody={isPartnerNamespace ? PARTNER_PORTAL_UNAUTHORIZED_BODY : undefined}
+  />;
 
   const email = typeof user?.email === 'string' ? user.email : '';
   const metadataName = user?.user_metadata?.full_name;
   const displayName =
+    (savedProfileName?.owner === userId && savedProfileName.name) ||
     (typeof metadataName === 'string' && metadataName.trim()) || email.split('@')[0] || 'Growth Partner';
   const retrySection = () => setReloadKey((key) => key + 1);
 
@@ -677,24 +482,41 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             accentHex={accentHex}
             onRetry={retrySection}
             refreshing={dashboard.loading}
+            refreshError={dashboard.error}
           />
         ) : null;
       case 'referral-code':
         return (
           <PartnerReferralCodeSection
+            loading={gateLoading}
             code={partner ? partner.referral_code : null}
             isActive={partner ? partner.is_active : true}
           />
         );
       case 'referrals':
         return (
-          <GrowthPartnerReferrals
+          <div key={userId}><GrowthPartnerReferrals
             list={referralOwner === userId ? referrals.data : null}
             loading={referralOwner !== userId || referrals.loading}
-            error={referrals.error}
+            error={referralOwner === userId ? referrals.error : null}
+            statusTab={referralStatusTab}
+            onStatusTabChange={next => {
+              if (next === referralStatusTab) return;
+              setReferrals(prev => ({ ...prev, loading: true, error: null }));
+              setReferralStatusTab(next);
+              setReferralOffset(0);
+            }}
+            referralCode={partner?.referral_code}
+            filtersActive={!!referralFilters.search || referralFilters.datePreset !== 'all' || referralFilters.conversion !== 'all'}
+            onApplyFilters={(next, clearStatus) => {
+              setReferrals(prev => ({ ...prev, loading: true, error: null }));
+              setReferralFilters(next);
+              setReferralOffset(0);
+              if (clearStatus) setReferralStatusTab('all');
+            }}
             onPage={setReferralOffset}
             onRetry={() => setReferralRefreshKey((key) => key + 1)}
-          />
+          /></div>
         );
       case 'customers': {
         const customersSection = (
@@ -742,17 +564,9 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'commission':
         return <GrowthPartnerCommission />;
       case 'profile':
-        if (dashboard.loading && !dashboard.data) return <SectionLoading label="Loading your profile…" />;
-        if (dashboard.error && !dashboard.data)
-          return <SectionError message={dashboard.error} onRetry={retrySection} />;
-        return dashboard.data ? (
-          <GrowthPartnerProfile
-            dashboard={dashboard.data}
-            displayName={displayName}
-            email={email}
-            accentHex={accentHex}
-          />
-        ) : null;
+        return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
+          if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
+        }} /></div>;
       default:
         return null;
     }
