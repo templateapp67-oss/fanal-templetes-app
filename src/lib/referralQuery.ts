@@ -7,7 +7,7 @@
 //
 // This module deliberately does NOT decide whether a code is valid — the two
 // apps that use it have different code formats (a Growth Partner code is
-// ^([A-Z0-9]{6,12}|NEXORA-[A-Z0-9]{4,24})$, a customer loyalty code is
+// ^[A-Z0-9-]{6,32}$, while a customer loyalty code is
 // ^NX-[A-Z0-9]{4,8}$), and in both cases the DATABASE is authoritative. This
 // only extracts the raw candidate.
 // ============================================================================
@@ -22,7 +22,7 @@ export const REFERRAL_QUERY_PARAMS = ['ref', 'referral'] as const;
 
 /**
  * Upper bound on a code read from a URL. The database's own format check tops
- * out far below this (`NEXORA-` + 24 = 31 characters), so the cap exists to
+ * out at 32 characters, so the cap exists to
  * keep an arbitrarily long query value from being carried into form state.
  */
 export const MAX_REFERRAL_QUERY_LENGTH = 64;
