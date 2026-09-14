@@ -434,3 +434,51 @@ test('9.2d the split-deployment switch is opt-in, validated, and never identity-
   const statusScreen = SOURCE('src/onboarding/screens/StatusScreen.tsx');
   assert.match(statusScreen, /onContinueToTemplateApp/);
 });
+
+// ===========================================================================
+// 9.1d — the DEPLOYED topology is one origin (not just the code default)
+// ===========================================================================
+//
+// The verdict "9.1 governs, so no new token" rests on production being a single
+// deployment. That is not an assumption: `vercel.json` is one project building
+// one SPA from one `index.html`, with `/api/*` sent to the one serverless entry
+// and every other path to `/index.html`. The Onboarding App and the Template App
+// are route branches inside that single bundle, so `/onboarding/handoff` is the
+// SAME origin as the editor by construction.
+
+test('9.1d production is one deployment: one build, one SPA, one API entry, no external rewrite', async () => {
+  const vercel = JSON.parse(SOURCE('vercel.json')) as {
+    buildCommand: string;
+    outputDirectory: string;
+    rewrites: Array<{ source: string; destination: string }>;
+  };
+  assert.equal(vercel.buildCommand, 'vite build', 'one client build produces both surfaces');
+  assert.equal(vercel.outputDirectory, 'dist');
+  assert.equal(vercel.rewrites.length, 2, 'SPA fallback + the serverless API — nothing else');
+  assert.deepEqual(vercel.rewrites[0], { source: '/api/(.*)', destination: '/api/index.ts' });
+  assert.deepEqual(vercel.rewrites[1], { source: '/(.*)', destination: '/index.html' });
+  for (const rewrite of vercel.rewrites) {
+    // An absolute destination would mean a second origin in the request path.
+    assert.doesNotMatch(rewrite.destination, /^https?:\/\//i, `${rewrite.source} must stay internal`);
+    assert.doesNotMatch(rewrite.destination, /^\/\//, `${rewrite.source} must not be protocol-relative`);
+  }
+
+  // One app root: a single HTML entry and a single package manifest. A split
+  // deployment ("apps/onboarding" + "apps/template") would show up here first.
+  const pkg = JSON.parse(SOURCE('package.json')) as { workspaces?: unknown; scripts: Record<string, string> };
+  assert.equal(pkg.workspaces, undefined, 'no workspace split — one application');
+  assert.equal(pkg.scripts.build, 'vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs');
+  assert.match(SOURCE('index.html'), /<div id="root">/, 'the SPA entry both surfaces render into');
+
+  // Both surfaces are branches of that one entry.
+  const app = SOURCE('src/App.tsx');
+  assert.match(app, /from '\.\/onboarding\/OnboardingApp'/, 'the Onboarding App is a branch of the Template App bundle');
+  assert.match(app, /from '\.\/components\/TemplateHandoffPage'/);
+
+  // And the operator documentation records the same default, so the topology is
+  // a stated property of the project rather than a code detail.
+  const architecture = SOURCE('ARCHITECTURE.md');
+  assert.match(architecture, /`VITE_TEMPLATE_APP_URL` \(same deployment default\)/);
+  assert.match(architecture, /Single Supabase project, single Auth system, single database/);
+  assert.match(architecture, /SPA rewrites \(already in `vercel\.json`\), serverless `\/api`\s*\n?entry \(`api\/index\.ts`\)/);
+});

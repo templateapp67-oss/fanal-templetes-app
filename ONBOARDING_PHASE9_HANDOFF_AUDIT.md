@@ -49,12 +49,28 @@ code whose safety depends on that flag. Recommendation in PART D.
 | signup → business setup | **exists** | The business details *are* the editor save: `save_owner_editor_state()` → `nexora_save_owner_workspace()` writes `owner_editor_state.state.profile`, `salons.name/data.editor_profile`, `profiles` contacts (PHASE 8 PART A). |
 | business setup → template editor | **exists** | `TemplateHandoffPage` → exchange → `resolveOwnerWorkspace()` → editor. This is the "handoff" the Phase 4 code means. |
 | main/onboarding route → editor route | **exists** | `src/lib/router.ts` paths + `src/lib/ownerEntryRoute.ts` (login routing by backend stage; PHASE 8 PART D). Session only. |
-| separate deployed origin → Template App | **opt-in only** | `VITE_TEMPLATE_APP_URL` (empty by default ⇒ current origin). Split mode: two hosts serving this same codebase and the same Supabase project. |
+| separate deployed origin → Template App | **opt-in only** | `VITE_TEMPLATE_APP_URL` (empty by default ⇒ current origin). Split mode: two hosts serving this same codebase and the same Supabase project. The shipped deployment is single-origin — see PART B0. |
 
 So of the six candidates, five are same-origin continuations and only the last is
 a genuine cross-origin transfer — and it is off unless an operator turns it on.
 
-## PART B — 9.1: the same-app path, verified
+## PART B0 — production topology: one deployment, one origin
+
+The 9.1-vs-9.2 decision turns on whether production really moves users between
+origins, so it was checked against the deployment configuration rather than
+inferred from the code defaults (now pinned by test 9.1d):
+
+| Evidence | What it shows |
+|---|---|
+| `vercel.json` | **One** project: `buildCommand: "vite build"`, `outputDirectory: "dist"`, and exactly **two** rewrites — `/api/(.*)` → `/api/index.ts` (the one serverless entry) and `/(.*)` → `/index.html` (the SPA fallback). No rewrite destination is an absolute or protocol-relative URL, i.e. no request path leaves the origin. |
+| one app root | A single `index.html` (`<div id="root">`), a single `package.json` with **no** `workspaces`, and one client build. A split deployment would have to appear here first (a second app root, a second build, a second Vercel project). |
+| one bundle | `src/App.tsx` imports `./onboarding/OnboardingApp` and `./components/TemplateHandoffPage` and renders the handoff route before the onboarding surface — both surfaces are branches of the same SPA, so `/onboarding/handoff` and the editor are the same origin by construction. |
+| operator documentation | `ARCHITECTURE.md:121` lists `VITE_TEMPLATE_APP_URL` as *"same deployment default"*; `:145-147` instructs the deployer to use *"SPA rewrites (already in `vercel.json`), serverless `/api` entry (`api/index.ts`)"* — one project, and the split env var is not part of the required checklist. |
+
+Conclusion: in the architecture as shipped, **9.1 is the production path** and
+the cross-origin mechanism is dormant configuration — so adding a second token
+system would be exactly the redundancy the brief forbids.
+
 
 The required flow, and where each step is enforced:
 
@@ -184,7 +200,7 @@ this phase's brief, so it is reported rather than made.
 
 | File | Change |
 |---|---|
-| `tests/secureContinuation.test.ts` (new, 7 tests) | 9.1a-c (session-only continuation, "no identity parameter exists", backend gates), 9.2a-d (not-a-session, inert query params, repo-wide sweep, opt-in split switch) — on the full chain (live-schema fixture + the whole committed growth chain + PART 3 + the owner-state migrations) |
+| `tests/secureContinuation.test.ts` (new, 8 tests) | 9.1a-d (session-only continuation, "no identity parameter exists", backend gates, and the single-deployment topology check), 9.2a-d (not-a-session, inert query params, repo-wide sweep, opt-in split switch) — on the full chain (live-schema fixture + the whole committed growth chain + PART 3 + the owner-state migrations) |
 | `ONBOARDING_PHASE9_HANDOFF_AUDIT.md` (new) | this report |
 
 **No production file was modified. No migration was added. No token system was
@@ -197,9 +213,9 @@ where the same-origin session already does the work.
 ```
 tsc --noEmit (5.8.3)   exit 0
 npm run build          exit 0
-npx tsx --test tests/secureContinuation.test.ts    7 tests, 7 pass, 0 fail   (~3.2s)
+npx tsx --test tests/secureContinuation.test.ts    8 tests, 8 pass, 0 fail   (~3.3s)
 npx tsx --test tests/templateHandoff.test.ts      (unchanged, still green)
-npm test               1393 tests, 1390 pass, 0 fail, 3 skipped   (was 1386)
+npm test               1394 tests, 1391 pass, 0 fail, 3 skipped   (was 1386)
 npm run test:dom         70 tests,   70 pass, 0 fail
 npm run test:partner    451 tests,  451 pass, 0 fail
 ```
@@ -213,8 +229,9 @@ grant, banned accounts, `template_started` recorded exactly once, no regression
 for owners already past entry, RPC-only table access, URL credential hygiene,
 URL cleanup, CORS, no privileged key in browser code.
 
-Added by this phase (`tests/secureContinuation.test.ts`): the same-app
-continuation needs no token and creates none; no identity parameter exists on the
+Added by this phase (`tests/secureContinuation.test.ts`): production is one
+deployment (one build, one SPA, one API entry, no external rewrite), so 9.1 is
+the shipped path; the same-app continuation needs no token and creates none; no identity parameter exists on the
 continuation surface; the redemption is not a session and mints no credential;
 identity query parameters are inert; the split-deployment switch is opt-in and
 identity-free; and the repo-wide sweep with the legacy-branch finding.
