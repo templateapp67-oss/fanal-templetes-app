@@ -555,3 +555,181 @@ test('Part1C-C12: no URL/storage/role-based authorization trust in the client', 
   assert.match(clientSrc, /rpc\('validate_growth_referral_code', \{\s*p_code:/);
   assert.match(read('src/onboarding/lib/auth.ts'), /rpc\('link_my_growth_referral', \{ p_code:/);
 });
+
+// ---------------------------------------------------------------------------
+// C13 — PHASE 2.1: authentication authority is Supabase Auth. No localStorage
+// session, no mock session, no frontend-only user object, no hardcoded account
+// reachable from a production bundle. No manually stored password, and no
+// custom password table (C10 already pins the latter across migrations).
+// ---------------------------------------------------------------------------
+
+test('Part1C-C13: a production bundle can never fabricate or restore a session', async () => {
+  const { canFabricateSession, isProductionBuild, allowMockAuth, isMockSupabase } = await import(
+    '../src/lib/supabaseClient'
+  );
+
+  // The rule itself: mock AND not a production build. Every other combination
+  // must refuse — in particular a production build with no Supabase configured,
+  // which is the failure mode that used to hand every visitor an owner account.
+  assert.deepEqual(
+    [
+      canFabricateSession(false, false),
+      canFabricateSession(false, true),
+      canFabricateSession(true, false),
+      canFabricateSession(true, true),
+    ],
+    [false, false, true, false]
+  );
+  assert.equal(isProductionBuild, false, 'a test run is not a production build');
+  assert.equal(allowMockAuth, isMockSupabase, 'outside a production build the two agree');
+
+  // The two client sites that could invent or resurrect a session must both be
+  // gated on allowMockAuth, never on isMockSupabase alone.
+  const authModal = read('src/components/AuthModal.tsx');
+  // Pinned by POSITION rather than by the surrounding syntax: the fabrication
+  // must sit inside the allowMockAuth branch, and the refusal branch must come
+  // first so a production bundle never reaches it. (An earlier version of this
+  // assertion matched the literal setTimeout wrapper and broke when the delay
+  // became awaitable — the invariant was unchanged, the spelling was not.)
+  const refusalAt = authModal.indexOf('if (isMockSupabase && !allowMockAuth) {');
+  const gateAt = authModal.indexOf('if (allowMockAuth) {');
+  const mockUserAt = authModal.indexOf("id: 'mock-user-123'");
+  // Positive control: if the marker ever disappears the three comparisons below
+  // would all pass vacuously.
+  assert.ok(refusalAt > -1, 'AuthModal still refuses when mock auth is unavailable');
+  assert.ok(gateAt > -1, 'AuthModal still has the allowMockAuth gate');
+  assert.ok(mockUserAt > -1, "the fabricated 'mock-user-123' is still present to be gated");
+  assert.ok(
+    refusalAt < gateAt && gateAt < mockUserAt,
+    `AuthModal must refuse before it fabricates: refusal@${refusalAt} gate@${gateAt} mockUser@${mockUserAt}`
+  );
+  assert.match(
+    authModal,
+    /if \(isMockSupabase && !allowMockAuth\) \{/,
+    'AuthModal must refuse, not fabricate, in a production build without Supabase'
+  );
+
+  const app = read('src/App.tsx');
+  const restoreBlock = app.slice(
+    app.indexOf('const [user, setUser] = useState<any>'),
+    app.indexOf('const [user, setUser] = useState<any>') + 700
+  );
+  assert.match(restoreBlock, /if \(!allowMockAuth\) return null;/);
+  assert.match(restoreBlock, /localStorage\.getItem\('nexora_auth_user_v1'\)/);
+  assert.doesNotMatch(
+    restoreBlock,
+    /if \(!isMockSupabase\) return null;/,
+    'the cached-user restore must not key off isMockSupabase'
+  );
+
+  // The server already had this guard; assert it is still the same shape so the
+  // client and server cannot drift apart.
+  assert.match(read('server.ts'), /const allowMockBookingAuth = isMockSupabase && !isVercelRuntime;/);
+  assert.match(
+    read('server/localSupabase.ts'),
+    /NODE_ENV === 'production'\) throw new Error\('The local authentication gateway cannot run in production\.'\)/
+  );
+
+  // No password ever reaches browser storage, and no signup path stores one.
+  for (const file of allSourceFiles('src/onboarding')) {
+    const src = read(file);
+    assert.doesNotMatch(
+      src,
+      /(localStorage|sessionStorage)[\s\S]{0,120}password|password[\s\S]{0,120}(localStorage|sessionStorage)/i,
+      `${file} must not persist a password`
+    );
+  }
+  // The onboarding signup reaches Supabase Auth and nothing else.
+  const onboardingAuth = read('src/onboarding/lib/auth.ts');
+  assert.match(onboardingAuth, /client\.auth\.signUp\(\{/);
+  assert.match(onboardingAuth, /client\.auth\.signInWithPassword\(\{/);
+  assert.doesNotMatch(onboardingAuth, /fetch\(['"`]\/api\/[^'"`]*(login|signup|register)/);
+});
+
+// ---------------------------------------------------------------------------
+// C14 — PHASE 2.2: profile provisioning and the canonical owner role.
+//
+// auth.users -> profiles via the on_auth_user_created trigger is the only
+// provisioning path. The canonical owner role is organization_members.role;
+// profiles.owner_role is a display title and must never grow into a second,
+// authorization-bearing role column.
+// ---------------------------------------------------------------------------
+
+test('Part1C-C14: profiles.role never exists and owner_role is never authorization', () => {
+  const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f.endsWith('.sql'));
+
+  // 1. No migration declares a role column on profiles — not `role`, not
+  //    `owner_role` as an authorization field. Comments are stripped first so
+  //    this reads the SQL that actually runs.
+  // Anchored on the table name itself: a loose `create table[^;]*profiles`
+  // also matches `create table public.stylists (... references
+  // public.profiles(id) ...)`, which says nothing about profiles' columns.
+  const CREATE_PROFILES = /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.profiles\s*\(([\s\S]*?)\);/gi;
+  const ALTER_PROFILES_ROLE =
+    /alter\s+table\s+(?:if\s+exists\s+)?public\.profiles\s+add\s+column\s+(?:if\s+not\s+exists\s+)?role\b/gi;
+
+  // Positive control first: prove the detection actually fires, so a green run
+  // below cannot be an artefact of a regex that never matches.
+  const synthetic = [
+    'create table if not exists public.profiles (\n  id uuid,\n  role text\n);',
+    'alter table public.profiles add column role text;',
+    'alter table if exists public.profiles add column if not exists role text;',
+  ];
+  for (const sample of synthetic) {
+    assert.ok(
+      /(^|\n)\s*role\s+/m.test(CREATE_PROFILES.exec(sample)?.[1] ?? '') ||
+        ALTER_PROFILES_ROLE.test(sample),
+      `the detector missed a real role column in: ${sample}`
+    );
+    CREATE_PROFILES.lastIndex = 0;
+    ALTER_PROFILES_ROLE.lastIndex = 0;
+  }
+
+  const roleDeclarations: string[] = [];
+  for (const file of migrations) {
+    const body = read(`supabase/migrations/${file}`)
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+    for (const m of body.matchAll(ALTER_PROFILES_ROLE)) {
+      roleDeclarations.push(`${file}: ${m[0].slice(0, 80)}`);
+    }
+    for (const m of body.matchAll(CREATE_PROFILES)) {
+      if (/(^|\n)\s*role\s+/m.test(m[1])) roleDeclarations.push(`${file}: create table profiles(role ...)`);
+    }
+  }
+  assert.deepEqual(roleDeclarations, [], 'profiles must not gain an authorization role column');
+
+  // 2. `owner_role` appears in exactly one migration's executable SQL: the
+  //    00001 column declaration. Nothing else — no policy, no function, no
+  //    grant — may start reading it, because the moment it does it becomes a
+  //    second role system competing with organization_members.role.
+  const ownerRoleSites = migrations.filter((file) => {
+    const body = read(`supabase/migrations/${file}`)
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+    return /owner_role/.test(body);
+  });
+  assert.deepEqual(ownerRoleSites, ['00001_init.sql']);
+
+  // 3. The canonical role: organization_members.role, constrained, and read by
+  //    the workspace resolver that every owner-side write goes through.
+  const workspace = read('supabase/migrations/20261002_owner_workspace_provisioning.sql');
+  assert.match(
+    workspace,
+    /role text not null default 'owner' check \(role in \('owner', 'manager', 'staff'\)\)/
+  );
+  assert.match(workspace, /m\.role in \('owner', 'manager'\)/);
+
+  // 4. No RLS policy anywhere is scoped by a profiles role column.
+  for (const file of migrations) {
+    const body = read(`supabase/migrations/${file}`)
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+    for (const m of body.matchAll(/create policy[^;]*/gis)) {
+      assert.doesNotMatch(m[0], /owner_role|\bprofiles\.role\b/, `${file}: a policy must not read a profiles role`);
+    }
+  }
+});

@@ -1,8 +1,7 @@
-import { toSafeAuthError } from '../lib/flow';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { signInWithEmail, type OnboardingSupabaseClient } from '../lib/auth';
-import { validateLogin } from '../lib/flow';
+import { createSingleFlight, toSafeAuthError, validateLogin } from '../lib/flow';
 
 // ============================================================================
 // Login — email + password via Supabase Auth, plus forgot-password and a
@@ -23,6 +22,12 @@ export const LoginScreen: React.FC<{
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [formError, setFormError] = useState('');
+  // `busy` is React state, so two submit events landing in the same tick both
+  // read `busy === false` before the re-render — a double click sends two
+  // signInWithPassword requests and burns two rate-limit slots. This ref is
+  // the real guard; the disabled button is only the visible half. Same
+  // pattern as SignupScreen.
+  const submitFlight = useRef(createSingleFlight());
 
   return (
     <GatewayShell
@@ -38,16 +43,26 @@ export const LoginScreen: React.FC<{
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          if (busy) return;
           const validation = validateLogin({ email, password });
           setFieldErrors(validation.errors);
           if (!validation.ok) return;
-          setBusy(true);
           setFormError('');
-          void signInWithEmail(client as OnboardingSupabaseClient, { email, password }).then(
-            () => onDone?.(),
-            (error: Error) => setFormError(toSafeAuthError(error, 'login').message)
-          ).finally(() => setBusy(false));
+          void submitFlight.current
+            .run(async () => {
+              setBusy(true);
+              try {
+                return await signInWithEmail(client as OnboardingSupabaseClient, { email, password });
+              } finally {
+                setBusy(false);
+              }
+            })
+            .then(
+              (result) => {
+                if (!result) return; // superseded by an in-flight submit
+                onDone?.();
+              },
+              (error: Error) => setFormError(toSafeAuthError(error, 'login').message)
+            );
         }}
       >
         <Field

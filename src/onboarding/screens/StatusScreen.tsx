@@ -16,7 +16,11 @@ import { templateAppBaseUrl } from '../lib/handoff';
 
 export const STATUS_VERIFIED_TITLE = 'Referral code verified successfully.';
 export const STATUS_VERIFIED_BODY =
-  'Your account is linked and ready for the next step. You will continue from here when it opens.';
+  'Your account is linked to your Growth Partner. Continue to the Template App to build your website.';
+
+/** Shown only when the host renders no handoff call to action. */
+export const STATUS_VERIFIED_WAITING_BODY =
+  'Nothing more to do right now — stay signed in and you will pick up here.';
 
 export const STATUS_COMPLETED_TITLE = 'Your website setup is complete.';
 export const STATUS_COMPLETED_BODY =
@@ -101,9 +105,12 @@ export const StatusScreen: React.FC<{
         </>
       ) : (
         <>
-          <p className="text-sm text-slate-600">
-            Nothing more to do right now — stay signed in and you will pick up here.
-          </p>
+          {/* Without a handoff handler there is genuinely nothing to do here,
+              so say so. With one, the button below IS the next step — telling
+              the user "nothing more to do" next to it was self-contradictory. */}
+          {onContinueToTemplateApp ? null : (
+            <p className="text-sm text-slate-600">{STATUS_VERIFIED_WAITING_BODY}</p>
+          )}
           {onContinueToTemplateApp && (
             <div className="space-y-3 border-t border-slate-100 pt-4">
               <button

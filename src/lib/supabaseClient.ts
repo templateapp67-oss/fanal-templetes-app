@@ -132,7 +132,47 @@ if (hasUrl && hasAnonKey && !hasServiceKey && !isBrowser) {
 /** True when we have a usable live Supabase connection (URL + at least one key). */
 const isRealSupabase = hasUrl && !!resolvedDefaultKey;
 
+/** True when there is no usable live Supabase connection. */
 export const isMockSupabase = !isRealSupabase;
+
+/**
+ * True only inside a production bundle (`vite build` sets `import.meta.env.PROD`).
+ * Read defensively: this module is also imported by Node, where `import.meta.env`
+ * does not exist, and by tests, where it is undefined — both mean "not a
+ * production build", which is what a dev server and a test run need.
+ */
+export const isProductionBuild: boolean = (() => {
+  try {
+    return (import.meta as any)?.env?.PROD === true;
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * May this bundle fabricate a session? Client-side mirror of the server's
+ * `allowMockBookingAuth = isMockSupabase && !isVercelRuntime` (server.ts:77).
+ *
+ * Mock mode is a deliberate offline-preview affordance: with no Supabase
+ * configured the app still renders demo data. But a session is not demo data.
+ * A production bundle must never invent one, or a deployment that simply
+ * forgot its environment variables would hand every visitor a signed-in
+ * owner — the Onboarding App already refuses in exactly this situation
+ * (`OnboardingMockNotice`), so this keeps both sign-up paths fail-closed.
+ *
+ * This flag gates session fabrication ONLY. Demo appointments, clients and
+ * template data stay keyed off `isMockSupabase`, so previews keep working.
+ */
+/**
+ * The decision as a pure function so it is unit-testable: a session may be
+ * fabricated only when there is no live Supabase AND this is not a production
+ * bundle. Exported for tests; application code should read `allowMockAuth`.
+ */
+export function canFabricateSession(isMock: boolean, isProdBuild: boolean): boolean {
+  return isMock && !isProdBuild;
+}
+
+export const allowMockAuth = canFabricateSession(isMockSupabase, isProductionBuild);
 
 /** Machine-readable snapshot used by /api/health and the startup diagnostics. */
 export const supabaseConfig = {

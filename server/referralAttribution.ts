@@ -9,8 +9,98 @@ function cookieToken(req: Request): string | null {
   return value && TOKEN.test(value) ? value : null;
 }
 
+// ---------------------------------------------------------------------------
+// Rate limiting.
+//
+// This endpoint is the only unauthenticated writer in the referral funnel:
+// every POST with a valid code makes `capture_growth_referral` INSERT a row
+// into public.growth_referral_attributions (7-day TTL, no cleanup job in this
+// repository) and hands back a fresh one-use capability. Without a limit one
+// client can grow that table without bound and hammer the RPC, and it can
+// brute-force referral codes at line speed. A fixed-window counter per client
+// IP is enough to make both expensive; it is deliberately in-memory (per
+// serverless instance) rather than shared state, so it degrades to "a little
+// more generous" instead of adding a dependency to the hot path.
+// ---------------------------------------------------------------------------
+
+export interface ReferralRateLimitOptions {
+  /** Requests allowed per window per client. Default 30. */
+  max?: number;
+  /** Window length in ms. Default 10 minutes. */
+  windowMs?: number;
+  /** Hard cap on tracked clients, so the map itself cannot grow unboundedly. */
+  maxKeys?: number;
+}
+
+export interface ReferralRateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  retryAfterSeconds: number;
+}
+
+export interface ReferralRateLimiter {
+  hit(key: string, now?: number): ReferralRateLimitResult;
+  reset(): void;
+}
+
+export const REFERRAL_RATE_LIMIT_MAX = 30;
+export const REFERRAL_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const REFERRAL_RATE_LIMIT_MAX_KEYS = 5000;
+
+export function createReferralRateLimiter(options: ReferralRateLimitOptions = {}): ReferralRateLimiter {
+  const max = Math.max(1, options.max ?? REFERRAL_RATE_LIMIT_MAX);
+  const windowMs = Math.max(1000, options.windowMs ?? REFERRAL_RATE_LIMIT_WINDOW_MS);
+  const maxKeys = Math.max(16, options.maxKeys ?? REFERRAL_RATE_LIMIT_MAX_KEYS);
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+
+  return {
+    hit(key: string, now: number = Date.now()): ReferralRateLimitResult {
+      const bucket = buckets.get(key);
+      if (!bucket || bucket.resetAt <= now) {
+        // Evict before growing: drop expired buckets, then the oldest tracked
+        // key if the map is still at its cap. A limiter must never be the
+        // thing that runs the process out of memory.
+        if (buckets.size >= maxKeys) {
+          for (const [k, v] of buckets) if (v.resetAt <= now) buckets.delete(k);
+          while (buckets.size >= maxKeys) {
+            const oldest = buckets.keys().next();
+            if (oldest.done) break;
+            buckets.delete(oldest.value);
+          }
+        }
+        buckets.set(key, { count: 1, resetAt: now + windowMs });
+        return { allowed: true, remaining: max - 1, retryAfterSeconds: 0 };
+      }
+      bucket.count += 1;
+      if (bucket.count > max) {
+        return {
+          allowed: false,
+          remaining: 0,
+          retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+        };
+      }
+      return { allowed: true, remaining: max - bucket.count, retryAfterSeconds: 0 };
+    },
+    reset() {
+      buckets.clear();
+    },
+  };
+}
+
+/** Best-effort client key: Express' resolved ip, else the first forwarded hop. */
+export function referralRateLimitKey(req: Request): string {
+  const forwarded = req.get('x-forwarded-for');
+  const first = typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : '';
+  return req.ip || first || 'unknown';
+}
+
 type Rpc = (name: string, args: Record<string, unknown>) => PromiseLike<{ data: any; error: any }>;
-export function registerReferralAttributionRoutes(app: Express, rpc: Rpc = (name, args) => supabase.rpc(name, args)) {
+
+export function registerReferralAttributionRoutes(
+  app: Express,
+  rpc: Rpc = (name, args) => supabase.rpc(name, args),
+  limiter: ReferralRateLimiter = createReferralRateLimiter()
+) {
   app.all('/api/referral-attribution', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.set('Vary', 'Origin');
@@ -22,6 +112,13 @@ export function registerReferralAttributionRoutes(app: Express, rpc: Rpc = (name
     try { if (origin) sameOrigin = new URL(origin).origin === `${secure ? 'https' : req.protocol}://${req.get('host')}`; } catch { sameOrigin = false; }
     if (!sameOrigin || req.get('sec-fetch-site') === 'cross-site') return void res.status(403).json({ error: 'Same-origin request required.' });
     if (req.method !== 'GET' && req.method !== 'POST') return void res.status(405).set('Allow', 'GET, POST').json({ error: 'Method not allowed.' });
+    // Counted AFTER the origin/method gates (a rejected request never reaches
+    // the database) and BEFORE any RPC, so the limit actually bounds writes.
+    const limit = limiter.hit(referralRateLimitKey(req));
+    if (!limit.allowed) {
+      res.set('Retry-After', String(limit.retryAfterSeconds));
+      return void res.status(429).json({ error: 'Too many requests. Please try again in a few minutes.' });
+    }
     if (req.method === 'POST' && !req.is('application/json')) return void res.status(415).json({ error: 'JSON required.' });
     if (req.method === 'POST' && Object.keys(req.body || {}).some(key => key !== 'code')) {
       return void res.status(400).json({ error: 'Only a referral code may be submitted.' });

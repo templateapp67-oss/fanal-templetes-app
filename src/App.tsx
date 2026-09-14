@@ -1,6 +1,14 @@
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
+import { normalizePath } from './lib/router';
+import { mergeHydratedSalonState } from './lib/hydrationMerge';
+import {
+  decideOwnerEntry,
+  describeOwnerEntry,
+  readOwnerEntryFacts,
+  type OwnerEntryStage,
+} from './lib/ownerEntryRoute';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, isMockSupabase } from './lib/supabaseClient';
+import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
@@ -348,8 +356,13 @@ export default function App() {
   const authStatusRef = useRef(authStatus);
   authStatusRef.current = authStatus;
   const authRetryRef = useRef<() => void>(() => {});
+  // Offline-preview convenience ONLY. `allowMockAuth` is false in a production
+  // bundle, so a cached user object can never be an authentication authority
+  // there -- the SDK session restored below is the only one (see the
+  // observeAuthSession effect). Demo data elsewhere still keys off
+  // isMockSupabase, so previews keep working.
   const [user, setUser] = useState<any>(() => {
-    if (!isMockSupabase) return null;
+    if (!allowMockAuth) return null;
     try {
       const raw = localStorage.getItem('nexora_auth_user_v1');
       if (raw) return JSON.parse(raw);
@@ -666,6 +679,54 @@ export default function App() {
     };
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // PHASE 3.1 — LOGIN ROUTING
+  //
+  // A signed-in owner lands on the step their own state implies, not on one
+  // hard-coded screen. Before this, every `setCurrentView` call in the app was
+  // a user click, so a returning owner who had already published a website saw
+  // the same marketing landing page as a first-time visitor.
+  //
+  //   • READ-ONLY: it calls get_my_owner_workspace() (STABLE), never
+  //     ensure_owner_workspace(). Logging in still provisions nothing.
+  //   • ONCE PER OWNER: keyed on user.id, so a token refresh or a re-render
+  //     cannot yank the owner off a screen they navigated to.
+  //   • ENTRY POINT ONLY: it acts only while the URL is '/'. A deep link
+  //     (/my-bookings, /partner/dashboard, /customer/booking/…) and any
+  //     deliberate navigation are left alone.
+  //   • NEVER GUESSES: an unreadable state resolves to 'landing' and the owner
+  //     stays exactly where they were.
+  // ---------------------------------------------------------------------------
+  const entryRoutedForRef = useRef<string | null>(null);
+  const ownerEntryStageRef = useRef<OwnerEntryStage | null>(null);
+  useEffect(() => {
+    if (isMockSupabase || !user?.id || authStatus !== 'ready') return;
+    if (entryRoutedForRef.current === user.id) return;
+    if (normalizePath(path) !== '/') return;
+    const ownerId = user.id;
+    // Claimed before the read so a second run cannot race the first.
+    entryRoutedForRef.current = ownerId;
+    let cancelled = false;
+    void readOwnerEntryFacts(supabase as any).then((facts) => {
+      if (cancelled || entryRoutedForRef.current !== ownerId) return;
+      // Every rule about when the owner may be moved lives in
+      // decideOwnerEntry, so it is testable without mounting this component.
+      const decision = decideOwnerEntry({ path, alreadyRouted: false, facts });
+      if (decision.stage) ownerEntryStageRef.current = decision.stage;
+      console.info(
+        '[Entry] %s -> %s',
+        describeOwnerEntry(decision.stage ?? 'unknown', facts),
+        decision.skip ?? decision.view
+      );
+      if (!decision.view) return;
+      if (decision.wizardStep !== null) setWizardStartingStep(decision.wizardStep);
+      setCurrentView(decision.view);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, authStatus, path, setCurrentView]);
+
   useEffect(() => {
     if (isMockSupabase) return;
     setProfile((prev) => ({ ...prev, ownerId: user?.id ?? undefined }));
@@ -873,19 +934,37 @@ export default function App() {
           if (error) throw error;
           if (hydrationUserRef.current === userId) {
             if (saved) {
-              const current = salonStateRef.current;
-              const mergedProfile = { ...current.profile, ...saved.profile, ownerId: userId };
-              // Preserve only edits made while this read was in flight. Local
-              // startup defaults must never prevent the saved profile loading.
-              for (const key of Object.keys(current.profile)) {
-                if (JSON.stringify(current.profile[key]) !== JSON.stringify(beforeRead.profile[key])) mergedProfile[key] = current.profile[key];
+              // PHASE 3.2 — the cloud row is the authoritative onboarding state
+              // and every field of it is restored, including the template the
+              // owner picked. `selectedTemplateId` used to be skipped, which
+              // silently restarted onboarding on one dimension: on a new device
+              // it falls back to INITIAL_SALON_PROFILE's default (loadSalonState
+              // is per-device), so the app believed the owner was on the default
+              // template while `profile.businessType` said otherwise — and the
+              // next auto-save persisted that regression over their real choice.
+              // The merge itself is a pure function so the "cloud wins, except
+              // for edits made mid-read" rule is testable on its own.
+              const next = mergeHydratedSalonState({
+                current: salonStateRef.current,
+                beforeRead,
+                saved,
+                userId,
+              });
+              if (next) {
+                salonStateRef.current = next;
+                setProfile(next.profile);
+                setServices(next.services);
+                setStylists(next.stylists);
+                setLoyaltyConfig(next.loyaltyConfig);
+                setSelectedTemplateId(next.selectedTemplateId as BusinessTypeId);
+                // Keep the "previous template" that mergeTemplatePreservingUserData
+                // compares against in step immediately. Without this there is a
+                // one-render window where previousTemplateIdRef still holds the
+                // default, and picking a template in it would treat the owner's
+                // restored values as the OLD template's defaults and replace
+                // them — the exact data loss this is meant to prevent.
+                previousTemplateIdRef.current = next.selectedTemplateId as BusinessTypeId;
               }
-              const next = { ...current, profile: mergedProfile,
-                services: current.services !== beforeRead.services ? current.services : saved.services ?? current.services,
-                stylists: current.stylists !== beforeRead.stylists ? current.stylists : saved.stylists ?? current.stylists,
-                loyaltyConfig: current.loyaltyConfig !== beforeRead.loyaltyConfig ? current.loyaltyConfig : saved.loyaltyConfig ?? current.loyaltyConfig };
-              salonStateRef.current = next;
-              setProfile(next.profile); setServices(next.services); setStylists(next.stylists); setLoyaltyConfig(next.loyaltyConfig);
             }
             hydratedForUserRef.current = true;
             hydrationErrorRef.current = null;
@@ -1440,6 +1519,19 @@ export default function App() {
   };
 
   const handleBuildWebsiteClick = () => {
+    // The backend-derived stage wins when it is known. ONBOARDING_COMPLETED_KEY
+    // is per-device localStorage, so on a new phone it says "not completed" for
+    // an owner who published last week — the stage read at login does not.
+    const stage = ownerEntryStageRef.current;
+    if (stage === 'published') {
+      setCurrentView('preview');
+      return;
+    }
+    if (stage === 'template-selected' || stage === 'editor-started') {
+      setWizardStartingStep(2);
+      setCurrentView('wizard');
+      return;
+    }
     const wizardCompleted = localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true';
     if (wizardCompleted) {
       setCurrentView('preview');

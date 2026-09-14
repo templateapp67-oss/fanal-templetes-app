@@ -20,7 +20,10 @@ test('incoming link is validated before navigation; cookie attribution reaches s
     requests.push(init!);
     assert.equal(init?.credentials, 'same-origin');
     if (init?.method === 'POST') {
-      assert.deepEqual(JSON.parse(String(init.body)), { code: 'nexora-rahul25' });
+      // PHASE 4.2: the client sends the CANONICAL code form (trim + uppercase),
+      // which is what growth_normalize_code produces and what the server stores.
+      // The link may carry 'nexora-rahul25'; the request must not.
+      assert.deepEqual(JSON.parse(String(init.body)), { code: 'NEXORA-RAHUL25' });
       cookieExists = true;
       return Response.json({ valid: true, referralCode: 'NEXORA-RAHUL25' });
     }
@@ -52,11 +55,18 @@ test('incoming link is validated before navigation; cookie attribution reaches s
     await act(async () => root.unmount());
     root = createRoot(host);
     await act(async () => root.render(React.createElement(OnboardingApp, { path: '/onboarding/signup', client, navigate: () => {} })));
+    // Field order is full name, email, phone, password, confirm (PHASE 2).
     const inputs = [...host.querySelectorAll('input')];
-    assert.equal(inputs.length, 3);
+    assert.equal(inputs.length, 5);
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
     await act(async () => {
-      for (const [i, value] of ['new@example.com', 'Secret123!', 'Secret123!'].entries()) {
+      for (const [i, value] of [
+        'New Owner',
+        'new@example.com',
+        '+919845077654',
+        'Secret123!',
+        'Secret123!',
+      ].entries()) {
         setter.call(inputs[i], value);
         inputs[i].dispatchEvent(new dom.window.Event('input', { bubbles: true }));
       }

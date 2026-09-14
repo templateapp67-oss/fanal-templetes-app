@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { saveOwnerEditorState } from '../src/lib/ownerEditorState.js';
+import { isMissingOwnerWorkspaceError, saveOwnerEditorState } from '../src/lib/ownerEditorState.js';
 import { runSalonSavePipeline } from '../src/lib/autoSave.js';
 
 const payload: any = { ownerId:'owner',profile:{businessName:'Mine',phone:'123'},services:[],stylists:[],loyaltyConfig:{},appointments:[],clients:[],selectedTemplateId:2 };
@@ -40,4 +40,92 @@ test('a failed or incomplete hydration cannot replace the saved cloud catalogue 
   assert.equal(result.target,'local_draft'); assert.equal(writes,0);
   assert.equal(local.ownerId,payload.ownerId); assert.deepEqual(local.profile,payload.profile);
   assert.match(result.summary,/workspace loads/);
+});
+
+// ---------------------------------------------------------------------------
+// Owner/salon workspace resolution on the save path.
+//
+// nexora_save_owner_workspace() raises 'Select a salon owned by this account'
+// for an owner who has no salon — the state every freshly onboarded user is
+// in. The save must resolve a workspace and retry ONCE, and only for that
+// failure: an ordinary rejection must not trigger a second write.
+// ---------------------------------------------------------------------------
+
+test('a save that fails for want of a salon resolves a workspace and retries once', async () => {
+  const calls: string[] = [];
+  const db: any = {
+    async rpc(name: string) {
+      calls.push(name);
+      if (name === 'ensure_owner_workspace') {
+        return { error: null, data: { provisioned: true, reason: 'created', organization_id: 'o', salon_id: 's', slug: 'mine', name: 'Mine' } };
+      }
+      // First save attempt fails for want of a salon; after provisioning it succeeds.
+      return calls.filter((c) => c === 'save_owner_editor_state').length === 1
+        ? { error: { code: '42501', message: 'Select a salon owned by this account' } }
+        : { error: null };
+    },
+  };
+  const result = await saveOwnerEditorState(db, payload);
+  assert.equal(result.ok, true, 'the save recovers once a workspace exists');
+  assert.deepEqual(calls, ['save_owner_editor_state', 'ensure_owner_workspace', 'save_owner_editor_state']);
+});
+
+test('a save is not retried for failures that provisioning cannot fix', async () => {
+  for (const message of ['permission denied for table salons', 'Invalid service price or duration', 'Sign in required']) {
+    const calls: string[] = [];
+    const db: any = { async rpc(name: string) { calls.push(name); return { error: { code: '42501', message } }; } };
+    const result = await saveOwnerEditorState(db, payload);
+    assert.equal(result.ok, false);
+    assert.deepEqual(calls, ['save_owner_editor_state'], `"${message}" is surfaced, not retried`);
+    assert.match(result.errors.join(' '), new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('an unresolvable workspace returns the original failure instead of masking it', async () => {
+  const calls: string[] = [];
+  const db: any = {
+    async rpc(name: string) {
+      calls.push(name);
+      if (name === 'ensure_owner_workspace') return { error: { message: 'legacy schema' }, data: null };
+      return { error: { code: '42501', message: 'Select a salon owned by this account' } };
+    },
+  };
+  const result = await saveOwnerEditorState(db, payload);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(' '), /Select a salon owned by this account/);
+  assert.deepEqual(calls, ['save_owner_editor_state', 'ensure_owner_workspace'], 'no pointless second write');
+});
+
+test('only the missing-salon failure is treated as a workspace problem', () => {
+  assert.equal(isMissingOwnerWorkspaceError(['Select a salon owned by this account']), true);
+  assert.equal(isMissingOwnerWorkspaceError(['function public.nexora_owner_salon_ids() does not exist']), true);
+  assert.equal(isMissingOwnerWorkspaceError(['permission denied for function save_owner_editor_state']), false);
+  assert.equal(isMissingOwnerWorkspaceError([]), false);
+  assert.equal(isMissingOwnerWorkspaceError(undefined), false);
+});
+
+test('an ambiguous workspace explains itself instead of returning the raw SQL error', async () => {
+  const db: any = {
+    async rpc(name: string) {
+      if (name === 'ensure_owner_workspace') {
+        return {
+          error: null,
+          data: {
+            provisioned: false, reason: 'existing', organization_id: 'o', salon_id: 's1',
+            slug: 'glow-studio', name: 'Glow Studio', salon_count: 2, ambiguous: true,
+            salons: [
+              { salon_id: 's1', slug: 'glow-studio', name: 'Glow Studio' },
+              { salon_id: 's2', slug: 'glow-studio-annexe', name: 'Glow Studio Annexe' },
+            ],
+          },
+        };
+      }
+      return { error: { code: '42501', message: 'Select a salon owned by this account' } };
+    },
+  };
+  const result = await saveOwnerEditorState(db, payload);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(' '), /more than one salon/);
+  assert.match(result.errors.join(' '), /glow-studio, glow-studio-annexe/);
+  assert.doesNotMatch(result.errors.join(' '), /Select a salon owned by this account/, 'raw SQL text is not shown to the owner');
 });
