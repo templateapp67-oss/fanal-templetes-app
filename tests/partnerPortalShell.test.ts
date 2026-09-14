@@ -1,7 +1,7 @@
 // ============================================================================
 // Partner portal SHELL (Part 2.2) — the /partner/dashboard layout.
 //
-//   • The sidebar includes live Rewards and Commission entries alongside the
+//   • The sidebar includes live Rewards and Extra Onboarding Reward entries alongside the
 //     original partner pages, while remaining future modules keep disabled
 //     “Soon” registry slots (Earnings, Withdrawals, Marketing Materials,
 //     Partner Levels, Leaderboards, Notifications, Support).
@@ -99,7 +99,7 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
   );
   assert.deepEqual(
     PARTNER_PORTAL_NAV.map((item) => item.label),
-    ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Commission', 'Profile'],
+    ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Extra Onboarding Reward', 'Profile'],
     'the exact sidebar menu labels, in order'
   );
   for (const item of PARTNER_PORTAL_NAV) {
@@ -169,7 +169,7 @@ test('the shell renders the professional dashboard layout (sidebar, header, main
   assert.match(html, /Growth Partner/);
   // Every required menu entry is present exactly once per nav surface
   // (desktop sidebar + mobile drawer both render the registry).
-  for (const label of ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Commission', 'Profile', 'Logout']) {
+  for (const label of ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Extra Onboarding Reward', 'Profile', 'Logout']) {
     assert.ok((html.match(new RegExp(`>${label}<`, 'g')) || []).length >= 2, `${label} appears in sidebar + drawer`);
   }
   // Top header: eyebrow + section title + identity + logout.
@@ -290,7 +290,7 @@ test('each portal section renders its own header title and active menu item', ()
     ['referral-status', 'Referral Status'],
     ['profile', 'Profile'],
     ['rewards', 'Rewards'],
-    ['commission', 'Commission'],
+    ['commission', 'Extra Onboarding Reward'],
   ];
   for (const [section, title] of cases) {
     const html = renderShell(section as (typeof PARTNER_PORTAL_SECTIONS)[number]);
