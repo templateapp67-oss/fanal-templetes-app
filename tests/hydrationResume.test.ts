@@ -207,3 +207,37 @@ test('the saved template id is what gets written back on the next save', () => {
   const editorState = readFileSync(new URL('../src/lib/ownerEditorState.ts', import.meta.url), 'utf8');
   assert.match(editorState, /selectedTemplateId: payload\.selectedTemplateId/);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 12 — Template Change Data Safety (Code & Logic Verification)
+// ---------------------------------------------------------------------------
+test('Phase 12 — Template switching code preserves canonical business data and does not rebuild salon records', () => {
+  const salonStoreCode = readFileSync(new URL('../src/lib/salonStore.ts', import.meta.url), 'utf8');
+  const appCode = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+
+  // 1. Preserves customized identity, contact & location fields
+  assert.match(salonStoreCode, /export function mergeTemplatePreservingUserData/);
+  assert.match(salonStoreCode, /keepIfCustomized\(prev\.businessName/);
+  assert.match(salonStoreCode, /keepIfCustomized\(prev\.phone/);
+  assert.match(salonStoreCode, /keepIfCustomized\(prev\.address/);
+  assert.match(salonStoreCode, /keepIfCustomized\(prev\.city/);
+  assert.match(salonStoreCode, /keepIfCustomized\(prev\.ownerName/);
+
+  // 2. Spreads prev profile first to preserve payments, business hours, offers, custom domain & gallery
+  assert.match(salonStoreCode, /\.\.\.prev,/);
+
+  // 3. Preserves services & staff when customized
+  assert.match(salonStoreCode, /export function areServicesCustomized/);
+  assert.match(salonStoreCode, /export function areStylistsCustomized/);
+  assert.match(salonStoreCode, /export function mergeTemplateServices/);
+  assert.match(salonStoreCode, /export function mergeTemplateStylists/);
+
+  // 4. App.tsx handleSelectTemplate updates in-memory state without rebuilding DB records
+  assert.match(appCode, /const handleSelectTemplate = \(catId: BusinessTypeId\) =>/);
+  assert.match(appCode, /mergeTemplatePreservingUserData\(prev, catId/);
+  assert.match(appCode, /mergeTemplateServices\(prev, catId/);
+  assert.match(appCode, /mergeTemplateStylists\(prev, catId/);
+
+  const selectTmplFunc = appCode.slice(appCode.indexOf('const handleSelectTemplate ='), appCode.indexOf('const handleSelectCategory ='));
+  assert.doesNotMatch(selectTmplFunc, /ensure_owner_workspace/, 'Template change must not provision or rebuild DB records');
+});
