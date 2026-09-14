@@ -199,7 +199,7 @@ test('PHASE 3.2: signup -> partial setup -> logout -> login resumes, does not re
         client: visitor as any,
         navigate: (next: string) => {
           window.history.replaceState(null, '', next);
-          setPath(next);
+          setPath(new URL(next, window.location.origin).pathname);
         },
       });
     }
