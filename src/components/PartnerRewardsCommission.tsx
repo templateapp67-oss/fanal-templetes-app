@@ -17,22 +17,22 @@ type RewardDashboard = {
     processing_day_from: number; processing_day_to: number };
   milestones: RewardMilestone[];
 };
-type CommissionDay = {
-  business_date: string; shop_attribution_id: string; salon_id: string;
-  qr_transaction_paise: number; company_commission_paise: number;
-  growth_partner_commission_paise: number;
-  daily_status: 'passed' | 'not_passed' | 'rejected'; rejection_reason?: string | null;
+type OnboardingRewardRow = {
+  id: string; shop_attribution_id: string; salon_id: string; shop_name: string;
+  qualification_start_date: string; qualification_end_date: string;
+  qualifying_qr_transaction_paise: number; company_commission_paise: number;
+  onboarding_reward_paise: number; status: 'earned' | 'approved' | 'paid' | 'held' | 'revoked';
+  earned_at: string; status_reason?: string | null;
 };
-type CommissionDashboard = {
-  currency: string; company_commission_rate_bps: number;
-  growth_partner_share_of_company_bps: number; effective_growth_partner_rate_bps: number;
-  minimums: { daily_qr_transaction_paise: number; daily_company_commission_paise: number;
-    daily_growth_partner_commission_paise: number; qualification_days: number;
-    cycle_qr_transaction_paise: number; cycle_company_commission_paise: number;
-    cycle_growth_partner_commission_paise: number };
-  totals: { qr_transaction_paise: number; company_commission_paise: number;
-    growth_partner_commission_paise: number; passed_days: number; rejected_days: number };
-  days: CommissionDay[];
+type OnboardingRewardDashboard = {
+  currency: string; programme_type: string; is_main_commission: false;
+  is_recurring: false; has_upper_cap: false; company_commission_rate_bps: number;
+  reward_share_of_company_bps: number; qualification_days: number;
+  minimums: { daily_qr_transaction_paise: number; cycle_qr_transaction_paise: number;
+    cycle_company_commission_paise: number; cycle_onboarding_reward_paise: number };
+  totals: { qualifying_shops: number; qualifying_qr_transaction_paise: number;
+    company_commission_paise: number; onboarding_reward_paise: number; paid_reward_paise: number };
+  rewards: OnboardingRewardRow[];
 };
 
 const money = (paise: number) => new Intl.NumberFormat('en-IN', {
@@ -115,52 +115,65 @@ export function PartnerRewardsPage() {
 }
 
 export function PartnerCommissionPage() {
-  const [data, setData] = useState<CommissionDashboard | null>(null);
+  const [data, setData] = useState<OnboardingRewardDashboard | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    const { data: value, error: rpcError } = await supabase.rpc('get_my_partner_qr_commission', { p_limit: 100, p_offset: 0 });
-    if (rpcError) setError('QR commission data अभी load नहीं हो सका।');
-    else setData(value as CommissionDashboard);
+    const { data: value, error: rpcError } = await supabase.rpc('get_my_partner_onboarding_rewards', { p_limit: 100, p_offset: 0 });
+    if (rpcError) setError('Extra Onboarding Reward data अभी load नहीं हो सका।');
+    else setData(value as OnboardingRewardDashboard);
     setLoading(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
-  if (loading && !data) return <Loading label="QR commission loading…" />;
+  if (loading && !data) return <Loading label="Extra Onboarding Rewards loading…" />;
   if (error && !data) return <ErrorState message={error} retry={() => void load()} />;
   if (!data) return null;
+
   return <div className="space-y-5">
     <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8">
-      <p className="text-xs font-bold uppercase tracking-[.2em] text-pink-300">Company QR Commission</p>
-      <h1 className="mt-2 text-2xl font-black">Growth Partner Commission</h1>
-      <p className="mt-2 text-sm text-slate-300">₹1,000 genuine daily QR business पर company को 10% यानी ₹100 commission मिलता है। उस ₹100 company commission का 10% यानी ₹10 Growth Partner commission होता है।</p>
+      <p className="text-xs font-bold uppercase tracking-[.2em] text-pink-300">One-time reward per qualifying shop</p>
+      <h1 className="mt-2 text-2xl font-black">Extra Onboarding Reward</h1>
+      <p className="mt-2 max-w-3xl text-sm text-slate-300">यह Growth Partner की main या recurring commission नहीं है। हर नई shop के पहले successful 15 consecutive qualifying days complete होने पर एक बार Extra Onboarding Reward मिलता है।</p>
       <div className="mt-5 grid gap-2 text-center text-sm font-black sm:grid-cols-3">
-        <div className="rounded-xl bg-white/10 p-3">₹1,000 QR Business</div>
-        <div className="rounded-xl bg-white/10 p-3">₹100 Company Commission</div>
-        <div className="rounded-xl bg-pink-600 p-3">₹10 Partner Commission</div>
+        <div className="rounded-xl bg-white/10 p-3">₹15,000 Minimum QR</div>
+        <div className="rounded-xl bg-white/10 p-3">₹1,500 Company Commission</div>
+        <div className="rounded-xl bg-pink-600 p-3">₹150 Minimum Extra Reward</div>
       </div>
     </section>
+
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Stat label="QR business" value={money(data.totals.qr_transaction_paise)} />
+      <Stat label="Qualifying shops" value={data.totals.qualifying_shops} />
+      <Stat label="15-day QR collection" value={money(data.totals.qualifying_qr_transaction_paise)} />
       <Stat label="Company commission" value={money(data.totals.company_commission_paise)} />
-      <Stat label="Your commission" value={money(data.totals.growth_partner_commission_paise)} />
-      <Stat label="Qualifying days" value={data.totals.passed_days} />
+      <Stat label="Your extra reward" value={money(data.totals.onboarding_reward_paise)} />
     </section>
+
     <section className="rounded-3xl border border-pink-200 bg-pink-50 p-5">
-      <h2 className="font-black text-slate-950">15-day minimum per qualifying shop</h2>
-      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-        <p className="rounded-xl bg-white p-3"><span className="block text-slate-500">QR transactions</span><strong className="text-lg">{money(data.minimums.cycle_qr_transaction_paise)}</strong></p>
-        <p className="rounded-xl bg-white p-3"><span className="block text-slate-500">Company commission</span><strong className="text-lg">{money(data.minimums.cycle_company_commission_paise)}</strong></p>
-        <p className="rounded-xl bg-white p-3"><span className="block text-slate-500">Your commission</span><strong className="text-lg text-[#c20e5a]">{money(data.minimums.cycle_growth_partner_commission_paise)}</strong></p>
+      <h2 className="font-black text-slate-950">No maximum limit</h2>
+      <p className="mt-2 text-sm text-slate-700">हर दिन minimum ₹1,000 जरूरी है। पहले valid 15-day cycle में जितना actual QR collection होगा, company को उसका 10% commission मिलेगा और company commission का 10% आपका one-time Extra Onboarding Reward होगा।</p>
+      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <p className="rounded-xl bg-white p-4"><span className="block text-slate-500">Minimum example</span><strong>₹15,000 QR → ₹1,500 company → ₹150 reward</strong></p>
+        <p className="rounded-xl bg-white p-4"><span className="block text-slate-500">Higher collection example</span><strong>₹50,000 QR → ₹5,000 company → ₹500 reward</strong></p>
       </div>
-      <p className="mt-3 text-xs font-semibold text-slate-600">Calculation: ₹10 partner commission × 15 consecutive qualifying days = ₹150 per shop.</p>
     </section>
+
     {error ? <p className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-800">{error}</p> : null}
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 p-5"><h2 className="font-black text-slate-950">Daily qualification history</h2></div>
-      {data.days.length===0?<div className="p-10 text-center"><IndianRupee className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 font-bold text-slate-800">No qualifying QR transactions yet</p><p className="mt-1 text-sm text-slate-500">Successful settled transactions आने पर daily calculation यहाँ दिखेगी।</p></div>:
-      <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Date</th><th className="p-4">QR transaction</th><th className="p-4">Company 10%</th><th className="p-4">Partner 10% of company</th><th className="p-4">Status</th><th className="p-4">Reason</th></tr></thead>
-      <tbody>{data.days.map((d)=><tr key={d.shop_attribution_id+':'+d.business_date} className="border-t border-slate-100"><td className="p-4 font-bold">{new Date(d.business_date+'T00:00:00').toLocaleDateString('en-IN')}</td><td className="p-4">{money(d.qr_transaction_paise)}</td><td className="p-4">{money(d.company_commission_paise)}</td><td className="p-4 font-black text-[#c20e5a]">{money(d.growth_partner_commission_paise)}</td><td className="p-4"><span className={'rounded-full px-2.5 py-1 text-xs font-bold '+(d.daily_status==='passed'?'bg-emerald-50 text-emerald-700':d.daily_status==='rejected'?'bg-rose-50 text-rose-700':'bg-amber-50 text-amber-700')}>{d.daily_status.replaceAll('_',' ')}</span></td><td className="p-4 text-slate-500">{d.rejection_reason?.replaceAll('_',' ') ?? '—'}</td></tr>)}</tbody></table></div>}
+      <div className="border-b border-slate-100 p-5"><h2 className="font-black text-slate-950">Shop-wise earned rewards</h2></div>
+      {data.rewards.length === 0
+        ? <div className="p-10 text-center"><IndianRupee className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 font-bold text-slate-800">No Extra Onboarding Reward earned yet</p><p className="mt-1 text-sm text-slate-500">नई shop का first valid 15-day qualification cycle complete होने पर reward यहाँ दिखेगा।</p></div>
+        : <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Shop</th><th className="p-4">15-day period</th><th className="p-4">QR collection</th><th className="p-4">Company 10%</th><th className="p-4">Extra reward</th><th className="p-4">Status</th></tr></thead>
+          <tbody>{data.rewards.map((reward) => <tr key={reward.id} className="border-t border-slate-100">
+            <td className="p-4 font-bold">{reward.shop_name || 'Shop'}</td>
+            <td className="p-4 text-slate-600">{new Date(reward.qualification_start_date + 'T00:00:00').toLocaleDateString('en-IN')} – {new Date(reward.qualification_end_date + 'T00:00:00').toLocaleDateString('en-IN')}</td>
+            <td className="p-4">{money(reward.qualifying_qr_transaction_paise)}</td>
+            <td className="p-4">{money(reward.company_commission_paise)}</td>
+            <td className="p-4 font-black text-[#c20e5a]">{money(reward.onboarding_reward_paise)}</td>
+            <td className="p-4"><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">{reward.status.replaceAll('_', ' ')}</span></td>
+          </tr>)}</tbody>
+        </table></div>}
     </section>
   </div>;
 }
