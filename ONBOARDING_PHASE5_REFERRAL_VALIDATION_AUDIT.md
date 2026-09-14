@@ -237,3 +237,184 @@ npm run build          exit 0
 
 `npm test` was 1331 before this phase (+17). `test:dom` unchanged at 68 — this
 phase is backend-only.
+
+---
+
+## PART G — 5.2 Safe response
+
+The rule this part enforces: public/client validation must not expose the
+partner's **private profile**, **internal IDs unnecessarily**, **bank
+details**, **commission configuration**, **admin metadata** or **private
+contact details** — and must return only the required safe information.
+
+The numbers in Part F belong to that phase. The runs for this part are at the
+end of Part G.
+
+### G.1 What each surface is allowed to answer
+
+| Surface | Caller | The complete answer |
+|---|---|---|
+| `public.validate_growth_referral_code(text)` | authenticated owner typing a code | `{valid, referral_code}` |
+| `public.capture_growth_referral(text,text)` | anonymous | `{valid, referral_code, token, expires_at}` |
+| `public.prepare_growth_referral_signup(text)` | anonymous (cookie capability) | same four fields |
+| `POST /api/referral-attribution` | anonymous | `{valid:true, referralCode}` + capability in an HttpOnly cookie, or `{valid:false, token:null}` |
+| `GET /api/referral-attribution` | anonymous (cookie capability) | `{valid:true, referralCode, token}` or `{valid:false, token:null}` |
+| `validateGrowthReferralCode()` (browser wrapper) | signed-in owner | `{valid, referral_code}` |
+| `linkMyGrowthReferral()` / `getMyGrowthReferral()` (browser wrappers) | signed-in owner | the 5 documented relationship fields (below) |
+
+`expires_at` never crosses the wire: it sets the cookie's `Expires` and nothing
+else. On the HTTP body the same fields are spelled camelCase
+(`referralCode`); both spellings are read in one place so a surface cannot
+re-implement the mapping.
+
+### G.2 The defect this part found and fixed
+
+`validateGrowthReferralCode()` used to cast the RPC result —
+`return data as ValidateReferralResult` (`src/lib/growthPartner.ts:114` before
+this change). A fetch-level probe with a hostile backend showed the entire
+partner row reaching the client:
+
+```
+RESULT {"valid":true,"referral_code":"ALPHA01","partner_id":"p-1",
+        "partner_name":"Anita","bank_account_number":"999",
+        "commission_rate":30,"is_admin":true,"email":"x@y.z"}
+```
+
+Nothing in the tree made the database return those fields — and nothing
+prevented it either. Any drift (a hand-edited function, a column added to a
+view, a self-hosted PostgREST, a caching proxy, a staging project with a
+different schema) would have delivered a partner's bank details, commission
+configuration, admin metadata and private contacts into React state through a
+call whose only job is to answer "is this code valid?".
+
+The fix is structural, not a filter list: **every public/client validation
+answer is constructed field by field from an allowlist**, so unrelated data
+cannot ride along under a new key name, inside a nested object, or in an array.
+
+### G.3 One definition, wired into every boundary
+
+`src/lib/safePartnerResponse.ts` is the single definition:
+
+* `SAFE_VALIDATION_FIELDS` — the complete allowlist per surface (`:51`);
+* `projectValidationResponse()` — builds the answer, type-checks the code
+  against the database's own CHECK constraint and the capability against the
+  64-hex form, and drops everything else (`:113`);
+* `publicValidationBody()` — the exact HTTP body (`:151`);
+* `capabilityExpiry()` — server-side cookie lifetime with the documented
+  7-day fallback (`:162`);
+* `projectReferralRelationship()` — the 5 documented relationship fields for
+  the own-referral reads (`:351`);
+* `PRIVATE_KEY_RULES` / `findPrivateResponseFields()` — the audit backstop that
+  names the six categories by key **and** by unmistakable value (email, phone,
+  UUID, IFSC, IBAN), through nested objects and arrays (`:193`, `:256`).
+
+Wired in:
+
+* `server/referralAttribution.ts:150–174` — the anonymous endpoint (both
+  methods), the only public writer in the funnel;
+* `src/lib/growthPartner.ts:132,149,160` — client validation and the
+  own-referral reads;
+* `src/onboarding/lib/referralAttribution.ts:34` — the signup client that
+  reads the same HTTP answer.
+
+### G.4 Fail-closed properties (all asserted)
+
+* A `valid:true` answer with no usable canonical code is reported as
+  `{valid:false, token:null}` instead of as a half-answer.
+* An answer is only "complete" when it has BOTH a canonical code and a usable
+  capability: otherwise no cookie is set and the JSON says invalid, so a
+  half-answer can neither start nor continue an attribution.
+* `valid` must be the boolean `true`; the string `'true'` is not validity.
+* A `referral_code` that is not in the database's own format is dropped, so a
+  private value can never be echoed back through that field.
+* Code validation ignores a `token` even if the backend returns one — asking
+  whether a code is valid must not mint a capability.
+* An unusable capability is not a token, so a forged/short/long value cannot
+  make the endpoint set a cookie.
+* `expires_at` is only accepted as a parseable instant, and the cookie falls
+  back to the committed 7-day TTL rather than to anything the client supplies.
+* The linking write path throws (never reports success) when the projected
+  relationship is unusable; the read path answers "no usable relationship".
+
+Anti-enumeration is untouched: unknown, inactive and banned partners still
+produce one indistinguishable message (Part B.2), and the response shape is
+identical in all three cases.
+
+### G.5 Drift is reported, never forwarded
+
+`server/partnerErrorLog.ts` gained `logPartnerResponseDrift()`. The response is
+already allowlisted, so this is an operational backstop: when the database
+starts returning a forbidden field, the endpoint logs the field **paths and
+categories** (`{"event":"partner_response_drift","dropped":[{"path":
+"bank_account_number","category":"bank-details"}]}`) and still answers with the
+safe body. Values are never logged — the point of the rule is that they are
+private — and the test asserts the log line contains no marker values.
+
+### G.6 Two further defects the tests caught
+
+1. **A too-loose code pattern.** The first draft accepted any upper-case
+   letters/digits/dashes, so `PRIVATE-NAME` (a partner's name in the
+   `referral_code` field of a drifted answer) passed as a "canonical code" and
+   was echoed to the browser. The pattern is now exactly the database's own
+   constraint — `^([A-Z0-9]{6,12}|NEXORA-[A-Z0-9]{4,24})$`
+   (`20260921_public_partner_referral_codes.sql`).
+2. **Two spellings of one answer.** The database returns `referral_code`
+   while the HTTP body returns `referralCode`; projecting only the snake_case
+   spelling silently emptied the captured code and broke four browser flows
+   (share link → signup, register recovery, Section 40 acceptance, cookie
+   attribution across a remount). Both spellings are now read in the one
+   projector, and `5.2 one definition reads both spellings` pins it.
+
+### G.7 Recorded, not changed
+
+* The referred owner's `partner_name` (and the partner's own view of their
+  referrals' display names) stays: `20260915_growth_partner_dashboard.sql`
+  documents that reverse disclosure as deliberate and minimal. What is new is
+  that nothing else can arrive with it.
+* `growth_onboarding`'s `growth_partner_id` in the own-onboarding snapshot is
+  unchanged; it is the caller's own relationship, pinned by
+  `tests/onboardingApp.test.ts:527`, and is not part of a validation answer.
+* Owner-only authenticated reads (`get_partner_profile`,
+  `get_my_growth_partner`) were already minimal and remain untouched.
+* `/api/site/:subdomain` returns the business contact details a salon
+  publishes on its own public website — a different, product-level contract,
+  out of scope for validation responses.
+
+### G.8 Verification
+
+`tests/partnerSafeResponse.test.ts` (11 tests) drives **all four layers** with
+the same hostile payload — a partner row that really does hold
+`PRIVATE-NAME`, `BANK-MARKER-9931`, `ADMIN-MARKER`,
+`partner.private@example.com` and `+919999900001`:
+
+* projector: exact key sets per surface, six categories named, nested/array
+  scanning, both spellings;
+* the anonymous endpoint: exact bodies, cookie still set and expiring,
+  fail-closed on a hostile/forged answer, drift log carries no values;
+* real PostgreSQL (PGlite, `LOCAL_GROWTH_CHAIN`): `capture_growth_referral`,
+  `prepare_growth_referral_signup` as `anon` and
+  `validate_growth_referral_code` / `link_my_growth_referral` /
+  `get_my_growth_referral` as `authenticated` — exact key lists, and the
+  markers above never appear even though the rows hold them;
+* browser wrappers through a hostile HTTP layer, including the signup client
+  and the linking screen.
+
+### Positive controls
+
+| Reverted | Result |
+|---|---|
+| `validateGrowthReferralCode` back to `return data as ValidateReferralResult` | `5.2 the client validation wrapper…` fails |
+| the endpoint back to forwarding the RPC payload | `5.2 /api/referral-attribution…` fails |
+| the canonical-code pattern back to letters/digits/dashes | `5.2 the public body…` and `one definition reads both spellings` fail |
+
+All restored → green.
+
+### Runs
+
+```
+tsc --noEmit (5.8.3)   exit 0
+npm run build          exit 0
+npm test               1359 tests, 1356 pass, 0 fail, 3 skipped   (was 1348)
+npm run test:dom         68 tests,   68 pass, 0 fail
+npm run test:partner    441 tests,  441 pass, 0 fail
+```
