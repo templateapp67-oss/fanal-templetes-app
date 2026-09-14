@@ -65,6 +65,9 @@ export const LOCAL_GROWTH_CHAIN = [
   // trim from spaces-only to the set String.prototype.trim() removes, so the
   // database and the browser agree on one canonical code form.
   '20261004_referral_code_normalization.sql',
+  // Partner usability guard (PHASE 5). Refuses NEW referrals to a partner who
+  // is inactive or GoTrue-banned; existing attributions are never revisited.
+  '20261005_partner_ban_guard.sql',
   // Owner/salon workspace resolution (PART 3). Creates the normalized
   // organizations / organization_members / salons objects and the idempotent
   // ensure_owner_workspace() the Template App entry gate calls, so the
@@ -118,7 +121,12 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
     last_sign_in_at timestamptz,
     raw_user_meta_data jsonb not null default '{}'::jsonb,
     raw_app_meta_data jsonb not null default '{}'::jsonb,
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    -- GoTrue's ban column. Real auth.users has it, and
+    -- 20260913_template_handoff.sql probes information_schema for it before
+    -- enforcing a ban, so modelling it here exercises that branch locally
+    -- instead of silently skipping it.
+    banned_until timestamptz
   );
   grant usage on schema auth to authenticated, anon;
 

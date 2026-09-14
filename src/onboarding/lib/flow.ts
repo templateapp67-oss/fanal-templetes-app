@@ -282,6 +282,14 @@ export function toSafeReferralError(error: unknown): OnboardingError {
   if (/invalid.*referral code|referral code.*invalid|inactive referral/i.test(message)) {
     return new OnboardingError('invalid-code', 'Invalid referral code. Please check and try again.');
   }
+  // `update_my_onboarding_progress` rejects an action it does not recognise.
+  // That is a stale or wrong client, not a transient failure, so "Something
+  // went wrong. Please try again." would send the owner back to retry the exact
+  // call that just failed. Reuses the existing 'validation' code rather than
+  // adding a new one.
+  if (/unknown onboarding action|invalid onboarding action/i.test(message)) {
+    return new OnboardingError('validation', 'This step could not be completed. Please refresh the page and try again.');
+  }
   if (/sign in required|not authenticated|jwt expired|invalid jwt/i.test(message)) {
     return new OnboardingError('session', 'Your session expired. Please sign in again.');
   }
