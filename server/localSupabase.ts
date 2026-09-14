@@ -61,6 +61,10 @@ export const LOCAL_GROWTH_CHAIN = [
   '20260929_partner_referral_events_rls.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
+  // Referral code normalization (PHASE 4.2). Widens growth_normalize_code's
+  // trim from spaces-only to the set String.prototype.trim() removes, so the
+  // database and the browser agree on one canonical code form.
+  '20261004_referral_code_normalization.sql',
   // Owner/salon workspace resolution (PART 3). Creates the normalized
   // organizations / organization_members / salons objects and the idempotent
   // ensure_owner_workspace() the Template App entry gate calls, so the

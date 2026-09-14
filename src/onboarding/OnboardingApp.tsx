@@ -1,7 +1,12 @@
 import { captureSignupReferral, prepareSignupAttribution } from './lib/referralAttribution';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
-import { isSessionExpiredError } from '../lib/growthPartner';
+import {
+  isGrowthReferralCodeFormat,
+  isSessionExpiredError,
+  normalizeGrowthReferralCode,
+} from '../lib/growthPartner';
+import { referralCodeFromQuery } from '../lib/referralQuery';
 import {
   normalizePath,
   matchOnboardingRoute,
@@ -60,21 +65,22 @@ export const ONBOARDING_MOCK_BODY =
   'Sign up, login and referral verification need Supabase Auth, which is not connected in this preview.';
 
 /**
- * Read the `ref` query parameter of a partner's share link
- * (`/signup?ref=CODE`). The code is captured
- * ONCE on mount (the router may redirect through the login screen, which
- * drops the query) and the backend re-validates it on submit.
+ * Read the referral code of a partner's share link
+ * (`/signup?ref=CODE`, `?referral=CODE` accepted as an alias). The code is
+ * captured ONCE on mount (the router may redirect through the login screen,
+ * which drops the query) and the backend re-validates it on submit.
+ *
+ * Only a code the database can actually link is pre-filled: normalised to the
+ * canonical form, and dropped when it fails the format check the database
+ * itself enforces. A rejected value falls back to manual entry instead of
+ * pre-filling something that is guaranteed to fail on submit.
  */
 export function readSharedReferralCode(): string {
   if (typeof window === 'undefined' || !window.location) return '';
-  try {
-    const value = new URLSearchParams(window.location.search).get('ref') ?? '';
-    // Never truncate a malformed code into a different, valid referral.
-    return value.trim().length <= 64 ? value.trim() : '';
-  } catch {
-    return '';
-  }
+  const candidate = referralCodeFromQuery(window.location.search);
+  return isGrowthReferralCodeFormat(candidate) ? normalizeGrowthReferralCode(candidate) : '';
 }
+
 
 export const OnboardingBootLoading: React.FC = () => (
   <GatewayShell title="One moment…" subtitle="Restoring your session.">

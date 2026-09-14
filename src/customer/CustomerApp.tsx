@@ -35,6 +35,7 @@ import { ActivityScreen } from './screens/Activity';
 import { LocationScreen, ProfileScreen } from './screens/Me';
 import { SettingsScreen } from './screens/Settings';
 import { Button, CARD_CLASS, Chip, MUTED_CLASS } from './ui';
+import { referralCodeFromQuery } from '../lib/referralQuery';
 
 export interface CustomerAppProps {
   /** Current path, from the same `usePathRoute` the owner app uses. */
@@ -185,7 +186,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
 
   const [referralFromLink] = useState(() => {
     if (typeof window === 'undefined') return '';
-    return String(new URLSearchParams(window.location.search).get('ref') || '').trim();
+    return referralCodeFromQuery(window.location.search);
   });
 
   const body = (() => {

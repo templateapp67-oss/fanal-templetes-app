@@ -20,7 +20,10 @@ test('incoming link is validated before navigation; cookie attribution reaches s
     requests.push(init!);
     assert.equal(init?.credentials, 'same-origin');
     if (init?.method === 'POST') {
-      assert.deepEqual(JSON.parse(String(init.body)), { code: 'nexora-rahul25' });
+      // PHASE 4.2: the client sends the CANONICAL code form (trim + uppercase),
+      // which is what growth_normalize_code produces and what the server stores.
+      // The link may carry 'nexora-rahul25'; the request must not.
+      assert.deepEqual(JSON.parse(String(init.body)), { code: 'NEXORA-RAHUL25' });
       cookieExists = true;
       return Response.json({ valid: true, referralCode: 'NEXORA-RAHUL25' });
     }
