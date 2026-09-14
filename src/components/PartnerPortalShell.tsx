@@ -61,7 +61,7 @@ export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   { section: 'referred-users', label: 'Referred Users', icon: Users },
   { section: 'referral-status', label: 'Referral Status', icon: ListChecks },
   { section: 'rewards', label: 'Rewards', icon: Gift },
-  { section: 'commission', label: 'Commission', icon: Percent },
+  { section: 'commission', label: 'Extra Onboarding Reward', icon: Percent },
   { section: 'profile', label: 'Profile', icon: CircleUserRound },
 ];
 
@@ -98,7 +98,7 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
   profile: 'Profile',
   rewards: 'Rewards',
   performance: 'Performance',
-  commission: 'Commission',
+  commission: 'Extra Onboarding Reward',
 };
 
 /**
