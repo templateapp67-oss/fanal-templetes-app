@@ -261,3 +261,24 @@ This run is the local gateway, not the production Supabase project. It
 proves the SQL, the RPC contracts and the HTTP surface; it does not prove
 the live project's column shapes, which is exactly why `20261002` probes
 every column before writing it.
+
+---
+
+## 7. Phase 14, Phase 15, and Phase 16 Audit Details
+
+### Phase 14 — Completion Callback / Status
+- **Callback Necessity & Integration:** The system uses server-authoritative state transitions (`complete_template_onboarding()` RPC and `template_website_is_complete(uuid)` SQL function). There is no disconnected second callback architecture or vulnerable client-side webhook.
+- **14.1 Security:** `complete_template_onboarding()` strictly relies on `auth.uid()` for session authentication. It verifies that the authenticated owner/manager has an active organization, named salon with slug, and an active service (or legacy profile subdomain + name + owned service) before marking `template_completed`. The client cannot simply issue `completed = true` or manipulate state directly without backend verification.
+- **14.2 Idempotency:** Subsequent calls to `complete_template_onboarding()` return existing timestamps (`template_completed_at`, `template_started_at`) and perform zero duplicate writes, avoiding double conversion events, double partner metrics, or duplicate audit logs.
+
+### Phase 15 — Referral Conversion Lifecycle
+- **Canonical Lifecycle:** Preserves the canonical lifecycle defined in `growth_effective_referral_status(p_onboarding_status, p_override)` and `20260924_referral_lifecycle.sql`:
+  - `pending` (e.g. linked / initial signup)
+  - `active` (`template_started`)
+  - `converted` (`template_completed`)
+  - Admin overrides: `inactive`, `cancelled`, `rejected`
+- **Conversion Point:** Referral validation/attribution (`linked`) does NOT mark a conversion. Conversion occurs ONLY when website onboarding is verifiably completed (`template_completed`).
+
+### Phase 16 — Database Schema & Additive Migrations
+- **Additive Migrations Only:** All migrations (e.g., `20260914_template_completion.sql`, `20260924_referral_lifecycle.sql`, `20261002_owner_workspace_provisioning.sql`) use introspection-aware checks (`IF NOT EXISTS`, column checks via `information_schema` / `template_completion_has_column`), avoiding destructive actions, table drops, or parallel duplicate tables.
+- **Data Backfill & Integrity:** Existing rows without `template_started_at` are safely backfilled at completion time (`coalesce(template_started_at, now())`). RLS policies, foreign key constraints, unique constraints, and least-privilege security definer grants are verified and preserved across all tables (`growth_onboarding`, `growth_partners`, `organizations`, `organization_members`, `salons`, `services`).
