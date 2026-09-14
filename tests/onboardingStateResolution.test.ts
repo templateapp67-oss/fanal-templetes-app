@@ -486,7 +486,6 @@ test('8.4 the chosen template is stored in the existing editor state — and the
         profileReadOk: true,
         workspaceSupported: true,
         workspaceResolved: true,
-        workspaceAmbiguous: false,
         onboardingStatus: status,
         hasEditorState: response.data !== null,
         templateId: response.data?.selectedTemplateId ?? null,

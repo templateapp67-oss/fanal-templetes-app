@@ -28,10 +28,6 @@ export function isMissingOwnerWorkspaceError(errors: string[] | undefined): bool
     || /nexora_owner_salon_ids/i.test(joined);
 }
 
-/** Shown instead of the raw SQL error when an owner has 2+ salons. */
-export const AMBIGUOUS_WORKSPACE_MESSAGE =
-  'This account has more than one salon, so the save could not pick one automatically.';
-
 async function writeOwnerEditorState(
   db: SupabaseClient,
   payload: SalonSyncPayload
@@ -70,24 +66,13 @@ export async function saveOwnerEditorState(
   // original failure is returned unchanged rather than being masked.
   const workspace = await resolveOwnerWorkspace(db as any);
 
-  // Several salons and no way to choose between them. Provisioning cannot
-  // help here and retrying would fail identically, so replace the raw
-  // 'Select a salon owned by this account' with something an owner can act
-  // on, and name the candidates.
-  if (workspace.ambiguous) {
-    const options = workspace.salons
-      .map((salon) => salon.slug || salon.name)
-      .filter(Boolean)
-      .join(', ');
-    return {
-      ...first,
-      errors: [
-        AMBIGUOUS_WORKSPACE_MESSAGE +
-          (options ? ` Your salons: ${options}. Set the website address to one of them and save again.` : ''),
-      ],
-    };
-  }
-
+  // PHASE 10: several salons are no longer a dead end. Migration 20261006
+  // resolves the target server-side (primary -> most recent -> first
+  // authorized) inside nexora_save_owner_workspace(), so the retry below is
+  // the normal path for a multi-salon owner. `workspace.ambiguous` stays
+  // informational and is deliberately NOT consulted here: refusing to retry
+  // was what produced the "more than one salon, could not pick one" message
+  // for perfectly valid accounts.
   if (!workspace.salonId) return first;
   const retried = await writeOwnerEditorState(db, payload);
   return retried.ok ? retried : first;

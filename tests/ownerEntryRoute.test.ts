@@ -165,13 +165,31 @@ test('a pre-20261002 database is not treated as an incomplete step', () => {
 // 2. Never guess
 // ---------------------------------------------------------------------------
 
-test('an ambiguous workspace produces no move', () => {
-  const ambiguous = facts({ workspaceResolved: false, workspaceAmbiguous: true });
-  assert.equal(classifyOwnerEntry(ambiguous), 'workspace-ambiguous');
-  assert.equal(ownerEntryView('workspace-ambiguous'), 'landing');
-  const decision = decideOwnerEntry({ path: '/', alreadyRouted: false, facts: ambiguous });
-  assert.equal(decision.view, null, 'the owner stays put');
-  assert.equal(decision.skip, 'no-confident-answer');
+test('PHASE 10: several salons are a workspace, not an owner decision', () => {
+  // Migration 20261006 makes the backend choose the target (primary → most
+  // recent → first authorized), so `resolved` is true for a multi-salon owner
+  // and routing proceeds exactly like any other resolved workspace. The old
+  // "the owner must decide" stage is gone: it left those owners on the landing
+  // page forever.
+  const multiSalon = facts({ workspaceResolved: true, onboardingStatus: 'linked', hasEditorState: true });
+  assert.equal(classifyOwnerEntry(multiSalon), 'editor-started');
+  assert.equal(ownerEntryView('editor-started'), 'wizard');
+  assert.equal(
+    decideOwnerEntry({ path: '/', alreadyRouted: false, facts: multiSalon }).view,
+    'wizard'
+  );
+
+  // An unresolved workspace is MISSING — the wizard is where provisioning runs
+  // and where the "no salon yet" save retry lives — not a special state.
+  const unresolved = facts({ workspaceResolved: false });
+  assert.equal(classifyOwnerEntry(unresolved), 'no-workspace');
+  assert.equal(ownerEntryView('no-workspace'), 'wizard');
+  assert.equal(decideOwnerEntry({ path: '/', alreadyRouted: false, facts: unresolved }).wizardStep, 1);
+
+  // And the stage itself no longer exists.
+  const source = readFileSync(new URL('../src/lib/ownerEntryRoute.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /workspace-ambiguous/);
+  assert.doesNotMatch(source, /workspaceAmbiguous/);
 });
 
 test('an unreadable state produces no move', () => {
@@ -353,19 +371,33 @@ test('every read failing at once still returns a usable fact set', async () => {
   assert.equal(read.workspaceSupported, true, 'a transport error is not "old database"');
 });
 
-test('ambiguous salons are detected from either field', async () => {
-  const byFlag = fakeClient({
+test('a multi-salon workspace reads as resolved and the ambiguous flag is ignored', async () => {
+  // The RPC's own verdict is what counts: two salons, one of them chosen.
+  const multi = fakeClient({
+    get_my_owner_workspace: {
+      data: {
+        resolved: true, ambiguous: true, salon_count: 2, selection: 'most-recent',
+        salon_id: 's2', slug: 'glow-studio-annexe', name: 'Glow Studio Annexe',
+        salons: [{ salon_id: 's2' }, { salon_id: 's1' }],
+      },
+      error: null,
+    },
+  });
+  const read = await readOwnerEntryFacts(multi);
+  assert.equal(read.workspaceSupported, true);
+  assert.equal(read.workspaceResolved, true, 'the backend already chose a salon');
+  assert.equal(classifyOwnerEntry(read), 'onboarding-incomplete');
+
+  // A database that reports several salons WITHOUT resolving one still reads as
+  // unresolved (never as "ambiguous"), so routing sends the owner to the editor
+  // — where provisioning and the save retry run — instead of stranding them on
+  // the landing page.
+  const unresolved = fakeClient({
     get_my_owner_workspace: { data: { resolved: false, ambiguous: true, salon_count: 2, salons: [{}, {}] }, error: null },
   });
-  assert.equal((await readOwnerEntryFacts(byFlag)).workspaceAmbiguous, true);
-
-  // An older shape without the `ambiguous` field: the count still proves it.
-  const byCount = fakeClient({
-    get_my_owner_workspace: { data: { resolved: false, salons: [{}, {}] }, error: null },
-  });
-  const read = await readOwnerEntryFacts(byCount);
-  assert.equal(read.workspaceAmbiguous, true);
-  assert.equal(classifyOwnerEntry(read), 'workspace-ambiguous');
+  const legacy = await readOwnerEntryFacts(unresolved);
+  assert.equal(legacy.workspaceResolved, false);
+  assert.equal(classifyOwnerEntry(legacy), 'no-workspace');
 });
 
 // ---------------------------------------------------------------------------

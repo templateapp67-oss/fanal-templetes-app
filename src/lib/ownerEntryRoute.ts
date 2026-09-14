@@ -28,10 +28,15 @@ import type { AppView } from '../types';
 export type OwnerEntryStage =
   /** No `profiles` row — nothing has been captured for this owner yet. */
   | 'no-profile'
-  /** A profile exists but no salon/workspace to save into. */
+  /**
+   * A profile exists but no salon/workspace to save into.
+   *
+   * PHASE 10: this is the ONLY unresolved-workspace stage. Several salons used
+   * to be reported as their own "the owner must decide" stage, but migration
+   * 20261006 resolves the target server-side (primary → most recent → first
+   * authorized), so a multi-salon owner has a workspace like any other.
+   */
   | 'no-workspace'
-  /** Several salons and no way to choose — the owner must decide, not us. */
-  | 'workspace-ambiguous'
   /** Workspace ready, onboarding not finished, no editor state yet. */
   | 'onboarding-incomplete'
   /** A template has been chosen but no editor state saved. */
@@ -54,8 +59,8 @@ export interface OwnerEntryFacts {
   profileReadOk: boolean;
   /** False on a database that predates migration 20261002 — see below. */
   workspaceSupported: boolean;
+  /** True when an authorized salon was found AND chosen for this caller. */
   workspaceResolved: boolean;
-  workspaceAmbiguous: boolean;
   /** `not_started` | `linked` | `template_started` | `template_completed`. */
   onboardingStatus: string;
   hasEditorState: boolean;
@@ -67,7 +72,6 @@ export const UNKNOWN_OWNER_ENTRY_FACTS: OwnerEntryFacts = {
   profileReadOk: false,
   workspaceSupported: false,
   workspaceResolved: false,
-  workspaceAmbiguous: false,
   onboardingStatus: '',
   hasEditorState: false,
   templateId: null,
@@ -134,11 +138,11 @@ export async function readOwnerEntryFacts(
     facts.workspaceSupported = !isMissingFunction(workspaceResult.error);
   } else if (workspaceResult.data && typeof workspaceResult.data === 'object') {
     const data = workspaceResult.data as Record<string, any>;
-    const salons = Array.isArray(data.salons) ? data.salons : [];
-    const count = typeof data.salon_count === 'number' ? data.salon_count : salons.length;
     facts.workspaceSupported = true;
+    // The RPC's own verdict. `ambiguous` is deliberately ignored: since
+    // migration 20261006 it is informational (several salons exist) while
+    // `resolved` already names the salon the backend chose for this caller.
     facts.workspaceResolved = data.resolved === true;
-    facts.workspaceAmbiguous = data.ambiguous === true || count > 1;
   }
 
   if (!statusResult.error && statusResult.data && typeof statusResult.data === 'object') {
@@ -164,10 +168,10 @@ export function classifyOwnerEntry(facts: OwnerEntryFacts): OwnerEntryStage {
   // the setup wizard because one request failed.
   if (!facts.profileReadOk) return 'unknown';
   if (!facts.hasProfile) return 'no-profile';
-  // Only meaningful on a database that has the normalized generation.
-  if (facts.workspaceSupported && !facts.workspaceResolved) {
-    return facts.workspaceAmbiguous ? 'workspace-ambiguous' : 'no-workspace';
-  }
+  // Only meaningful on a database that has the normalized generation. An
+  // unresolved workspace is MISSING, never "ambiguous": the server resolves
+  // multiple salons itself (20261006), and a caller cannot act on ambiguity.
+  if (facts.workspaceSupported && !facts.workspaceResolved) return 'no-workspace';
   if (facts.onboardingStatus === 'template_completed') return 'published';
   if (facts.hasEditorState) return 'editor-started';
   if (facts.templateId) return 'template-selected';
@@ -200,11 +204,13 @@ export function ownerEntryView(stage: OwnerEntryStage): AppView {
     case 'template-selected':
     case 'editor-started':
       return 'wizard';
-    case 'workspace-ambiguous':
     case 'unknown':
     default:
-      // Never guess. `saveOwnerEditorState` already names the ambiguous
-      // salons when the owner next saves, which is where that decision belongs.
+      // Never guess: `unknown` means a read FAILED, not that the owner has no
+      // workspace — a missing workspace is its own stage above. PHASE 10
+      // removed the last case that used to land here deliberately: several
+      // salons are resolved server-side (20261006), so a multi-salon owner
+      // reaches the wizard like any other instead of being parked on landing.
       return 'landing';
   }
 }
@@ -224,7 +230,7 @@ export function describeOwnerEntry(stage: OwnerEntryStage, facts: OwnerEntryFact
     `stage=${stage}`,
     `profile=${facts.profileReadOk ? (facts.hasProfile ? 'yes' : 'no') : 'unread'}`,
     facts.workspaceSupported
-      ? `workspace=${facts.workspaceResolved ? 'resolved' : facts.workspaceAmbiguous ? 'ambiguous' : 'missing'}`
+      ? `workspace=${facts.workspaceResolved ? 'resolved' : 'missing'}`
       : 'workspace=unsupported',
     `onboarding=${facts.onboardingStatus || 'unread'}`,
     `editor=${facts.hasEditorState ? 'saved' : 'empty'}`,
