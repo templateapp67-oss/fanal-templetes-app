@@ -92,8 +92,8 @@ export interface ValidateReferralResult {
   referral_code: string | null;
 }
 
-/** Server-side code format: Legacy alphanumerics or public NEXORA-prefixed codes. */
-const GROWTH_CODE_RE = /^(?:[A-Z0-9]{6,12}|NEXORA-[A-Z0-9]{4,24})$/;
+/** Canonical DB format: 6–32 uppercase letters, digits and hyphens. */
+const GROWTH_CODE_RE = /^[A-Z0-9-]{6,32}$/;
 
 /**
  * Client-side normalization (trim + uppercase) for UX only.

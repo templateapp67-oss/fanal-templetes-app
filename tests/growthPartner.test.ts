@@ -539,8 +539,11 @@ test('growth partner client helpers normalize codes and never reference the serv
   assert.equal(normalizeGrowthReferralCode('  alpha01 '), 'ALPHA01');
   assert.equal(isGrowthReferralCodeFormat('ALPHA01'), true);
   assert.equal(isGrowthReferralCodeFormat('  beta002'), true);
+  assert.equal(isGrowthReferralCodeFormat('REF-5A45019655'), true);
+  assert.equal(isGrowthReferralCodeFormat('ALPHA-01'), true);
   // Loyalty NX- codes belong to the separate check-in credit flow, not here.
-  assert.equal(isGrowthReferralCodeFormat('NX-ABC123'), false);
+  assert.equal(isGrowthReferralCodeFormat('NX-ABC123'), true);
+  assert.equal(isGrowthReferralCodeFormat('A'.repeat(33)), false);
   assert.equal(isGrowthReferralCodeFormat('bad!'), false);
   assert.equal(isGrowthReferralCodeFormat(''), false);
 

@@ -113,7 +113,8 @@ test('PART 3 journey: share link → sign up → referral link → handoff → T
     return React.createElement(OnboardingApp, {
       path,
       client: visitor as any,
-      navigate: (next: string) => { window.history.replaceState(null, '', next); setPath(next); },
+      navigate: (next: string) => { window.history.replaceState(null, '', next);
+          setPath(new URL(next, window.location.origin).pathname); },
     });
   }
 

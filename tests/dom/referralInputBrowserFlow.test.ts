@@ -72,6 +72,7 @@ test('4.2 — the pre-filled value is the canonical form the database will store
     [`?ref=${CODE.toLowerCase()}`, CODE],
     [`?ref=%20%20${CODE}%20%20`, CODE],
     [`?referral=${CODE.toLowerCase()}`, CODE],
+    ['?ref=ref-5a45019655', 'REF-5A45019655'],
   ] as [string, string][]) {
     const result = await prefillFor(query);
     assert.equal(result.read, expected, `${query} pre-fills canonically`);
@@ -84,8 +85,7 @@ test('4.2 — a code the database cannot link is not pre-filled at all', async (
   // to fail on submit. Each of these fails the database's own format check.
   for (const bad of [
     'ABC', // too short
-    'ABCDEFGHIJKLM', // 13 — one over the maximum
-    'ALPHA-01', // the legacy form allows no dash
+    '-'.repeat(6), // separators without any identifier
     'ALPHA%2001', // no spaces
     '<script>alert(1)</script>', // markup, not a code
     'A'.repeat(200), // far over the length cap
@@ -110,7 +110,7 @@ test('4.1 — the reader is a pure read: repeated calls do not consume the code'
 
 test('4.1 — a code the app does not understand is never substituted for another', async () => {
   const initialUrl = window.location.href;
-  window.history.replaceState(null, '', '/onboarding/referral?ref=ABCDEFGHIJKLM&referral=GOOD01');
+  window.history.replaceState(null, '', '/onboarding/referral?ref=BAD!CODE&referral=GOOD01');
   try {
     // ?ref= is present but unusable. Falling through to ?referral= would
     // attribute this owner to a DIFFERENT partner than the link they clicked,
