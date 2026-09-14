@@ -50,3 +50,17 @@ export function referralCodeFromQuery(search: unknown): string {
     return '';
   }
 }
+
+
+/**
+ * Carry a validated Growth Partner code across canonical onboarding routes.
+ * This is display/continuity only; the server-side capability remains the
+ * authority for attribution.
+ */
+export function withReferralQuery(path: string, code: string): string {
+  const cleanPath = String(path || '').split('?')[0] || '/';
+  const canonicalCode = String(code || '').trim();
+  if (!canonicalCode) return cleanPath;
+  const params = new URLSearchParams({ ref: canonicalCode });
+  return `${cleanPath}?${params.toString()}`;
+}
