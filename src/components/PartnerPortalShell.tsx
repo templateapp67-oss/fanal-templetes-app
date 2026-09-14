@@ -4,6 +4,7 @@ import {
   Bell,
   ChevronDown,
   CircleUserRound,
+  Gift,
   LayoutDashboard,
   LifeBuoy,
   ListChecks,
@@ -59,6 +60,8 @@ export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   { section: 'referral-code', label: 'My Referral Code', icon: Ticket },
   { section: 'referred-users', label: 'Referred Users', icon: Users },
   { section: 'referral-status', label: 'Referral Status', icon: ListChecks },
+  { section: 'rewards', label: 'Rewards', icon: Gift },
+  { section: 'commission', label: 'Commission', icon: Percent },
   { section: 'profile', label: 'Profile', icon: CircleUserRound },
 ];
 
@@ -78,7 +81,6 @@ export interface PartnerPortalPlannedItem {
 /** Planned modules — add new sidebar sections here first, then promote them. */
 export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [
   { id: 'earnings', label: 'Earnings', icon: Wallet },
-  { id: 'commission', label: 'Commission', icon: Percent },
   { id: 'withdrawals', label: 'Withdrawals', icon: Banknote },
   { id: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone },
   { id: 'partner-levels', label: 'Partner Levels', icon: Medal },
@@ -94,6 +96,7 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
   'referred-users': 'Referred Users',
   'referral-status': 'Referral Status',
   profile: 'Profile',
+  rewards: 'Rewards',
   performance: 'Performance',
   commission: 'Commission',
 };
@@ -105,12 +108,13 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
  * and `referral-code` renders the dedicated code+share-link section. Adding a
  * new portal page = one entry here plus one renderer case in the page.
  */
-const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection | 'referral-code'> = {
+const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection | 'referral-code' | 'rewards'> = {
   dashboard: 'dashboard',
   'referral-code': 'referral-code',
   'referred-users': 'referrals',
   'referral-status': 'customers',
   profile: 'profile',
+  rewards: 'rewards',
   performance: 'performance',
   commission: 'commission',
 };
@@ -118,7 +122,7 @@ const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection 
 /** Resolve the content to render for a portal section (see PARTNER_PORTAL_CONTENT). */
 export function partnerPortalContentSection(
   section: PartnerPortalSection
-): GrowthPartnerSection | 'referral-code' {
+): GrowthPartnerSection | 'referral-code' | 'rewards' {
   return PARTNER_PORTAL_CONTENT[section] ?? 'dashboard';
 }
 
