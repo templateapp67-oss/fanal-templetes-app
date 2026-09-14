@@ -277,9 +277,9 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
-  'profile',
   'rewards',
   'commission',
+  'profile',
 ];
 
 /** Canonical URL for each partner-portal section. */
