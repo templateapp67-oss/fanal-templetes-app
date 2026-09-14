@@ -5,7 +5,6 @@
 //     original partner pages, while remaining future modules keep disabled
 //     “Soon” registry slots (Earnings, Withdrawals, Marketing Materials,
 //     Partner Levels, Leaderboards, Notifications, Support).
-//     slots — shown as disabled "Soon" entries, never fake links.
 //   • Server-rendered output pins the professional layout: desktop sidebar +
 //     top header + main content, the mobile drawer (closed by default) and
 //     its hamburger toggle, active-item state, identity and logout actions.
@@ -70,9 +69,9 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
     'referral-code',
     'referred-users',
     'referral-status',
-    'profile',
     'rewards',
     'commission',
+    'profile',
   ]);
   // Every menu section maps to real content — no orphan menu entries.
   assert.equal(partnerPortalContentSection('dashboard'), 'dashboard');
