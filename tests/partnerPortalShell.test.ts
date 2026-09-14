@@ -1,12 +1,10 @@
 // ============================================================================
 // Partner portal SHELL (Part 2.2) — the /partner/dashboard layout.
 //
-//   • The sidebar menu is EXACTLY the six required entries (Dashboard, My
-//     Referral Code, Referred Users, Referral Status, Profile, Logout) and
-//     the expandability contract is pinned: the eight future modules
-//     (Earnings, Commission, Withdrawals, Marketing Materials, Partner
-//     Levels, Leaderboards, Notifications, Support) already have registry
-//     slots — shown as disabled "Soon" entries, never fake links.
+//   • The sidebar includes live Rewards and Commission entries alongside the
+//     original partner pages, while remaining future modules keep disabled
+//     “Soon” registry slots (Earnings, Withdrawals, Marketing Materials,
+//     Partner Levels, Leaderboards, Notifications, Support).
 //   • Server-rendered output pins the professional layout: desktop sidebar +
 //     top header + main content, the mobile drawer (closed by default) and
 //     its hamburger toggle, active-item state, identity and logout actions.
@@ -54,22 +52,25 @@ const render = (element: React.ReactElement) => renderToStaticMarkup(element);
 // ---------------------------------------------------------------------------
 
 test('the portal section model keeps menu, URL and content sections in sync', () => {
-  // URL sections = the five menu sections + the two still-URL-reachable ones.
+  // URL sections include the seven live menu sections plus legacy performance.
   assert.deepEqual([...PARTNER_PORTAL_SECTIONS], [
     'dashboard',
     'referral-code',
     'referred-users',
     'referral-status',
     'profile',
+    'rewards',
     'performance',
     'commission',
   ]);
-  // The sidebar shows exactly the five menu sections (Logout is an action).
+  // The sidebar shows seven live menu sections (Logout is an action).
   assert.deepEqual([...PARTNER_PORTAL_MENU_SECTIONS], [
     'dashboard',
     'referral-code',
     'referred-users',
     'referral-status',
+    'rewards',
+    'commission',
     'profile',
   ]);
   // Every menu section maps to real content — no orphan menu entries.
@@ -78,6 +79,7 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
   assert.equal(partnerPortalContentSection('referred-users'), 'referrals');
   assert.equal(partnerPortalContentSection('referral-status'), 'customers');
   assert.equal(partnerPortalContentSection('profile'), 'profile');
+  assert.equal(partnerPortalContentSection('rewards'), 'rewards');
   assert.equal(partnerPortalContentSection('performance'), 'performance');
   assert.equal(partnerPortalContentSection('commission'), 'commission');
   // Canonical paths for every section.
@@ -97,7 +99,7 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
   );
   assert.deepEqual(
     PARTNER_PORTAL_NAV.map((item) => item.label),
-    ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Profile'],
+    ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Commission', 'Profile'],
     'the exact sidebar menu labels, in order'
   );
   for (const item of PARTNER_PORTAL_NAV) {
@@ -106,12 +108,11 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
   }
 });
 
-test('the planned-module registry holds the eight future sections without faking them', () => {
+test('the planned-module registry holds the remaining seven future sections without faking them', () => {
   assert.deepEqual(
     PARTNER_PORTAL_PLANNED.map((item) => item.label),
     [
       'Earnings',
-      'Commission',
       'Withdrawals',
       'Marketing Materials',
       'Partner Levels',
@@ -122,9 +123,7 @@ test('the planned-module registry holds the eight future sections without faking
     'the future modules named in the Part 2 plan, as expandable slots'
   );
   // A planned slot must never shadow a live MENU item — promotion (moving the
-  // entry into PARTNER_PORTAL_NAV) stays a safe, local change. (A planned id
-  // may equal a URL-reachable section, e.g. commission, which already serves
-  // its honest empty state but is not a sidebar item yet.)
+  // entry into PARTNER_PORTAL_NAV) stays a safe, local change.
   const liveMenu = new Set(PARTNER_PORTAL_MENU_SECTIONS as string[]);
   for (const item of PARTNER_PORTAL_PLANNED) {
     assert.equal(liveMenu.has(item.id), false, `${item.id} collides with a live menu item`);
@@ -170,7 +169,7 @@ test('the shell renders the professional dashboard layout (sidebar, header, main
   assert.match(html, /Growth Partner/);
   // Every required menu entry is present exactly once per nav surface
   // (desktop sidebar + mobile drawer both render the registry).
-  for (const label of ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Profile', 'Logout']) {
+  for (const label of ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Commission', 'Profile', 'Logout']) {
     assert.ok((html.match(new RegExp(`>${label}<`, 'g')) || []).length >= 2, `${label} appears in sidebar + drawer`);
   }
   // Top header: eyebrow + section title + identity + logout.
@@ -290,6 +289,8 @@ test('each portal section renders its own header title and active menu item', ()
     ['referred-users', 'Referred Users'],
     ['referral-status', 'Referral Status'],
     ['profile', 'Profile'],
+    ['rewards', 'Rewards'],
+    ['commission', 'Commission'],
   ];
   for (const [section, title] of cases) {
     const html = renderShell(section as (typeof PARTNER_PORTAL_SECTIONS)[number]);

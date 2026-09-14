@@ -255,6 +255,7 @@ export type PartnerPortalSection =
   | 'referred-users'
   | 'referral-status'
   | 'profile'
+  | 'rewards'
   | 'performance'
   | 'commission';
 
@@ -265,6 +266,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'referred-users',
   'referral-status',
   'profile',
+  'rewards',
   'performance',
   'commission',
 ];
@@ -275,6 +277,8 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
+  'rewards',
+  'commission',
   'profile',
 ];
 
@@ -285,6 +289,7 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   'referred-users': `${PARTNER_PORTAL_ROOT}/referrals`,
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
+  rewards: `${PARTNER_PORTAL_ROOT}/rewards`,
   performance: `${PARTNER_PORTAL_ROOT}/performance`,
   commission: `${PARTNER_PORTAL_ROOT}/commission`,
 };
