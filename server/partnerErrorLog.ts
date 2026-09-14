@@ -13,6 +13,35 @@ export function logPartnerFailure(operation: string, error: unknown, sink: (entr
   return id;
 }
 
+/**
+ * 5.2 SAFE RESPONSE backstop. The public validation answer is already built
+ * from an allowlist, so a private field in the RPC payload cannot reach the
+ * browser — but it does mean the database contract drifted from what this
+ * repository expects (a hand-edited function, an environment with an extra
+ * column, a future migration). Log the field PATHS and CATEGORIES so an
+ * operator can fix it at the source. Values are never logged: the point of the
+ * rule is that they are private.
+ */
+export function logPartnerResponseDrift(
+  surface: string,
+  findings: readonly { path: string; category: string }[],
+  sink: (entry: string) => void = console.warn
+): void {
+  if (findings.length === 0) return;
+  try {
+    sink(JSON.stringify({
+      event: 'partner_response_drift',
+      surface: /^[a-zA-Z0-9_.:-]{1,64}$/.test(surface) ? surface : 'unknown',
+      dropped: findings.slice(0, 20).map(finding => ({
+        path: /^[a-zA-Z0-9_.\[\]-]{1,120}$/.test(finding.path) ? finding.path : 'unknown',
+        category: finding.category,
+      })),
+      total: findings.length,
+      at: new Date().toISOString(),
+    }));
+  } catch { /* logging must not break the safe response */ }
+}
+
 /** Fixed response copy; detailed payloads and SQL names never cross the gateway. */
 export function safeGatewayFailure(error: unknown): string {
   const value = error as {message?: string; code?: string};

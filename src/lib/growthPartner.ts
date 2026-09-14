@@ -1,5 +1,6 @@
 import type { ReferralStatus, ReferralStatusCounts } from './referralStatus';
 import { supabase } from './supabaseClient';
+import { projectReferralRelationship, projectValidationResponse } from './safePartnerResponse';
 
 // ============================================================================
 // Growth Partner + shared Onboarding — typed client for the Phase 1 backend
@@ -58,12 +59,18 @@ export interface GrowthOnboardingRow {
   updated_at: string;
 }
 
-/** The caller's referral relationship (get_my_growth_referral / link result). */
+/**
+ * The caller's referral relationship (get_my_growth_referral / link result).
+ *
+ * Projected through `safePartnerResponse.ts`: these five fields are the
+ * complete answer, and `linked_at`/`status` stay null when the backend did not
+ * supply a usable value rather than being invented.
+ */
 export interface GrowthReferralRelationship {
   growth_partner_id: string;
   referral_code: string;
-  linked_at: string;
-  status: GrowthOnboardingStatusValue;
+  linked_at: string | null;
+  status: GrowthOnboardingStatusValue | null;
   /** Display name from profiles, or null when unavailable. */
   partner_name: string | null;
 }
@@ -116,7 +123,14 @@ export async function validateGrowthReferralCode(code: string): Promise<Validate
     p_code: normalizeGrowthReferralCode(code),
   });
   if (error) throw rpcError('Referral validation failed', error);
-  return data as ValidateReferralResult;
+  // 5.2 SAFE RESPONSE: a validation answer is built from the allowlist
+  // ({valid, referral_code}) instead of being cast from the RPC payload, so a
+  // widened jsonb cannot hand the browser private partner profile data,
+  // internal ids, bank details, commission configuration, admin metadata or
+  // private contact details. A `token` is never accepted here: code validation
+  // must not smuggle a signup capability into the client's hands.
+  const safe = projectValidationResponse('validate-code', data);
+  return { valid: safe.valid, referral_code: safe.referralCode };
 }
 
 /**
@@ -129,14 +143,21 @@ export async function linkMyGrowthReferral(code: string): Promise<GrowthReferral
     p_code: normalizeGrowthReferralCode(code),
   });
   if (error) throw rpcError('Referral linking failed', error);
-  return data as GrowthReferralRelationship;
+  // 5.2 SAFE RESPONSE: keep only the documented relationship fields. The
+  // related-user answer discloses the partner's display name on purpose, but a
+  // row that grew bank/commission/admin/contact fields must not reach state.
+  const relationship = projectReferralRelationship(data);
+  // A response without a usable partner id + canonical code did not establish
+  // a relationship: fail closed instead of returning a half-populated object.
+  if (!relationship) throw rpcError('Referral linking failed', { message: 'incomplete relationship' });
+  return relationship;
 }
 
 /** Read the signed-in user's referral relationship (null when unlinked). */
 export async function getMyGrowthReferral(): Promise<GrowthReferralRelationship | null> {
   const { data, error } = await supabase.rpc('get_my_growth_referral');
   if (error) throw rpcError('Referral lookup failed', error);
-  return (data ?? null) as GrowthReferralRelationship | null;
+  return projectReferralRelationship(data);
 }
 
 /** Read the signed-in user's onboarding progress (defaults when never started). */

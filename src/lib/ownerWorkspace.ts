@@ -48,13 +48,18 @@ export interface OwnerWorkspace {
   /** How many live salons the caller owns (0 when unresolved). */
   salonCount: number;
   /**
-   * True when the caller owns more than one salon.
-   * `nexora_save_owner_workspace()` resolves its target by matching
-   * `salons.slug` to `profile.subdomain` and otherwise requires exactly one
-   * salon, so an ambiguous owner can only save when the subdomain matches.
+   * True when the caller owns more than one live salon. INFORMATIONAL ONLY:
+   * since migration 20261006 the backend always picks one (see `selection`),
+   * so several salons are never a reason a save cannot proceed.
    */
   ambiguous: boolean;
-  /** The candidate salons, oldest first, capped by the backend at 25. */
+  /**
+   * Which tier of the canonical rule chose `salonId` (`primary`,
+   * `most-recent`, `first-authorized`, `first-authorized-inactive`), or null
+   * on a database that predates the rule.
+   */
+  selection: string | null;
+  /** The candidate salons: the chosen one first, then newest first, capped at 25. */
   salons: OwnerSalonOption[];
 }
 
@@ -68,6 +73,7 @@ export const UNRESOLVED_OWNER_WORKSPACE: OwnerWorkspace = {
   name: null,
   salonCount: 0,
   ambiguous: false,
+  selection: null,
   salons: [],
 };
 
@@ -110,7 +116,10 @@ export async function resolveOwnerWorkspace(
       slug: text(data.slug),
       name: text(data.name),
       salonCount,
+      // Informational. The backend resolves multiple salons with its canonical
+      // rule, so callers must not treat this as an error state.
       ambiguous: data.ambiguous === true || salonCount > 1,
+      selection: text(data.selection),
       salons,
     };
   } catch (error) {

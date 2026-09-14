@@ -78,6 +78,14 @@ export const LOCAL_GROWTH_CHAIN = [
   // trigger does. It deliberately does not seed owner_role - see the header
   // of the migration for why that column belongs to the template/editor.
   '20261003_signup_profile_fields.sql',
+  // Canonical owner -> salon resolution (PHASE 10). Replaces the read side
+  // get_my_owner_workspace() with the version that PICKS a salon (primary ->
+  // most recent active -> first authorized) instead of reporting "ambiguous",
+  // so a multi-salon owner is exercisable locally exactly as in production.
+  // The save-side patch is skipped here: nexora_save_owner_workspace() is not
+  // part of this chain (the owner/editor save path reads the normalized
+  // production schema).
+  '20261006_owner_salon_resolution.sql',
 ];
 
 /**

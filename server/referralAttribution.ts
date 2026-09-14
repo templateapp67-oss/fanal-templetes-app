@@ -1,9 +1,17 @@
-import { logPartnerFailure } from './partnerErrorLog.js';
+import { logPartnerFailure, logPartnerResponseDrift } from './partnerErrorLog.js';
 import type { Express, Request } from 'express';
 import { supabase } from '../src/lib/supabaseClient.js';
+import {
+  capabilityExpiry,
+  findPrivateResponseFields,
+  projectValidationResponse,
+  publicValidationBody,
+  REFERRAL_CAPABILITY,
+} from '../src/lib/safePartnerResponse.js';
+import type { SafeValidationSurface } from '../src/lib/safePartnerResponse.js';
 
 const COOKIE = 'nexora_referral';
-const TOKEN = /^[a-f0-9]{64}$/;
+const TOKEN = REFERRAL_CAPABILITY;
 function cookieToken(req: Request): string | null {
   const value = (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   return value && TOKEN.test(value) ? value : null;
@@ -132,14 +140,37 @@ export function registerReferralAttributionRoutes(
         ? await rpc('prepare_growth_referral_signup', { p_token: token })
         : await rpc('capture_growth_referral', { p_code: code, p_token: token });
       if (error) throw error;
+      // 5.2 SAFE RESPONSE: the answer is BUILT from an allowlist, never
+      // forwarded from the RPC payload. Whatever the database returns, the
+      // browser can only ever receive `valid` + the canonical code (+ the
+      // one-use capability on signup preparation) — never partner profile
+      // data, internal ids, bank details, commission configuration, admin
+      // metadata or private contact details.
+      const surface: SafeValidationSurface = req.method === 'GET' ? 'prepare-signup' : 'capture-attribution';
+      const safe = projectValidationResponse(surface, data);
+      // Operational backstop: the response below is already allowlisted, so
+      // this only reports that the DATABASE contract started returning private
+      // fields (schema drift between environments, a hand-edited function). It
+      // logs field paths and categories and never values, and it never changes
+      // the answer.
+      logPartnerResponseDrift(surface, findPrivateResponseFields(data, {
+        allow: ['valid', 'referral_code', 'token', 'expires_at'],
+        ignoreValues: [safe.token, safe.referralCode],
+      }));
+
       const options = { httpOnly: true, secure, sameSite: 'lax' as const, path: '/' };
-      if (data?.valid && TOKEN.test(data.token)) {
-        res.cookie(COOKIE, data.token, { ...options, expires: new Date(data.expires_at) });
+      // Complete means: a real canonical code AND a usable one-use capability.
+      // A half-answer never sets a cookie and never claims validity.
+      const complete = safe.valid && !!safe.referralCode && !!safe.token && TOKEN.test(safe.token);
+      if (complete) {
+        res.cookie(COOKIE, safe.token!, { ...options, expires: capabilityExpiry(safe) });
         // Only signup preparation needs the capability in JS. No partner ID.
-        res.json({ valid: true, referralCode: data.referral_code, ...(req.method === 'GET' ? { token: data.token } : {}) });
+        res.json(publicValidationBody(safe, { includeToken: req.method === 'GET' }));
       } else {
         res.clearCookie(COOKIE, options);
-        res.json({ valid: false, token: null });
+        // A half-answer is reported as invalid: the caller never receives
+        // `valid: true` without a code AND a capability it can actually use.
+        res.json(publicValidationBody({ ...safe, valid: false }));
       }
     } catch (error) {
       const requestId = logPartnerFailure(req.method === 'GET' ? 'referral.prepare' : 'referral.capture', error);

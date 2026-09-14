@@ -1,6 +1,24 @@
 import { OnboardingError } from './flow';
-/** Cookie-backed attribution. Never persisted to localStorage or trusted from a URL. */
-async function requestAttribution(code?: string): Promise<{ valid: boolean; token?: string; referralCode?: string }> {
+import { projectValidationResponse, REFERRAL_CAPABILITY } from '../../lib/safePartnerResponse';
+
+/** What this client may hold from the attribution endpoint — nothing else. */
+interface AttributionAnswer {
+  valid: boolean;
+  referralCode: string | null;
+  token?: string;
+}
+
+/**
+ * Cookie-backed attribution. Never persisted to localStorage or trusted from a URL.
+ *
+ * 5.2 SAFE RESPONSE: the JSON answer is projected through the shared allowlist
+ * (`valid` + canonical code + the one-use capability) instead of being taken
+ * as-is. The endpoint is ours, but the client is the last boundary: a drifted
+ * deployment, an intermediate proxy or a future field must not be able to put
+ * private partner profile data, internal ids, bank details, commission
+ * configuration, admin metadata or private contact details into signup state.
+ */
+async function requestAttribution(code?: string): Promise<AttributionAnswer> {
   let response: Response;
   try { response = await fetch('/api/referral-attribution', {
     method: code === undefined ? 'GET' : 'POST',
@@ -10,8 +28,17 @@ async function requestAttribution(code?: string): Promise<{ valid: boolean; toke
   });
   } catch { throw new OnboardingError('network', 'Network error. Check your connection and try again.'); }
   if (!response.ok) throw new OnboardingError('unknown', 'Referral attribution could not be checked. Please retry.');
-  try { return await response.json(); }
+  let payload: unknown;
+  try { payload = await response.json(); }
   catch { throw new OnboardingError('unknown', 'Referral attribution could not be checked. Please retry.'); }
+  const safe = projectValidationResponse(code === undefined ? 'prepare-signup' : 'capture-attribution', payload);
+  return {
+    valid: safe.valid,
+    referralCode: safe.referralCode,
+    // The capability is re-validated (opaque 64-hex) rather than trusted, and
+    // its lifetime is the endpoint's, never the browser's.
+    ...(safe.token && REFERRAL_CAPABILITY.test(safe.token) ? { token: safe.token } : {}),
+  };
 }
 
 export async function captureSignupReferral(code: string): Promise<string> {

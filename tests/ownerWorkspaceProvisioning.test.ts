@@ -18,6 +18,12 @@ const MIGRATION = await readFile(
   new URL('../supabase/migrations/20261002_owner_workspace_provisioning.sql', import.meta.url),
   'utf8'
 );
+// PHASE 10 appended the canonical resolution rule + its read-side contract to
+// the same objects, so the workspace contract is asserted with both applied.
+const RESOLUTION_MIGRATION = await readFile(
+  new URL('../supabase/migrations/20261006_owner_salon_resolution.sql', import.meta.url),
+  'utf8'
+);
 
 const OWNER_A = 'c0000000-0000-4000-8000-000000000001';
 const OWNER_B = 'c0000000-0000-4000-8000-000000000002';
@@ -80,6 +86,7 @@ async function setup(options: { preCreateNormalized?: boolean; profilesColumns?:
     `);
   }
   await db.exec(MIGRATION);
+  await db.exec(RESOLUTION_MIGRATION);
   const asUser = async (userId: string | null, sql: string, params: unknown[] = []) => {
     await db.query(`select set_config('request.jwt.claim.sub', ${userId ? `'${userId}'` : "''"}, false)`);
     await db.exec('set role authenticated');
@@ -419,11 +426,13 @@ test('a provisioned workspace satisfies the completion check\'s normalized branc
 });
 
 // ---------------------------------------------------------------------------
-// Multiple salon resolution. nexora_save_owner_workspace() picks its target by
-// matching salons.slug to profile.subdomain and otherwise requires exactly one
-// owned salon — with two or more it raises 'Select a salon owned by this
-// account'. Resolution must therefore TELL a caller that the choice is
-// ambiguous rather than silently returning the oldest salon.
+// Multiple salon resolution (PHASE 10, migration 20261006).
+//
+// Ownership authority is the membership model, and resolution is now a RULE
+// rather than a refusal: primary active -> most recently created active ->
+// first authorized active -> first authorized. `ambiguous` survives as
+// information for the caller ("more than one live salon exists"); it is never a
+// reason the caller cannot act, because a target has already been chosen.
 // ---------------------------------------------------------------------------
 
 test('a single salon resolves unambiguously and reports its count', async () => {
@@ -434,6 +443,7 @@ test('a single salon resolves unambiguously and reports its count', async () => 
     assert.equal(view.resolved, true);
     assert.equal(view.salon_count, 1);
     assert.equal(view.ambiguous, false);
+    assert.equal(view.selection, 'most-recent');
     assert.equal(view.salons.length, 1);
     assert.equal(view.salons[0].salon_id, workspace.salon_id, 'salons[0] is the salon the scalar fields report');
     assert.equal(view.salons[0].slug, 'glow-studio');
@@ -442,22 +452,29 @@ test('a single salon resolves unambiguously and reports its count', async () => 
   }
 });
 
-test('two salons are reported as ambiguous, ordered, and the list is the caller\'s own', async () => {
+test('two salons resolve to the most recent active one, and the list is the caller\'s own', async () => {
   const h = await setup();
   try {
     const workspace = await ensure(h);
     // A second salon in the same organization, e.g. a second location.
-    await h.db.query(
+    const annexe = await h.db.query(
       `insert into public.salons(organization_id, slug, name, created_at)
-       values ($1, 'glow-studio-annexe', 'Glow Studio Annexe', now() + interval '1 day')`,
+       values ($1, 'glow-studio-annexe', 'Glow Studio Annexe', now() + interval '1 day') returning id`,
       [workspace.organization_id]
     );
     const view = (await h.asUser(OWNER_A, 'select public.get_my_owner_workspace() as r')).rows[0].r;
-    assert.equal(view.resolved, true);
+    assert.equal(view.resolved, true, 'several salons are a workspace, not an error');
     assert.equal(view.salon_count, 2);
-    assert.equal(view.ambiguous, true, 'the caller can tell this apart from "no workspace yet"');
-    assert.deepEqual(view.salons.map((s: any) => s.slug), ['glow-studio', 'glow-studio-annexe'], 'oldest first');
-    assert.equal(view.salons[0].salon_id, view.salon_id);
+    assert.equal(view.ambiguous, true, 'informational: more than one live salon exists');
+    assert.equal(view.selection, 'most-recent');
+    assert.equal(view.salon_id, (annexe.rows[0] as { id: string }).id, 'the most recently created active salon wins');
+    assert.equal(view.slug, 'glow-studio-annexe');
+    assert.deepEqual(
+      view.salons.map((s: any) => s.slug),
+      ['glow-studio-annexe', 'glow-studio'],
+      'the chosen salon is first, then newest first'
+    );
+    assert.equal(view.salons[0].salon_id, view.salon_id, 'salons[0] is what the scalar fields report');
 
     // Another tenant sees none of it.
     await h.db.query(`insert into public.profiles(id, full_name, salon_name) values ('${OWNER_B}', 'Owner B', 'Blow Dry Bar')`);
@@ -478,6 +495,7 @@ test('an owner with no salon reports count 0 and ambiguous false, not an error',
     assert.equal(view.resolved, false);
     assert.equal(view.salon_count, 0);
     assert.equal(view.ambiguous, false);
+    assert.equal(view.selection, null);
     assert.deepEqual(view.salons, []);
   } finally {
     await h.close();

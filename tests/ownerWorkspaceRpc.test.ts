@@ -104,28 +104,37 @@ test('only the missing-salon failure is treated as a workspace problem', () => {
   assert.equal(isMissingOwnerWorkspaceError(undefined), false);
 });
 
-test('an ambiguous workspace explains itself instead of returning the raw SQL error', async () => {
+test('PHASE 10: an owner with several salons saves into the salon the backend resolved', async () => {
+  // Migration 20261006 makes nexora_save_owner_workspace() pick the target
+  // itself (primary -> most recent -> first authorized), so the retry is the
+  // normal path here. Before it, this exact state produced "This account has
+  // more than one salon, so the save could not pick one automatically" and the
+  // save never ran — a dead end for a valid account.
+  let writes = 0;
   const db: any = {
     async rpc(name: string) {
       if (name === 'ensure_owner_workspace') {
         return {
           error: null,
           data: {
-            provisioned: false, reason: 'existing', organization_id: 'o', salon_id: 's1',
-            slug: 'glow-studio', name: 'Glow Studio', salon_count: 2, ambiguous: true,
+            provisioned: false, reason: 'existing', organization_id: 'o', salon_id: 's2',
+            slug: 'glow-studio-annexe', name: 'Glow Studio Annexe', salon_count: 2,
+            ambiguous: true, selection: 'most-recent',
             salons: [
-              { salon_id: 's1', slug: 'glow-studio', name: 'Glow Studio' },
               { salon_id: 's2', slug: 'glow-studio-annexe', name: 'Glow Studio Annexe' },
+              { salon_id: 's1', slug: 'glow-studio', name: 'Glow Studio' },
             ],
           },
         };
       }
-      return { error: { code: '42501', message: 'Select a salon owned by this account' } };
+      writes += 1;
+      // First attempt: a database that predates 20261006 still refuses.
+      if (writes === 1) return { error: { code: '42501', message: 'Select a salon owned by this account' } };
+      return { error: null };
     },
   };
   const result = await saveOwnerEditorState(db, payload);
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join(' '), /more than one salon/);
-  assert.match(result.errors.join(' '), /glow-studio, glow-studio-annexe/);
-  assert.doesNotMatch(result.errors.join(' '), /Select a salon owned by this account/, 'raw SQL text is not shown to the owner');
+  assert.equal(result.ok, true, 'the save succeeds once the resolved salon is known');
+  assert.deepEqual(result.errors, []);
+  assert.equal(writes, 2, 'exactly one retry against the canonical transaction');
 });
