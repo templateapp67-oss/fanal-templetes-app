@@ -452,16 +452,22 @@ export function usePathRoute(): { path: string; navigate: (to: string) => void }
   }, []);
 
   const navigate = useCallback((to: string) => {
-    const next = normalizePath(to);
+    // Route state is always the pathname; search/hash stay visible in the URL
+    // but must never become a section id (e.g. "signup?ref=CODE").
+    const raw = String(to || '/');
+    let next = normalizePath(raw.split(/[?#]/, 1)[0] || '/');
+    let href = raw;
+    if (typeof window !== 'undefined') {
+      const target = new URL(raw, window.location.origin);
+      next = normalizePath(target.pathname);
+      href = `${target.pathname}${target.search}${target.hash}`;
+    }
     if (typeof window === 'undefined' || !window.history?.pushState) {
       setPath(next);
       return;
     }
-    if (normalizePath(window.location.pathname) === next) {
-      setPath(next);
-      return;
-    }
-    window.history.pushState({}, '', next);
+    const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (currentHref !== href) window.history.pushState({}, '', href);
     setPath(next);
   }, []);
 
