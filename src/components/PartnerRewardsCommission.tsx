@@ -11,18 +11,27 @@ type RewardMilestone = {
 type RewardDashboard = {
   verified_shops: number; qualifying_shops: number; cycles_running: number; rejected_shops: number;
   current_milestone: number; next_milestone: number | null; remaining_qualifying_shops: number;
-  rules: { daily_qr_paise: number; commission_rate_bps: number; daily_commission_paise: number;
-    consecutive_days: number; processing_day_from: number; processing_day_to: number };
+  rules: { daily_qr_paise: number; company_commission_rate_bps: number;
+    daily_company_commission_paise: number; growth_partner_share_of_company_bps: number;
+    daily_growth_partner_commission_paise: number; consecutive_days: number;
+    processing_day_from: number; processing_day_to: number };
   milestones: RewardMilestone[];
 };
 type CommissionDay = {
   business_date: string; shop_attribution_id: string; salon_id: string;
   qr_transaction_paise: number; company_commission_paise: number;
+  growth_partner_commission_paise: number;
   daily_status: 'passed' | 'not_passed' | 'rejected'; rejection_reason?: string | null;
 };
 type CommissionDashboard = {
-  currency: string; rate_bps: number;
-  totals: { qr_transaction_paise: number; company_commission_paise: number; passed_days: number; rejected_days: number };
+  currency: string; company_commission_rate_bps: number;
+  growth_partner_share_of_company_bps: number; effective_growth_partner_rate_bps: number;
+  minimums: { daily_qr_transaction_paise: number; daily_company_commission_paise: number;
+    daily_growth_partner_commission_paise: number; qualification_days: number;
+    cycle_qr_transaction_paise: number; cycle_company_commission_paise: number;
+    cycle_growth_partner_commission_paise: number };
+  totals: { qr_transaction_paise: number; company_commission_paise: number;
+    growth_partner_commission_paise: number; passed_days: number; rejected_days: number };
   days: CommissionDay[];
 };
 
@@ -123,20 +132,35 @@ export function PartnerCommissionPage() {
   return <div className="space-y-5">
     <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8">
       <p className="text-xs font-bold uppercase tracking-[.2em] text-pink-300">Company QR Commission</p>
-      <h1 className="mt-2 text-2xl font-black">10% transparent daily calculation</h1>
-      <p className="mt-2 text-sm text-slate-300">₹1,000 minimum genuine daily QR business पर minimum ₹100 company commission। यह company commission ledger है, partner cash-income promise नहीं।</p>
+      <h1 className="mt-2 text-2xl font-black">Growth Partner Commission</h1>
+      <p className="mt-2 text-sm text-slate-300">₹1,000 genuine daily QR business पर company को 10% यानी ₹100 commission मिलता है। उस ₹100 company commission का 10% यानी ₹10 Growth Partner commission होता है।</p>
+      <div className="mt-5 grid gap-2 text-center text-sm font-black sm:grid-cols-3">
+        <div className="rounded-xl bg-white/10 p-3">₹1,000 QR Business</div>
+        <div className="rounded-xl bg-white/10 p-3">₹100 Company Commission</div>
+        <div className="rounded-xl bg-pink-600 p-3">₹10 Partner Commission</div>
+      </div>
     </section>
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Stat label="QR business" value={money(data.totals.qr_transaction_paise)} />
       <Stat label="Company commission" value={money(data.totals.company_commission_paise)} />
-      <Stat label="Passed days" value={data.totals.passed_days} /><Stat label="Rejected days" value={data.totals.rejected_days} />
+      <Stat label="Your commission" value={money(data.totals.growth_partner_commission_paise)} />
+      <Stat label="Qualifying days" value={data.totals.passed_days} />
+    </section>
+    <section className="rounded-3xl border border-pink-200 bg-pink-50 p-5">
+      <h2 className="font-black text-slate-950">15-day minimum per qualifying shop</h2>
+      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+        <p className="rounded-xl bg-white p-3"><span className="block text-slate-500">QR transactions</span><strong className="text-lg">{money(data.minimums.cycle_qr_transaction_paise)}</strong></p>
+        <p className="rounded-xl bg-white p-3"><span className="block text-slate-500">Company commission</span><strong className="text-lg">{money(data.minimums.cycle_company_commission_paise)}</strong></p>
+        <p className="rounded-xl bg-white p-3"><span className="block text-slate-500">Your commission</span><strong className="text-lg text-[#c20e5a]">{money(data.minimums.cycle_growth_partner_commission_paise)}</strong></p>
+      </div>
+      <p className="mt-3 text-xs font-semibold text-slate-600">Calculation: ₹10 partner commission × 15 consecutive qualifying days = ₹150 per shop.</p>
     </section>
     {error ? <p className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-800">{error}</p> : null}
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 p-5"><h2 className="font-black text-slate-950">Daily qualification history</h2></div>
       {data.days.length===0?<div className="p-10 text-center"><IndianRupee className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 font-bold text-slate-800">No qualifying QR transactions yet</p><p className="mt-1 text-sm text-slate-500">Successful settled transactions आने पर daily calculation यहाँ दिखेगी।</p></div>:
-      <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Date</th><th className="p-4">QR transaction</th><th className="p-4">10% commission</th><th className="p-4">Status</th><th className="p-4">Reason</th></tr></thead>
-      <tbody>{data.days.map((d)=><tr key={d.shop_attribution_id+':'+d.business_date} className="border-t border-slate-100"><td className="p-4 font-bold">{new Date(d.business_date+'T00:00:00').toLocaleDateString('en-IN')}</td><td className="p-4">{money(d.qr_transaction_paise)}</td><td className="p-4 font-bold">{money(d.company_commission_paise)}</td><td className="p-4"><span className={'rounded-full px-2.5 py-1 text-xs font-bold '+(d.daily_status==='passed'?'bg-emerald-50 text-emerald-700':d.daily_status==='rejected'?'bg-rose-50 text-rose-700':'bg-amber-50 text-amber-700')}>{d.daily_status.replaceAll('_',' ')}</span></td><td className="p-4 text-slate-500">{d.rejection_reason?.replaceAll('_',' ') ?? '—'}</td></tr>)}</tbody></table></div>}
+      <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Date</th><th className="p-4">QR transaction</th><th className="p-4">Company 10%</th><th className="p-4">Partner 10% of company</th><th className="p-4">Status</th><th className="p-4">Reason</th></tr></thead>
+      <tbody>{data.days.map((d)=><tr key={d.shop_attribution_id+':'+d.business_date} className="border-t border-slate-100"><td className="p-4 font-bold">{new Date(d.business_date+'T00:00:00').toLocaleDateString('en-IN')}</td><td className="p-4">{money(d.qr_transaction_paise)}</td><td className="p-4">{money(d.company_commission_paise)}</td><td className="p-4 font-black text-[#c20e5a]">{money(d.growth_partner_commission_paise)}</td><td className="p-4"><span className={'rounded-full px-2.5 py-1 text-xs font-bold '+(d.daily_status==='passed'?'bg-emerald-50 text-emerald-700':d.daily_status==='rejected'?'bg-rose-50 text-rose-700':'bg-amber-50 text-amber-700')}>{d.daily_status.replaceAll('_',' ')}</span></td><td className="p-4 text-slate-500">{d.rejection_reason?.replaceAll('_',' ') ?? '—'}</td></tr>)}</tbody></table></div>}
     </section>
   </div>;
 }
