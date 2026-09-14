@@ -1,6 +1,7 @@
 import { PartnerRouteGuard, usePartnerRouteGuard } from './PartnerRouteGuard';
 export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
+import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
 import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
@@ -47,7 +48,6 @@ import {
   PartnerReferralStatusSection,
 } from './PartnerPortalSections';
 import {
-  GrowthPartnerCommission,
   GrowthPartnerCustomers,
   GrowthPartnerDashboard,
   GrowthPartnerPerformance,
@@ -223,7 +223,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
    * dedicated code + share-link section). Data effects key off this value, so
    * each page fetches exactly what it shows.
    */
-  const contentSection: GrowthPartnerSection | 'referral-code' = isPartnerNamespace
+  const contentSection: GrowthPartnerSection | 'referral-code' | 'rewards' = isPartnerNamespace
     ? partnerPortalContentSection(portalSection)
     : legacySection;
   const isLoginPath = isPartnerLoginPath(path) || isGrowthPartnerLoginPath(path);
@@ -561,8 +561,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             onRetry={retrySection}
           />
         );
+      case 'rewards':
+        return <PartnerRewardsPage />;
       case 'commission':
-        return <GrowthPartnerCommission />;
+        return <PartnerCommissionPage />;
       case 'profile':
         return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
           if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
