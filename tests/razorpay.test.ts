@@ -10,6 +10,7 @@ import {
   toPaise,
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
+  handleCreateRazorpayTestOrder,
   handleVerifyRazorpayPayment,
   handleMockRazorpayPayment,
   resolveRazorpayGatewayMode,
@@ -19,7 +20,9 @@ import {
   signMockPayment,
   isMockOrderId,
   MOCK_KEY_ID,
+  TEST_ORDER_PROBE_CONFIRMATION,
   _resetPaymentOrderCache,
+  _resetRazorpayTestOrderProbe,
 } from '../server/razorpay';
 import { computeAdvanceDeposit } from '../src/lib/advanceDeposit';
 
@@ -437,6 +440,144 @@ test('order endpoint sends the real Razorpay API the 25 % advance in integer pai
       assert.equal(res.body.mock, false);
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test('TEST order probe refuses ambiguous input and is impossible with live/mock credentials', async () => {
+  const bad = makeRes();
+  await withEnvAsync(REAL_KEYS, async () => {
+    _resetRazorpayTestOrderProbe();
+    await handleCreateRazorpayTestOrder({ body: { amount: 1, currency: 'INR' } }, bad);
+  });
+  assert.equal(bad.statusCode, 400);
+  assert.equal(bad.body.code, 'invalid_test_order_probe');
+
+  const live = makeRes();
+  await withEnvAsync({ ...REAL_KEYS, RAZORPAY_KEY_ID: 'rzp_live_ABCDEFGHIJKLMN' }, async () => {
+    _resetRazorpayTestOrderProbe();
+    await handleCreateRazorpayTestOrder(
+      { body: { confirmation: TEST_ORDER_PROBE_CONFIRMATION, amount: 1, currency: 'INR' } },
+      live
+    );
+  });
+  assert.equal(live.statusCode, 404);
+  assert.equal(live.body.code, 'test_order_probe_unavailable');
+  assert.equal(live.body.mode, 'live');
+
+  const mock = makeRes();
+  await withEnvAsync(NO_KEYS_DEV, async () => {
+    _resetRazorpayTestOrderProbe();
+    await handleCreateRazorpayTestOrder(
+      { body: { confirmation: TEST_ORDER_PROBE_CONFIRMATION, amount: 1, currency: 'INR' } },
+      mock
+    );
+  });
+  assert.equal(mock.statusCode, 404);
+  assert.equal(mock.body.mode, 'mock');
+});
+
+test('TEST order probe sends one fixed ₹1 INR request through the runtime client and reuses it briefly', async () => {
+  await withEnvAsync({ ...REAL_KEYS, VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_SHA: '1234567890abcdef' }, async () => {
+    _resetRazorpayTestOrderProbe();
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    let sentBody: any = null;
+    globalThis.fetch = (async (url: any, init?: any) => {
+      calls += 1;
+      assert.equal(String(url), 'https://api.razorpay.com/v1/orders');
+      sentBody = JSON.parse(String(init?.body || '{}'));
+      return new Response(
+        JSON.stringify({
+          id: 'order_probe_1',
+          entity: 'order',
+          amount: 100,
+          amount_paid: 0,
+          amount_due: 100,
+          currency: 'INR',
+          receipt: sentBody.receipt,
+          status: 'created',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }) as typeof fetch;
+    try {
+      const input = { confirmation: TEST_ORDER_PROBE_CONFIRMATION, amount: 1, currency: 'INR' };
+      const first = makeRes();
+      await handleCreateRazorpayTestOrder({ body: input }, first);
+      assert.equal(first.statusCode, 200, JSON.stringify(first.body));
+      assert.equal(first.body.success, true);
+      assert.equal(first.body.provider.httpStatus, 200);
+      assert.equal(first.body.provider.version, 'v1');
+      assert.deepEqual(first.body.request, { amount: 100, currency: 'INR' });
+      assert.equal(first.body.order.amount, 100);
+      assert.equal(first.body.order.currency, 'INR');
+      assert.equal(first.body.runtime.credentialVariables.keyId, 'RAZORPAY_KEY_ID');
+      assert.equal(first.body.runtime.credentialVariables.keySecret, 'RAZORPAY_KEY_SECRET');
+      assert.equal(first.body.runtime.credentialRead, 'process.env at request time');
+      assert.equal(first.body.runtime.vercelEnvironment, 'production');
+      assert.equal(first.body.runtime.commitSha, '1234567890ab');
+      assert.equal(sentBody.amount, 100, '₹1 must be sent as exactly 100 paise');
+      assert.equal(sentBody.currency, 'INR');
+      assert.equal(sentBody.payment_capture, 1, 'probe must exercise the same payload builder as customer orders');
+      assert.equal(sentBody.notes.purpose, 'razorpay_test_order_probe');
+      assert.equal(sentBody.notes.booking_policy, 'not_a_booking');
+      assert.ok(!JSON.stringify(first.body).includes(KEY_SECRET));
+
+      const second = makeRes();
+      await handleCreateRazorpayTestOrder({ body: input }, second);
+      assert.equal(second.statusCode, 200);
+      assert.equal(second.body.reused, true);
+      assert.equal(second.body.order.id, first.body.order.id);
+      assert.equal(calls, 1, 'the cooldown must reuse the probe instead of flooding Razorpay');
+    } finally {
+      globalThis.fetch = originalFetch;
+      _resetRazorpayTestOrderProbe();
+    }
+  });
+});
+
+test('TEST order probe returns exact sanitized Razorpay status/error fields and no credentials', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
+    _resetRazorpayTestOrderProbe();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'BAD_REQUEST_ERROR',
+            description: `Authentication failed for ${KEY_ID} using ${KEY_SECRET}`,
+            source: 'business',
+            step: 'payment_initiation',
+            reason: 'authentication_failed',
+            field: null,
+            metadata: { credential_hint: KEY_SECRET, request_kind: 'order' },
+          },
+        }),
+        { status: 401, headers: { 'content-type': 'application/json' } }
+      )) as typeof fetch;
+    try {
+      const res = makeRes();
+      await handleCreateRazorpayTestOrder(
+        { body: { confirmation: TEST_ORDER_PROBE_CONFIRMATION, amount: 1, currency: 'INR' } },
+        res
+      );
+      assert.equal(res.statusCode, 502);
+      assert.equal(res.body.code, 'razorpay_order_failed');
+      assert.equal(res.body.provider.httpStatus, 401);
+      assert.equal(res.body.provider.error.code, 'BAD_REQUEST_ERROR');
+      assert.equal(res.body.provider.error.reason, 'authentication_failed');
+      assert.equal(res.body.provider.error.source, 'business');
+      assert.equal(res.body.provider.error.step, 'payment_initiation');
+      assert.match(res.body.provider.error.description, /Authentication failed/);
+      assert.ok(!res.body.provider.error.description.includes(KEY_ID));
+      assert.ok(!res.body.provider.error.description.includes(KEY_SECRET));
+      assert.equal(res.body.provider.error.metadata.credential_hint, '[REDACTED]');
+      assert.ok(!JSON.stringify(res.body).includes(KEY_SECRET));
+      assert.ok(!JSON.stringify(res.body).includes(KEY_ID));
+    } finally {
+      globalThis.fetch = originalFetch;
+      _resetRazorpayTestOrderProbe();
     }
   });
 });

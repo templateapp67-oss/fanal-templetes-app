@@ -40,8 +40,11 @@
 import crypto from 'node:crypto';
 import { computeAdvanceDeposit, rupeesToPaise, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit.js';
 
-const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
+export const RAZORPAY_API_VERSION = 'v1';
+const RAZORPAY_API_BASE = `https://api.razorpay.com/${RAZORPAY_API_VERSION}`;
 const REQUEST_TIMEOUT_MS = 20_000;
+const TEST_ORDER_PROBE_CACHE_MS = 60_000;
+export const TEST_ORDER_PROBE_CONFIRMATION = 'CREATE_RAZORPAY_TEST_ORDER_INR_1';
 
 /** Public "key id" the browser sees while the mock gateway is active. */
 export const MOCK_KEY_ID = 'rzp_mock_nexoraSandbox';
@@ -105,6 +108,23 @@ export function readRazorpayCredentials(env: EnvLike = process.env): RazorpayCre
     env.RAZORPAY_KEY_SECRET || env.RAZORPAY_SECRET || env.RAZORPAY_API_SECRET
   );
   return { keyId, keySecret };
+}
+
+/**
+ * Report only the NAMES of the variables selected by the runtime precedence
+ * chain. Values are deliberately omitted. This lets an operator prove that a
+ * Vercel function is reading the canonical server variables (rather than a
+ * stale Vite/build value) without disclosing either credential.
+ */
+export function readRazorpayCredentialVariableNames(
+  env: EnvLike = process.env
+): { keyId: string | null; keySecret: string | null } {
+  const firstTruthyName = (names: string[]): string | null =>
+    names.find((name) => Boolean((env as Record<string, string | undefined>)[name])) || null;
+  return {
+    keyId: firstTruthyName(['RAZORPAY_KEY_ID', 'VITE_RAZORPAY_KEY_ID', 'RAZORPAY_API_KEY', 'RAZORPAY_KEY']),
+    keySecret: firstTruthyName(['RAZORPAY_KEY_SECRET', 'RAZORPAY_SECRET', 'RAZORPAY_API_SECRET']),
+  };
 }
 
 /**
@@ -300,6 +320,72 @@ function normalizeNotes(notes?: Record<string, unknown>): Record<string, string>
   );
 }
 
+export interface SanitizedRazorpayProviderError {
+  code: string | null;
+  description: string;
+  source: string | null;
+  step: string | null;
+  reason: string | null;
+  field: string | null;
+  metadata: Record<string, string | number | boolean | null>;
+}
+
+/** Remove credentials and keep only Razorpay's documented, operational fields. */
+function sanitizeProviderText(value: unknown, fallback = ''): string {
+  let text = typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);
+  const { keyId, keySecret } = readRazorpayCredentials();
+  for (const credential of [keyId, keySecret]) {
+    if (credential) text = text.split(credential).join('[REDACTED]');
+  }
+  return text
+    .replace(/rzp_(?:test|live)_[A-Za-z0-9]+/g, 'rzp_[REDACTED]')
+    .replace(/Basic\s+[A-Za-z0-9+/=]+/gi, 'Basic [REDACTED]')
+    .slice(0, 500) || fallback;
+}
+
+export function sanitizeRazorpayProviderError(payload: any): SanitizedRazorpayProviderError {
+  const error = payload?.error && typeof payload.error === 'object' ? payload.error : payload || {};
+  const metadata: Record<string, string | number | boolean | null> = {};
+  if (error?.metadata && typeof error.metadata === 'object' && !Array.isArray(error.metadata)) {
+    for (const [key, value] of Object.entries(error.metadata).slice(0, 20)) {
+      if (/secret|authorization|credential|token|password|key/i.test(key)) {
+        metadata[key] = '[REDACTED]';
+      } else if (value === null || typeof value === 'number' || typeof value === 'boolean') {
+        metadata[key] = value as number | boolean | null;
+      } else if (typeof value === 'string') {
+        metadata[key] = sanitizeProviderText(value);
+      }
+    }
+  }
+  const nullable = (value: unknown): string | null => {
+    const safe = sanitizeProviderText(value);
+    return safe || null;
+  };
+  return {
+    code: nullable(error?.code),
+    description: sanitizeProviderText(error?.description || payload?.message, 'Unknown Razorpay error'),
+    source: nullable(error?.source),
+    step: nullable(error?.step),
+    reason: nullable(error?.reason),
+    field: nullable(error?.field),
+    metadata,
+  };
+}
+
+/** Typed provider failure: status + sanitized Razorpay JSON, never credentials. */
+export class RazorpayApiError extends Error {
+  readonly code = 'razorpay_api_error';
+
+  constructor(
+    readonly providerStatus: number,
+    readonly providerError: SanitizedRazorpayProviderError
+  ) {
+    const reason = providerError.reason ? ` (${providerError.reason})` : '';
+    super(`Razorpay order failed [HTTP ${providerStatus}]${reason}: ${providerError.description}`);
+    this.name = 'RazorpayApiError';
+  }
+}
+
 /** Build a mock order that looks exactly like Razorpay's response shape. */
 export function createMockOrder(input: CreateOrderInput): RazorpayOrder {
   const paise = paiseForOrder(input.amount);
@@ -434,10 +520,13 @@ export function createRazorpayClient(env: EnvLike = process.env): RazorpayClient
       }
 
       if (!response.ok) {
-        const description =
-          payload?.error?.description || payload?.message || raw?.slice(0, 300) || 'Unknown Razorpay error';
-        const reason = payload?.error?.reason ? ` (${payload.error.reason})` : '';
-        throw new Error(`Razorpay order failed [HTTP ${response.status}]${reason}: ${description}`);
+        // Preserve the provider status and documented error fields so the
+        // TEST-only probe can report the exact first gateway failure. The raw
+        // response and Authorization header are never retained or returned.
+        throw new RazorpayApiError(
+          response.status,
+          sanitizeRazorpayProviderError(payload || { message: raw?.slice(0, 300) })
+        );
       }
 
       if (!payload?.id) throw new Error('Razorpay returned a response without an order id.');
@@ -670,6 +759,165 @@ export function handleRazorpayConfig(_req: any, res: any): void {
       issues: ['Secure payment service is not configured on this server.'],
     });
   }
+}
+
+// ===========================================================================
+// TEST-only deployed credential probe
+// ---------------------------------------------------------------------------
+// This is intentionally separate from the customer order route. The customer
+// route must keep its account/slot/price gates and the mandatory verified 25%
+// advance. An operator probe has no booking, checkout, payment or settlement:
+// it can create exactly one ₹1 TEST order and nothing else. Live/mock/disabled
+// modes refuse it. A short per-instance cache prevents repeated calls from
+// minting a new test order on every refresh.
+// ===========================================================================
+
+interface TestOrderProbeResult {
+  status: number;
+  body: Record<string, any>;
+}
+
+let testOrderProbeCache: { at: number; result: TestOrderProbeResult } | null = null;
+let testOrderProbeInFlight: Promise<TestOrderProbeResult> | null = null;
+
+function razorpayRuntimeCredentialEvidence(env: EnvLike = process.env): Record<string, any> {
+  const { keyId } = readRazorpayCredentials(env);
+  return {
+    credentialVariables: readRazorpayCredentialVariableNames(env),
+    credentialRead: 'process.env at request time',
+    keyIdPrefix: keyId ? `${keyId.slice(0, 12)}…` : null,
+    vercelEnvironment: cleanEnvValue(env.VERCEL_ENV) || null,
+    commitSha: cleanEnvValue(env.VERCEL_GIT_COMMIT_SHA).slice(0, 12) || null,
+  };
+}
+
+async function runRazorpayTestOrderProbe(): Promise<TestOrderProbeResult> {
+  const client = createRazorpayClient();
+  if (!client || client.mode !== 'test') {
+    return {
+      status: 404,
+      body: {
+        success: false,
+        code: 'test_order_probe_unavailable',
+        error: 'The ₹1 order probe is available only while Razorpay TEST credentials are active.',
+        mode: client?.mode || 'disabled',
+        runtime: razorpayRuntimeCredentialEvidence(),
+      },
+    };
+  }
+
+  const request = { amount: 100, currency: 'INR' } as const;
+  try {
+    const order = await client.createOrder({
+      amount: 1,
+      currency: request.currency,
+      receipt: `nexora-probe-${Date.now().toString(36)}-${randomId(6)}`,
+      notes: {
+        purpose: 'razorpay_test_order_probe',
+        booking_policy: 'not_a_booking',
+        requested_amount: 'INR 1.00',
+      },
+    });
+    if (order.amount !== request.amount || order.currency !== request.currency || !order.id) {
+      throw new Error('Razorpay returned an order whose amount, currency or id did not match the ₹1 probe.');
+    }
+    return {
+      status: 200,
+      body: {
+        success: true,
+        probe: 'razorpay_test_order',
+        mode: 'test',
+        provider: { name: 'Razorpay REST API', version: RAZORPAY_API_VERSION, httpStatus: 200 },
+        request,
+        order: {
+          id: order.id,
+          amount: order.amount,
+          currency: order.currency,
+          status: order.status || null,
+          receipt: order.receipt ?? null,
+        },
+        runtime: razorpayRuntimeCredentialEvidence(),
+      },
+    };
+  } catch (err: any) {
+    const providerFailure = err instanceof RazorpayApiError;
+    const timeout = err?.code === 'razorpay_timeout';
+    const unreachable = err?.code === 'razorpay_unreachable';
+    console.error(
+      '[Razorpay] ₹1 TEST order probe failed (credentials and raw response not logged):',
+      providerFailure
+        ? { providerStatus: err.providerStatus, providerError: err.providerError }
+        : sanitizeProviderText(err?.message || err, 'Unknown order probe error')
+    );
+    return {
+      status: timeout ? 504 : unreachable ? 503 : 502,
+      body: {
+        success: false,
+        probe: 'razorpay_test_order',
+        mode: 'test',
+        code: timeout ? 'request_timeout' : unreachable ? 'razorpay_unreachable' : 'razorpay_order_failed',
+        retryable: timeout || unreachable || (providerFailure && err.providerStatus >= 500),
+        error: providerFailure
+          ? 'Razorpay rejected the ₹1 TEST order request.'
+          : 'The ₹1 TEST order could not be created.',
+        provider: providerFailure
+          ? {
+              name: 'Razorpay REST API',
+              version: RAZORPAY_API_VERSION,
+              httpStatus: err.providerStatus,
+              error: err.providerError,
+            }
+          : null,
+        request,
+        runtime: razorpayRuntimeCredentialEvidence(),
+      },
+    };
+  }
+}
+
+/**
+ * POST /api/payments/razorpay/test-order
+ * Body: { confirmation: 'CREATE_RAZORPAY_TEST_ORDER_INR_1', amount: 1, currency: 'INR' }
+ *
+ * No caller-supplied amount, receipt or notes reach Razorpay. This endpoint is
+ * impossible to use with live keys and never creates or updates a booking.
+ */
+export async function handleCreateRazorpayTestOrder(req: any, res: any): Promise<void> {
+  res.set?.('Cache-Control', 'no-store');
+  const body = req.body || {};
+  if (
+    body.confirmation !== TEST_ORDER_PROBE_CONFIRMATION ||
+    Number(body.amount) !== 1 ||
+    String(body.currency || '').toUpperCase() !== 'INR'
+  ) {
+    return void res.status(400).json({
+      success: false,
+      code: 'invalid_test_order_probe',
+      error: `This endpoint accepts only an explicit ₹1 TEST probe (${TEST_ORDER_PROBE_CONFIRMATION}).`,
+    });
+  }
+
+  const now = Date.now();
+  if (testOrderProbeCache && now - testOrderProbeCache.at < TEST_ORDER_PROBE_CACHE_MS) {
+    return void res
+      .status(testOrderProbeCache.result.status)
+      .json({ ...testOrderProbeCache.result.body, reused: true });
+  }
+
+  if (!testOrderProbeInFlight) {
+    testOrderProbeInFlight = runRazorpayTestOrderProbe().finally(() => {
+      testOrderProbeInFlight = null;
+    });
+  }
+  const result = await testOrderProbeInFlight;
+  testOrderProbeCache = { at: Date.now(), result };
+  res.status(result.status).json(result.body);
+}
+
+/** Test seam — never called by request handlers. */
+export function _resetRazorpayTestOrderProbe(): void {
+  testOrderProbeCache = null;
+  testOrderProbeInFlight = null;
 }
 
 // ===========================================================================
