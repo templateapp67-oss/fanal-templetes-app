@@ -153,6 +153,7 @@ export const PartnerProfileMenu: React.FC<{
   displayName: string;
   email: string;
   partnerId?: string;
+  avatarUrl?: string;
   onNavigateProfile: () => void;
   onLogout: () => void;
 }> = ({ displayName, email, partnerId, onNavigateProfile, onLogout }) => (
@@ -391,6 +392,7 @@ export const PartnerPortalShell: React.FC<{
   displayName,
   email,
   partnerId,
+  avatarUrl,
   notifications = [],
   notificationsLoading = false,
   navigate,
@@ -610,13 +612,13 @@ export const PartnerPortalShell: React.FC<{
                   onClick={() => toggleMenu('profile')}
                   className="flex min-w-0 items-center gap-2 rounded-xl p-1.5 text-left hover:bg-slate-100"
                 >
-                  <span
+                  {avatarUrl ? <img src={avatarUrl} alt="Profile" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span
                     aria-hidden="true"
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
                     style={{ backgroundColor: accentHex }}
                   >
                     {displayName.slice(0, 1).toUpperCase()}
-                  </span>
+                  </span>}
                   <span className="hidden min-w-0 max-w-40 leading-tight sm:block">
                     <span className="block truncate text-sm font-bold text-slate-900">
                       {displayName}

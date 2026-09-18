@@ -11,7 +11,7 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
 }) {
   const [profile, setProfile] = useState<GrowthPartnerProfileData | null>(null);
   const [form, setForm] = useState({ fullName: '', phone: '' });
-  const [business, setBusiness] = useState<PartnerAccountSettings>({ agency_name: '', whatsapp_phone: '', city: '', state: '', public_bio: '', payout_method: null, payout_account_name: '', payout_account_number: '', payout_ifsc: '', payout_upi_id: '' });
+  const [business, setBusiness] = useState<PartnerAccountSettings>({ agency_name: '', whatsapp_phone: '', city: '', state: '', public_bio: '', full_address: '', alternate_phone: '', website_url: '', social_handles: '', payout_method: null, payout_account_name: '', payout_account_number: '', payout_ifsc: '', payout_upi_id: '' });
   const [activeTab, setActiveTab] = useState<'contact' | 'payout' | 'notifications' | 'security'>('contact');
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
@@ -98,6 +98,10 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
               <label className="text-sm font-bold text-slate-600">WhatsApp Business Helpline<input type="tel" maxLength={30} value={business.whatsapp_phone || ''} onChange={e => setBusiness({ ...business, whatsapp_phone: e.target.value })} className={inputClass} /></label>
               <label className="text-sm font-bold text-slate-600">City Base<input maxLength={80} value={business.city} onChange={e => setBusiness({ ...business, city: e.target.value })} className={inputClass} /></label>
               <label className="text-sm font-bold text-slate-600">State<input maxLength={80} value={business.state} onChange={e => setBusiness({ ...business, state: e.target.value })} className={inputClass} /></label>
+              <label className="text-sm font-bold text-slate-600 sm:col-span-2">Full Address / Location<input maxLength={240} value={business.full_address} onChange={e => setBusiness({ ...business, full_address: e.target.value })} className={inputClass} /></label>
+              <label className="text-sm font-bold text-slate-600">Emergency / Alternate Phone<input type="tel" maxLength={30} value={business.alternate_phone || ''} onChange={e => setBusiness({ ...business, alternate_phone: e.target.value })} className={inputClass} /></label>
+              <label className="text-sm font-bold text-slate-600">Website Link<input type="url" maxLength={200} value={business.website_url || ''} onChange={e => setBusiness({ ...business, website_url: e.target.value })} className={inputClass} /></label>
+              <label className="text-sm font-bold text-slate-600 sm:col-span-2">Social Media Handles<input maxLength={240} placeholder="Instagram, LinkedIn, Facebook" value={business.social_handles} onChange={e => setBusiness({ ...business, social_handles: e.target.value })} className={inputClass} /></label>
             </div>
             <label className="text-sm font-bold text-slate-600">Public Partner Bio & Expertise<textarea maxLength={500} rows={4} value={business.public_bio} onChange={e => setBusiness({ ...business, public_bio: e.target.value })} className={inputClass} /></label>
             <button type="submit" className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">{busy ? 'Saving…' : 'Save Profile & Account Settings'}</button>
@@ -107,10 +111,10 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
         </form>
       </section> : null}
       <section aria-label="Partner account details" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <h2 className="font-bold text-slate-900">Account details</h2>
+        <div className="flex items-center justify-between"><h2 className="font-bold text-slate-900">Account details</h2><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">KYB/KYC: {business.kyb_status || 'Pending'}</span></div>
         <dl className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2">
           {[
-            ['Partner Name', profile.full_name || 'Not provided'], ['Email', profile.email || 'Not provided'], ['Phone', profile.phone || 'Not provided'],
+            ['Partner Name', profile.full_name || 'Not provided'], ['Email', profile.email || 'Not provided'], ['Phone', profile.phone || 'Not provided'], ['Business / Salon Name', business.agency_name || 'Not provided'], ['Full Address', business.full_address || 'Not provided'], ['Alternate Phone', business.alternate_phone || 'Not provided'], ['Website', business.website_url || 'Not provided'], ['Social Handles', business.social_handles || 'Not provided'],
             ['Partner ID', profile.partner_id], ['Referral Code', profile.referral_code], ['Account status', profile.account_status],
             ['Joined date', new Date(profile.joined_at).toLocaleDateString()], ['Partner Role', profile.partner_role], ['Approval Status', profile.approval_status],
           ].map(([label,value]) => <div key={label}><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 break-all text-sm text-slate-900">{value}</dd></div>)}

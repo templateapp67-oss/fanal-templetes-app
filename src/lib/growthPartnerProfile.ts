@@ -14,7 +14,7 @@ export interface GrowthPartnerProfileData {
   joined_at: string;
 }
 export interface PartnerAccountSettings {
-  agency_name: string; whatsapp_phone: string | null; city: string; state: string; public_bio: string;
+  agency_name: string; whatsapp_phone: string | null; city: string; state: string; public_bio: string; full_address: string; alternate_phone: string | null; website_url: string | null; social_handles: string; kyb_status?: string;
   payout_method: 'upi' | 'bank_transfer' | 'paypal' | null; payout_account_name: string | null; payout_account_number: string | null; payout_ifsc: string | null; payout_upi_id: string | null;
 }
 /** Structural interface keeps Auth and Storage paths testable without privileged keys. */

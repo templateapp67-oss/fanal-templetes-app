@@ -22,7 +22,7 @@ import {
   type PartnerReferralFilter,
   type PartnerReferralList,
 } from '../lib/growthPartner';
-import { isMockSupabase } from '../lib/supabaseClient';
+import { isMockSupabase, supabase } from '../lib/supabaseClient';
 import {
   GROWTH_PARTNER_SECTIONS,
   growthPartnerLoginPath,
@@ -236,6 +236,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
   const [savedProfileName, setSavedProfileName] = useState<{ owner: string; name: string } | null>(null);
+  const [savedProfileAvatar, setSavedProfileAvatar] = useState('');
   const [partner, setPartner] = useState<GrowthPartner | null>(null);
   const [gateLoading, setGateLoading] = useState(true);
   const [verifiedFor, setVerifiedFor] = useState<string | null>(null);
@@ -576,6 +577,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'profile':
         return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
           if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
+          if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
+          if (saved.partner_id === userId && !saved.photo_path) setSavedProfileAvatar('');
         }} /></div>;
       default:
         return null;
@@ -595,6 +598,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         // auth id (the growth_partners row is keyed by it) — a display value
         // from the session, never an input to any backend read.
         partnerId={userId ?? undefined}
+        avatarUrl={savedProfileAvatar}
         notifications={dashboard.data ? dashboard.data.recent_activity : []}
         notificationsLoading={dashboard.loading && !dashboard.data}
         navigate={navigate ?? (() => {})}
