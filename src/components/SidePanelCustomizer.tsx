@@ -795,16 +795,49 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                       }}
                       className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-900 focus:outline-none w-3/4 py-0.5"
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setServices?.((prev) => prev.filter((s) => s.id !== srv.id));
-                        showToast(`Deleted service "${srv.name}"`);
-                      }}
-                      className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newShow = srv.showDuration === false ? true : false;
+                          setServices?.((prev) =>
+                            prev.map((s) => (s.id === srv.id ? { ...s, showDuration: newShow } : s))
+                          );
+                          showToast(
+                            newShow
+                              ? `Showing duration for "${srv.name}" on public website`
+                              : `Hiding duration for "${srv.name}" on public website`
+                          );
+                        }}
+                        className={`p-1 rounded transition-colors cursor-pointer ${
+                          srv.showDuration === false
+                            ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title={
+                          srv.showDuration === false
+                            ? 'Duration hidden on public website. Click to show.'
+                            : 'Duration shown on public website. Click to hide.'
+                        }
+                      >
+                        {srv.showDuration === false ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setServices?.((prev) => prev.filter((s) => s.id !== srv.id));
+                          showToast(`Deleted service "${srv.name}"`);
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+                        title="Delete service"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-[11px]">

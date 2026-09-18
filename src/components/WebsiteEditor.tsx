@@ -6,6 +6,7 @@ import React, { useRef, useState } from 'react';
 import {
   Save,
   Eye,
+  EyeOff,
   ExternalLink,
   Copy,
   Check,
@@ -717,14 +718,40 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => removeService(srv.id)}
-                  className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors self-end md:self-center cursor-pointer"
-                  title="Delete service"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 self-end md:self-center">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateService(srv.id, {
+                        showDuration: srv.showDuration === false ? true : false,
+                      })
+                    }
+                    className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                      srv.showDuration === false
+                        ? 'text-amber-700 bg-amber-50 hover:bg-amber-100'
+                        : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                    }`}
+                    title={
+                      srv.showDuration === false
+                        ? 'Duration hidden on public menu. Click to show.'
+                        : 'Duration shown on public menu. Click to hide.'
+                    }
+                  >
+                    {srv.showDuration === false ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeService(srv.id)}
+                    className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                    title="Delete service"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

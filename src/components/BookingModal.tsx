@@ -1377,11 +1377,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             </div>
                             <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 mt-1">
                               <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[10px]">{srv.category}</span>
-                              <span>•</span>
-                              <span className="flex items-center gap-1 font-mono text-slate-700">
-                                <Clock className="w-3 h-3 text-slate-500" />
-                                {srv.durationMinutes} mins
-                              </span>
+                              {srv.showDuration !== false && (
+                                <>
+                                  <span>•</span>
+                                  <span className="flex items-center gap-1 font-mono text-slate-700">
+                                    <Clock className="w-3 h-3 text-slate-500" />
+                                    {srv.durationMinutes} mins
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -1551,10 +1555,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="text-xs font-bold text-slate-900">{addon.name}</div>
-                              <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                {addon.durationMinutes} mins
-                              </div>
+                              {addon.showDuration !== false && (
+                                <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-slate-400" />
+                                  {addon.durationMinutes} mins
+                                </div>
+                              )}
                             </div>
                             <div className="text-xs font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(addon.price)}</div>
                         </div>
@@ -2042,7 +2048,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       <span className="min-w-0 font-semibold text-slate-800">
                         {selectedServices.length > 1 && <span className="text-slate-400 font-mono mr-1">{idx + 1}.</span>}
                         {srv.name}
-                        <span className="text-slate-400 font-normal"> ({srv.durationMinutes} mins)</span>
+                        {srv.showDuration !== false && (
+                          <span className="text-slate-400 font-normal"> ({srv.durationMinutes} mins)</span>
+                        )}
                       </span>
                       <span className="font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(srv.price)}</span>
                     </div>
@@ -2052,7 +2060,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       <span className="min-w-0 text-slate-700">
                         <span className="text-[9px] font-mono font-bold uppercase tracking-wide text-slate-400 mr-1">Add-on:</span>
                         {upgrade.name}
-                        <span className="text-slate-400 font-normal"> ({upgrade.durationMinutes} mins)</span>
+                        {upgrade.showDuration !== false && (
+                          <span className="text-slate-400 font-normal"> ({upgrade.durationMinutes} mins)</span>
+                        )}
                       </span>
                       <span className="font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(upgrade.price)}</span>
                     </div>

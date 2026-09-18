@@ -4,6 +4,7 @@ import {
   Bell,
   ChevronDown,
   CircleUserRound,
+  FileSpreadsheet,
   Gift,
   LayoutDashboard,
   LifeBuoy,
@@ -15,6 +16,7 @@ import {
   Settings,
   Ticket,
   Trophy,
+  Users,
   Wallet,
   X,
 } from 'lucide-react';
@@ -55,17 +57,12 @@ export interface PartnerPortalNavItem {
 /** Sidebar menu items, in menu order. Mirrors PARTNER_PORTAL_MENU_SECTIONS. */
 export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   { section: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { section: 'referral-code', label: 'Referral Hub', icon: Ticket },
+  { section: 'referral-code', label: 'My Referral Code', icon: Ticket },
+  { section: 'referred-users', label: 'Referred Users', icon: Users },
+  { section: 'referral-status', label: 'Referral Status', icon: FileSpreadsheet },
   { section: 'rewards', label: 'Rewards', icon: Gift },
   { section: 'commission', label: 'Extra Onboarding Reward', icon: Percent },
   { section: 'profile', label: 'Profile', icon: CircleUserRound },
-  { section: 'earnings', label: 'Earnings', icon: Wallet },
-  { section: 'withdrawals', label: 'Withdrawals', icon: Banknote },
-  { section: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone },
-  { section: 'partner-levels', label: 'Partner Levels', icon: Medal },
-  { section: 'leaderboards', label: 'Leaderboards', icon: Trophy },
-  { section: 'notifications', label: 'Notifications', icon: Bell },
-  { section: 'support', label: 'Support', icon: LifeBuoy },
 ];
 
 /**
@@ -82,12 +79,20 @@ export interface PartnerPortalPlannedItem {
 }
 
 /** Planned modules — add new sidebar sections here first, then promote them. */
-export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [];
+export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [
+  { id: 'earnings', label: 'Earnings', icon: Wallet },
+  { id: 'withdrawals', label: 'Withdrawals', icon: Banknote },
+  { id: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone },
+  { id: 'partner-levels', label: 'Partner Levels', icon: Medal },
+  { id: 'leaderboards', label: 'Leaderboards', icon: Trophy },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'support', label: 'Support', icon: LifeBuoy },
+];
 
 /** Human title for each portal section (header + drawer use it). */
 export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string> = {
   dashboard: 'Dashboard',
-  'referral-code': 'Referral Hub',
+  'referral-code': 'My Referral Code',
   'referred-users': 'Referred Users',
   'referral-status': 'Referral Status',
   profile: 'Profile',
@@ -95,8 +100,13 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
   rewards: 'Rewards',
   performance: 'Performance',
   commission: 'Extra Onboarding Reward',
-  earnings: 'Earnings', withdrawals: 'Withdrawals', 'marketing-materials': 'Marketing Materials',
-  'partner-levels': 'Partner Levels', leaderboards: 'Leaderboards', notifications: 'Notifications', support: 'Support',
+  earnings: 'Earnings',
+  withdrawals: 'Withdrawals',
+  'marketing-materials': 'Marketing Materials',
+  'partner-levels': 'Partner Levels',
+  leaderboards: 'Leaderboards',
+  notifications: 'Notifications',
+  support: 'Support',
 };
 
 /**
@@ -191,18 +201,22 @@ export const PartnerProfileMenu: React.FC<{
         className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       >
         <CircleUserRound className="h-4 w-4 shrink-0 text-slate-400" />
-        Profile
+        My Profile
       </button>
-      <button
-        type="button"
+      <span
         role="menuitem"
+        aria-disabled="true"
         data-partner-menu-item="account-settings"
-        onClick={onNavigateAccountSettings}
-        className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+        className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 cursor-not-allowed opacity-60 select-none"
       >
-        <Settings className="h-4 w-4 shrink-0" />
-        Account Settings
-      </button>
+        <span className="flex items-center gap-2.5">
+          <Settings className="h-4 w-4 shrink-0" />
+          Account Settings
+        </span>
+        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+          Soon
+        </span>
+      </span>
       <div className="my-1.5 border-t border-slate-100" role="separator" />
       <button
         type="button"

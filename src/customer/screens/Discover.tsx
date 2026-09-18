@@ -954,7 +954,7 @@ export const ServiceList: React.FC<{
                     {service.description ? <p className={`text-xs mt-1 ${MUTED_CLASS}`}>{service.description}</p> : null}
                     <div className="flex items-center gap-3 mt-2 text-xs">
                       <span className="font-extrabold text-slate-900">{money(service.price, currency)}</span>
-                      {service.showDuration ? (
+                      {service.showDuration !== false ? (
                         <span className={`inline-flex items-center gap-1 ${MUTED_CLASS}`}>
                           <Clock className="w-3.5 h-3.5" /> {service.durationMinutes} min
                         </span>

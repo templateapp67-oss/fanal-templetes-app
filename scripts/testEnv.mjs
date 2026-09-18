@@ -12,6 +12,14 @@
 // production are untouched because they never load this file.
 // ============================================================================
 
+import { register } from 'node:module';
+
+try {
+  register('./imageLoader.mjs', import.meta.url);
+} catch {
+  // Graceful fallback if module.register is not supported
+}
+
 if (!process.env.NODE_ENV) process.env.NODE_ENV = 'test';
 
 // A dedicated marker rather than NODE_ENV: some tests deliberately set NODE_ENV

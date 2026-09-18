@@ -274,11 +274,10 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
-  'profile', 'account-settings',
+  'profile',
   'rewards',
   'performance',
   'commission',
-  'earnings', 'withdrawals', 'marketing-materials', 'partner-levels', 'leaderboards', 'notifications', 'support',
 ];
 
 /** Sidebar sections (the menu) — a subset of the URL sections. */
@@ -290,13 +289,6 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'rewards',
   'commission',
   'profile',
-  'earnings',
-  'withdrawals',
-  'marketing-materials',
-  'partner-levels',
-  'leaderboards',
-  'notifications',
-  'support',
 ];
 
 /** Canonical URL for each partner-portal section. */

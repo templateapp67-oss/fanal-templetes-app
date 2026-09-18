@@ -110,14 +110,15 @@ export async function readOwnerEntryFacts(
   const facts: OwnerEntryFacts = { ...UNKNOWN_OWNER_ENTRY_FACTS };
 
   const [profileResult, workspaceResult, statusResult, editorResult] = await Promise.all([
-    client
-      .from('profiles')
-      .select('id')
-      // RLS (`id = auth.uid()`) already limits this to the caller's own row, so
-      // no `.eq('id', …)` is needed — and limit(1) keeps a pathological schema
-      // from turning into a maybeSingle error.
-      .limit(1)
-      .catch(() => ({ data: null, error: { message: 'profiles read failed' } })),
+    Promise.resolve(
+      client
+        .from('profiles')
+        .select('id')
+        // RLS (`id = auth.uid()`) already limits this to the caller's own row, so
+        // no `.eq('id', …)` is needed — and limit(1) keeps a pathological schema
+        // from turning into a maybeSingle error.
+        .limit(1)
+    ).catch(() => ({ data: null, error: { message: 'profiles read failed' } })),
     client.rpc('get_my_owner_workspace'),
     client.rpc('get_my_onboarding_status'),
     client.rpc('get_owner_editor_state'),
