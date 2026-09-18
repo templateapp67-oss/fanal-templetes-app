@@ -343,7 +343,19 @@ export const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
             {formatBookingTime(summary.time)} IST
           </Row>
           <Row icon={<MapPin className="w-3.5 h-3.5" />} label={summary.addressLabel}>
-            {summary.address}
+            {directionsUrl ? (
+              <a
+                href={directionsUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="hover:underline text-slate-900 hover:text-emerald-700 inline-block cursor-pointer"
+                title="View location in Google Maps"
+              >
+                {summary.address} <span className="text-[10px] text-emerald-600 font-sans">↗</span>
+              </a>
+            ) : (
+              summary.address
+            )}
             <span className="block text-[11px] font-normal text-slate-500">{bookingTypeLabel}</span>
           </Row>
         </div>

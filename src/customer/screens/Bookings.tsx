@@ -142,11 +142,12 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
               return (
                 <button
                   key={descriptor.id}
+                  id={`booking-tab-${descriptor.id}`}
                   type="button"
                   role="tab"
                   aria-selected={active}
                   onClick={() => setTab(descriptor.id)}
-                  className={`flex-1 rounded-2xl border px-3 py-2 text-left transition ${
+                  className={`flex-1 rounded-2xl border px-3.5 py-2.5 min-h-[52px] text-left transition cursor-pointer ${
                     active ? 'border-transparent text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                   }`}
                   style={active ? { backgroundColor: accentHex } : undefined}
@@ -159,10 +160,16 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
           </div>
 
           {flash ? (
-            <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start justify-between gap-2">
+            <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
               <span>{flash}</span>
-              <button type="button" onClick={() => setFlash('')} aria-label="Dismiss" className="shrink-0">
-                <X className="w-3.5 h-3.5" />
+              <button
+                id="booking-flash-dismiss-btn"
+                type="button"
+                onClick={() => setFlash('')}
+                aria-label="Dismiss message"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] -my-2 -mr-2 flex items-center justify-center shrink-0 cursor-pointer rounded-lg hover:bg-emerald-100/60"
+              >
+                <X className="w-4 h-4" />
               </button>
             </p>
           ) : null}
@@ -171,7 +178,12 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
             <p className={`text-xs ${MUTED_CLASS}`}>
               {state.loading ? 'Loading your bookings…' : `${visible.length} in this tab · ${bookings.length} total on your account`}
             </p>
-            <button type="button" onClick={state.reload} className="text-xs font-bold text-slate-500 hover:text-slate-900 inline-flex items-center gap-1">
+            <button
+              id="bookings-refresh-btn"
+              type="button"
+              onClick={state.reload}
+              className="text-xs font-bold text-slate-500 hover:text-slate-900 min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center gap-1 rounded-lg cursor-pointer"
+            >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
           </div>
@@ -467,7 +479,14 @@ const BookingCard: React.FC<{
                   <p className="text-xs font-bold text-slate-900">Rate your visit</p>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((value) => (
-                      <button key={value} type="button" onClick={() => setRating(value)} aria-label={`${value} star${value > 1 ? 's' : ''}`} className="p-1">
+                      <button
+                        key={value}
+                        id={`rate-star-${value}`}
+                        type="button"
+                        onClick={() => setRating(value)}
+                        aria-label={`${value} star${value > 1 ? 's' : ''}`}
+                        className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl cursor-pointer hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-300 transition-colors"
+                      >
                         <Star className={`w-6 h-6 ${value <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
                       </button>
                     ))}
@@ -555,10 +574,12 @@ const RescheduleSlots: React.FC<{
       {times.map((time: string) => (
         <button
           key={time}
+          id={`reschedule-time-${time.replace(':', '-')}`}
           type="button"
+          aria-pressed={selected === time}
           onClick={() => onSelect(time)}
-          className={`px-3 py-1.5 rounded-xl border text-xs font-bold ${
-            selected === time ? 'border-transparent text-white' : 'border-slate-200 bg-white text-slate-700'
+          className={`px-3.5 py-2 min-h-[44px] min-w-[56px] inline-flex items-center justify-center rounded-xl border text-xs font-bold cursor-pointer transition-colors ${
+            selected === time ? 'border-transparent text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
           }`}
           style={selected === time ? { backgroundColor: '#0f172a' } : undefined}
         >

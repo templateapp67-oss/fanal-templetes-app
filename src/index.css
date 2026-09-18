@@ -155,6 +155,22 @@
   color: var(--accent-text-color, #ffffff);
 }
 
+/* Service catalog entry animation */
+@keyframes service-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-service-enter {
+  animation: service-card-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Material Symbols Styling */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';

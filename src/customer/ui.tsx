@@ -46,7 +46,8 @@ export const Chip: React.FC<{
   tone?: 'neutral' | 'accent' | 'success' | 'warn' | 'danger';
   title?: string;
   onClick?: () => void;
-}> = ({ children, tone = 'neutral', title, onClick }) => {
+  id?: string;
+}> = ({ children, tone = 'neutral', title, onClick, id }) => {
   const tones: Record<string, string> = {
     neutral: 'bg-slate-100 text-slate-700 border-slate-200',
     accent: 'bg-[#fff1f5] text-[#90003b] border-[#ffd9de]',
@@ -57,10 +58,10 @@ export const Chip: React.FC<{
   const Tag = onClick ? 'button' : 'span';
   return (
     <Tag
-      {...(onClick ? { type: 'button' as const, onClick } : {})}
+      {...(onClick ? { type: 'button' as const, onClick, id } : {})}
       title={title}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold tracking-wide ${tones[tone]} ${
-        onClick ? 'cursor-pointer hover:opacity-90' : ''
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-bold tracking-wide ${tones[tone]} ${
+        onClick ? 'cursor-pointer hover:opacity-90 min-h-[44px]' : ''
       }`}
     >
       {children}
@@ -78,8 +79,10 @@ export const Button: React.FC<{
   type?: 'button' | 'submit';
   className?: string;
   title?: string;
-}> = ({ children, onClick, variant = 'primary', accentHex = '#C20E5A', disabled, busy, type = 'button', className = '', title }) => {
-  const base = 'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50';
+  id?: string;
+  'aria-label'?: string;
+}> = ({ children, onClick, variant = 'primary', accentHex = '#C20E5A', disabled, busy, type = 'button', className = '', title, id, 'aria-label': ariaLabel }) => {
+  const base = 'inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] min-w-[44px] rounded-xl text-sm font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50';
   const variants: Record<string, string> = {
     primary: 'text-white shadow-sm hover:opacity-90',
     secondary: 'bg-white text-slate-800 border border-slate-200 hover:border-slate-300',
@@ -88,7 +91,7 @@ export const Button: React.FC<{
   };
   const style = variant === 'primary' ? { backgroundColor: accentHex } : undefined;
   return (
-    <button type={type} title={title} onClick={onClick} disabled={disabled || busy} style={style} className={`${base} ${variants[variant]} ${className}`}>
+    <button id={id} type={type} title={title} aria-label={ariaLabel} onClick={onClick} disabled={disabled || busy} style={style} className={`${base} ${variants[variant]} ${className}`}>
       {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
       {children}
     </button>
@@ -180,9 +183,10 @@ export const ErrorState: React.FC<{
         {hint ? <p className="text-xs text-rose-700/70 mt-1.5">{hint}</p> : null}
         {onRetry ? (
           <button
+            id="error-state-retry-btn"
             type="button"
             onClick={onRetry}
-            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 cursor-pointer"
+            className="mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-white border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Try again
           </button>

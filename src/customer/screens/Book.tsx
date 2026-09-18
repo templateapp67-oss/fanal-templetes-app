@@ -570,8 +570,14 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <button type="button" onClick={back} className="w-9 h-9 rounded-full border border-slate-200 bg-white grid place-items-center text-slate-600 hover:bg-slate-50" aria-label="Back">
-          <ArrowLeft className="w-4 h-4" />
+        <button
+          id="book-flow-back-btn"
+          type="button"
+          onClick={back}
+          className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full border border-slate-200 bg-white grid place-items-center text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300"
+          aria-label="Back to previous step"
+        >
+          <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -661,7 +667,12 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
               <p className="text-sm font-bold text-slate-900">{dayLabel(date)}</p>
               <div className="flex items-center gap-2">
                 <SourceChip source={slotsState.data?.source} title={`Fetched ${slotsState.data?.fetchedAt ? new Date(slotsState.data.fetchedAt).toLocaleTimeString() : 'just now'}`} />
-                <button type="button" onClick={slotsState.reload} className="text-xs font-bold text-slate-500 hover:text-slate-900">
+                <button
+                  id="book-slots-refresh-btn"
+                  type="button"
+                  onClick={slotsState.reload}
+                  className="text-xs font-bold text-slate-500 hover:text-slate-900 min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center rounded-lg cursor-pointer"
+                >
                   Refresh
                 </button>
               </div>
@@ -691,17 +702,19 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                   return (
                     <button
                       key={row.time}
+                      id={`book-time-slot-${row.time.replace(':', '-')}`}
                       type="button"
                       disabled={!row.available}
                       onClick={() => setTime(row.time)}
+                      aria-pressed={isSelected}
                       title={row.available ? row.freeStaff.map((slot) => slot.staffName).join(', ') : `Unavailable (${row.reason})`}
-                      className={`rounded-2xl border px-2 py-2.5 text-center transition ${
-                        isSelected ? 'border-transparent text-white' : row.available ? 'border-slate-200 hover:border-slate-300' : 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                      className={`rounded-2xl border px-2 py-2.5 min-h-[48px] text-center transition flex flex-col items-center justify-center cursor-pointer ${
+                        isSelected ? 'border-transparent text-white shadow-sm' : row.available ? 'border-slate-200 bg-white hover:border-slate-300' : 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
                       }`}
                       style={isSelected ? { backgroundColor: accentHex } : undefined}
                     >
-                      <span className="block text-sm font-bold">{clockLabel(row.time)}</span>
-                      <span className={`block text-[10px] ${isSelected ? 'text-white/80' : 'text-slate-500'}`}>
+                      <span className="block text-sm font-bold leading-tight">{clockLabel(row.time)}</span>
+                      <span className={`block text-[10px] leading-tight ${isSelected ? 'text-white/80' : 'text-slate-500'}`}>
                         {row.available ? (staffId ? 'free' : `${row.freeStaff.length} free`) : row.reason === 'past' ? 'past' : row.reason === 'off-shift' ? 'off' : 'booked'}
                       </span>
                     </button>
@@ -952,22 +965,28 @@ export const DatePicker: React.FC<{ value: string; onChange: (date: string) => v
           return (
             <button
               key={day}
+              id={`book-date-${day}`}
               type="button"
+              aria-pressed={active}
+              aria-label={parts.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
               onClick={() => onChange(day)}
-              className={`shrink-0 rounded-2xl border px-3 py-2 text-center ${active ? 'border-transparent text-white' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}
+              className={`shrink-0 min-w-[50px] min-h-[52px] rounded-2xl border px-3 py-2 text-center flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                active ? 'border-transparent text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+              }`}
               style={active ? { backgroundColor: accentHex } : undefined}
             >
-              <span className="block text-[10px] font-bold uppercase tracking-wide opacity-80">
+              <span className="block text-[10px] font-bold uppercase tracking-wide opacity-80 leading-tight">
                 {parts.toLocaleDateString(undefined, { weekday: 'short' })}
               </span>
-              <span className="block text-sm font-extrabold">{parts.getDate()}</span>
+              <span className="block text-sm font-extrabold leading-tight">{parts.getDate()}</span>
             </button>
           );
         })}
         <button
+          id="book-date-other-picker-btn"
           type="button"
           onClick={() => inputRef.current?.showPicker?.()}
-          className="shrink-0 rounded-2xl border border-dashed border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+          className="shrink-0 min-w-[50px] min-h-[52px] rounded-2xl border border-dashed border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center justify-center cursor-pointer transition-colors"
         >
           <CalendarDays className="w-4 h-4 inline mr-1" />
           Other

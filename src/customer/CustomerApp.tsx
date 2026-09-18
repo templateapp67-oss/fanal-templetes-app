@@ -407,8 +407,8 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
     <div className="min-h-screen bg-slate-50" style={{ backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${hexToRgba(accentHex, 0.1)}, transparent)` }}>
       <div className="max-w-2xl mx-auto px-4 pt-5 pb-28">
         <header className="flex items-center justify-between gap-3 mb-5">
-          <button type="button" onClick={() => go('home')} className="flex items-center gap-2.5 min-w-0 text-left">
-            <span className="w-9 h-9 rounded-2xl grid place-items-center text-white shrink-0" style={{ backgroundColor: accentHex }}>
+          <button id="customer-header-brand-btn" type="button" onClick={() => go('home')} className="flex items-center gap-2.5 min-w-0 text-left min-h-[44px] cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-300">
+            <span className="w-10 h-10 rounded-2xl grid place-items-center text-white shrink-0" style={{ backgroundColor: accentHex }}>
               <Sparkles className="w-5 h-5" />
             </span>
             <span className="min-w-0">
@@ -424,11 +424,11 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
               {customerBackendConnected() ? 'supabase' : 'not connected'}
             </Chip>
             {session ? (
-              <button type="button" onClick={() => go('profile')} className="w-9 h-9 rounded-full border border-slate-200 bg-white grid place-items-center" title={session.email || 'Your profile'}>
-                <User className="w-4 h-4 text-slate-600" />
+              <button id="customer-header-profile-btn" type="button" onClick={() => go('profile')} className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full border border-slate-200 bg-white grid place-items-center cursor-pointer hover:bg-slate-50 transition-colors" title={session.email || 'Your profile'} aria-label="Your profile">
+                <User className="w-5 h-5 text-slate-600" />
               </button>
             ) : (
-              <Button variant="secondary" onClick={() => requireAuth(path)}>
+              <Button id="customer-header-signin-btn" variant="secondary" onClick={() => requireAuth(path)}>
                 Sign in
               </Button>
             )}
@@ -437,14 +437,14 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
 
         {tenantSubdomain && route.section === 'home' ? (
           <div className={`${CARD_CLASS} mb-4 p-3.5 flex items-center gap-3`}>
-            <span className="w-9 h-9 rounded-2xl grid place-items-center text-white shrink-0" style={{ backgroundColor: accentHex }}>
-              <Compass className="w-4 h-4" />
+            <span className="w-10 h-10 rounded-2xl grid place-items-center text-white shrink-0" style={{ backgroundColor: accentHex }}>
+              <Compass className="w-5 h-5" />
             </span>
             <p className={`text-xs flex-1 ${MUTED_CLASS}`}>
               You arrived from <span className="font-bold text-slate-900">{tenantName || 'this salon'}</span>'s site. Their page is open below — or browse every
               salon on Nexora.
             </p>
-            <Button variant="secondary" onClick={() => go('salon', tenantSubdomain)}>
+            <Button id="customer-open-tenant-btn" variant="secondary" onClick={() => go('salon', tenantSubdomain)}>
               Open their page
             </Button>
           </div>
@@ -466,12 +466,17 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
             return (
               <button
                 key={item.section}
+                id={`customer-bottom-nav-${item.section}`}
                 type="button"
+                aria-label={item.label}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => go(item.section)}
-                className={`py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-bold transition ${active ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`min-h-[52px] min-w-[44px] py-2 px-1 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition cursor-pointer ${
+                  active ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                }`}
               >
-                <span style={active ? { color: accentHex } : undefined}>{item.icon}</span>
-                {item.label}
+                <span className="shrink-0" style={active ? { color: accentHex } : undefined}>{item.icon}</span>
+                <span className="leading-tight truncate max-w-full">{item.label}</span>
               </button>
             );
           })}

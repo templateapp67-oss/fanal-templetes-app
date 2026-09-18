@@ -1840,7 +1840,12 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         initialMode={authMode}
-        onSuccess={(u) => setUser(u)}
+        purpose="owner"
+        onSuccess={(u) => {
+          setUser(u);
+          setCurrentView('dashboard');
+          showToast('Welcome! Successfully entered SaaS Dashboard.');
+        }}
       />
 
       <UserProfileSettingsModal

@@ -180,10 +180,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
         </form>
 
         <div className="mt-5 flex items-center justify-between text-sm">
-          <button type="button" className="font-bold cursor-pointer" style={{ color: accentHex }} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}>
+          <button
+            id="auth-toggle-mode-btn"
+            type="button"
+            className="font-bold cursor-pointer min-h-[44px] px-2 -ml-2 inline-flex items-center rounded-lg hover:underline"
+            style={{ color: accentHex }}
+            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
+          >
             {mode === 'login' ? 'Create an account' : 'I already have an account'}
           </button>
-          <button type="button" onClick={onContinueAsGuest} className={`${MUTED_CLASS} font-semibold hover:text-slate-900 cursor-pointer`}>
+          <button
+            id="auth-browse-guest-btn"
+            type="button"
+            onClick={onContinueAsGuest}
+            className={`${MUTED_CLASS} font-semibold hover:text-slate-900 cursor-pointer min-h-[44px] px-2 -mr-2 inline-flex items-center rounded-lg`}
+          >
             Browse as guest
           </button>
         </div>

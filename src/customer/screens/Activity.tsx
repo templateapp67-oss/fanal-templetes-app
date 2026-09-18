@@ -75,12 +75,13 @@ export const ActivityScreen: React.FC<ActivityProps> = ({ userId, email, accentH
           return (
             <button
               key={item.id}
+              id={`activity-tab-${item.id}`}
               type="button"
               role="tab"
               aria-selected={active}
               onClick={() => setTab(item.id)}
-              className={`flex-1 px-3 py-2 rounded-2xl text-xs font-bold border transition ${
-                active ? 'border-transparent text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+              className={`flex-1 px-3.5 py-2.5 min-h-[44px] inline-flex items-center justify-center rounded-2xl text-xs font-bold border transition cursor-pointer ${
+                active ? 'border-transparent text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
               }`}
               style={active ? { backgroundColor: accentHex } : undefined}
             >
@@ -175,12 +176,20 @@ const NotificationsPanel: React.FC<{
                     {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
                   </p>
                   {item.bookingId && onOpenBooking ? (
-                    <button type="button" onClick={() => onOpenBooking(item.bookingId)} className="text-[11px] font-bold text-slate-700 underline">
+                    <button
+                      type="button"
+                      onClick={() => onOpenBooking(item.bookingId)}
+                      className="text-xs font-bold text-slate-700 underline min-h-[44px] px-2 -mx-2 inline-flex items-center rounded-lg cursor-pointer"
+                    >
                       Open booking
                     </button>
                   ) : null}
                   {item.salonId && onOpenSalon && !item.bookingId ? (
-                    <button type="button" onClick={() => onOpenSalon(item.salonId)} className="text-[11px] font-bold text-slate-700 underline">
+                    <button
+                      type="button"
+                      onClick={() => onOpenSalon(item.salonId)}
+                      className="text-xs font-bold text-slate-700 underline min-h-[44px] px-2 -mx-2 inline-flex items-center rounded-lg cursor-pointer"
+                    >
                       Open salon
                     </button>
                   ) : null}
@@ -270,12 +279,16 @@ const FavouritesPanel: React.FC<{
             </div>
             <div className="flex items-center gap-2 mt-2.5">
               {onOpenSalon && item.salonId ? (
-                <button type="button" onClick={() => onOpenSalon(item.salonId)} className="text-xs font-bold text-slate-700">
+                <button
+                  type="button"
+                  onClick={() => onOpenSalon(item.salonId)}
+                  className="text-xs font-bold text-slate-700 min-h-[44px] px-2 -mx-2 inline-flex items-center rounded-lg cursor-pointer hover:text-slate-900"
+                >
                   Open salon →
                 </button>
               ) : null}
               {item.origin === 'pinned' ? (
-                <Button variant="ghost" busy={busy === item.id} onClick={() => unpin(item)} className="ml-auto !px-2 !py-1 text-xs" accentHex={accentHex}>
+                <Button variant="ghost" busy={busy === item.id} onClick={() => unpin(item)} className="ml-auto !px-3 !py-2 min-h-[44px] text-xs" accentHex={accentHex}>
                   Remove
                 </Button>
               ) : null}
@@ -421,7 +434,12 @@ const DataPanel: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button type="button" onClick={state.reload} className="text-xs font-bold text-slate-500 inline-flex items-center gap-1">
+            <button
+              id="activity-reprobe-tables-btn"
+              type="button"
+              onClick={state.reload}
+              className="text-xs font-bold text-slate-500 hover:text-slate-900 min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center gap-1.5 rounded-lg cursor-pointer"
+            >
               <RefreshCw className="w-3.5 h-3.5" /> Re-probe tables
             </button>
             <span className="text-[11px] text-slate-400 inline-flex items-center gap-1">

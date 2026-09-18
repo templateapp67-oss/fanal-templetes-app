@@ -647,10 +647,16 @@ export const BookingDetailPage: React.FC<BookingDetailPageProps> = ({
               <BookingStatusBadge status={view.status} compact />
             </div>
             {view.address && (
-              <p className="text-xs text-slate-500 mt-2 flex items-start gap-1.5">
-                <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{view.address}</span>
-              </p>
+              <a
+                href={view.directionsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(view.address)}`}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-xs text-slate-500 hover:text-slate-900 mt-2 flex items-start gap-1.5 underline-offset-2 hover:underline transition-colors group cursor-pointer"
+                title="Click to view address in Google Maps"
+              >
+                <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500 group-hover:scale-110 transition-transform" />
+                <span>{view.address} <span className="text-[10px] text-emerald-600 font-sans">↗</span></span>
+              </a>
             )}
           </div>
         </div>

@@ -258,13 +258,15 @@ const LanguageRow: React.FC<{ customerId?: string | null }> = ({ customerId }) =
         {CUSTOMER_LANGUAGES.map((entry) => (
           <button
             key={entry.code}
+            id={`me-lang-${entry.code}`}
             type="button"
+            aria-pressed={language === entry.code}
             onClick={() => {
               setLanguage(entry.code);
               setSaved(writeLanguage(customerId, entry.code));
             }}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
-              language === entry.code ? 'bg-slate-900 text-white border-transparent' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+            className={`px-3.5 py-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-xs font-bold cursor-pointer border transition-colors ${
+              language === entry.code ? 'bg-slate-900 text-white border-transparent shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
             }`}
           >
             {entry.label}

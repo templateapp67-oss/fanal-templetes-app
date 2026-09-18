@@ -128,12 +128,18 @@ export const HomeScreen: React.FC<DiscoverProps> = ({ userId, accentHex = '#C20E
               className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
             />
             {query ? (
-              <button type="button" onClick={() => { setQuery(''); setSubmitted(''); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button
+                id="search-clear-btn"
+                type="button"
+                aria-label="Clear search"
+                onClick={() => { setQuery(''); setSubmitted(''); }}
+                className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600 cursor-pointer -mr-2"
+              >
                 <X className="w-4 h-4" />
               </button>
             ) : null}
           </div>
-          <Button type="submit">Search</Button>
+          <Button id="discover-search-submit-btn" type="submit">Search</Button>
         </form>
 
         {submitted.length < 2 && suggestionsState.data?.length ? (
@@ -160,14 +166,15 @@ export const HomeScreen: React.FC<DiscoverProps> = ({ userId, accentHex = '#C20E
         <DiscoveryFilterBar filters={filters} onChange={setFilters} salons={salonsState.data || []} accentHex={accentHex} />
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 text-xs">
+          <div className="flex items-center gap-1.5 text-xs overflow-x-auto py-1">
             {(['nearby', 'trending', 'rating', 'price', 'name'] as const).map((value) => (
               <button
                 key={value}
+                id={`sort-btn-${value}`}
                 type="button"
                 onClick={() => setSort(value)}
-                className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer capitalize ${
-                  sort === value ? 'text-white' : 'text-slate-500 hover:bg-slate-100'
+                className={`px-3 py-2 min-h-[44px] inline-flex items-center justify-center rounded-xl font-bold cursor-pointer capitalize transition-colors shrink-0 ${
+                  sort === value ? 'text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 style={sort === value ? { backgroundColor: accentHex } : undefined}
               >
@@ -175,7 +182,12 @@ export const HomeScreen: React.FC<DiscoverProps> = ({ userId, accentHex = '#C20E
               </button>
             ))}
           </div>
-          <button type="button" onClick={() => salonsState.reload()} className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer">
+          <button
+            id="discover-salons-refresh-btn"
+            type="button"
+            onClick={() => salonsState.reload()}
+            className="text-xs font-bold text-slate-500 hover:text-slate-900 min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center rounded-lg cursor-pointer shrink-0"
+          >
             Refresh
           </button>
         </div>
@@ -237,7 +249,12 @@ export const HomeScreen: React.FC<DiscoverProps> = ({ userId, accentHex = '#C20E
 
       {salonsState.mode === 'mock' ? <ConnectionNotice mode="mock" notice={salonsState.notice} /> : null}
       {!userId ? (
-        <button type="button" onClick={onRequireAuth} className={`${CARD_CLASS} w-full px-4 py-3 text-left flex items-center justify-between gap-3 hover:border-slate-300 cursor-pointer`}>
+        <button
+          id="discover-signin-banner-btn"
+          type="button"
+          onClick={onRequireAuth}
+          className={`${CARD_CLASS} w-full px-4 py-3 min-h-[52px] text-left flex items-center justify-between gap-3 hover:border-slate-300 cursor-pointer`}
+        >
           <span className="text-sm">
             <span className="font-bold text-slate-900">Sign in to save favourites</span>
             <span className={`block ${MUTED_CLASS}`}>Your bookings, wallet and notifications follow your account.</span>
@@ -356,10 +373,11 @@ const DiscoveryFilterBar: React.FC<{
     <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <button
+          id="discover-filter-open-now-btn"
           type="button"
           onClick={() => onChange({ ...filters, openNow: !filters.openNow })}
-          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
-            filters.openNow ? 'text-white border-transparent' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
+          className={`px-3 py-2 min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-bold cursor-pointer border transition-colors ${
+            filters.openNow ? 'text-white border-transparent shadow-sm' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
           }`}
           style={filters.openNow ? { backgroundColor: accentHex } : undefined}
           title="Salons whose published working hours cover this moment"
@@ -367,10 +385,11 @@ const DiscoveryFilterBar: React.FC<{
           Open now
         </button>
         <button
+          id="discover-filter-offers-btn"
           type="button"
           onClick={() => onChange({ ...filters, offersOnly: !filters.offersOnly })}
-          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
-            filters.offersOnly ? 'text-white border-transparent' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
+          className={`px-3 py-2 min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-bold cursor-pointer border transition-colors ${
+            filters.offersOnly ? 'text-white border-transparent shadow-sm' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
           }`}
           style={filters.offersOnly ? { backgroundColor: accentHex } : undefined}
           title="Salons with at least one active row in loyalty_rewards"
@@ -381,10 +400,11 @@ const DiscoveryFilterBar: React.FC<{
           {[0, 4, 4.5].map((value) => (
             <button
               key={value}
+              id={`discover-filter-rating-${value}`}
               type="button"
               onClick={() => onChange({ ...filters, minRating: value })}
-              className={`px-2 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
-                filters.minRating === value ? 'text-white border-transparent' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
+              className={`px-3 py-2 min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-bold cursor-pointer border transition-colors ${
+                filters.minRating === value ? 'text-white border-transparent shadow-sm' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
               }`}
               style={filters.minRating === value ? { backgroundColor: accentHex } : undefined}
               title={value ? `Average of stored ratings at or above ${value}` : 'Any rating, including salons with no reviews yet'}
@@ -396,16 +416,22 @@ const DiscoveryFilterBar: React.FC<{
         <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
           under
           <input
+            id="discover-filter-max-price-input"
             value={filters.maxPrice}
             onChange={(event) => onChange({ ...filters, maxPrice: event.target.value.replace(/[^\d]/g, '').slice(0, 6) })}
             inputMode="numeric"
             placeholder="600"
-            className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-slate-300"
+            className="w-20 px-2.5 py-2 min-h-[44px] rounded-xl border border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-slate-300"
             title="The salon's cheapest published service price must be at or below this"
           />
         </label>
         {activeCount ? (
-          <button type="button" onClick={() => onChange(EMPTY_DISCOVERY_FILTERS)} className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer">
+          <button
+            id="discover-filter-clear-btn"
+            type="button"
+            onClick={() => onChange(EMPTY_DISCOVERY_FILTERS)}
+            className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center rounded-lg"
+          >
             clear ({activeCount})
           </button>
         ) : null}
@@ -415,14 +441,15 @@ const DiscoveryFilterBar: React.FC<{
           {categories.map(([entry, count]) => (
             <button
               key={entry}
+              id={`discover-filter-category-${entry.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
               type="button"
               onClick={() => onChange({ ...filters, category: filters.category === entry ? '' : entry })}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer border ${
-                filters.category === entry ? 'text-white border-transparent' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
+              className={`px-3 py-2 min-h-[44px] inline-flex items-center justify-center rounded-full text-xs font-bold cursor-pointer border transition-colors ${
+                filters.category === entry ? 'text-white border-transparent shadow-sm' : 'text-slate-600 border-slate-200 bg-white hover:border-slate-300'
               }`}
               style={filters.category === entry ? { backgroundColor: accentHex } : undefined}
             >
-              {entry} <span className="opacity-70">{count}</span>
+              {entry} <span className="opacity-70 ml-1">({count})</span>
             </button>
           ))}
         </div>
@@ -517,24 +544,27 @@ const DiscoveryRails: React.FC<{
  * salons/services this customer has actually booked — the tip says which half is
  * which, because "saved" and "booked before" are different claims.
  */
-const SaveButton: React.FC<{ saved: boolean; label: string; onSave: () => void; disabled?: boolean }> = ({
+const SaveButton: React.FC<{ saved: boolean; label: string; onSave: () => void; disabled?: boolean; id?: string }> = ({
   saved,
   label,
   onSave,
   disabled,
+  id,
 }) => (
   <button
+    id={id}
     type="button"
     onClick={onSave}
     disabled={disabled}
     aria-pressed={saved}
+    aria-label={saved ? `Saved${label ? `: ${label}` : ''}` : `Save${label ? ` ${label}` : ''} to your favourites`}
     title={saved ? `Saved${label ? `: ${label}` : ''}` : `Save${label ? ` ${label}` : ''} to your favourites`}
-    className={`p-1.5 rounded-full border cursor-pointer transition-colors ${
-      saved ? 'border-transparent text-white' : 'border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300'
+    className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full border cursor-pointer transition-colors ${
+      saved ? 'border-transparent text-white' : 'border-slate-200 bg-white text-slate-400 hover:text-slate-700 hover:border-slate-300'
     }`}
     style={saved ? { backgroundColor: '#0f172a' } : undefined}
   >
-    <Heart className={`w-3.5 h-3.5 ${saved ? 'fill-current' : ''}`} />
+    <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
   </button>
 );
 
@@ -704,7 +734,12 @@ export const SalonScreen: React.FC<{
 
   return (
     <div className="space-y-4">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900 cursor-pointer">
+      <button
+        id="salon-back-btn"
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900 cursor-pointer min-h-[44px] px-3 -ml-3 rounded-xl transition-colors"
+      >
         <ArrowLeft className="w-4 h-4" /> All salons
       </button>
 
@@ -718,12 +753,14 @@ export const SalonScreen: React.FC<{
               <p className="text-xs text-white/85 truncate">{salon.tagline || [salon.city, salon.businessType].filter(Boolean).join(' · ')}</p>
             </div>
             <button
+              id="salon-favorite-toggle-btn"
               type="button"
               onClick={toggleSave}
               title={userId ? 'Save or unsave this salon' : 'Sign in to save salons'}
-              className="w-9 h-9 rounded-xl bg-white/95 flex items-center justify-center shrink-0 cursor-pointer hover:bg-white"
+              aria-label={isFavourite ? 'Remove salon from favourites' : 'Save salon to favourites'}
+              className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-white/95 flex items-center justify-center shrink-0 cursor-pointer hover:bg-white shadow-sm transition-colors"
             >
-              <Heart className={`w-4 h-4 ${isFavourite ? 'fill-rose-600 text-rose-600' : 'text-slate-600'}`} />
+              <Heart className={`w-5 h-5 ${isFavourite ? 'fill-rose-600 text-rose-600' : 'text-slate-600'}`} />
             </button>
           </div>
         </div>
@@ -752,14 +789,17 @@ export const SalonScreen: React.FC<{
         </div>
       </div>
 
-      <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100 w-fit">
+      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 w-fit overflow-x-auto" role="tablist">
         {(['overview', 'services', 'staff', 'reviews'] as SalonTab[]).map((value) => (
           <button
             key={value}
+            id={`salon-tab-${value}`}
             type="button"
+            role="tab"
+            aria-selected={tab === value}
             onClick={() => onTab(value)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold capitalize cursor-pointer transition-colors ${
-              tab === value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            className={`px-4 py-2.5 min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-bold capitalize cursor-pointer transition-colors ${
+              tab === value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             {value === 'reviews' && salon.rating.count ? `reviews (${salon.rating.count})` : value}
@@ -886,13 +926,19 @@ export const ServiceList: React.FC<{
                 <div key={service.id} className={`flex items-start gap-3 rounded-2xl border p-3 ${isSelected ? 'border-transparent' : 'border-slate-100'}`} style={isSelected ? { backgroundColor: '#fff1f5' } : undefined}>
                   {onToggle ? (
                     <button
+                      id={`service-toggle-${service.id}`}
                       type="button"
                       onClick={() => onToggle(service.id)}
                       aria-pressed={isSelected}
-                      className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 cursor-pointer ${isSelected ? 'text-white' : 'bg-white'}`}
-                      style={isSelected ? { backgroundColor: accentHex, borderColor: accentHex } : undefined}
+                      aria-label={`${isSelected ? 'Deselect' : 'Select'} ${service.name}`}
+                      className="w-11 h-11 min-w-[44px] min-h-[44px] -m-2.5 flex items-center justify-center shrink-0 cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-300"
                     >
-                      {isSelected ? <CheckGlyph /> : null}
+                      <span
+                        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? 'text-white' : 'bg-white border-slate-300'}`}
+                        style={isSelected ? { backgroundColor: accentHex, borderColor: accentHex } : undefined}
+                      >
+                        {isSelected ? <CheckGlyph /> : null}
+                      </span>
                     </button>
                   ) : null}
                   <div className="min-w-0 flex-1">
@@ -916,7 +962,13 @@ export const ServiceList: React.FC<{
                     </div>
                   </div>
                   {compact ? null : (
-                    <button type="button" onClick={() => onBook([service.id])} className="shrink-0 text-xs font-bold cursor-pointer hover:underline" style={{ color: accentHex }}>
+                    <button
+                      id={`service-book-${service.id}`}
+                      type="button"
+                      onClick={() => onBook([service.id])}
+                      className="shrink-0 text-xs font-bold cursor-pointer hover:underline min-h-[44px] min-w-[44px] px-2.5 flex items-center justify-center rounded-xl"
+                      style={{ color: accentHex }}
+                    >
                       Book
                     </button>
                   )}

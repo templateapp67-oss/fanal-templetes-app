@@ -121,12 +121,13 @@ export const RewardsScreen: React.FC<RewardsProps> = ({ userId, email, accentHex
           return (
             <button
               key={item.id}
+              id={`rewards-tab-${item.id}`}
               type="button"
               role="tab"
               aria-selected={active}
               onClick={() => setTab(item.id)}
-              className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition ${
-                active ? 'border-transparent text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+              className={`shrink-0 px-4 py-2.5 min-h-[44px] inline-flex items-center justify-center rounded-full text-xs font-bold border transition cursor-pointer ${
+                active ? 'border-transparent text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
               }`}
               style={active ? { backgroundColor: accentHex } : undefined}
             >
@@ -260,7 +261,12 @@ const Card: React.FC<{ salon: RewardWallet; onOpenSalon?: (id: string) => void }
     ) : null}
     {salon.lastVisit ? <p className="text-[11px] text-slate-400 mt-2">Last visit {new Date(salon.lastVisit).toLocaleDateString()}</p> : null}
     {onOpenSalon && salon.salonId ? (
-      <button type="button" onClick={() => onOpenSalon(salon.salonId)} className="text-xs font-bold mt-2" style={{ color: '#0f172a' }}>
+      <button
+        type="button"
+        onClick={() => onOpenSalon(salon.salonId)}
+        className="text-xs font-bold mt-2 min-h-[44px] px-2 -mx-2 inline-flex items-center rounded-lg cursor-pointer hover:underline"
+        style={{ color: '#0f172a' }}
+      >
         View salon →
       </button>
     ) : null}
@@ -411,7 +417,12 @@ const QrVerifyRow: React.FC<{ payment: QrPayment; accentHex: string; onVerified:
   return (
     <div className="mt-2">
       {!open ? (
-        <button type="button" onClick={() => setOpen(true)} className="text-[11px] font-bold underline underline-offset-2" style={{ color: accentHex }}>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-xs font-bold underline underline-offset-2 min-h-[44px] px-2 -mx-2 inline-flex items-center rounded-lg cursor-pointer"
+          style={{ color: accentHex }}
+        >
           I have the gateway receipt — verify this payment
         </button>
       ) : (
@@ -671,7 +682,11 @@ const MembershipPanel: React.FC<{
             </span>
           </div>
           {onOpenSalon && membership.salonId ? (
-            <button type="button" onClick={() => onOpenSalon(membership.salonId)} className="text-xs font-bold mt-3 text-slate-900">
+            <button
+              type="button"
+              onClick={() => onOpenSalon(membership.salonId)}
+              className="text-xs font-bold mt-3 text-slate-900 min-h-[44px] px-2 -mx-2 inline-flex items-center rounded-lg cursor-pointer hover:underline"
+            >
               Book at this salon →
             </button>
           ) : null}
@@ -702,7 +717,9 @@ const ReferralPanel: React.FC<{
         <div className="mt-3 flex items-center gap-2">
           <p className="font-mono text-lg font-extrabold tracking-wider text-slate-900 flex-1 min-w-0 break-all">{payload?.code || '—'}</p>
           <button
+            id="rewards-copy-code-btn"
             type="button"
+            aria-label="Copy referral code"
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(payload?.code || '');
@@ -711,17 +728,19 @@ const ReferralPanel: React.FC<{
                 setCopied('unavailable');
               }
             }}
-            className="w-9 h-9 rounded-xl border border-slate-200 grid place-items-center text-slate-600 hover:bg-slate-50"
+            className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border border-slate-200 grid place-items-center text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors"
             title="Copy code"
           >
-            {copied === 'code' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+            {copied === 'code' ? <Check className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
           </button>
         </div>
         {payload?.link ? (
           <div className="mt-2 flex items-center gap-2">
             <p className="text-[11px] font-mono text-slate-500 truncate flex-1">{payload.link}</p>
             <button
+              id="rewards-copy-link-btn"
               type="button"
+              aria-label="Copy invite link"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(payload.link);
@@ -730,9 +749,9 @@ const ReferralPanel: React.FC<{
                   setCopied('unavailable');
                 }
               }}
-              className="text-[11px] font-bold text-slate-700 inline-flex items-center gap-1"
+              className="text-xs font-bold text-slate-700 min-h-[44px] px-2.5 inline-flex items-center gap-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
             >
-              {copied === 'link' ? <Check className="w-3 h-3 text-emerald-600" /> : <Share2 className="w-3 h-3" />} Copy invite link
+              {copied === 'link' ? <Check className="w-4 h-4 text-emerald-600" /> : <Share2 className="w-4 h-4" />} Copy invite link
             </button>
           </div>
         ) : null}
@@ -772,7 +791,12 @@ const ReferralPanel: React.FC<{
           booking is written, so a typo can never silently swallow a reward.
         </p>
       </div>
-      <button type="button" onClick={state.reload} className="text-xs font-bold text-slate-500 inline-flex items-center gap-1">
+      <button
+        id="rewards-reload-history-btn"
+        type="button"
+        onClick={state.reload}
+        className="text-xs font-bold text-slate-500 hover:text-slate-900 min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center gap-1.5 rounded-lg cursor-pointer"
+      >
         <Loader2 className="w-3.5 h-3.5" /> Reload referral history
       </button>
     </div>

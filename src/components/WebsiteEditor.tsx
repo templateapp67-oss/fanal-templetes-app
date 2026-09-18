@@ -89,12 +89,24 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   React.useEffect(() => {
     let active = true;
     setProfileCompletion('loading');
-    if (isMockSupabase || !profile.ownerId) { setProfileCompletion('incomplete'); return; }
+    if (isMockSupabase || !profile.ownerId) {
+      const isCompleteLocally = !!(
+        profile.ownerName?.trim() &&
+        profile.whatsapp?.trim() &&
+        profile.postalCode?.trim() &&
+        profile.city?.trim() &&
+        profile.areaLocality?.trim() &&
+        profile.ownerPhotoUrl?.trim() &&
+        profile.dob?.trim()
+      );
+      setProfileCompletion(isCompleteLocally ? 'complete' : 'incomplete');
+      return;
+    }
     readPartnerProfile(profile.ownerId).then(({ data, error }) => {
       if (active) setProfileCompletion(error ? 'error' : isPartnerProfileComplete(data) ? 'complete' : 'incomplete');
     }).catch(() => { if (active) setProfileCompletion('error'); });
     return () => { active = false; };
-  }, [profile.ownerId, completionRetry]);
+  }, [profile.ownerId, profile.dob, profile.ownerPhotoUrl, completionRetry]);
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

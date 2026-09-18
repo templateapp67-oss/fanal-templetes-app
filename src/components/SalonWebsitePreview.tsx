@@ -223,6 +223,28 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const activeStylists = setStylistsProp ? stylists : internalStylists;
   const setStylists = setStylistsProp || setInternalStylists;
 
+  // Google Maps URLs for address click redirection
+  const googleMapsUrl = React.useMemo(() => {
+    const lat = Number(activeProfile.latitude);
+    const lng = Number(activeProfile.longitude);
+    const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+    const fullAddr = [activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode].filter(Boolean).join(', ');
+    const query = activeProfile.businessName ? `${activeProfile.businessName}, ${fullAddr}` : fullAddr;
+    if (hasCoordinates) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || 'Salon')}`;
+  }, [activeProfile.latitude, activeProfile.longitude, activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode, activeProfile.businessName]);
+
+  const googleDirectionsUrl = React.useMemo(() => {
+    const lat = Number(activeProfile.latitude);
+    const lng = Number(activeProfile.longitude);
+    const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+    const fullAddr = [activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode].filter(Boolean).join(', ');
+    const dest = hasCoordinates ? `${lat},${lng}` : fullAddr;
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest || 'Salon')}`;
+  }, [activeProfile.latitude, activeProfile.longitude, activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode]);
+
   // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
@@ -1267,6 +1289,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       label="City"
                     />
                   </span>
+                  {!isEditMode && (
+                    <a
+                      href={googleMapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 text-[10px] text-emerald-500 hover:text-emerald-400 hover:underline inline-flex items-center gap-0.5 shrink-0 cursor-pointer"
+                      title="Open address in Google Maps"
+                    >
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      <span>Map</span>
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -1542,14 +1576,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         <div className={`px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs border-b ${
           isDarkCanvas ? 'bg-[#15151c] border-neutral-800 text-neutral-300' : 'bg-slate-50 border-slate-200 text-slate-700'
         }`}>
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0">
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
+            title="Click to show location on Google Maps"
+          >
+            <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
               <MapPin className="w-3.5 h-3.5" />
             </span>
             <span>
-              <strong>Salon Location:</strong> {activeProfile.address}, {activeProfile.city} - <span className="font-mono">{activeProfile.postalCode}</span>
+              <strong>Salon Location:</strong>{' '}
+              <span className="group-hover:underline underline-offset-2 decoration-emerald-500/60">
+                {activeProfile.address}, {activeProfile.city} - <span className="font-mono">{activeProfile.postalCode}</span>
+              </span>
+              <span className="ml-2 text-[10px] text-emerald-600 font-bold inline-flex items-center gap-0.5">
+                (View on Google Maps ↗)
+              </span>
             </span>
-          </div>
+          </a>
 
           <div className="flex items-center gap-3 font-mono text-[11px]">
             <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
@@ -1766,34 +1812,38 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Services Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredServices.map((srv) => (
+            <div
+              key={activeSubCategory}
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            >
+              {filteredServices.map((srv, idx) => (
                 <div
-                  key={srv.id}
-                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 group ${
+                  key={`${activeSubCategory}-${srv.id}`}
+                  style={{ animationDelay: `${Math.min(idx * 50, 400)}ms` }}
+                  className={`animate-service-enter p-5 rounded-2xl border transition-all duration-300 ease-out flex flex-col justify-between gap-4 group cursor-pointer hover:-translate-y-1 hover:shadow-lg ${
                     isDarkCanvas
-                      ? 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'
-                      : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                      ? 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700 hover:shadow-black/50'
+                      : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-slate-200/80'
                   }`}
                 >
                   <div className="flex items-start gap-4 justify-between">
                     <div className="flex items-start gap-3.5 flex-1 min-w-0">
                       {/* Service Icon Container */}
                       <div 
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-1 ${
                           isDarkCanvas
                             ? 'bg-neutral-800/50 border-neutral-700/60 text-white'
                             : 'bg-slate-50 border-slate-100'
                         }`}
                         style={{ color: activeAccent.primaryHex }}
                       >
-                        {React.createElement(getServiceIcon(srv.icon), { className: "w-6 h-6 shrink-0" })}
+                        {React.createElement(getServiceIcon(srv.icon), { className: "w-6 h-6 shrink-0 transition-transform duration-300 group-hover:scale-105" })}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className={`font-extrabold text-base md:text-lg leading-snug ${
-                            isDarkCanvas ? 'text-white' : 'text-slate-900'
+                          <h3 className={`font-extrabold text-base md:text-lg leading-snug transition-colors duration-200 ${
+                            isDarkCanvas ? 'text-white group-hover:text-emerald-300' : 'text-slate-900 group-hover:text-emerald-700'
                           }`}>
                             <InlineEditable
                               value={srv.name}
@@ -1804,7 +1854,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           </h3>
                           {srv.popular && (
                             <span 
-                              className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-lg border border-white/20 shadow-2xs shrink-0 tracking-wider uppercase"
+                              className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-lg border border-white/20 shadow-2xs shrink-0 tracking-wider uppercase transition-transform duration-200 group-hover:scale-105"
                               style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
                             >
                               POPULAR
@@ -1829,7 +1879,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     {/* Price & Duration Elegant Badge System */}
                     <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                       <div className="flex items-center gap-2 justify-end flex-wrap">
-                        <div className={`text-lg md:text-xl font-extrabold font-mono ${
+                        <div className={`text-lg md:text-xl font-extrabold font-mono transition-transform duration-200 origin-right group-hover:scale-105 ${
                           isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
                         }`}>
                           <InlineEditable
@@ -1845,14 +1895,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                         {/* Duration Badge directly next to Price */}
                         {(srv.showDuration !== false || isEditMode) && (
-                          <div className={`text-[11px] font-mono flex items-center gap-1 px-2.5 py-1 rounded-full border shrink-0 ${
+                          <div className={`text-[11px] font-mono flex items-center gap-1 px-2.5 py-1 rounded-full border shrink-0 transition-all duration-200 group-hover:scale-102 ${
                             srv.showDuration === false 
                               ? 'text-amber-800 bg-amber-50 border-amber-200' 
                               : isDarkCanvas
-                              ? 'text-neutral-200 bg-neutral-800 border-neutral-700'
-                              : 'text-slate-700 bg-slate-100 border-slate-200'
+                              ? 'text-neutral-200 bg-neutral-800 border-neutral-700 group-hover:border-neutral-600'
+                              : 'text-slate-700 bg-slate-100 border-slate-200 group-hover:border-slate-300'
                           }`}>
-                            <Clock className="w-3 h-3 text-slate-500 dark:text-neutral-400 shrink-0" />
+                            <Clock className="w-3 h-3 text-slate-500 dark:text-neutral-400 shrink-0 transition-transform duration-300 group-hover:rotate-12" />
                             <InlineEditable
                               value={srv.durationMinutes}
                               onSave={(val) => handleUpdateServiceDuration(srv.id, Number(val))}
@@ -1877,10 +1927,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <div className={`flex items-center justify-between pt-3 border-t text-xs ${
                     isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'
                   }`}>
-                    <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border ${
+                    <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border transition-colors duration-200 ${
                       isDarkCanvas
-                        ? 'bg-neutral-800 border-neutral-700 text-neutral-300'
-                        : 'bg-slate-100 border-slate-200 text-slate-700'
+                        ? 'bg-neutral-800 border-neutral-700 text-neutral-300 group-hover:border-neutral-600'
+                        : 'bg-slate-100 border-slate-200 text-slate-700 group-hover:border-slate-300'
                     }`}>
                       Category: {srv.category}
                     </span>
@@ -1923,10 +1973,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenBooking(srv)}
-                        className="font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-xs transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer hover:opacity-90"
+                        className="font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-xs transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer hover:opacity-95 hover:shadow-md group-hover:shadow-sm"
                         style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
                       >
-                        <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
+                        <CalendarCheck className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
                         <span>Book (₹{srv.price})</span>
                       </button>
                     </div>
@@ -2511,13 +2561,24 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-3 text-xs">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                  <a
+                    href={googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-3 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
+                    title="Click to view studio location on Google Maps"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
                       <MapPin className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="font-bold text-slate-900 text-sm">Studio Address</div>
-                      <div className="text-slate-900 font-medium text-xs mt-0.5">
+                      <div className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 flex items-center gap-1.5">
+                        <span>Studio Address</span>
+                        <span className="text-[11px] font-medium text-emerald-600 font-sans inline-flex items-center gap-0.5">
+                          (View on Google Maps ↗)
+                        </span>
+                      </div>
+                      <div className="text-slate-900 font-medium text-xs mt-0.5 group-hover:underline underline-offset-2 decoration-emerald-500/50">
                         {activeProfile.address}, {activeProfile.city} - {activeProfile.postalCode}
                       </div>
                       {(activeProfile.landmark || standardData.landmark) && (
@@ -2526,7 +2587,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </div>
                       )}
                     </div>
-                  </div>
+                  </a>
 
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
@@ -2604,7 +2665,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-200 flex items-center gap-3">
+                <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
                     onClick={() => handleOpenBooking()}
@@ -2613,6 +2674,17 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   >
                     Schedule Your Appointment
                   </button>
+
+                  <a
+                    href={googleDirectionsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
+                    title="Get directions on Google Maps"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Get Directions</span>
+                  </a>
 
                   <a
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}

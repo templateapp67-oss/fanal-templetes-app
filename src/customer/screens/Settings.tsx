@@ -191,13 +191,15 @@ export const SettingsScreen: React.FC<{
               {CUSTOMER_LANGUAGES.map((entry) => (
                 <button
                   key={entry.code}
+                  id={`settings-lang-${entry.code}`}
                   type="button"
+                  aria-pressed={language === entry.code}
                   onClick={() => {
                     setLanguage(entry.code);
                     writeLanguage(userId, entry.code);
                   }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
-                    language === entry.code ? 'text-white border-transparent' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                  className={`px-3.5 py-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-xs font-bold cursor-pointer border transition-colors ${
+                    language === entry.code ? 'text-white border-transparent shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                   }`}
                   style={language === entry.code ? { backgroundColor: accentHex } : undefined}
                 >
@@ -262,9 +264,10 @@ export const SettingsScreen: React.FC<{
 
       {onSignOut ? (
         <button
+          id="settings-signout-btn"
           type="button"
           onClick={onSignOut}
-          className={`${CARD_CLASS} w-full px-4 py-3 text-left flex items-center justify-between gap-3 hover:border-slate-300 cursor-pointer`}
+          className={`${CARD_CLASS} w-full px-4 py-3 min-h-[56px] text-left flex items-center justify-between gap-3 hover:border-slate-300 cursor-pointer`}
         >
           <span className="text-sm">
             <span className="font-bold text-slate-900">Sign out</span>
