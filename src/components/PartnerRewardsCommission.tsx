@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Gift, IndianRupee, RefreshCw, ShieldCheck, Store } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import partnerMilestonesImage from '../assets/partner-milestones.png';
+import partnerRulesImage from '../assets/nexora-partner-rules-revenue.jpg';
 
 type RewardMilestone = {
   id: string; code: string; name: string; required_qualifying_shops: number;
@@ -147,6 +148,11 @@ export function PartnerCommissionPage() {
   if (!data) return null;
 
   return <div className="space-y-5">
+    <section className="relative overflow-hidden rounded-[2rem] bg-slate-950 shadow-2xl shadow-slate-950/20">
+      <img src={partnerRulesImage} alt="Nexora Growth Partner rules and revenue sharing" className="h-56 w-full object-cover opacity-80 sm:h-72 lg:h-96" />
+      <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/45 to-transparent" />
+      <div className="absolute inset-0 flex items-end p-6 sm:p-8"><div className="max-w-xl text-white"><p className="text-xs font-black uppercase tracking-[.22em] text-pink-300">Nexora Partner Program</p><h1 className="mt-2 text-2xl font-black sm:text-4xl">Rules, revenue &amp; your extra reward</h1><p className="mt-2 text-sm leading-6 text-slate-200">Explain SalonOS, onboard shops ethically and unlock transparent one-time activation rewards with recurring growth share.</p><div className="mt-4 flex flex-wrap gap-2 text-xs font-bold"><span className="rounded-full bg-white/15 px-3 py-2 backdrop-blur">10% activation bonus</span><span className="rounded-full bg-pink-600 px-3 py-2">10% recurring share</span><span className="rounded-full bg-white/15 px-3 py-2 backdrop-blur">2% lifetime share</span></div></div></div>
+    </section>
     <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8">
       <p className="text-xs font-bold uppercase tracking-[.2em] text-pink-300">One-time reward per qualifying shop</p>
       <h1 className="mt-2 text-2xl font-black">Extra Onboarding Reward</h1>
