@@ -7,7 +7,6 @@ import {
   Gift,
   LayoutDashboard,
   LifeBuoy,
-  ListChecks,
   LogOut,
   Megaphone,
   Medal,
@@ -16,7 +15,6 @@ import {
   Settings,
   Ticket,
   Trophy,
-  Users,
   Wallet,
   X,
 } from 'lucide-react';
@@ -57,9 +55,7 @@ export interface PartnerPortalNavItem {
 /** Sidebar menu items, in menu order. Mirrors PARTNER_PORTAL_MENU_SECTIONS. */
 export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   { section: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { section: 'referral-code', label: 'My Referral Code', icon: Ticket },
-  { section: 'referred-users', label: 'Referred Users', icon: Users },
-  { section: 'referral-status', label: 'Referral Status', icon: ListChecks },
+  { section: 'referral-code', label: 'Referral Hub', icon: Ticket },
   { section: 'rewards', label: 'Rewards', icon: Gift },
   { section: 'commission', label: 'Extra Onboarding Reward', icon: Percent },
   { section: 'profile', label: 'Profile', icon: CircleUserRound },
@@ -91,7 +87,7 @@ export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [];
 /** Human title for each portal section (header + drawer use it). */
 export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string> = {
   dashboard: 'Dashboard',
-  'referral-code': 'My Referral Code',
+  'referral-code': 'Referral Hub',
   'referred-users': 'Referred Users',
   'referral-status': 'Referral Status',
   profile: 'Profile',
@@ -192,7 +188,7 @@ export const PartnerProfileMenu: React.FC<{
         className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       >
         <CircleUserRound className="h-4 w-4 shrink-0 text-slate-400" />
-        My Profile
+        Profile & Account Settings
       </button>
       <button
         type="button"
