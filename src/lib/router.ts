@@ -174,7 +174,6 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'performance',
   'commission',
   'profile',
-  'account-settings',
 ];
 
 /** True when the path belongs to the Growth Partner area at all. */
@@ -257,6 +256,7 @@ export type PartnerPortalSection =
   | 'referred-users'
   | 'referral-status'
   | 'profile'
+  | 'account-settings'
   | 'rewards'
   | 'performance'
   | 'commission'
@@ -274,7 +274,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
-  'profile',
+  'profile', 'account-settings',
   'rewards',
   'performance',
   'commission',
