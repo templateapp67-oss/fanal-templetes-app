@@ -66,6 +66,7 @@ import {
 } from '../lib/partnerPortalAuth';
 import { clearAuthSessionLifetime } from '../lib/authRememberStorage';
 import { PARTNER_DASHBOARD_PATH } from '../lib/router';
+import brandedLogo from '../assets/nexora-salonos-logo.png';
 import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
 import {
   GrowthPartnerAdminReviewPanel,
@@ -127,17 +128,13 @@ function StateCard({
 }
 
 /** The platform brand mark: logo image + wordmark, centered. */
-export const PartnerBrandMark: React.FC<{ logoSrc?: string }> = ({ logoSrc = PLATFORM_LOGO_URL }) => (
-  <div className="flex items-center justify-center gap-2" aria-label="Nexora">
-    <img src={logoSrc} alt="Nexora Logo" className="w-9 h-9 object-contain" />
-    <span
-      className="material-symbols-outlined text-[#C20E5A]"
-      style={{ fontVariationSettings: "'FILL' 1" }}
-      aria-hidden="true"
-    >
-      spa
-    </span>
-    <span className="text-2xl font-black tracking-tighter text-[#C20E5A]">Nexora</span>
+export const PartnerBrandMark: React.FC<{ logoSrc?: string }> = ({ logoSrc = brandedLogo }) => (
+  <div className="flex items-center justify-center gap-2 transition-transform duration-300 hover:scale-105" aria-label="Nexora SalonOS">
+    <img src={logoSrc} alt="Nexora SalonOS" className="h-12 w-12 rounded-xl object-contain shadow-sm" />
+    <div className="text-left leading-none">
+      <span className="block text-2xl font-black tracking-tight text-[#111827]">NEXORA</span>
+      <span className="block text-[0.65rem] font-black tracking-[0.35em] text-[#C20E5A]">SALONOS</span>
+    </div>
   </div>
 );
 

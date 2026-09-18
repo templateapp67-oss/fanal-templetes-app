@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Gift, IndianRupee, RefreshCw, ShieldCheck, Store } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import partnerMilestonesImage from '../assets/partner-milestones.png';
 
 type RewardMilestone = {
   id: string; code: string; name: string; required_qualifying_shops: number;
@@ -38,6 +39,16 @@ type OnboardingRewardDashboard = {
 const money = (paise: number) => new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', maximumFractionDigits: 0,
 }).format((Number(paise) || 0) / 100);
+
+const CAREER_MILESTONES = [
+  ['25 Shops', 'Official Nexora T-Shirt', 'Branded NEXORA SALONOS Logo • 240 GSM Organic Cotton'],
+  ['50 Shops', 'Samsung Tablet', 'Samsung Galaxy Tab A9+ 5G + 128GB + Stylus'],
+  ['100 Shops', 'Branded HP Laptop', 'HP OmniBook Ultra / ProBook AI Laptop'],
+  ['250 Shops', 'Electric Scooter', 'Flagship Smart Electric Scooter — Ather 450X / Ola S1 Pro'],
+  ['500 Shops', 'Latest iPhone', 'Apple iPhone 16 Pro 256GB Titanium Edition'],
+  ['750 Shops', 'Royal Enfield 350 CC', 'Royal Enfield Classic 350 CC Chrome & Stealth Black'],
+  ['1000+ Shops', 'District Partner SUV Car', 'Mahindra XUV700 AX7 / Hyundai Creta'],
+] as const;
 
 function Loading({ label }: { label: string }) {
   return <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm font-bold text-slate-500">{label}</div>;
@@ -106,6 +117,11 @@ export function PartnerRewardsPage() {
         </div>
         <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">Claim status: {m.claim?.status?.replaceAll('_',' ') ?? 'Not eligible'}</div>
       </article>)}
+    </section>
+    <section className="overflow-hidden rounded-3xl border border-white/30 bg-white/70 p-5 shadow-xl shadow-pink-900/5 backdrop-blur-lg sm:p-7">
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[.18em] text-[#c20e5a]">7-stage career ladder</p><h2 className="mt-1 text-2xl font-black text-slate-950">Nexora Milestone Rewards &amp; Asset Gifts</h2><p className="mt-1 text-sm text-slate-600">Guaranteed physical handover after eligibility, document verification and compliance review.</p></div><span className="rounded-full bg-pink-100 px-3 py-1.5 text-xs font-black text-[#a40c4c]">1,000+ Shops Milestone</span></div>
+      <img src={partnerMilestonesImage} alt="Nexora partner milestone reward assets" className="mt-5 h-44 w-full rounded-2xl object-cover object-center sm:h-56" />
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">{CAREER_MILESTONES.map(([target,title,detail], index) => <article key={target} className="group rounded-2xl border border-white/70 bg-white/80 p-3 backdrop-blur-md transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-2xl hover:shadow-pink-500/20"><p className="text-[10px] font-black uppercase tracking-wide text-[#c20e5a]">Stage {index + 1} · {target}</p><h3 className="mt-2 text-sm font-black text-slate-950">{title}</h3><p className="mt-1 min-h-10 text-[11px] leading-snug text-slate-600">{detail}</p><p className="mt-3 flex items-center gap-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />Physical handover guaranteed</p></article>)}</div>
     </section>
     <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
       <h2 className="font-black">Important</h2>
