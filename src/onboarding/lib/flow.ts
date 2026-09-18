@@ -61,6 +61,7 @@ export function resolveOnboardingRoute(input: {
     return (AUTH_SECTIONS as string[]).includes(requested) ? requested : 'login';
   }
   if (!hasLinkedReferral(phase)) return 'referral';
+  if (requested === 'shop') return 'shop';
   if (requested === 'referral') return 'status';
   if ((AUTH_SECTIONS as string[]).includes(requested)) return 'status';
   return 'status';
