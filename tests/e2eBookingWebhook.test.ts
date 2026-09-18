@@ -249,6 +249,45 @@ test('POST /api/payments/razorpay/order rejects an invalid amount with HTTP 400'
   assert.equal(r.body.success, false);
 });
 
+test('POST /api/payments/razorpay/test-order reaches the fixed ₹1 provider call in TEST mode', async (t) => {
+  if (skipUnlessRealRazorpay(t)) return;
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (input: any, init?: any) => {
+      const url = String(input);
+      if (!url.includes('api.razorpay.com')) return originalFetch(input as any, init as any);
+      const payload = JSON.parse(String(init?.body || '{}'));
+      assert.equal(payload.amount, 100);
+      assert.equal(payload.currency, 'INR');
+      assert.equal(payload.payment_capture, 1);
+      return new Response(
+        JSON.stringify({
+          id: 'order_e2e_probe_001',
+          entity: 'order',
+          amount: payload.amount,
+          currency: payload.currency,
+          receipt: payload.receipt,
+          status: 'created',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const r = await request('POST', '/api/payments/razorpay/test-order', {
+      confirm: 'create_test_order_1_inr',
+    });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.body.success, true);
+    assert.equal(r.body.provider.httpStatus, 200);
+    assert.equal(r.body.request.amount, 100);
+    assert.equal(r.body.runtime.credentialVariables.keyId, 'RAZORPAY_KEY_ID');
+    assert.equal(r.body.runtime.credentialVariables.keySecret, 'RAZORPAY_KEY_SECRET');
+    assert.ok(!('keySecret' in r.body));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('POST /api/payments/razorpay/order initializes an order with the gateway', async (t) => {
   // The outbound api.razorpay.com interception below only fires when real
   // credentials are configured; the built-in mock gateway never calls out.

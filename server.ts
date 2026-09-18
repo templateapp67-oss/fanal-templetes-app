@@ -45,6 +45,7 @@ import { installProcessGuards } from "./server/processGuards";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
+  handleCreateRazorpayTestOrder,
   handleVerifyRazorpayPayment,
   handleMockRazorpayPayment,
   describeRazorpayGateway,
@@ -681,6 +682,7 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
   // PAYMENTS — Razorpay (checkout for the 25% advance token)
   // --------------------------------------------------------------------------
   // GET  /api/payments/razorpay/config   -> { configured, mode, keyId }  (public key)
+  // POST /api/payments/razorpay/test-order -> fixed ₹1 TEST-only credential probe
   // POST /api/payments/razorpay/order    -> creates an order for the advance
   //                                         ({ totalAmount, depositPercent } → integer paise)
   // POST /api/payments/razorpay/verify   -> HMAC-SHA256 signature check
@@ -690,6 +692,7 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
   // none present outside production the mock gateway takes over.
   // ==========================================================================
   app.get("/api/payments/razorpay/config", asyncRoute(handleRazorpayConfig));
+  app.post("/api/payments/razorpay/test-order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayTestOrder));
   app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(customerPaymentOrderHandler(db, bookingHandlerIsMock)));
   app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
   app.post("/api/payments/razorpay/mock-pay", asyncRoute(handleMockRazorpayPayment));
