@@ -257,7 +257,14 @@ export type PartnerPortalSection =
   | 'profile'
   | 'rewards'
   | 'performance'
-  | 'commission';
+  | 'commission'
+  | 'earnings'
+  | 'withdrawals'
+  | 'marketing-materials'
+  | 'partner-levels'
+  | 'leaderboards'
+  | 'notifications'
+  | 'support';
 
 /** Every partner-portal section, in canonical sidebar order. */
 export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
@@ -269,6 +276,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'rewards',
   'performance',
   'commission',
+  'earnings', 'withdrawals', 'marketing-materials', 'partner-levels', 'leaderboards', 'notifications', 'support',
 ];
 
 /** Sidebar sections (the menu) — a subset of the URL sections. */
@@ -280,6 +288,13 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'rewards',
   'commission',
   'profile',
+  'earnings',
+  'withdrawals',
+  'marketing-materials',
+  'partner-levels',
+  'leaderboards',
+  'notifications',
+  'support',
 ];
 
 /** Canonical URL for each partner-portal section. */
@@ -292,6 +307,13 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   rewards: `${PARTNER_PORTAL_ROOT}/rewards`,
   performance: `${PARTNER_PORTAL_ROOT}/performance`,
   commission: `${PARTNER_PORTAL_ROOT}/commission`,
+  earnings: `${PARTNER_PORTAL_ROOT}/earnings`,
+  withdrawals: `${PARTNER_PORTAL_ROOT}/withdrawals`,
+  'marketing-materials': `${PARTNER_PORTAL_ROOT}/marketing-materials`,
+  'partner-levels': `${PARTNER_PORTAL_ROOT}/partner-levels`,
+  leaderboards: `${PARTNER_PORTAL_ROOT}/leaderboards`,
+  notifications: `${PARTNER_PORTAL_ROOT}/notifications`,
+  support: `${PARTNER_PORTAL_ROOT}/support`,
 };
 
 /**

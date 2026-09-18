@@ -2,6 +2,7 @@ import { PartnerRouteGuard, usePartnerRouteGuard } from './PartnerRouteGuard';
 export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
+import { PartnerEarningsModule, PartnerLeaderboardsModule, PartnerLevelsModule, PartnerMarketingMaterialsModule, PartnerNotificationsModule, PartnerSupportModule, PartnerWithdrawalsModule } from './PartnerPortalGrowthModules';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
 import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
@@ -223,7 +224,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
    * dedicated code + share-link section). Data effects key off this value, so
    * each page fetches exactly what it shows.
    */
-  const contentSection: GrowthPartnerSection | 'referral-code' | 'rewards' = isPartnerNamespace
+  const contentSection: GrowthPartnerSection | 'referral-code' | 'rewards' | PartnerPortalSection = isPartnerNamespace
     ? partnerPortalContentSection(portalSection)
     : legacySection;
   const isLoginPath = isPartnerLoginPath(path) || isGrowthPartnerLoginPath(path);
@@ -565,6 +566,13 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         return <PartnerRewardsPage />;
       case 'commission':
         return <PartnerCommissionPage />;
+      case 'earnings': return <PartnerEarningsModule />;
+      case 'withdrawals': return <PartnerWithdrawalsModule />;
+      case 'marketing-materials': return <PartnerMarketingMaterialsModule />;
+      case 'partner-levels': return <PartnerLevelsModule />;
+      case 'leaderboards': return <PartnerLeaderboardsModule />;
+      case 'notifications': return <PartnerNotificationsModule />;
+      case 'support': return <PartnerSupportModule />;
       case 'profile':
         return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
           if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });

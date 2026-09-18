@@ -63,6 +63,13 @@ export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   { section: 'rewards', label: 'Rewards', icon: Gift },
   { section: 'commission', label: 'Extra Onboarding Reward', icon: Percent },
   { section: 'profile', label: 'Profile', icon: CircleUserRound },
+  { section: 'earnings', label: 'Earnings', icon: Wallet },
+  { section: 'withdrawals', label: 'Withdrawals', icon: Banknote },
+  { section: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone },
+  { section: 'partner-levels', label: 'Partner Levels', icon: Medal },
+  { section: 'leaderboards', label: 'Leaderboards', icon: Trophy },
+  { section: 'notifications', label: 'Notifications', icon: Bell },
+  { section: 'support', label: 'Support', icon: LifeBuoy },
 ];
 
 /**
@@ -79,15 +86,7 @@ export interface PartnerPortalPlannedItem {
 }
 
 /** Planned modules — add new sidebar sections here first, then promote them. */
-export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [
-  { id: 'earnings', label: 'Earnings', icon: Wallet },
-  { id: 'withdrawals', label: 'Withdrawals', icon: Banknote },
-  { id: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone },
-  { id: 'partner-levels', label: 'Partner Levels', icon: Medal },
-  { id: 'leaderboards', label: 'Leaderboards', icon: Trophy },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'support', label: 'Support', icon: LifeBuoy },
-];
+export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [];
 
 /** Human title for each portal section (header + drawer use it). */
 export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string> = {
@@ -99,6 +98,8 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
   rewards: 'Rewards',
   performance: 'Performance',
   commission: 'Extra Onboarding Reward',
+  earnings: 'Earnings', withdrawals: 'Withdrawals', 'marketing-materials': 'Marketing Materials',
+  'partner-levels': 'Partner Levels', leaderboards: 'Leaderboards', notifications: 'Notifications', support: 'Support',
 };
 
 /**
@@ -108,7 +109,7 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
  * and `referral-code` renders the dedicated code+share-link section. Adding a
  * new portal page = one entry here plus one renderer case in the page.
  */
-const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection | 'referral-code' | 'rewards'> = {
+const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection | 'referral-code' | 'rewards' | PartnerPortalSection> = {
   dashboard: 'dashboard',
   'referral-code': 'referral-code',
   'referred-users': 'referrals',
@@ -117,12 +118,14 @@ const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection 
   rewards: 'rewards',
   performance: 'performance',
   commission: 'commission',
+  earnings: 'earnings', withdrawals: 'withdrawals', 'marketing-materials': 'marketing-materials',
+  'partner-levels': 'partner-levels', leaderboards: 'leaderboards', notifications: 'notifications', support: 'support',
 };
 
 /** Resolve the content to render for a portal section (see PARTNER_PORTAL_CONTENT). */
 export function partnerPortalContentSection(
   section: PartnerPortalSection
-): GrowthPartnerSection | 'referral-code' | 'rewards' {
+): GrowthPartnerSection | 'referral-code' | 'rewards' | PartnerPortalSection {
   return PARTNER_PORTAL_CONTENT[section] ?? 'dashboard';
 }
 
