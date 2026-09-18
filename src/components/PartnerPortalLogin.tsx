@@ -67,6 +67,7 @@ import {
 import { clearAuthSessionLifetime } from '../lib/authRememberStorage';
 import { PARTNER_DASHBOARD_PATH } from '../lib/router';
 import brandedLogo from '../assets/nexora-salonos-logo.png';
+import partnerHero from '../assets/nexora-partner-hero.jpg';
 import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
 import {
   GrowthPartnerAdminReviewPanel,
@@ -242,6 +243,11 @@ export const PartnerPortalLoginForm: React.FC<{
       className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8"
     >
       <PartnerBrandMark logoSrc={logoSrc} />
+      <img
+        src={partnerHero}
+        alt="Nexora partner growth showcase"
+        className="mt-5 h-32 w-full rounded-2xl object-cover object-center shadow-inner"
+      />
       <div className="mt-5 text-center">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Growth Partner Portal</p>
         <h1 className="mt-1 text-2xl font-bold text-slate-900">{PARTNER_PORTAL_LOGIN_TITLE}</h1>
