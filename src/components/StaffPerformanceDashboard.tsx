@@ -34,6 +34,7 @@ import {
   sortStaffRows,
   staffInitials,
   toIsoDate,
+  topStaffServices,
   type DateRange,
   type SalonTotals,
   type StaffDailyPerformanceRow,
@@ -44,6 +45,7 @@ import {
   type StaffNumericSortKey,
   type StaffPerformanceError,
   type StaffPerformanceSummaryRow,
+  type StaffServiceSummary,
 } from '../lib/staffPerformance';
 import {
   fetchStaffDailyPerformance,
@@ -51,6 +53,7 @@ import {
   fetchStaffExport,
   fetchStaffLast7Days,
   fetchStaffPerformance,
+  fetchStaffTopServicesMap,
   isRpcFail,
   refreshStaffDaily,
   resolveOwnerSalon,
@@ -355,6 +358,8 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
   const [loadError, setLoadError] = useState<StaffPerformanceError | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [bundle, setBundle] = useState<LoadedBundle | null>(null);
+  const [topServicesMap, setTopServicesMap] = useState<Record<string, StaffServiceSummary[]>>({});
+  const [topServicesLoading, setTopServicesLoading] = useState(false);
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -371,6 +376,7 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
     setDetail(null);
     setDetailDaily([]);
     setDetailOpen(false);
+    setTopServicesMap({});
     salonIdRef.current = null;
     detailStaffIdRef.current = null;
   }, []);
@@ -455,6 +461,26 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
       setLoading(false);
     }
   }, [user, clearDashboard]);
+
+  useEffect(() => {
+    if (!bundle?.salonId || !bundle.rows.length) {
+      setTopServicesMap({});
+      return;
+    }
+    let cancelled = false;
+    setTopServicesLoading(true);
+    const staffIds = bundle.rows.map((r) => r.staff_id);
+    void fetchStaffTopServicesMap(bundle.salonId, staffIds, debouncedRange.from, debouncedRange.to).then((res) => {
+      if (cancelled) return;
+      setTopServicesLoading(false);
+      if (res.ok) {
+        setTopServicesMap(res.map);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bundle?.salonId, bundle?.rows, debouncedRange.from, debouncedRange.to]);
 
   useEffect(() => {
     setPage(1);
@@ -720,6 +746,10 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
           {exportError && <div className="text-xs text-rose-700 font-bold">{exportError}</div>}
         </div>
 
+        {bundle?.salonId && (
+          <StaffPerformanceAlerts salonId={bundle.salonId} currencySymbol={currencySymbol} />
+        )}
+
         {loadError && <ErrorBlock error={loadError} onRetry={() => void load()} />}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -899,6 +929,15 @@ export const StaffPerformanceDashboard: React.FC<StaffPerformanceDashboardProps>
             </>
           )}
         </div>
+
+        <StaffTopServicesSection
+          rows={visibleRows}
+          topServicesMap={topServicesMap}
+          loading={loading || topServicesLoading}
+          currencySymbol={currencySymbol}
+          primaryAccentColor={primaryAccentColor}
+          onOpenDetail={(staffId) => void openDetail(staffId)}
+        />
 
         <div>
           <h2 className="font-display font-bold text-lg mb-3">Last 7 days leaderboard</h2>
@@ -1174,6 +1213,163 @@ function LeaderCard({
             );
           })}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function StaffTopServicesSection({
+  rows,
+  topServicesMap,
+  loading,
+  currencySymbol = '₹',
+  primaryAccentColor = '#C20E5A',
+  onOpenDetail,
+}: {
+  rows: StaffPerformanceSummaryRow[];
+  topServicesMap: Record<string, StaffServiceSummary[]>;
+  loading: boolean;
+  currencySymbol?: string;
+  primaryAccentColor?: string;
+  onOpenDetail?: (staffId: string) => void;
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs" data-testid="staff-top-services-section">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+        <div>
+          <h2 className="font-display font-bold text-lg text-gray-900">Top 3 most booked services per staff</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Key service popularity and revenue breakdown for each team member in the selected timeframe.
+          </p>
+        </div>
+      </div>
+
+      {loading && rows.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="top-services-skeleton">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="border border-gray-100 rounded-xl p-4 bg-gray-50/70 animate-pulse flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gray-200" />
+                <div className="h-4 w-28 bg-gray-200 rounded" />
+              </div>
+              <div className="h-10 bg-gray-200 rounded-lg" />
+              <div className="h-10 bg-gray-200 rounded-lg" />
+              <div className="h-10 bg-gray-200 rounded-lg" />
+            </div>
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyBlock title="No staff members" body="No staff members found for this filter." />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {rows.map((row) => {
+            const rawServices = topServicesMap[row.staff_id] || [];
+            const services = topStaffServices(rawServices, 3);
+            const maxBookings = Math.max(1, ...services.map((s) => s.bookings ?? s.completed_bookings ?? 1));
+
+            return (
+              <div
+                key={row.staff_id}
+                className="border border-gray-200 hover:border-gray-300 rounded-xl p-4 bg-white flex flex-col justify-between gap-3 transition-colors shadow-2xs"
+                data-testid={`staff-top-services-card-${row.staff_id}`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-gray-100">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Photo url={row.staff_photo} name={row.staff_name} size={34} />
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm text-gray-900 truncate" title={row.staff_name}>
+                          {row.staff_name}
+                        </div>
+                        <div className="text-[10px] text-gray-500 truncate">{row.staff_role || 'Staff Member'}</div>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                      {row.total_bookings} total
+                    </span>
+                  </div>
+
+                  {loading && services.length === 0 ? (
+                    <div className="flex flex-col gap-2 py-2">
+                      <div className="h-8 bg-gray-100 rounded-lg animate-pulse" />
+                      <div className="h-8 bg-gray-100 rounded-lg animate-pulse" />
+                    </div>
+                  ) : services.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-gray-400 bg-gray-50/50 rounded-lg border border-dashed border-gray-100">
+                      No service bookings recorded in this period.
+                    </div>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {services.map((svc, idx) => {
+                        const count = svc.bookings ?? svc.completed_bookings ?? 0;
+                        const pct = Math.min(100, Math.round((count / maxBookings) * 100));
+                        const rankColors = [
+                          'bg-amber-100 text-amber-900 border-amber-300',
+                          'bg-slate-100 text-slate-800 border-slate-300',
+                          'bg-amber-50 text-amber-800 border-amber-200',
+                        ];
+                        const badgeColor = rankColors[idx] || 'bg-gray-100 text-gray-700 border-gray-200';
+
+                        return (
+                          <li
+                            key={`${svc.service_id || ''}-${svc.service_name}-${idx}`}
+                            className="flex flex-col gap-1 rounded-lg p-2 bg-slate-50/60 border border-slate-100/80"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span
+                                  className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0 ${badgeColor}`}
+                                >
+                                  #{idx + 1}
+                                </span>
+                                <span
+                                  className="text-xs font-semibold text-gray-900 truncate"
+                                  title={svc.service_name}
+                                >
+                                  {svc.service_name}
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-mono font-bold text-gray-700 shrink-0">
+                                {count} {count === 1 ? 'booking' : 'bookings'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-gray-500 font-mono">
+                              <span>
+                                {svc.completed_bookings} completed
+                              </span>
+                              <span>{formatInr(svc.gross_amount, currencySymbol)}</span>
+                            </div>
+                            <div className="w-full bg-gray-200/80 rounded-full h-1 mt-0.5 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-300"
+                                style={{
+                                  width: `${pct}%`,
+                                  backgroundColor: primaryAccentColor,
+                                }}
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {onOpenDetail && (
+                  <div className="pt-2 border-t border-gray-100 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetail(row.staff_id)}
+                      className="text-[11px] font-bold text-gray-600 hover:text-gray-900 flex items-center gap-0.5 cursor-pointer"
+                    >
+                      All service stats <span className="material-symbols-outlined text-xs">chevron_right</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

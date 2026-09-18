@@ -17,6 +17,7 @@ import {
   type StaffRecentAppointment,
   type StaffServiceSummary,
   asFiniteNumber,
+  topStaffServices,
 } from './staffPerformance';
 
 async function withRpcTimeout(
@@ -318,4 +319,33 @@ export function triggerCsvDownload(filename: string, csv: string): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+export async function fetchStaffTopServicesMap(
+  salonId: string,
+  staffIds: string[],
+  from: string,
+  to: string
+): Promise<{ ok: true; map: Record<string, StaffServiceSummary[]> } | { ok: false; error: StaffPerformanceError }> {
+  if (!salonId || staffIds.length === 0) {
+    return { ok: true, map: {} };
+  }
+  const entries = await Promise.all(
+    staffIds.map(async (id) => {
+      const result = await fetchStaffDetail(salonId, id, from, to);
+      if (isRpcFail(result)) {
+        return { staffId: id, services: [] };
+      }
+      const raw =
+        result.detail.service_wise_booking_summary.length > 0
+          ? result.detail.service_wise_booking_summary
+          : result.detail.top_services;
+      return { staffId: id, services: topStaffServices(raw, 3) };
+    })
+  );
+  const map: Record<string, StaffServiceSummary[]> = {};
+  for (const entry of entries) {
+    map[entry.staffId] = entry.services;
+  }
+  return { ok: true, map };
 }

@@ -721,6 +721,26 @@ export function chartStaffBars(
     .filter((row) => Number.isFinite(row.value));
 }
 
+export function topStaffServices(
+  services: StaffServiceSummary[],
+  limit = 3
+): StaffServiceSummary[] {
+  const copy = [...(services || [])];
+  copy.sort((a, b) => {
+    const aCount = asFiniteNumber(a.bookings ?? a.completed_bookings);
+    const bCount = asFiniteNumber(b.bookings ?? b.completed_bookings);
+    if (bCount !== aCount) return bCount - aCount;
+    const aCompleted = asFiniteNumber(a.completed_bookings);
+    const bCompleted = asFiniteNumber(b.completed_bookings);
+    if (bCompleted !== aCompleted) return bCompleted - aCompleted;
+    const aGross = asFiniteNumber(a.gross_amount);
+    const bGross = asFiniteNumber(b.gross_amount);
+    if (bGross !== aGross) return bGross - aGross;
+    return String(a.service_name || '').localeCompare(String(b.service_name || ''));
+  });
+  return copy.slice(0, Math.max(1, limit));
+}
+
 export function emptyTotals(): SalonTotals {
   return {
     total_bookings: 0,

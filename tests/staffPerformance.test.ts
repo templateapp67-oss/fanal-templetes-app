@@ -26,8 +26,10 @@ import {
   publicCustomerLabel,
   resolveDateRange,
   sortStaffRows,
+  topStaffServices,
   type StaffLast7DaysRow,
   type StaffPerformanceSummaryRow,
+  type StaffServiceSummary,
 } from '../src/lib/staffPerformance';
 import {
   STAFF_PERFORMANCE_PATH,
@@ -342,4 +344,39 @@ test('App.tsx mounts the page on the owner route', () => {
   assert.ok(app.includes('isStaffPerformancePath'));
   assert.ok(app.includes('STAFF_PERFORMANCE_PATH'));
   assert.ok(app.includes('staffPerformance'));
+});
+
+test('topStaffServices extracts and ranks the top 3 services by bookings', () => {
+  const sampleServices: StaffServiceSummary[] = [
+    { service_name: 'Hair Spa', bookings: 5, completed_bookings: 4, gross_amount: 5000 },
+    { service_name: 'Haircut', bookings: 12, completed_bookings: 10, gross_amount: 6000 },
+    { service_name: 'Beard Trim', bookings: 8, completed_bookings: 8, gross_amount: 2400 },
+    { service_name: 'Facial', bookings: 2, completed_bookings: 2, gross_amount: 3000 },
+    { service_name: 'Hair Color', bookings: 7, completed_bookings: 6, gross_amount: 14000 },
+  ];
+
+  const top3 = topStaffServices(sampleServices, 3);
+  assert.equal(top3.length, 3);
+  assert.equal(top3[0].service_name, 'Haircut');
+  assert.equal(top3[0].bookings, 12);
+  assert.equal(top3[1].service_name, 'Beard Trim');
+  assert.equal(top3[1].bookings, 8);
+  assert.equal(top3[2].service_name, 'Hair Color');
+  assert.equal(top3[2].bookings, 7);
+
+  // When services are fewer than 3
+  const fewer = topStaffServices(sampleServices.slice(0, 2), 3);
+  assert.equal(fewer.length, 2);
+
+  // Empty services
+  const empty = topStaffServices([], 3);
+  assert.equal(empty.length, 0);
+});
+
+test('the staff performance dashboard renders the top 3 most booked services summary section', () => {
+  const ui = readFileSync('src/components/StaffPerformanceDashboard.tsx', 'utf8');
+  assert.ok(ui.includes('Top 3 most booked services per staff'));
+  assert.ok(ui.includes('data-testid="staff-top-services-section"'));
+  assert.ok(ui.includes('topServicesMap'));
+  assert.ok(ui.includes('fetchStaffTopServicesMap'));
 });
