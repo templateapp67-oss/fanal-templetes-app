@@ -193,19 +193,16 @@ export const PartnerProfileMenu: React.FC<{
         <CircleUserRound className="h-4 w-4 shrink-0 text-slate-400" />
         My Profile
       </button>
-      <span
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
         data-partner-menu-item="account-settings"
-        title="Coming soon"
-        className="flex w-full cursor-default items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400"
+        onClick={onNavigateProfile}
+        className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       >
         <Settings className="h-4 w-4 shrink-0" />
         Account Settings
-        <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-          Soon
-        </span>
-      </span>
+      </button>
       <div className="my-1.5 border-t border-slate-100" role="separator" />
       <button
         type="button"
