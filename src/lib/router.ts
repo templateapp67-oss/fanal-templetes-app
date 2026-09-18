@@ -32,6 +32,7 @@ export const CUSTOMER_APP_ROOT = '/app';
 export type CustomerSection =
   | 'auth'
   | 'profile'
+  | 'account-settings'
   | 'location'
   | 'home'
   | 'salon'
@@ -173,6 +174,7 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'performance',
   'commission',
   'profile',
+  'account-settings',
 ];
 
 /** True when the path belongs to the Growth Partner area at all. */
@@ -304,6 +306,7 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   'referred-users': `${PARTNER_PORTAL_ROOT}/referrals`,
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
+  'account-settings': `${PARTNER_PORTAL_ROOT}/account-settings`,
   rewards: `${PARTNER_PORTAL_ROOT}/rewards`,
   performance: `${PARTNER_PORTAL_ROOT}/performance`,
   commission: `${PARTNER_PORTAL_ROOT}/commission`,

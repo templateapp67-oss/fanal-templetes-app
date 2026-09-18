@@ -580,6 +580,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
           if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
           if (saved.partner_id === userId && !saved.photo_path) setSavedProfileAvatar('');
         }} /></div>;
+      case 'account-settings':
+        return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
+          if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
+        }} /></div>;
       default:
         return null;
     }

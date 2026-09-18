@@ -91,6 +91,7 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
   'referred-users': 'Referred Users',
   'referral-status': 'Referral Status',
   profile: 'Profile',
+  'account-settings': 'Account Settings',
   rewards: 'Rewards',
   performance: 'Performance',
   commission: 'Extra Onboarding Reward',
@@ -111,6 +112,7 @@ const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection 
   'referred-users': 'referrals',
   'referral-status': 'customers',
   profile: 'profile',
+  'account-settings': 'account-settings',
   rewards: 'rewards',
   performance: 'performance',
   commission: 'commission',
@@ -151,8 +153,9 @@ export const PartnerProfileMenu: React.FC<{
   partnerId?: string;
   avatarUrl?: string;
   onNavigateProfile: () => void;
+  onNavigateAccountSettings: () => void;
   onLogout: () => void;
-}> = ({ displayName, email, partnerId, onNavigateProfile, onLogout }) => (
+}> = ({ displayName, email, partnerId, onNavigateProfile, onNavigateAccountSettings, onLogout }) => (
   <div data-partner-profile-menu>
     <div className="border-b border-slate-100 px-4 py-3">
       <div className="flex items-center gap-3">
@@ -188,13 +191,13 @@ export const PartnerProfileMenu: React.FC<{
         className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       >
         <CircleUserRound className="h-4 w-4 shrink-0 text-slate-400" />
-        Profile & Account Settings
+        Profile
       </button>
       <button
         type="button"
         role="menuitem"
         data-partner-menu-item="account-settings"
-        onClick={onNavigateProfile}
+        onClick={onNavigateAccountSettings}
         className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       >
         <Settings className="h-4 w-4 shrink-0" />
@@ -651,6 +654,10 @@ export const PartnerPortalShell: React.FC<{
                       onNavigateProfile={() => {
                         setOpenMenu(null);
                         navigate(partnerPortalPath('profile'));
+                      }}
+                      onNavigateAccountSettings={() => {
+                        setOpenMenu(null);
+                        navigate(partnerPortalPath('account-settings'));
                       }}
                       onLogout={() => {
                         setOpenMenu(null);
