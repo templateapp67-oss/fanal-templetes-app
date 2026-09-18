@@ -152,16 +152,16 @@ called. Use the isolated TEST-only probe instead:
 ```bash
 curl -sS -X POST "$APP_URL/api/payments/razorpay/test-order" \
   -H 'content-type: application/json' \
-  --data '{"confirmation":"CREATE_RAZORPAY_TEST_ORDER_INR_1","amount":1,"currency":"INR"}'
+  --data '{"confirm":"create_test_order_1_inr"}'
 ```
 
-The probe is disabled unless the runtime is using `rzp_test_*` credentials. It
-ignores caller-supplied receipts/notes, always sends exactly `100` paise and
-`INR` through the same REST v1 order client as checkout, never opens Checkout,
-and never creates or updates a booking. Its response reports the selected
-environment-variable **names**, deployment/commit evidence, provider HTTP
-status, and only Razorpay's sanitized documented error fields. It briefly
-reuses its result to avoid flooding the test account.
+The probe accepts that exact body only and is disabled unless the runtime is
+using `rzp_test_*` credentials. It always sends exactly `100` paise, `INR`, and
+`payment_capture: 1` through the same REST v1 order client as checkout; it never
+opens Checkout or creates/updates a booking. Its response reports the selected
+environment-variable **names**, deployment/commit evidence, exact provider HTTP
+status, and only Razorpay's sanitized documented error fields. A process-level
+15-second cooldown prevents repeated provider requests.
 
 For **live** Supabase deployments also set, server-side:
 

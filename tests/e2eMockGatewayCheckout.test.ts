@@ -137,11 +137,9 @@ test('config announces the mock gateway instead of "not configured"', async () =
 
 test('deployed ₹1 credential probe route is wired but refuses the mock gateway', async () => {
   const r = await request('POST', '/api/payments/razorpay/test-order', {
-    confirmation: 'CREATE_RAZORPAY_TEST_ORDER_INR_1',
-    amount: 1,
-    currency: 'INR',
+    confirm: 'create_test_order_1_inr',
   });
-  assert.equal(r.status, 404, r.text);
+  assert.equal(r.status, 409, r.text);
   assert.equal(r.body.code, 'test_order_probe_unavailable');
   assert.equal(r.body.mode, 'mock');
 });
