@@ -3,7 +3,7 @@ import { PartnerToast } from './PartnerToast';
 import { PartnerLoading } from './PartnerLoading';
 import React, { useEffect, useRef, useState } from 'react';
 import { compressPartnerAvatar } from '../lib/partnerProfile';
-import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl, requestGrowthPartnerEmailChange, saveGrowthPartnerProfile, type GrowthPartnerProfileClient, type GrowthPartnerProfileData } from '../lib/growthPartnerProfile';
+import { fetchGrowthPartnerProfile, fetchPartnerAccountSettings, growthPartnerPhotoUrl, requestGrowthPartnerEmailChange, saveGrowthPartnerProfile, savePartnerAccountSettings, type GrowthPartnerProfileClient, type GrowthPartnerProfileData, type PartnerAccountSettings } from '../lib/growthPartnerProfile';
 
 export function GrowthPartnerProfilePage({ client, onProfileChange }: {
   client?: GrowthPartnerProfileClient;
@@ -11,7 +11,7 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
 }) {
   const [profile, setProfile] = useState<GrowthPartnerProfileData | null>(null);
   const [form, setForm] = useState({ fullName: '', phone: '' });
-  const [business, setBusiness] = useState({ agency: '', whatsapp: '', city: '', state: '', bio: '' });
+  const [business, setBusiness] = useState<PartnerAccountSettings>({ agency_name: '', whatsapp_phone: '', city: '', state: '', public_bio: '', payout_method: null, payout_account_name: '', payout_account_number: '', payout_ifsc: '', payout_upi_id: '' });
   const [activeTab, setActiveTab] = useState<'contact' | 'payout' | 'notifications' | 'security'>('contact');
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
@@ -33,10 +33,7 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
     fetchGrowthPartnerProfile(client).then(data => {
       if (cancelled) return;
       setProfile(data); setForm({ fullName: data.full_name, phone: data.phone || '' }); setLoading(false); profileCallback.current?.(data);
-      try {
-        const saved = JSON.parse(localStorage.getItem(`nexora-partner-business-${data.partner_id}`) || '{}');
-        setBusiness({ agency: saved.agency || 'Growth Partner Desk', whatsapp: saved.whatsapp || data.phone || '', city: saved.city || '', state: saved.state || '', bio: saved.bio || '' });
-      } catch { /* ignore unavailable local storage */ }
+      fetchPartnerAccountSettings(client).then(setBusiness).catch(() => setBusiness(prev => ({ ...prev, agency_name: 'Growth Partner Desk', whatsapp_phone: data.phone || '' })));
     }, error => { if (!cancelled) { setError(safePartnerErrorMessage(error, 'Could not load your partner profile. Please retry.')); setLoading(false); } });
     return () => { cancelled = true; };
   }, [client, retry]);
@@ -49,22 +46,21 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
   if (!profile) return <div role="alert" className="rounded-3xl bg-white p-8"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white">Retry profile</button></div>;
   const avatar = preview || (!removePhoto && growthPartnerPhotoUrl(profile.photo_path, client)) || '';
   const inputClass = 'mt-1 min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-2 focus:outline-slate-900';
-  const saveBusinessDraft = () => {
-    try { localStorage.setItem(`nexora-partner-business-${profile.partner_id}`, JSON.stringify(business)); setMessage('Account settings saved.'); } catch { setError('Could not save account settings on this device.'); }
-  };
+  const saveBusinessDraft = async () => { setBusy(true); setError(''); try { setBusiness(await savePartnerAccountSettings(business, client)); setMessage('Account settings saved.'); } catch (cause) { setError(safePartnerErrorMessage(cause, 'Could not save account settings.')); } finally { setBusy(false); } };
   return (
     <div className="min-w-0 space-y-5">
       <PartnerToast message={emailMessage || message} />
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-pink-100 text-xl font-black text-pink-700">{(form.fullName.slice(0, 2) || 'GP').toUpperCase()}</div><div><h1 className="text-xl font-black text-slate-900">{form.fullName || 'Growth Partner'}</h1><p className="text-xs text-slate-500">Growth Partner Desk · {business.city || 'Partner Network'}</p></div></div>
+          <div className="flex items-center gap-3"><div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-pink-100 text-xl font-black text-pink-700">{avatar ? <img src={avatar} alt="Profile" className="h-full w-full object-cover" /> : (form.fullName.slice(0, 2) || 'GP').toUpperCase()}</div><div><h1 className="text-xl font-black text-slate-900">{form.fullName || 'Growth Partner'}</h1><p className="text-xs text-slate-500">{business.agency_name || 'Growth Partner Desk'} · {business.city || 'Partner Network'}</p></div></div>
           <div className="flex gap-2 text-xs"><span className="rounded-xl bg-slate-100 px-3 py-2 font-bold">Status: {profile.account_status}</span><span className="rounded-xl bg-pink-50 px-3 py-2 font-bold text-pink-700">{profile.partner_role}</span></div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2 border-b border-slate-100 pb-3">
           {([['contact', 'Contact & Personal Info'], ['payout', 'Payout & Bank Accounts'], ['notifications', 'Notification & Preferences'], ['security', 'Security & 2FA']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setActiveTab(id)} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === id ? 'bg-pink-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'}`}>{label}</button>)}
         </div>
       </section>
-      {activeTab !== 'contact' ? <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-lg font-bold text-slate-900">{activeTab === 'payout' ? 'Payout & Bank Accounts' : activeTab === 'notifications' ? 'Notification & Preferences' : 'Security & 2FA'}</h2><p className="mt-2 text-sm text-slate-500">This secure workspace is ready for your account controls. Payout requests, notification preferences and authentication actions remain protected by the live partner session.</p><div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">No changes are pending in this section.</div></section> : null}
+      {activeTab === 'payout' ? <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-lg font-bold text-slate-900">Payout & Bank Accounts</h2><p className="mt-2 text-sm text-slate-500">These details are used only for manual payout review.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold text-slate-600">Payout method<select value={business.payout_method || ''} onChange={e => setBusiness({ ...business, payout_method: (e.target.value || null) as PartnerAccountSettings['payout_method'] })} className={inputClass}><option value="">Select method</option><option value="upi">UPI</option><option value="bank_transfer">Bank Transfer</option><option value="paypal">PayPal</option></select></label><label className="text-sm font-bold text-slate-600">Account holder name<input value={business.payout_account_name || ''} onChange={e => setBusiness({ ...business, payout_account_name: e.target.value })} className={inputClass} /></label><label className="text-sm font-bold text-slate-600">Account number<input value={business.payout_account_number || ''} onChange={e => setBusiness({ ...business, payout_account_number: e.target.value })} className={inputClass} /></label><label className="text-sm font-bold text-slate-600">IFSC code<input value={business.payout_ifsc || ''} onChange={e => setBusiness({ ...business, payout_ifsc: e.target.value.toUpperCase() })} className={inputClass} /></label><label className="text-sm font-bold text-slate-600 sm:col-span-2">UPI ID<input value={business.payout_upi_id || ''} onChange={e => setBusiness({ ...business, payout_upi_id: e.target.value })} className={inputClass} /></label></div><button type="button" onClick={saveBusinessDraft} className="mt-5 rounded-xl bg-pink-600 px-5 py-2.5 text-sm font-bold text-white">Save payout details</button></section> : null}
+      {activeTab === 'notifications' || activeTab === 'security' ? <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-lg font-bold text-slate-900">{activeTab === 'notifications' ? 'Notification & Preferences' : 'Security & 2FA'}</h2><p className="mt-2 text-sm text-slate-500">{activeTab === 'notifications' ? 'Manage email and in-app alerts from the Notifications section in your partner portal.' : 'Your sign-in and email changes are protected by Supabase Auth. Enable 2FA when your organization policy requires it.'}</p></section> : null}
       {activeTab === 'contact' ? <section aria-label="Partner profile" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <h2 className="text-xl font-bold text-slate-900">Personal & Contact Details</h2>
         <p className="mt-1 text-sm text-slate-500">Update your basic details. Your partner identity and approval are managed by the platform.</p>
@@ -98,14 +94,13 @@ export function GrowthPartnerProfilePage({ client, onProfileChange }: {
               <label className="text-sm font-bold text-slate-600">Phone<input type="tel" maxLength={30} autoComplete="tel" placeholder="Phone number with country code" value={form.phone} onChange={e => { setForm({ ...form, phone: e.target.value }); setMessage(''); }} className={inputClass} /></label>
             </div>
             <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-              <label className="text-sm font-bold text-slate-600">Agency / Partner Brand Name<input maxLength={120} value={business.agency} onChange={e => setBusiness({ ...business, agency: e.target.value })} className={inputClass} /></label>
-              <label className="text-sm font-bold text-slate-600">WhatsApp Business Helpline<input type="tel" maxLength={30} value={business.whatsapp} onChange={e => setBusiness({ ...business, whatsapp: e.target.value })} className={inputClass} /></label>
+              <label className="text-sm font-bold text-slate-600">Agency / Partner Brand Name<input maxLength={120} value={business.agency_name} onChange={e => setBusiness({ ...business, agency_name: e.target.value })} className={inputClass} /></label>
+              <label className="text-sm font-bold text-slate-600">WhatsApp Business Helpline<input type="tel" maxLength={30} value={business.whatsapp_phone || ''} onChange={e => setBusiness({ ...business, whatsapp_phone: e.target.value })} className={inputClass} /></label>
               <label className="text-sm font-bold text-slate-600">City Base<input maxLength={80} value={business.city} onChange={e => setBusiness({ ...business, city: e.target.value })} className={inputClass} /></label>
               <label className="text-sm font-bold text-slate-600">State<input maxLength={80} value={business.state} onChange={e => setBusiness({ ...business, state: e.target.value })} className={inputClass} /></label>
             </div>
-            <label className="text-sm font-bold text-slate-600">Public Partner Bio & Expertise<textarea maxLength={500} rows={4} value={business.bio} onChange={e => setBusiness({ ...business, bio: e.target.value })} className={inputClass} /></label>
-            <button type="submit" className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">{busy ? 'Saving…' : 'Save Profile'}</button>
-            <button type="button" onClick={saveBusinessDraft} className="ml-2 rounded-xl bg-pink-600 px-5 py-2.5 text-sm font-bold text-white">Save Account Settings</button>
+            <label className="text-sm font-bold text-slate-600">Public Partner Bio & Expertise<textarea maxLength={500} rows={4} value={business.public_bio} onChange={e => setBusiness({ ...business, public_bio: e.target.value })} className={inputClass} /></label>
+            <button type="submit" className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">{busy ? 'Saving…' : 'Save Profile & Account Settings'}</button>
           </fieldset>
           {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
           <p className="text-sm text-emerald-700">{message}</p>

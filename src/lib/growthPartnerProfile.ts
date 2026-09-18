@@ -13,6 +13,10 @@ export interface GrowthPartnerProfileData {
   approval_status: string;
   joined_at: string;
 }
+export interface PartnerAccountSettings {
+  agency_name: string; whatsapp_phone: string | null; city: string; state: string; public_bio: string;
+  payout_method: 'upi' | 'bank_transfer' | 'paypal' | null; payout_account_name: string | null; payout_account_number: string | null; payout_ifsc: string | null; payout_upi_id: string | null;
+}
 /** Structural interface keeps Auth and Storage paths testable without privileged keys. */
 export interface GrowthPartnerProfileClient {
   rpc: (name: string, args?: Record<string, unknown>) => PromiseLike<{ data: any; error: any }>;
@@ -32,6 +36,16 @@ export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClie
   const { data, error } = await client.rpc('get_my_growth_partner_profile');
   if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not load your partner profile. Please retry.'));
   return data as GrowthPartnerProfileData;
+}
+export async function fetchPartnerAccountSettings(client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
+  const { data, error } = await client.rpc('get_my_partner_account_settings');
+  if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not load account settings.'));
+  return data as PartnerAccountSettings;
+}
+export async function savePartnerAccountSettings(patch: Partial<PartnerAccountSettings>, client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
+  const { data, error } = await client.rpc('save_my_partner_account_settings', { p_patch: patch });
+  if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not save account settings.'));
+  return data as PartnerAccountSettings;
 }
 export function growthPartnerPhotoUrl(path: string | null, client: GrowthPartnerProfileClient = defaultClient): string {
   if (!path || !/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp)$/.test(path)) return '';
