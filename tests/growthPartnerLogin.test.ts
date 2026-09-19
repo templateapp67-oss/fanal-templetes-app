@@ -72,6 +72,8 @@ import {
   GrowthPartnerLoginUnauthorized,
   GrowthPartnerLoginVerifying,
   GrowthPartnerAdminReviewPanel,
+  GrowthPartnerSignupForm,
+  validateGrowthPartnerSignupInput,
 } from '../src/components/GrowthPartnerLogin';
 
 const PARTNER_A = 'a0000000-0000-4000-8000-000000000001';
@@ -636,3 +638,78 @@ test('the admin queue says so when nothing is waiting, and surfaces failures', (
   );
   assert.match(failed, /permission denied for function/);
 });
+
+test('Growth Partner signup validation catches missing fields and highlights specific errors', () => {
+  const emptyErrors = validateGrowthPartnerSignupInput({});
+  assert.equal(emptyErrors.fullName, 'Enter your full name.');
+  assert.equal(emptyErrors.email, 'Enter your email address.');
+  assert.equal(emptyErrors.password, 'Enter a password.');
+  assert.equal(emptyErrors.kycDocumentType, 'Select a KYC document type.');
+  assert.equal(emptyErrors.kycDocumentReference, 'Enter your KYC reference number.');
+
+  const invalidEmail = validateGrowthPartnerSignupInput({
+    fullName: 'Asha Sharma',
+    email: 'not-an-email',
+    password: 'password123',
+    kycDocumentType: 'pan',
+    kycDocumentReference: 'ABCDE1234F',
+  });
+  assert.equal(invalidEmail.email, 'Enter a valid email address.');
+  assert.equal(invalidEmail.fullName, undefined);
+  assert.equal(invalidEmail.password, undefined);
+  assert.equal(invalidEmail.kycDocumentType, undefined);
+  assert.equal(invalidEmail.kycDocumentReference, undefined);
+
+  const shortPass = validateGrowthPartnerSignupInput({
+    fullName: 'Asha Sharma',
+    email: 'asha@example.com',
+    password: 'short',
+    kycDocumentType: 'pan',
+    kycDocumentReference: 'ABCDE1234F',
+  });
+  assert.equal(shortPass.password, 'Password must be at least 8 characters.');
+
+  const missingKycRef = validateGrowthPartnerSignupInput({
+    fullName: 'Asha Sharma',
+    email: 'asha@example.com',
+    password: 'securepassword123',
+    kycDocumentType: 'pan',
+    kycDocumentReference: '',
+  });
+  assert.equal(missingKycRef.kycDocumentReference, 'Enter your KYC reference number.');
+
+  const valid = validateGrowthPartnerSignupInput({
+    fullName: 'Asha Sharma',
+    email: 'asha@example.com',
+    password: 'securepassword123',
+    kycDocumentType: 'pan',
+    kycDocumentReference: 'ABCDE1234F',
+  });
+  assert.deepEqual(valid, {});
+});
+
+test('Growth Partner signup form renders inline field errors for failed validation', () => {
+  const html = render(
+    React.createElement(GrowthPartnerSignupForm, {
+      busy: false,
+      formError: '',
+      success: '',
+      fieldErrors: {
+        fullName: 'Enter your full name.',
+        email: 'Enter a valid email address.',
+        password: 'Password must be at least 8 characters.',
+        kycDocumentType: 'Select a KYC document type.',
+        kycDocumentReference: 'Enter your KYC reference number.',
+      },
+      onSubmit: () => {},
+      onBack: () => {},
+    })
+  );
+
+  assert.match(html, /Enter your full name\./);
+  assert.match(html, /Enter a valid email address\./);
+  assert.match(html, /Password must be at least 8 characters\./);
+  assert.match(html, /Select a KYC document type\./);
+  assert.match(html, /Enter your KYC reference number\./);
+});
+

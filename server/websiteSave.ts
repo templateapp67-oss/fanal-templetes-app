@@ -200,9 +200,31 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       };
       // Use the same transaction as the editor. Never write salon fields into identity profiles.
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      const result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
+      let result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
         p_state: { profile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
       }), { label: 'atomic owner workspace save', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
+
+      if (
+        result.error &&
+        (result.error.code === '42501' ||
+          /select a salon owned by this account/i.test(result.error.message || '') ||
+          /nexora_owner_salon_ids/i.test(result.error.message || ''))
+      ) {
+        try {
+          await runDb(() => databaseForToken(token).rpc('ensure_owner_workspace'), {
+            label: 'ensure owner workspace before save retry',
+            timeoutMs: DEFAULT_DB_TIMEOUT_MS,
+            deadlineAt,
+            retry: false,
+          });
+          result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
+            p_state: { profile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+          }), { label: 'atomic owner workspace save (retry)', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
+        } catch (provisionErr) {
+          console.warn('[Website save] ensure_owner_workspace retry skipped or failed:', provisionErr);
+        }
+      }
+
       if (result.error) {
         syncError('Owner workspace transaction failed', { code: result.error.code, message: result.error.message });
         if (responseAlreadyEnded(res)) return;

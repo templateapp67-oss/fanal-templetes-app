@@ -718,31 +718,48 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 self-end md:self-center">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateService(srv.id, {
-                        showDuration: srv.showDuration === false ? true : false,
-                      })
-                    }
-                    className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                      srv.showDuration === false
-                        ? 'text-amber-700 bg-amber-50 hover:bg-amber-100'
-                        : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                <div className="flex items-center gap-2 self-end md:self-center">
+                  {/* Visual toggle switch for showDuration */}
+                  <label
+                    onClick={(e) => e.stopPropagation()}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-colors select-none ${
+                      srv.showDuration !== false
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                     }`}
                     title={
-                      srv.showDuration === false
-                        ? 'Duration hidden on public menu. Click to show.'
-                        : 'Duration shown on public menu. Click to hide.'
+                      srv.showDuration !== false
+                        ? 'Duration shown on public website. Click to hide.'
+                        : 'Duration hidden on public website. Click to show.'
                     }
                   >
-                    {srv.showDuration === false ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={srv.showDuration !== false}
+                      onChange={() =>
+                        updateService(srv.id, {
+                          showDuration: srv.showDuration === false ? true : false,
+                        })
+                      }
+                      className="sr-only"
+                      aria-label={`Show duration on website for ${srv.name}`}
+                    />
+                    <div
+                      className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                        srv.showDuration !== false ? 'bg-emerald-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <div
+                        className={`bg-white w-2.5 h-2.5 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
+                          srv.showDuration !== false ? 'translate-x-2.5' : 'translate-x-0'
+                        }`}
+                      />
+                    </div>
+                    <span className="text-[11px] font-semibold whitespace-nowrap">
+                      {srv.showDuration !== false ? 'Duration On' : 'Duration Off'}
+                    </span>
+                  </label>
+
                   <button
                     type="button"
                     onClick={() => removeService(srv.id)}

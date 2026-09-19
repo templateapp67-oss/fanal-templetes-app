@@ -1854,10 +1854,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           </h3>
                           {srv.popular && (
                             <span 
-                              className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-lg border border-white/20 shadow-2xs shrink-0 tracking-wider uppercase transition-transform duration-200 group-hover:scale-105"
+                              className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-full border border-white/20 shadow-xs shrink-0 tracking-wider uppercase transition-transform duration-200 group-hover:scale-105 inline-flex items-center gap-1"
                               style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
                             >
-                              POPULAR
+                              <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                              <span>POPULAR</span>
                             </span>
                           )}
                         </div>
@@ -1938,26 +1939,46 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="flex items-center gap-2">
                       {isEditMode && (
                         <>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleServiceShowDuration(srv.id)}
-                            className={`p-1.5 rounded-lg transition-colors cursor-pointer text-xs flex items-center gap-1 ${
-                              srv.showDuration === false
-                                ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300'
-                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-neutral-800'
+                          {/* Visual toggle switch for showDuration */}
+                          <label
+                            onClick={(e) => e.stopPropagation()}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors select-none ${
+                              srv.showDuration !== false
+                                ? isDarkCanvas
+                                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                : isDarkCanvas
+                                ? 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
+                                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                             }`}
                             title={
-                              srv.showDuration === false
-                                ? 'Duration is currently hidden on public website. Click to show.'
-                                : 'Duration is currently shown on public website. Click to hide.'
+                              srv.showDuration !== false
+                                ? 'Duration is visible on public website. Click to hide.'
+                                : 'Duration is hidden on public website. Click to show.'
                             }
                           >
-                            {srv.showDuration === false ? (
-                              <EyeOff className="w-3.5 h-3.5" />
-                            ) : (
-                              <Eye className="w-3.5 h-3.5" />
-                            )}
-                          </button>
+                            <input
+                              type="checkbox"
+                              checked={srv.showDuration !== false}
+                              onChange={() => handleToggleServiceShowDuration(srv.id)}
+                              className="sr-only"
+                              aria-label={`Show duration for ${srv.name}`}
+                            />
+                            <div
+                              className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                                srv.showDuration !== false ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-neutral-700'
+                              }`}
+                            >
+                              <div
+                                className={`bg-white w-2.5 h-2.5 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
+                                  srv.showDuration !== false ? 'translate-x-2.5' : 'translate-x-0'
+                                }`}
+                              />
+                            </div>
+                            <span className="text-[10px] font-semibold whitespace-nowrap">
+                              {srv.showDuration !== false ? 'Duration On' : 'Duration Hidden'}
+                            </span>
+                          </label>
 
                           <button
                             type="button"

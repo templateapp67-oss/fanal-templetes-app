@@ -146,28 +146,248 @@ export const GrowthPartnerLoginForm: React.FC<{
   </main>
 );
 
+export interface GrowthPartnerSignupInput {
+  fullName: string;
+  phone?: string;
+  email: string;
+  password: string;
+  kycDocumentType: string;
+  kycDocumentReference: string;
+}
+
+export interface GrowthPartnerSignupFieldErrors {
+  fullName?: string;
+  phone?: string;
+  email?: string;
+  password?: string;
+  kycDocumentType?: string;
+  kycDocumentReference?: string;
+}
+
+export function validateGrowthPartnerSignupInput(
+  input: Partial<GrowthPartnerSignupInput>
+): GrowthPartnerSignupFieldErrors {
+  const errors: GrowthPartnerSignupFieldErrors = {};
+
+  const fullName = input.fullName?.trim() ?? '';
+  if (!fullName) {
+    errors.fullName = 'Enter your full name.';
+  }
+
+  const email = input.email?.trim() ?? '';
+  if (!email) {
+    errors.email = 'Enter your email address.';
+  } else if (!EMAIL_RE.test(email)) {
+    errors.email = 'Enter a valid email address.';
+  }
+
+  const password = input.password ?? '';
+  if (!password) {
+    errors.password = 'Enter a password.';
+  } else if (password.length < 8) {
+    errors.password = 'Password must be at least 8 characters.';
+  }
+
+  const kycType = input.kycDocumentType?.trim() ?? '';
+  if (!kycType) {
+    errors.kycDocumentType = 'Select a KYC document type.';
+  }
+
+  const kycRef = input.kycDocumentReference?.trim() ?? '';
+  if (!kycRef) {
+    errors.kycDocumentReference = 'Enter your KYC reference number.';
+  }
+
+  return errors;
+}
+
 export const GrowthPartnerSignupForm: React.FC<{
-  busy: boolean; formError: string; success: string; accentHex?: string;
-  onSubmit: (input: { fullName: string; phone: string; email: string; password: string; kycDocumentType: string; kycDocumentReference: string }) => void; onBack: () => void;
-}> = ({ busy, formError, success, accentHex = '#C20E5A', onSubmit, onBack }) => {
-  const [fullName, setFullName] = useState(''); const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  const [kycDocumentType, setKycDocumentType] = useState(''); const [kycDocumentReference, setKycDocumentReference] = useState('');
-  return <main className="min-h-[70vh] flex items-center justify-center px-4 py-16"><motion.div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8">
-    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Growth Partner</p><h1 className="mt-1 text-2xl font-bold text-slate-900">Apply as a Growth Partner</h1>
-    <p className="mt-1 text-sm text-slate-600">Create an account and submit your application. Access starts only after approval.</p>
-    <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); onSubmit({ fullName, phone, email, password, kycDocumentType, kycDocumentReference }); }}>
-      <Field id="growth-partner-signup-name" label="Full name" value={fullName} onChange={setFullName} disabled={busy} />
-      <Field id="growth-partner-signup-phone" label="Phone (optional)" value={phone} onChange={setPhone} disabled={busy} />
-      <Field id="growth-partner-signup-email" label="Email" type="email" value={email} onChange={setEmail} disabled={busy} />
-      <Field id="growth-partner-signup-password" label="Password" type="password" value={password} autoComplete="new-password" onChange={setPassword} disabled={busy} />
-      <label className="block text-sm font-bold text-slate-700" htmlFor="growth-partner-kyc-type">KYC document type<select id="growth-partner-kyc-type" value={kycDocumentType} onChange={(e) => setKycDocumentType(e.target.value)} disabled={busy} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"><option value="">Select document</option><option value="pan">PAN</option><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving licence</option><option value="business_registration">Business registration</option></select></label>
-      <Field id="growth-partner-kyc-reference" label="KYC reference number" value={kycDocumentReference} onChange={setKycDocumentReference} disabled={busy} placeholder="Reference only; do not upload document here" />
-      {formError && <FormAlert tone="error">{formError}</FormAlert>}{success && <FormAlert tone="success">{success}</FormAlert>}
-      <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>Submit application</SubmitButton>
-      <button type="button" onClick={onBack} className="w-full text-sm font-bold text-slate-500 hover:text-slate-800">Back to sign in</button>
-    </form>
-  </motion.div></main>;
+  busy: boolean;
+  formError: string;
+  success: string;
+  accentHex?: string;
+  fieldErrors?: GrowthPartnerSignupFieldErrors;
+  onSubmit: (input: {
+    fullName: string;
+    phone: string;
+    email: string;
+    password: string;
+    kycDocumentType: string;
+    kycDocumentReference: string;
+  }) => void;
+  onBack: () => void;
+}> = ({
+  busy,
+  formError,
+  success,
+  accentHex = '#C20E5A',
+  fieldErrors: propsFieldErrors,
+  onSubmit,
+  onBack,
+}) => {
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [kycDocumentType, setKycDocumentType] = useState('');
+  const [kycDocumentReference, setKycDocumentReference] = useState('');
+  const [localFieldErrors, setLocalFieldErrors] = useState<GrowthPartnerSignupFieldErrors>({});
+
+  const fieldErrors = { ...localFieldErrors, ...propsFieldErrors };
+
+  const handleFieldChange = <K extends keyof GrowthPartnerSignupFieldErrors>(
+    key: K,
+    setter: (val: string) => void
+  ) => (val: string) => {
+    setter(val);
+    if (localFieldErrors[key]) {
+      setLocalFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  const handleFormSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    const errors = validateGrowthPartnerSignupInput({
+      fullName,
+      phone,
+      email,
+      password,
+      kycDocumentType,
+      kycDocumentReference,
+    });
+    setLocalFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+    onSubmit({
+      fullName: fullName.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      password,
+      kycDocumentType,
+      kycDocumentReference: kycDocumentReference.trim(),
+    });
+  };
+
+  return (
+    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8"
+      >
+        <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Growth Partner</p>
+        <h1 className="mt-1 text-2xl font-bold text-slate-900">Apply as a Growth Partner</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Create an account and submit your application. Access starts only after approval.
+        </p>
+        <form className="mt-6 space-y-4" onSubmit={handleFormSubmit}>
+          <Field
+            id="growth-partner-signup-name"
+            label="Full name"
+            value={fullName}
+            error={fieldErrors.fullName}
+            onChange={handleFieldChange('fullName', setFullName)}
+            disabled={busy}
+          />
+          <Field
+            id="growth-partner-signup-phone"
+            label="Phone (optional)"
+            value={phone}
+            error={fieldErrors.phone}
+            onChange={handleFieldChange('phone', setPhone)}
+            disabled={busy}
+          />
+          <Field
+            id="growth-partner-signup-email"
+            label="Email"
+            type="email"
+            value={email}
+            autoComplete="email"
+            error={fieldErrors.email}
+            onChange={handleFieldChange('email', setEmail)}
+            disabled={busy}
+          />
+          <Field
+            id="growth-partner-signup-password"
+            label="Password"
+            type="password"
+            value={password}
+            autoComplete="new-password"
+            error={fieldErrors.password}
+            onChange={handleFieldChange('password', setPassword)}
+            disabled={busy}
+          />
+          <div>
+            <label className="block text-sm font-bold text-slate-800" htmlFor="growth-partner-kyc-type">
+              KYC document type
+            </label>
+            <select
+              id="growth-partner-kyc-type"
+              name="growth-partner-kyc-type"
+              value={kycDocumentType}
+              onChange={(e) => {
+                const val = e.target.value;
+                setKycDocumentType(val);
+                if (localFieldErrors.kycDocumentType) {
+                  setLocalFieldErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.kycDocumentType;
+                    return next;
+                  });
+                }
+              }}
+              disabled={busy}
+              aria-invalid={fieldErrors.kycDocumentType ? true : undefined}
+              aria-describedby={fieldErrors.kycDocumentType ? 'growth-partner-kyc-type-error' : undefined}
+              className={`mt-1.5 w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-500 disabled:opacity-60 ${
+                fieldErrors.kycDocumentType ? 'border-rose-400' : 'border-slate-200'
+              }`}
+            >
+              <option value="">Select document</option>
+              <option value="pan">PAN</option>
+              <option value="aadhaar">Aadhaar</option>
+              <option value="passport">Passport</option>
+              <option value="driving_license">Driving licence</option>
+              <option value="business_registration">Business registration</option>
+            </select>
+            {fieldErrors.kycDocumentType && (
+              <p id="growth-partner-kyc-type-error" role="alert" className="mt-1.5 text-xs font-semibold text-rose-600">
+                {fieldErrors.kycDocumentType}
+              </p>
+            )}
+          </div>
+          <Field
+            id="growth-partner-kyc-reference"
+            label="KYC reference number"
+            value={kycDocumentReference}
+            error={fieldErrors.kycDocumentReference}
+            onChange={handleFieldChange('kycDocumentReference', setKycDocumentReference)}
+            disabled={busy}
+            placeholder="Reference only; do not upload document here"
+          />
+          {formError && <FormAlert tone="error">{formError}</FormAlert>}
+          {success && <FormAlert tone="success">{success}</FormAlert>}
+          <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>
+            Submit application
+          </SubmitButton>
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={busy}
+            className="w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer disabled:opacity-60"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </motion.div>
+    </main>
+  );
 };
 
 export const GrowthPartnerLoginVerifying: React.FC = () => (
@@ -590,13 +810,33 @@ export const GrowthPartnerLogin: React.FC<{
   };
 
   const handleSignup = (input: { fullName: string; phone: string; email: string; password: string; kycDocumentType: string; kycDocumentReference: string }) => {
-    if (!input.fullName.trim() || !EMAIL_RE.test(input.email.trim()) || input.password.length < 8 || !input.kycDocumentType || !input.kycDocumentReference.trim()) {
-      setFormError('Enter your name, valid email, 8+ character password, and KYC details.'); return;
+    const errors = validateGrowthPartnerSignupInput(input);
+    if (Object.keys(errors).length > 0) {
+      const specificError =
+        errors.fullName ||
+        errors.email ||
+        errors.password ||
+        errors.kycDocumentType ||
+        errors.kycDocumentReference ||
+        'Please check the form for errors.';
+      setFormError(specificError);
+      return;
     }
-    setBusy(true); setFormError(''); setSignupSuccess('');
-    void signUpGrowthPartner(sb, input).then((result) => {
-      setSignupSuccess(result.confirmed ? GROWTH_PARTNER_SIGNUP_SUCCESS : 'Account created. Verify your email, then return here to sign in and submit your application.');
-    }, (error: Error) => setFormError(safePartnerErrorMessage(error, 'Signup failed. Please try again.'))).finally(() => setBusy(false));
+    setBusy(true);
+    setFormError('');
+    setSignupSuccess('');
+    void signUpGrowthPartner(sb, input)
+      .then(
+        (result) => {
+          setSignupSuccess(
+            result.confirmed
+              ? GROWTH_PARTNER_SIGNUP_SUCCESS
+              : 'Account created. Verify your email, then return here to sign in and submit your application.'
+          );
+        },
+        (error: Error) => setFormError(safePartnerErrorMessage(error, 'Signup failed. Please try again.'))
+      )
+      .finally(() => setBusy(false));
   };
 
   if (state === 'mock-mode') return <GrowthPartnerLoginMockNotice onBack={onBack} />;

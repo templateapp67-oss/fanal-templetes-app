@@ -499,10 +499,11 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                             <h4 className="font-extrabold text-sm text-slate-900">{srv.name}</h4>
                             {srv.popular && (
                               <span 
-                                className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-md shadow-2xs border border-white/20"
+                                className="text-[10px] font-mono font-extrabold px-2.5 py-0.5 rounded-full shadow-xs border border-white/20 uppercase tracking-wider inline-flex items-center gap-1"
                                 style={{ backgroundColor: primaryAccentColor, color: 'var(--accent-text-color, #ffffff)' }}
                               >
-                                POPULAR
+                                <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                                <span>POPULAR</span>
                               </span>
                             )}
                           </div>
@@ -527,7 +528,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                       </p>
                     )}
 
-                    {/* Duration Display Status Pill & Public Toggle */}
+                    {/* Duration Display & Visual Toggle Switch */}
                     <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between flex-wrap gap-2 text-xs">
                       <div className="flex items-center gap-1.5">
                         <span className="flex items-center gap-1 font-mono text-gray-600 font-medium text-xs bg-gray-50 border border-gray-200 px-2 py-1 rounded-lg">
@@ -546,44 +547,53 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                           {isDurationVisible ? (
                             <>
                               <Eye className="w-3 h-3 text-emerald-600" />
-                              <span>Visible on Website</span>
+                              <span>Visible</span>
                             </>
                           ) : (
                             <>
                               <EyeOff className="w-3 h-3 text-amber-600" />
-                              <span>Hidden on Website</span>
+                              <span>Hidden</span>
                             </>
                           )}
                         </span>
                       </div>
 
-                      {/* Quick Inline Show Duration Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleShowDuration(srv.id, e)}
-                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 cursor-pointer ${
+                      {/* Visual Switch / Checkbox Toggle for showDuration */}
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-colors select-none ${
                           isDurationVisible
-                            ? 'border-gray-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300 text-gray-600'
-                            : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                            : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                         }`}
                         title={
                           isDurationVisible
-                            ? 'Click to hide duration from the public website menu'
-                            : 'Click to show duration on the public website menu'
+                            ? 'Duration is shown on public website. Click to hide.'
+                            : 'Duration is hidden on public website. Click to show.'
                         }
                       >
-                        {isDurationVisible ? (
-                          <>
-                            <EyeOff className="w-3 h-3" />
-                            <span>Hide Duration</span>
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="w-3 h-3" />
-                            <span>Show Duration</span>
-                          </>
-                        )}
-                      </button>
+                        <input
+                          type="checkbox"
+                          checked={isDurationVisible}
+                          onChange={(e) => handleToggleShowDuration(srv.id, e)}
+                          className="sr-only"
+                          aria-label={`Show duration on website for ${srv.name}`}
+                        />
+                        <div
+                          className={`w-7 h-4 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                            isDurationVisible ? 'bg-emerald-600' : 'bg-gray-300'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-3 h-3 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
+                              isDurationVisible ? 'translate-x-3' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                        <span className="text-[11px] font-semibold whitespace-nowrap">
+                          {isDurationVisible ? 'Show Duration' : 'Duration Hidden'}
+                        </span>
+                      </label>
                     </div>
                   </div>
 

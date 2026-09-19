@@ -944,7 +944,15 @@ export const ServiceList: React.FC<{
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-bold text-slate-900">{service.name}</p>
-                      {service.popular ? <Chip tone="accent">popular</Chip> : null}
+                      {service.popular ? (
+                        <span
+                          className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full text-white shrink-0 tracking-wider uppercase inline-flex items-center gap-1 shadow-2xs"
+                          style={{ backgroundColor: accentHex }}
+                        >
+                          <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                          <span>Popular</span>
+                        </span>
+                      ) : null}
                       {service.discountLabel ? (
                         <Chip tone="success" title="A discount this salon published in loyalty_rewards for this category">
                           {service.discountLabel}

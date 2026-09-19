@@ -72,6 +72,7 @@ import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
 import {
   GrowthPartnerAdminReviewPanel,
   GrowthPartnerSignupForm,
+  validateGrowthPartnerSignupInput,
 } from './GrowthPartnerLogin';
 
 // ============================================================================
@@ -1002,14 +1003,16 @@ export const PartnerPortalLogin: React.FC<{
     kycDocumentType: string;
     kycDocumentReference: string;
   }) => {
-    if (
-      !input.fullName.trim() ||
-      !EMAIL_RE.test(input.email.trim()) ||
-      input.password.length < 8 ||
-      !input.kycDocumentType ||
-      !input.kycDocumentReference.trim()
-    ) {
-      setFormError('Enter your name, valid email, 8+ character password, and KYC details.');
+    const errors = validateGrowthPartnerSignupInput(input);
+    if (Object.keys(errors).length > 0) {
+      const specificError =
+        errors.fullName ||
+        errors.email ||
+        errors.password ||
+        errors.kycDocumentType ||
+        errors.kycDocumentReference ||
+        'Please check the form for errors.';
+      setFormError(specificError);
       return;
     }
     setBusy(true);

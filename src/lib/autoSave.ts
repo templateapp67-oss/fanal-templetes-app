@@ -592,14 +592,26 @@ export async function saveViaWebsiteApi(
       }),
     });
 
-    const body: any = await res.json().catch(() => null);
+    let body: any = null;
+    try {
+      const rawText = await res.text();
+      if (rawText && rawText.trim()) {
+        try {
+          body = JSON.parse(rawText);
+        } catch {
+          body = null;
+        }
+      }
+    } catch {
+      body = null;
+    }
 
-    if (res.ok && body && body.success === true) {
+    if (res.ok && (body?.success === true || res.status === 204 || (!body && res.status >= 200 && res.status < 300))) {
       console.info(
         `[Nexora Sync] Server-side save succeeded via POST ${path} (HTTP ${res.status}) — ` +
           'the service-role upsert persisted the site state.'
       );
-      return { ok: true, status: res.status, timestamp: typeof body.timestamp === 'number' ? body.timestamp : undefined };
+      return { ok: true, status: res.status, timestamp: typeof body?.timestamp === 'number' ? body.timestamp : Date.now() };
     }
 
     const serverMessage =

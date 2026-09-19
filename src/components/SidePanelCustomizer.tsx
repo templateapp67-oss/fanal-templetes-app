@@ -795,37 +795,53 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                       }}
                       className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-900 focus:outline-none w-3/4 py-0.5"
                     />
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newShow = srv.showDuration === false ? true : false;
-                          setServices?.((prev) =>
-                            prev.map((s) => (s.id === srv.id ? { ...s, showDuration: newShow } : s))
-                          );
-                          showToast(
-                            newShow
-                              ? `Showing duration for "${srv.name}" on public website`
-                              : `Hiding duration for "${srv.name}" on public website`
-                          );
-                        }}
-                        className={`p-1 rounded transition-colors cursor-pointer ${
-                          srv.showDuration === false
-                            ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                    <div className="flex items-center gap-1.5">
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium cursor-pointer transition-colors select-none ${
+                          srv.showDuration !== false
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                            : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                         }`}
                         title={
-                          srv.showDuration === false
-                            ? 'Duration hidden on public website. Click to show.'
-                            : 'Duration shown on public website. Click to hide.'
+                          srv.showDuration !== false
+                            ? 'Duration is shown on public website. Click to hide.'
+                            : 'Duration is hidden on public website. Click to show.'
                         }
                       >
-                        {srv.showDuration === false ? (
-                          <EyeOff className="w-3.5 h-3.5" />
-                        ) : (
-                          <Eye className="w-3.5 h-3.5" />
-                        )}
-                      </button>
+                        <input
+                          type="checkbox"
+                          checked={srv.showDuration !== false}
+                          onChange={() => {
+                            const newShow = srv.showDuration === false ? true : false;
+                            setServices?.((prev) =>
+                              prev.map((s) => (s.id === srv.id ? { ...s, showDuration: newShow } : s))
+                            );
+                            showToast(
+                              newShow
+                                ? `Showing duration for "${srv.name}" on public website`
+                                : `Hiding duration for "${srv.name}" on public website`
+                            );
+                          }}
+                          className="sr-only"
+                          aria-label={`Show duration on website for ${srv.name}`}
+                        />
+                        <div
+                          className={`w-5 h-3 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                            srv.showDuration !== false ? 'bg-emerald-600' : 'bg-slate-300'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-2 h-2 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
+                              srv.showDuration !== false ? 'translate-x-2' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                        <span className="text-[9px] font-semibold">
+                          {srv.showDuration !== false ? 'Duration' : 'Hidden'}
+                        </span>
+                      </label>
+
                       <button
                         type="button"
                         onClick={() => {

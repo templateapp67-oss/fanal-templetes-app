@@ -1370,8 +1370,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             <div className="flex items-center gap-2">
                               <span className={`font-extrabold text-xs ${isSelected ? 'text-slate-900' : 'text-slate-800'}`}>{srv.name}</span>
                               {srv.popular && (
-                                <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 text-[10px] font-extrabold shrink-0">
-                                  Popular
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-white text-[10px] font-mono font-extrabold shrink-0 shadow-2xs border border-white/20 tracking-wider uppercase inline-flex items-center gap-1"
+                                  style={{
+                                    backgroundColor: themeAccentHex || '#10b981',
+                                    color: 'var(--accent-text-color, #ffffff)',
+                                  }}
+                                >
+                                  <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                                  <span>Popular</span>
                                 </span>
                               )}
                             </div>
