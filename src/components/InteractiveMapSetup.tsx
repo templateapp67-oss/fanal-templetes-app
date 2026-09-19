@@ -523,22 +523,19 @@ export const InteractiveMapSetup: React.FC<InteractiveMapSetupProps> = ({
               address={fullAddress}
               phone={profile.phone || '+91 98765 43210'}
               height="100%"
-              interactive={true}
-              onPositionChange={(lat, lng) => {
+              interactive={false}
+              onPositionChange={undefined} // Location is set by address autocomplete only
+              /* onPositionChange={(lat, lng) => {
                 setProfile((prev) => ({
                   ...prev,
                   latitude: lat,
                   longitude: lng,
                 }));
                 setPinConfirmed(true);
-              }}
+              }} */
               accentColor={themePrimaryColor}
             />
           </div>
-
-          <p className="text-[10px] text-slate-400 font-medium italic mt-2 text-center">
-            "Pin updates automatically as you type your address or drag the marker."
-          </p>
         </div>
       </div>
     </div>

@@ -19,6 +19,11 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
 }) => {
   const [vibe, setVibe] = useState<string>('Luxury & Botanical');
   const [specialties, setSpecialties] = useState<string>('Balayage, Scalp Detox, Tailored Haircuts');
+  const [targetCustomers, setTargetCustomers] = useState<string>('Luxury');
+  const [storyTone, setStoryTone] = useState<string>('Professional');
+  const [taglineOptions, setTaglineOptions] = useState<string[]>([]);
+  const [selectedTagline, setSelectedTagline] = useState<string>('');
+  const [generatedBio, setGeneratedBio] = useState<string>('');
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -36,14 +41,19 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
           businessType,
           ownerName: ownerName || 'Salon Founder',
           vibe,
-          specialties
+          specialties,
+          targetCustomers,
+          storyTone
         })
       });
 
       if (response.ok) {
         const data = await response.json();
-        onApply(data.bio, data.tagline);
-        onClose();
+        const options = Array.isArray(data.taglines) && data.taglines.length ? data.taglines : [data.tagline];
+        setTaglineOptions(options);
+        setSelectedTagline(options[0]);
+        setGeneratedBio(data.bio);
+        onApply(data.bio, options[0]);
         setLoading(false);
         return;
       }
@@ -53,11 +63,14 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
 
     // High quality fallback auto-composition
     setTimeout(() => {
-      const generatedTagline = `Redefining ${businessType.replace('_', ' ')} with bespoke luxury & precision care.`;
-      const generatedBio = `Welcome to ${businessName || 'our studio'}, founded by ${ownerName || 'our team'}. We are a modern sanctuary dedicated to ${specialties || 'exceptional salon services'}. Blending a ${vibe.toLowerCase()} aesthetic with high-performance botanical products, our mission is to make every client feel renewed, confident, and celebrated.`;
-      onApply(generatedBio, generatedTagline);
+      const generatedTagline = `Redefining ${businessType.replace('_', ' ')} with ${targetCustomers.toLowerCase()} care.`;
+      const generatedBio = `Welcome to ${businessName || 'our studio'}, founded by ${ownerName || 'our team'}. We have created a warm, welcoming space where every guest can slow down, feel comfortable, and enjoy genuinely personalised care. Our specialists offer ${specialties || 'exceptional salon services'}, combining thoughtful technique, honest guidance, and attention to every detail. We take time to understand your needs, explain each step, and shape every treatment around your comfort and goals. Whether you are here for a fresh look, restorative care, or a moment of self-care, our promise is to make you feel heard, respected, and confident. With a ${vibe.toLowerCase()} atmosphere and a passion for authentic service, we believe every visit should leave you feeling renewed, cared for, and beautifully yourself.`;
+      const options = [generatedTagline, `Your ${targetCustomers.toLowerCase()} destination for beautiful, confident results.`, `Where expert ${specialties.split(',')[0].trim()} meets effortless self-care.`, `Elevate your everyday with thoughtfully crafted beauty.`, `Feel renewed. Look radiant. Love your time with us.`];
+      setTaglineOptions(options);
+      setSelectedTagline(options[0]);
+      setGeneratedBio(generatedBio);
+      onApply(generatedBio, options[0]);
       setLoading(false);
-      onClose();
     }, 1200);
   };
 
@@ -205,6 +218,38 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
             Enter a few keywords separated by commas. AI will generate a professional bio.
           </p>
         </div>
+
+        {/* Story tone */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-bold font-mono-caps text-gray-700">About Us Story Tone</label>
+          <div className="grid grid-cols-3 gap-2">
+            {['Professional', 'Friendly', 'Luxury'].map((tone) => (
+              <button key={tone} type="button" onClick={() => setStoryTone(tone)} className={`p-2.5 rounded-xl text-xs font-semibold border transition-all ${storyTone === tone ? 'border-[#C20E5A] bg-[#C20E5A]/10 text-[#C20E5A]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{tone}</button>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-400">AI will write a 100–150 word About Us story focused on comfort and authentic care.</p>
+        </div>
+
+        {/* Target customer */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-bold font-mono-caps text-gray-700">Target Customer & Service Positioning</label>
+          <div className="grid grid-cols-3 gap-2">
+            {['Luxury', 'Affordable', 'Organic'].map((option) => (
+              <button key={option} type="button" onClick={() => setTargetCustomers(option)} className={`p-2.5 rounded-xl text-xs font-semibold border transition-all ${targetCustomers === option ? 'border-[#C20E5A] bg-[#C20E5A]/10 text-[#C20E5A]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{option}</button>
+            ))}
+          </div>
+        </div>
+
+        {taglineOptions.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold font-mono-caps text-gray-700">Choose Your Catchphrase</label>
+            <div className="space-y-2">
+              {taglineOptions.map((option, index) => (
+                <button key={`${option}-${index}`} type="button" onClick={() => { setSelectedTagline(option); onApply(generatedBio, option); }} className={`w-full text-left p-3 rounded-xl border text-xs transition-all ${selectedTagline === option ? 'border-[#C20E5A] bg-[#C20E5A]/10 text-[#9d0b49] font-semibold' : 'border-gray-200 text-gray-700 hover:border-[#C20E5A]/50'}`}>{index + 1}. {option}</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Generate Button */}
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">

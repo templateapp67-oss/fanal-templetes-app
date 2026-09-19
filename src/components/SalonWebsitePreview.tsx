@@ -50,8 +50,7 @@ import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY
 import { InteractiveMapSetup } from './InteractiveMapSetup';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 import { TestimonialModal } from './ClientTestimonials';
-import { TikTokIcon } from './TikTokIcon';
-import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
+import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
 import { getServiceIcon } from './ServiceManagement';
 import {
   buildYouTubeEmbedUrl,
@@ -789,9 +788,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Device width class
   const deviceWidthClass = {
-    desktop: 'w-full max-w-[1240px]',
-    tablet: 'w-full max-w-[768px]',
-    mobile: 'w-full max-w-[390px]'
+    desktop: 'w-full max-w-7xl mx-auto',
+    tablet: 'max-w-[768px] w-full mx-auto shadow-2xl rounded-2xl border-2 border-slate-300',
+    mobile: 'max-w-[375px] w-full mx-auto overflow-hidden shadow-2xl rounded-3xl border-[8px] border-gray-900 bg-white relative'
   }[deviceMode];
 
   const themeStyle = activeTemplate.themeStyle;
@@ -835,7 +834,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* ============================================================ */}
       {!publicView && (
       <div className="w-full bg-white border-b border-slate-200 sticky top-20 z-40 shadow-xs">
-        <div className="max-w-[1440px] mx-auto px-4 py-2.5 flex flex-col gap-2.5">
+        <div className="max-w-[1440px] mx-auto p-2 sm:p-4 flex flex-col gap-2.5">
           
           {/* Main Controls Row */}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -883,7 +882,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Mode Switcher: Inline Edit Mode vs Preview Mode */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full flex-wrap sm:flex-nowrap justify-center">
               <button
                 type="button"
                 onClick={() => setIsEditMode(!isEditMode)}
@@ -915,7 +914,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Viewport Device Switcher */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full flex-wrap sm:flex-nowrap justify-center">
               <button
                 type="button"
                 onClick={() => setDeviceMode('desktop')}
@@ -1127,9 +1126,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
       <div 
-        className={`mt-8 transition-all duration-300 ${deviceWidthClass} min-h-[800px] ${
+        className={`mt-8 transition-all duration-300 max-w-full min-w-0 overflow-x-hidden p-2 sm:p-4 ${deviceWidthClass} min-h-[800px] box-border [&_*]:max-w-full ${
           isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
         }`}
+        style={{
+          width: '100%',
+          maxWidth: deviceMode === 'mobile' ? '375px' : deviceMode === 'tablet' ? '768px' : '80rem',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}
         id="salon-website-canvas"
       >
         
@@ -1243,10 +1248,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
         {sectionVisibility.header && (
-          <header className={`px-6 md:px-10 py-4 flex justify-between items-center border-b transition-colors ${
+          <header className={`flex min-w-0 flex-col sm:flex-row items-center justify-between gap-2 p-2 sm:p-4 w-full overflow-hidden border-b transition-colors ${
             isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
           }`}>
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 max-w-full items-center gap-3">
               {activeProfile.logoUrl ? (
                 <div className="relative group shrink-0">
                   <img 
@@ -1274,7 +1279,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
                 <div className={`text-[11px] flex items-center gap-1 font-mono ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
                   <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                  <span className="truncate max-w-[280px] sm:max-w-md">
+                  <span className="truncate max-w-[180px] sm:max-w-md text-xs">
                     <InlineEditable
                       value={activeProfile.address}
                       onSave={(val) => setProfile((p) => ({ ...p, address: String(val) }))}
@@ -1305,16 +1310,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex min-w-0 max-w-full items-center gap-1 sm:gap-3 text-xs flex-wrap justify-center">
               {/* SOCIAL MEDIA HEADER LINKS (Instagram, Facebook, TikTok) */}
               {(() => {
                 const instagramUrl = formatInstagramUrl(activeProfile.instagramHandle);
                 const facebookUrl = formatFacebookUrl(activeProfile.facebookPage);
-                const tiktokUrl = formatTikTokUrl(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl);
-                const hasSocials = Boolean(instagramUrl || facebookUrl || tiktokUrl);
+                const hasSocials = Boolean(instagramUrl || facebookUrl);
 
                 return (
-                  <div className="flex items-center gap-1.5 sm:gap-2 mr-1 sm:mr-2" id="header-social-media-links">
+                  <div className="flex items-center gap-1 sm:gap-3 text-xs flex-wrap mr-1 sm:mr-2" id="header-social-media-links">
                     {instagramUrl ? (
                       <a
                         href={instagramUrl}
@@ -1363,36 +1367,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       </span>
                     ) : null}
 
-                    {tiktokUrl ? (
-                      <a
-                        href={tiktokUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
-                          isDarkCanvas
-                            ? 'bg-neutral-800/90 hover:bg-neutral-950 text-neutral-300 hover:text-cyan-400 border border-neutral-700/60 hover:border-cyan-500/50'
-                            : 'bg-slate-100/90 hover:bg-slate-900 text-slate-700 hover:text-cyan-300 border border-slate-200/80 hover:border-transparent'
-                        }`}
-                        title={`TikTok: ${displaySocialHandle(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl)}`}
-                        aria-label="TikTok Profile"
-                      >
-                        <TikTokIcon className="w-4 h-4" />
-                      </a>
-                    ) : isEditMode ? (
-                      <span
-                        className="w-8 h-8 rounded-xl flex items-center justify-center opacity-40 border border-dashed border-slate-400 text-slate-400 text-[10px]"
-                        title="Add TikTok in Salon Info editor"
-                      >
-                        <TikTokIcon className="w-3.5 h-3.5" />
-                      </span>
-                    ) : null}
                   </div>
                 );
               })()}
 
               <div className="hidden lg:flex flex-col text-right">
                 <span className="text-[11px] font-mono text-slate-400">Direct Appointments</span>
-                <span className="text-xs font-bold font-mono">
+                <span className="text-xs font-semibold sm:text-sm font-mono">
                   <InlineEditable
                     value={activeProfile.phone}
                     onSave={(val) => setProfile((p) => ({ ...p, phone: String(val) }))}
@@ -1420,13 +1401,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
         {sectionVisibility.hero && (
-          <section className="relative overflow-hidden transition-all bg-slate-950 text-white min-h-[480px] md:min-h-[540px] flex items-center">
+          <section className="relative w-full max-w-full min-w-0 overflow-hidden transition-all bg-slate-950 text-white min-h-[480px] md:min-h-[540px] flex items-center">
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
             <div className="absolute inset-0 z-0 overflow-hidden">
               <img
                 src={activeProfile.coverImageUrl}
                 alt={activeProfile.businessName}
-                className={`w-full h-full object-cover object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
+                className={`w-full max-w-full h-full object-cover rounded-xl object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
               />
               {/* Dynamic Overlay Ambient Tint (Gentle ~15-25% mask max) */}
               <div 
@@ -1444,7 +1425,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             <div className="relative z-10 px-4 sm:px-6 md:px-12 py-10 md:py-16 max-w-4xl w-full mx-auto my-auto">
               <div className={`${heroAIStyling.cardBackingClass} transition-all duration-500`}>
                 {/* Category badge & highlight tags */}
-                <div className="flex flex-wrap items-center gap-2 mb-4">
+                <div className="flex flex-wrap justify-center gap-1 sm:gap-2 max-w-full mb-4">
                   <span 
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs transition-colors"
                     style={{ 
@@ -1475,7 +1456,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                 {/* Tagline / Heading */}
                 <h1 
-                  className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight text-balance transition-colors duration-300"
+                  className="text-xl sm:text-3xl md:text-5xl font-bold leading-tight break-words text-center sm:text-left text-balance transition-colors duration-300"
                   style={{ 
                     color: heroAIStyling.headingColor,
                     textShadow: heroAIStyling.textShadow
@@ -1940,45 +1921,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       {isEditMode && (
                         <>
                           {/* Visual toggle switch for showDuration */}
-                          <label
-                            onClick={(e) => e.stopPropagation()}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors select-none ${
-                              srv.showDuration !== false
-                                ? isDarkCanvas
-                                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
-                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                                : isDarkCanvas
-                                ? 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
-                                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                            }`}
-                            title={
-                              srv.showDuration !== false
-                                ? 'Duration is visible on public website. Click to hide.'
-                                : 'Duration is hidden on public website. Click to show.'
-                            }
-                          >
-                            <input
-                              type="checkbox"
-                              checked={srv.showDuration !== false}
-                              onChange={() => handleToggleServiceShowDuration(srv.id)}
-                              className="sr-only"
-                              aria-label={`Show duration for ${srv.name}`}
-                            />
-                            <div
-                              className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
-                                srv.showDuration !== false ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-neutral-700'
-                              }`}
-                            >
-                              <div
-                                className={`bg-white w-2.5 h-2.5 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
-                                  srv.showDuration !== false ? 'translate-x-2.5' : 'translate-x-0'
-                                }`}
-                              />
-                            </div>
-                            <span className="text-[10px] font-semibold whitespace-nowrap">
-                              {srv.showDuration !== false ? 'Duration On' : 'Duration Hidden'}
-                            </span>
-                          </label>
 
                           <button
                             type="button"
@@ -2657,17 +2599,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             title="Facebook"
                           >
                             <Facebook className="w-4 h-4" />
-                          </a>
-                        )}
-                        {(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl) && (
-                          <a 
-                            href={formatTikTokUrl(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl)} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-900 text-slate-600 hover:text-cyan-300 flex items-center justify-center transition-colors"
-                            title="TikTok"
-                          >
-                            <TikTokIcon className="w-4 h-4" />
                           </a>
                         )}
                         {activeProfile.youtubeChannel && (

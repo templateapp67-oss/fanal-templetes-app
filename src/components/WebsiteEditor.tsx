@@ -111,6 +111,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [copied, setCopied] = useState(false);
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [brandFocus, setBrandFocus] = useState('');
+  const [brandAdvice, setBrandAdvice] = useState('');
+  const [isBrandThinking, setIsBrandThinking] = useState(false);
+  const [scentProfile, setScentProfile] = useState('Jasmine & White Tea');
+  const [soundscape, setSoundscape] = useState('Lounge & Acoustic Chill');
+  const [consultationStyle, setConsultationStyle] = useState('Warm & Personalised');
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
   // Phase 5: set ONLY when the verified completion RPC rejects as not-ready
   // after a successful cloud save. Never set optimistically, never blocks save.
@@ -454,9 +460,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                     <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
                       Live Location Map Preview
                     </label>
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
-                      GPS: {profile.latitude.toFixed(6)}, {profile.longitude.toFixed(6)}
-                    </span>
                   </div>
                   <div className="rounded-xl overflow-hidden border border-slate-200 shadow-xs">
                     <GoogleMapsView
@@ -467,16 +470,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                       phone={profile.phone || ''}
                       height="180px"
                       zoom={15}
-                      interactive={true}
-                      onPositionChange={(lat, lng) => {
+                      interactive={false}
+                      onPositionChange={undefined} // Location is set by address autocomplete only
+              /* onPositionChange={(lat, lng) => {
                         upd({ latitude: lat, longitude: lng });
                       }}
                       accentColor={profile.brandColor || '#C20E5A'}
                     />
                   </div>
-                  <p className="text-[10px] text-slate-400 font-medium italic mt-1 text-center">
-                    "Pin updates automatically. Drag the marker pin on the map to fine-tune your exact coordinates."
-                  </p>
                 </div>
               ) : null}
             </div>
@@ -508,7 +509,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
-            Links for Instagram, Facebook, and TikTok will appear directly in your website header so visitors can follow and discover your portfolio.
+            Links for Instagram and Facebook will appear directly in your website header so visitors can follow and discover your portfolio.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -577,46 +578,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 {profile.facebookPage ? displaySocialHandle(profile.facebookPage, '') : 'Add page URL'}
               </div>
             </div>
-
-            {/* TikTok */}
-            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-slate-800 transition-all">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
-                  <span className="w-4 h-4 rounded bg-slate-900 text-cyan-300 flex items-center justify-center text-[10px]">
-                    <TikTokIcon className="w-3 h-3" />
-                  </span>
-                  <span>TikTok</span>
-                </label>
-                {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) && (
-                  <a
-                    href={formatTikTokUrl(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[10px] font-bold text-slate-900 hover:text-cyan-600 hover:underline flex items-center gap-0.5"
-                  >
-                    <span>Test</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                )}
-              </div>
-              <input
-                type="text"
-                value={profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  upd({
-                    tiktokProfile: val,
-                    tiktokHandle: val,
-                    tiktokUrl: val,
-                  });
-                }}
-                placeholder="e.g. @artsbyuma or url"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
-              <div className="text-[10px] text-gray-400 mt-1">
-                {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)
-                  ? displaySocialHandle(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)
-                  : 'Add handle or URL'}
               </div>
             </div>
           </div>
@@ -720,45 +681,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
                 <div className="flex items-center gap-2 self-end md:self-center">
                   {/* Visual toggle switch for showDuration */}
-                  <label
-                    onClick={(e) => e.stopPropagation()}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-colors select-none ${
-                      srv.showDuration !== false
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                        : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                    }`}
-                    title={
-                      srv.showDuration !== false
-                        ? 'Duration shown on public website. Click to hide.'
-                        : 'Duration hidden on public website. Click to show.'
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={srv.showDuration !== false}
-                      onChange={() =>
-                        updateService(srv.id, {
-                          showDuration: srv.showDuration === false ? true : false,
-                        })
-                      }
-                      className="sr-only"
-                      aria-label={`Show duration on website for ${srv.name}`}
-                    />
-                    <div
-                      className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
-                        srv.showDuration !== false ? 'bg-emerald-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <div
-                        className={`bg-white w-2.5 h-2.5 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
-                          srv.showDuration !== false ? 'translate-x-2.5' : 'translate-x-0'
-                        }`}
-                      />
-                    </div>
-                    <span className="text-[11px] font-semibold whitespace-nowrap">
-                      {srv.showDuration !== false ? 'Duration On' : 'Duration Off'}
-                    </span>
-                  </label>
+
 
                   <button
                     type="button"
@@ -779,6 +702,28 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <p className="text-sm mt-2">Manage your daily opening times and weekly off in SaaS Dashboard → Appointments → Salon Opening Hours. Bookings use those saved hours.</p>
         </section>
 
+        {/* ===== DIGITAL TOUCHPOINTS ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <div className="flex items-center gap-2 mb-1"><Globe className="w-4 h-4 text-[#C20E5A]" /><h2 className="font-display font-bold text-base">Website &amp; Digital Touchpoints</h2></div>
+          <p className="text-[11px] text-gray-500 mb-4">Use this checklist to turn your brand story into a high-converting website experience.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              { title: 'Hero / About Story', detail: 'Aim for 100–150 words focused on comfort, expertise, and authentic care.', ready: (profile.about || '').trim().split(/\s+/).filter(Boolean).length >= 100 },
+              { title: 'Services & Pricing', detail: 'Give every service a clear 1–2 line, benefit-focused description.', ready: services.length > 0 && services.every((service) => (service.description || '').trim().length > 0) },
+              { title: 'Social Proof & CTA', detail: 'Show transformations, before-and-after content, and a clear booking action.', ready: true },
+            ].map((item) => (
+              <div key={item.title} className="rounded-xl border border-gray-200 p-3 bg-gray-50/60">
+                <div className="flex items-center gap-2 mb-1"><CheckCircle2 className={`w-4 h-4 ${item.ready ? 'text-emerald-600' : 'text-gray-300'}`} /><span className="text-xs font-bold text-gray-800">{item.title}</span></div>
+                <p className="text-[10px] leading-relaxed text-gray-500">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-[#C20E5A]/5 border border-[#C20E5A]/10 p-3">
+            <div><p className="text-xs font-bold text-gray-800">Ready to review your customer journey?</p><p className="text-[10px] text-gray-500">Preview your story, service benefits, transformations, and booking CTA together.</p></div>
+            <button type="button" onClick={onNavigateToPreview} className="shrink-0 px-3 py-2 rounded-lg bg-[#C20E5A] text-white text-[11px] font-bold hover:opacity-90">View Preview</button>
+          </div>
+        </section>
+
         {/* ===== 5. TEMPLATE & LIVE SITE ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <div className="flex items-center gap-2 mb-1">
@@ -788,6 +733,26 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <p className="text-[11px] text-gray-500 mb-5">
             Pick a template (your data is preserved) and grab your white-label link.
           </p>
+          <div className="mb-5 p-4 rounded-xl border border-amber-100 bg-amber-50/40">
+            <div className="flex items-center gap-2 mb-1"><Sparkles className="w-4 h-4 text-amber-600" /><span className="text-xs font-bold text-gray-800">In-Salon Brand Experience</span></div>
+            <p className="text-[10px] text-gray-500 mb-3">Make every visit feel consistent with your digital brand.</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label className="text-[11px] font-bold text-gray-700">Scent Profile<select value={scentProfile} onChange={(e) => setScentProfile(e.target.value)} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Jasmine &amp; White Tea</option><option>Eucalyptus &amp; Lavender</option><option>Citrus &amp; Cedar</option><option>Rose &amp; Sandalwood</option></select></label>
+              <label className="text-[11px] font-bold text-gray-700">Soundscape<select value={soundscape} onChange={(e) => setSoundscape(e.target.value)} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Lounge &amp; Acoustic Chill</option><option>Lo-fi Ambient</option><option>Soft Piano &amp; Spa</option><option>Upbeat Contemporary</option></select></label>
+              <label className="text-[11px] font-bold text-gray-700">Consultation Style<select value={consultationStyle} onChange={(e) => setConsultationStyle(e.target.value)} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Warm &amp; Personalised</option><option>Thorough &amp; Clinical</option><option>Express &amp; Efficient</option><option>Luxury Concierge</option></select></label>
+            </div>
+          </div>
+
+          <div className="mb-5 p-4 rounded-xl border border-purple-100 bg-purple-50/50">
+            <div className="flex items-center gap-2 mb-2"><Sparkles className="w-4 h-4 text-purple-600" /><span className="text-xs font-bold text-gray-800">AI Brand Identity Advisor</span></div>
+            <div className="flex gap-2">
+              <input value={brandFocus} onChange={(e) => setBrandFocus(e.target.value)} placeholder="e.g. Skin aesthetics, barbering, herbal spa" className="flex-1 p-2.5 rounded-xl border border-gray-200 text-xs outline-none focus:border-purple-500" />
+              <button type="button" disabled={isBrandThinking || !brandFocus.trim()} onClick={async () => { setIsBrandThinking(true); try { const r = await fetch('/api/recommend-brand-identity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ businessType: profile.businessType, focus: brandFocus }) }); const d = await r.json(); setBrandAdvice(d.advice || ''); } finally { setIsBrandThinking(false); } }} className="px-3 rounded-xl bg-purple-600 text-white text-xs font-bold disabled:opacity-50">{isBrandThinking ? 'Thinking…' : 'Recommend'}</button>
+            </div>
+            {brandAdvice && <p className="mt-3 text-xs leading-relaxed text-gray-700">{brandAdvice}</p>}
+          </div>
+
+
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
