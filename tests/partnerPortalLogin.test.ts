@@ -65,7 +65,6 @@ import {
   PartnerPortalPendingReview,
   PartnerPortalRejected,
   PartnerPortalVerifying,
-  PLATFORM_LOGO_URL,
 } from '../src/components/PartnerPortalLogin';
 import {
   PARTNER_PORTAL_LOGIN_TITLE,
@@ -208,9 +207,13 @@ function formElement(overrides: Partial<Parameters<typeof PartnerPortalLoginForm
 
 test('the login page shows the platform logo and the exact "Growth Partner Login" heading', () => {
   const html = render(formElement());
-  assert.ok(html.includes('alt="Nexora Logo"'), 'the platform logo is an image with alt text');
-  assert.ok(html.includes(PLATFORM_LOGO_URL), 'the logo asset is the platform brand mark');
-  assert.ok(html.includes('Nexora</span>'), 'the wordmark renders next to the logo');
+  assert.ok(html.includes('alt="Nexora SalonOS"'), 'the platform logo is an image with alt text');
+  // The brand moved to the bundled SalonOS asset (the retired Google-hosted
+  // PLATFORM_LOGO_URL import stays exported for compatibility); the pin is the
+  // property that matters: the bundled asset, not an external URL.
+  assert.ok(html.includes('nexora-salonos-logo'), 'the logo asset is the bundled SalonOS brand mark');
+  assert.ok(!html.includes('googleusercontent.com'), 'no retired external logo URL survives');
+  assert.ok(html.includes('NEXORA</span>'), 'the wordmark renders next to the logo');
   const headings = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/g) ?? [];
   assert.equal(headings.length, 1, 'exactly one h1');
   assert.ok(
@@ -267,7 +270,7 @@ test('the loading state disables the form and relabels the button; errors render
 });
 
 test('the brand mark, verifying state and denial cards render without partner data', () => {
-  assert.ok(render(React.createElement(PartnerBrandMark)).includes('alt="Nexora Logo"'));
+  assert.ok(render(React.createElement(PartnerBrandMark)).includes('alt="Nexora SalonOS"'));
   const verifying = render(React.createElement(PartnerPortalVerifying));
   assert.ok(verifying.includes(PARTNER_PORTAL_LOGIN_VERIFYING_LABEL));
   assert.ok(verifying.includes('role="status"'));

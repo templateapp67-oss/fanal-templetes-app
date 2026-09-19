@@ -85,7 +85,8 @@ import {
 
 test('onboarding routes resolve per the existing router conventions', () => {
   assert.equal(ONBOARDING_PATH, '/onboarding');
-  assert.deepEqual([...ONBOARDING_SECTIONS], ['login', 'signup', 'forgot-password', 'referral', 'status']);
+  // The shop-owner wizard joined the funnel as a real section (PHASE: shop onboarding).
+  assert.deepEqual([...ONBOARDING_SECTIONS], ['login', 'signup', 'forgot-password', 'referral', 'status', 'shop']);
   assert.equal(isOnboardingPath('/onboarding'), true);
   assert.equal(isOnboardingPath('/onboarding/referral'), true);
   assert.equal(isOnboardingPath('/onboarding/'), true);
@@ -202,13 +203,16 @@ test('authenticated users with no referral are routed to the referral step', () 
 });
 
 test('authenticated users with a referral never see the referral screen', () => {
+  // Linked shop owners continue in the single guided setup flow (the shop
+  // wizard replaced the old status/template handoff) — the property that
+  // matters is unchanged: nobody is forced through referral/login again.
   for (const phase of ['referral_added', 'template_started', 'completed'] as const) {
     const route = (requested: any) => resolveOnboardingRoute({ hasSession: true, phase, requested });
-    assert.equal(route('status'), 'status');
-    assert.equal(route('referral'), 'status');
-    assert.equal(route('login'), 'status');
-    assert.equal(route('signup'), 'status');
-    assert.equal(route('forgot-password'), 'status');
+    assert.equal(route('status'), 'shop');
+    assert.equal(route('referral'), 'shop');
+    assert.equal(route('login'), 'shop');
+    assert.equal(route('signup'), 'shop');
+    assert.equal(route('forgot-password'), 'shop');
   }
 });
 

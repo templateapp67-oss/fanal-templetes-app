@@ -1,6 +1,7 @@
 import { PartnerRouteGuard, usePartnerRouteGuard } from './PartnerRouteGuard';
 export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
+import { PartnerAccountSettingsPage } from './PartnerAccountSettingsPage';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
 import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, PartnerMarketingMaterialsPage, PartnerNotificationsPage, PartnerSupportPage, PartnerWithdrawalsPage } from './partner';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
@@ -587,15 +588,24 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'support':
         return <PartnerSupportPage accentHex={accentHex} />;
       case 'profile':
-        return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
+        return <div key={userId}><GrowthPartnerProfilePage navigate={navigate} onProfileChange={saved => {
           if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
           if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
           if (saved.partner_id === userId && !saved.photo_path) setSavedProfileAvatar('');
         }} /></div>;
+      // The real Account Settings page: change email, password + 2FA,
+      // sessions + security log, deactivation request.
       case 'account-settings':
-        return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
-          if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
-        }} /></div>;
+        return (
+          <div key={userId}>
+            <PartnerAccountSettingsPage
+              email={email}
+              expectedUserId={userId ?? ''}
+              displayName={displayName}
+              navigate={navigate}
+            />
+          </div>
+        );
       default:
         return null;
     }

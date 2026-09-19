@@ -89,6 +89,9 @@ export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   { section: 'notifications', label: 'Notifications', icon: Bell, group: 'resources' },
   { section: 'support', label: 'Support', icon: LifeBuoy, group: 'resources' },
   { section: 'profile', label: 'Profile', icon: CircleUserRound, group: 'account' },
+  // Account Settings is a real page (/partner/account-settings) — the profile
+  // dropdown opens it and the sidebar carries it in the Account group.
+  { section: 'account-settings', label: 'Account Settings', icon: Settings, group: 'account' },
 ];
 
 /** Human title for each portal section (header + drawer use it). */
@@ -154,10 +157,9 @@ export function shortPartnerId(id: string | null | undefined): string {
 /**
  * Profile dropdown (Part 2.3). The user card shows the partner's real
  * identity: name, email and the full partner id. "My Profile" navigates to
- * the portal profile section; "Account Settings" is a planned slot (no
- * account-settings module exists yet — it is shown disabled with a Soon
- * badge, exactly like the sidebar's planned modules, never as a fake link);
- * Logout runs the real sign-out.
+ * the portal profile section; "Account Settings" opens the real
+ * /partner/account-settings page (email, password, 2FA, sessions, danger
+ * zone); Logout runs the real sign-out.
  */
 export const PartnerProfileMenu: React.FC<{
   displayName: string;
@@ -165,7 +167,7 @@ export const PartnerProfileMenu: React.FC<{
   partnerId?: string;
   avatarUrl?: string;
   onNavigateProfile: () => void;
-  onNavigateAccountSettings: () => void;
+  onNavigateAccountSettings?: () => void;
   onLogout: () => void;
 }> = ({ displayName, email, partnerId, onNavigateProfile, onNavigateAccountSettings, onLogout }) => (
   <div data-partner-profile-menu>
@@ -205,20 +207,16 @@ export const PartnerProfileMenu: React.FC<{
         <CircleUserRound className="h-4 w-4 shrink-0 text-slate-400" />
         My Profile
       </button>
-      <span
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
         data-partner-menu-item="account-settings"
-        className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 cursor-not-allowed opacity-60 select-none"
+        onClick={onNavigateAccountSettings}
+        className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       >
-        <span className="flex items-center gap-2.5">
-          <Settings className="h-4 w-4 shrink-0" />
-          Account Settings
-        </span>
-        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-          Soon
-        </span>
-      </span>
+        <Settings className="h-4 w-4 shrink-0 text-slate-400" />
+        Account Settings
+      </button>
       <div className="my-1.5 border-t border-slate-100" role="separator" />
       <button
         type="button"

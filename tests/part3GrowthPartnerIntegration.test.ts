@@ -232,7 +232,10 @@ test('7.1 a partner referral code is generated in one canonical store, in the ca
       await db.query(`select table_name from information_schema.columns
         where table_schema='public' and column_name in ('referral_code','partner_code','referral_slug','code') order by table_name`)
     ).rows.map((row: any) => row.table_name);
-    assert.deepEqual(codeColumns, ['growth_onboarding', 'growth_partners', 'growth_referral_attributions', 'partner_referral_attribution', 'partner_referrals']);
+    // partner_level_definitions is the levels catalog (its `code` column is a
+    // level key, not a partner referral code) — the one-store property is
+    // about the partner-code columns, which still live in growth_partners.
+    assert.deepEqual(codeColumns, ['growth_onboarding', 'growth_partners', 'growth_referral_attributions', 'partner_level_definitions', 'partner_referral_attribution', 'partner_referrals']);
     const partners = (await db.query('select referral_code, is_active from public.growth_partners order by referral_code')).rows;
     assert.equal(partners.length, 3, 'one row per partner, created by the two admin paths only');
   } finally {
@@ -456,6 +459,7 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
       'growth_referral_attributions',
       'growth_referral_status_audit',
       'partner_account_settings',
+      'partner_deactivation_requests',
       'partner_earnings',
       'partner_level_definitions',
       'partner_marketing_assets',
@@ -464,6 +468,7 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
       'partner_payout_requests',
       'partner_referral_events',
       'partner_referrals',
+      'partner_security_events',
       'partner_support_attachments',
       'partner_support_tickets',
     ]);

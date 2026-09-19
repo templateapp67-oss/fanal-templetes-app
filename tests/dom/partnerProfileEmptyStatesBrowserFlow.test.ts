@@ -10,10 +10,10 @@ import type { GrowthPartnerProfileClient } from '../../src/lib/growthPartnerProf
 
 after(()=>dom.window.close());
 const change=async(el:HTMLInputElement,value:string)=>{assert.ok(el);await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(el,value);el.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});};
-const click=async(el:Element|undefined|null)=>{assert.ok(el);await act(async()=>{(el as HTMLElement).click();});};
+const click=async(el:Element|undefined|null,label?:string)=>{assert.ok(el,label||'element');await act(async()=>{(el as HTMLElement).click();});};
 const wait=async(check:()=>boolean)=>{for(let i=0;i<100&&!check();i++)await act(async()=>{await new Promise(r=>setTimeout(r,10));});assert.ok(check(),'UI settled');};
 
-test('profile shows protected fields read-only, persists basic edits, removes photo, and requests secure email confirmation',async()=>{
+test('profile shows protected fields read-only, persists profile + account settings together, and removes photo',async()=>{
   const id='a0000000-0000-4000-8000-000000000001';
   let profile:any={full_name:'Rahul',email:'rahul@example.com',phone:'+919876543210',partner_id:id,referral_code:'NEXORA-RAHUL25',account_status:'Active',partner_role:'Growth Partner',approval_status:'Approved',joined_at:'2026-09-01T00:00:00Z',photo_path:`${id}/a0000000-0000-4000-8000-000000000099.webp`};
   const rpcCalls:any[]=[],authCalls:any[]=[];
@@ -28,27 +28,35 @@ test('profile shows protected fields read-only, persists basic edits, removes ph
   const button=(label:string)=>[...host.querySelectorAll('button')].find(el=>el.textContent===label);
   try{
     await act(async()=>root.render(React.createElement(GrowthPartnerProfilePage,{client})));
-    assert.match(host.textContent!,/Could not load/);await click(button('Retry profile'));
+    assert.match(host.textContent!,/Could not load/);await click(button('Retry profile'),'retry');
     await wait(()=>!!input('Full Name'));
     for(const label of ['Partner Name','Email','Phone','Partner ID','Referral Code','Account status','Joined date','Profile Photo','Approval Status','Partner Role'])assert.ok(host.textContent!.includes(label),label);
     for(const protectedLabel of ['Partner ID','Partner Role','Referral Code','Approval Status'])assert.equal([...host.querySelectorAll('label')].some(el=>el.textContent?.startsWith(protectedLabel)),false);
     assert.equal(input('Full Name').value,'Rahul');assert.ok(host.querySelector('img[alt="Your profile photo"]'));
+    // City/State/Address/binding: the account-settings fields persist WITH the
+    // profile (one submit, two RPCs) — the old bug let them live in state only.
+    await change(input('City Base'),'Bengaluru');
     await change(input('Full Name'),'Rahul Kumar');await change(input('Phone'),'+91 99887 76655');
-    await click(button('Save Profile'));await wait(()=>host.textContent!.includes('Profile saved.'));
+    await click(button('Save Profile & Account Settings'),'save');await wait(()=>host.textContent!.includes('Profile and account settings saved.'));
     assert.deepEqual(rpcCalls.find(c=>c.fn==='save_my_growth_partner_profile').args,{p_patch:{full_name:'Rahul Kumar',phone:'+919988776655'}});
+    const settingsCall=rpcCalls.find(c=>c.fn==='save_my_partner_account_settings');
+    assert.ok(settingsCall,'account settings saved in the same submit');
+    assert.equal(settingsCall.args.p_patch.city,'Bengaluru');
     assert.match(host.textContent!,/Rahul Kumar/);
-    await click(button('Remove photo'));await click(button('Save Profile'));await wait(()=>profile.photo_path===null);
+    await click(button('Remove photo'),'remove-photo');await click(button('Save Profile & Account Settings'),'save-2');await wait(()=>profile.photo_path===null);
     assert.ok(host.querySelector('[aria-label="No profile photo"]'));
     // Unsupported image formats are rejected before any upload/save.
     const fileInput=input('Profile Photo');Object.defineProperty(fileInput,'files',{configurable:true,value:[new dom.window.File(['svg'],'avatar.svg',{type:'image/svg+xml'})]});
     await act(async()=>fileInput.dispatchEvent(new dom.window.Event('change',{bubbles:true})));
     assert.match(host.textContent!,/Choose a JPG, PNG or WebP/);
-    await change(input('New email'),'new@example.com');await click(button('Request Email Change'));
-    await wait(()=>host.textContent!.includes('Email change requested.'));
-    assert.deepEqual(authCalls[0].args,{email:'new@example.com'});
-    assert.equal(authCalls[0].opts.emailRedirectTo,'http://localhost:3000/partner/profile');
-    assert.equal(profile.email,'rahul@example.com');assert.ok(host.textContent!.includes('rahul@example.com'));
+    // Email changes moved to Account Settings: the profile page renders the
+    // address read-only in the summary and hands off via the Account Settings
+    // link — it never edits auth identity from here.
+    assert.ok(host.textContent!.includes('rahul@example.com'));
+    assert.ok(host.querySelector('[data-summary-account-settings-link]'),'the Account Settings hand-off link exists');
+    assert.equal([...host.querySelectorAll('label')].some(el=>el.textContent?.startsWith('New email')),false,'no email-change form on the profile page');
     assert.ok(rpcCalls.filter(c=>c.fn==='save_my_growth_partner_profile').every(c=>!('email' in c.args.p_patch)));
+    assert.equal(authCalls.length,0,'no auth email mutation from the profile page');
   }finally{await act(async()=>root.unmount());host.remove();}
 });
 

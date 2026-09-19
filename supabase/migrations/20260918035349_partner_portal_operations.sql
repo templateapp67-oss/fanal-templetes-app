@@ -153,13 +153,22 @@ end $$;
 revoke all on function public.my_active_partner_id() from public, anon;
 grant execute on function public.my_active_partner_id() to authenticated, service_role;
 
+drop policy if exists partner_earnings_select_own on public.partner_earnings;
 create policy partner_earnings_select_own on public.partner_earnings for select to authenticated using (partner_id = public.my_active_partner_id());
+drop policy if exists partner_payout_select_own on public.partner_payout_requests;
 create policy partner_payout_select_own on public.partner_payout_requests for select to authenticated using (partner_id = public.my_active_partner_id());
+drop policy if exists partner_notifications_select_own on public.partner_notifications;
 create policy partner_notifications_select_own on public.partner_notifications for select to authenticated using (partner_id = public.my_active_partner_id());
+drop policy if exists partner_preferences_select_own on public.partner_notification_preferences;
 create policy partner_preferences_select_own on public.partner_notification_preferences for select to authenticated using (partner_id = public.my_active_partner_id());
+drop policy if exists partner_tickets_select_own on public.partner_support_tickets;
 create policy partner_tickets_select_own on public.partner_support_tickets for select to authenticated using (partner_id = public.my_active_partner_id());
+drop policy if exists partner_attachments_select_own on public.partner_support_attachments;
 create policy partner_attachments_select_own on public.partner_support_attachments for select to authenticated using (partner_id = public.my_active_partner_id());
+drop policy if exists partner_levels_select_active on public.partner_level_definitions;
 create policy partner_levels_select_active on public.partner_level_definitions for select to authenticated using (is_active);
+drop policy if exists partner_assets_select_published on public.partner_marketing_assets;
+drop policy if exists partner_assets_select_published on public.partner_marketing_assets;
 create policy partner_assets_select_published on public.partner_marketing_assets for select to authenticated using (is_published);
 
 -- Private support uploads are organised as <partner-record-id>/<uuid>/<file>.
@@ -179,16 +188,19 @@ do $$ begin
   $sb$;
   execute $sb$drop policy if exists partner_support_objects_select_own on storage.objects$sb$;
   execute $sb$
+    drop policy if exists partner_support_objects_select_own on storage.objects;
     create policy partner_support_objects_select_own on storage.objects for select to authenticated
       using (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text)
   $sb$;
   execute $sb$drop policy if exists partner_support_objects_insert_own on storage.objects$sb$;
   execute $sb$
+    drop policy if exists partner_support_objects_insert_own on storage.objects;
     create policy partner_support_objects_insert_own on storage.objects for insert to authenticated
       with check (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text)
   $sb$;
   execute $sb$drop policy if exists partner_support_objects_delete_own on storage.objects$sb$;
   execute $sb$
+    drop policy if exists partner_support_objects_delete_own on storage.objects;
     create policy partner_support_objects_delete_own on storage.objects for delete to authenticated
       using (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text)
   $sb$;
