@@ -26,6 +26,7 @@ import {
 import { createBookingCheckinHandler } from "./server/bookingCheckin";
 import { registerCustomerRoutes } from "./server/customerRoutes";
 import { registerStaffPerformanceRoutes } from "./server/staffPerformanceRoutes";
+import { registerPartnerPortalRoutes } from "./server/partnerPortalRoutes";
 import {
   createMyBookingsListHandler,
   createMyBookingDetailHandler,
@@ -649,6 +650,33 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
   );
 
   registerStaffPerformanceRoutes(app);
+
+  // ==========================================================================
+  // GROWTH PARTNER PORTAL OPERATIONS — /api/partner/*
+  // --------------------------------------------------------------------------
+  // The HTTP surface behind the promoted partner sidebar sections (Earnings,
+  // Withdrawals, Marketing Materials, Partner Levels, Leaderboards,
+  // Notifications, Support). Handlers verify the caller's bearer token and then
+  // call the same session-scoped RPCs the SPA would call directly, so RLS and
+  // the functions' own "active partner" guard stay in force; the browser falls
+  // back to the direct RPC whenever these routes are not deployed.
+  // ==========================================================================
+  registerPartnerPortalRoutes(
+    app,
+    {
+      db,
+      isMock: bookingHandlerIsMock,
+      // Private marketing buckets: a 60-second URL, signed only after the
+      // asset proved itself present in the CALLER's published list.
+      signAssetUrl: admin
+        ? async (bucket: string, path: string) => {
+            const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, 60);
+            return error || !data ? null : (data as any).signedUrl || null;
+          }
+        : undefined,
+    },
+    asyncRoute
+  );
 
 
   // ==========================================================================

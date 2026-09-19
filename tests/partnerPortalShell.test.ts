@@ -1,10 +1,11 @@
 // ============================================================================
 // Partner portal SHELL (Part 2.2) — the /partner/dashboard layout.
 //
-//   • The sidebar includes live Rewards and Extra Onboarding Reward entries alongside the
-//     original partner pages, while remaining future modules keep disabled
-//     “Soon” registry slots (Earnings, Withdrawals, Marketing Materials,
-//     Partner Levels, Leaderboards, Notifications, Support).
+//   • The sidebar is ONE live registry. The seven modules that used to sit
+//     behind a disabled “Coming soon” heading (Earnings, Withdrawals,
+//     Marketing Materials, Partner Levels, Leaderboards, Notifications,
+//     Support) are real menu entries now, each an <a href> carrying its
+//     canonical /partner/... URL, with the “Soon” badges gone.
 //   • Server-rendered output pins the professional layout: desktop sidebar +
 //     top header + main content, the mobile drawer (closed by default) and
 //     its hamburger toggle, active-item state, identity and logout actions.
@@ -27,9 +28,10 @@ import {
   matchPartnerPortalRoute,
   partnerPortalPath,
 } from '../src/lib/router';
+import * as PARTNER_PORTAL_SHELL_MODULE from '../src/components/PartnerPortalShell';
 import {
   PARTNER_PORTAL_NAV,
-  PARTNER_PORTAL_PLANNED,
+  PARTNER_PORTAL_NAV_GROUPS,
   PARTNER_PORTAL_SECTION_TITLES,
   PartnerNotificationsPanel,
   PartnerPortalShell,
@@ -52,18 +54,28 @@ const render = (element: React.ReactElement) => renderToStaticMarkup(element);
 // ---------------------------------------------------------------------------
 
 test('the portal section model keeps menu, URL and content sections in sync', () => {
-  // URL sections include the seven live menu sections plus legacy performance.
+  // URL sections: the original menu, the two legacy URL-only sections, and the
+  // seven promoted modules. `account-settings` stays out — it has no page yet,
+  // so it must not resolve to a route (see the alias test below).
   assert.deepEqual([...PARTNER_PORTAL_SECTIONS], [
     'dashboard',
     'referral-code',
     'referred-users',
     'referral-status',
-    'profile',
     'rewards',
     'performance',
     'commission',
+    'earnings',
+    'withdrawals',
+    'marketing-materials',
+    'partner-levels',
+    'leaderboards',
+    'notifications',
+    'support',
+    'profile',
   ]);
-  // The sidebar shows seven live menu sections (Logout is an action).
+  assert.deepEqual(PARTNER_PORTAL_SECTIONS.slice(0, 4), [...PARTNER_PORTAL_MENU_SECTIONS].slice(0, 4));
+  // The sidebar shows fourteen live menu sections (Logout is an action).
   assert.deepEqual([...PARTNER_PORTAL_MENU_SECTIONS], [
     'dashboard',
     'referral-code',
@@ -71,8 +83,25 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
     'referral-status',
     'rewards',
     'commission',
+    'earnings',
+    'withdrawals',
+    'partner-levels',
+    'leaderboards',
+    'marketing-materials',
+    'notifications',
+    'support',
     'profile',
   ]);
+  // Every promoted module maps to its own content section — not to a shared
+  // fallback, which is how a “live” menu item could otherwise render the
+  // dashboard under an earnings URL.
+  assert.equal(partnerPortalContentSection('earnings'), 'earnings');
+  assert.equal(partnerPortalContentSection('withdrawals'), 'withdrawals');
+  assert.equal(partnerPortalContentSection('marketing-materials'), 'marketing-materials');
+  assert.equal(partnerPortalContentSection('partner-levels'), 'partner-levels');
+  assert.equal(partnerPortalContentSection('leaderboards'), 'leaderboards');
+  assert.equal(partnerPortalContentSection('notifications'), 'notifications');
+  assert.equal(partnerPortalContentSection('support'), 'support');
   // Every menu section maps to real content — no orphan menu entries.
   assert.equal(partnerPortalContentSection('dashboard'), 'dashboard');
   assert.equal(partnerPortalContentSection('referral-code'), 'referral-code');
@@ -82,13 +111,42 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
   assert.equal(partnerPortalContentSection('rewards'), 'rewards');
   assert.equal(partnerPortalContentSection('performance'), 'performance');
   assert.equal(partnerPortalContentSection('commission'), 'commission');
-  // Canonical paths for every section.
+  // Canonical paths for every section. The promoted modules keep short URL
+  // segments (marketing, levels, leaderboard) even though their section ids are
+  // descriptive — the id names the content, the segment names the address.
+  const SEGMENT_OVERRIDES: Record<string, string> = {
+    'referral-code': 'referral',
+    'referred-users': 'referrals',
+    'marketing-materials': 'marketing',
+    'partner-levels': 'levels',
+    leaderboards: 'leaderboard',
+  };
   for (const section of PARTNER_PORTAL_SECTIONS) {
-    assert.equal(partnerPortalPath(section), `/partner/${section === 'referral-code' ? 'referral' : section === 'referred-users' ? 'referrals' : section}`);
+    assert.equal(partnerPortalPath(section), `/partner/${SEGMENT_OVERRIDES[section] ?? section}`);
   }
-  // Legacy aliases keep resolving (no broken links from the earlier model).
+  // The seven promoted URLs each resolve to their own section.
+  for (const [path, section] of [
+    ['/partner/earnings', 'earnings'],
+    ['/partner/withdrawals', 'withdrawals'],
+    ['/partner/marketing', 'marketing-materials'],
+    ['/partner/levels', 'partner-levels'],
+    ['/partner/leaderboard', 'leaderboards'],
+    ['/partner/notifications', 'notifications'],
+    ['/partner/support', 'support'],
+  ] as Array<[string, string]>) {
+    assert.equal(matchPartnerPortalRoute(path), section, `${path} → ${section}`);
+  }
+  // Legacy aliases keep resolving (no broken links from the earlier model) —
+  // including the long-form segments the promoted modules briefly had.
   assert.equal(matchPartnerPortalRoute('/partner/referrals'), 'referred-users');
   assert.equal(matchPartnerPortalRoute('/partner/customers'), 'referral-status');
+  assert.equal(matchPartnerPortalRoute('/partner/marketing-materials'), 'marketing-materials');
+  assert.equal(matchPartnerPortalRoute('/partner/partner-levels'), 'partner-levels');
+  assert.equal(matchPartnerPortalRoute('/partner/leaderboards'), 'leaderboards');
+  // An unknown path still falls back to the dashboard: it is never a way past
+  // the authorization gate, and no section id is invented on the fly.
+  assert.equal(matchPartnerPortalRoute('/partner/does-not-exist'), 'dashboard');
+  assert.equal(matchPartnerPortalRoute('/partner/account-settings'), 'dashboard');
 });
 
 test('the shell nav registry mirrors the router menu and adds no extra live items', () => {
@@ -99,7 +157,12 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
   );
   assert.deepEqual(
     PARTNER_PORTAL_NAV.map((item) => item.label),
-    ['Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status', 'Rewards', 'Extra Onboarding Reward', 'Profile'],
+    [
+      'Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status',
+      'Rewards', 'Extra Onboarding Reward', 'Earnings', 'Withdrawals',
+      'Partner Levels', 'Leaderboards', 'Marketing Materials', 'Notifications',
+      'Support', 'Profile',
+    ],
     'the exact sidebar menu labels, in order'
   );
   for (const item of PARTNER_PORTAL_NAV) {
@@ -108,26 +171,21 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
   }
 });
 
-test('the planned-module registry holds the remaining seven future sections without faking them', () => {
-  assert.deepEqual(
-    PARTNER_PORTAL_PLANNED.map((item) => item.label),
-    [
-      'Earnings',
-      'Withdrawals',
-      'Marketing Materials',
-      'Partner Levels',
-      'Leaderboards',
-      'Notifications',
-      'Support',
-    ],
-    'the future modules named in the Part 2 plan, as expandable slots'
-  );
-  // A planned slot must never shadow a live MENU item — promotion (moving the
-  // entry into PARTNER_PORTAL_NAV) stays a safe, local change.
-  const liveMenu = new Set(PARTNER_PORTAL_MENU_SECTIONS as string[]);
-  for (const item of PARTNER_PORTAL_PLANNED) {
-    assert.equal(liveMenu.has(item.id), false, `${item.id} collides with a live menu item`);
-    assert.ok(item.icon, `${item.id} has an icon`);
+test('the promoted modules are live entries — no planned registry, no Soon slots left in the nav', () => {
+  // The disabled registry is gone entirely: an entry can only be a real route.
+  assert.equal((PARTNER_PORTAL_SHELL_MODULE as any).PARTNER_PORTAL_PLANNED, undefined);
+  const plannedSource = readFileSync('src/components/PartnerPortalShell.tsx', 'utf8');
+  assert.doesNotMatch(plannedSource, /PARTNER_PORTAL_PLANNED\s*[:=]/, 'no planned registry to keep items in');
+  assert.doesNotMatch(plannedSource, /data-partner-planned/, 'no disabled slot markup in the shell');
+  assert.doesNotMatch(plannedSource, /Coming soon/, 'the sidebar no longer has a Coming soon heading');
+
+  const promoted = ['earnings', 'withdrawals', 'marketing-materials', 'partner-levels', 'leaderboards', 'notifications', 'support'];
+  for (const section of promoted) {
+    const item = PARTNER_PORTAL_NAV.find((entry) => entry.section === section);
+    assert.ok(item, `${section} is a live sidebar entry`);
+    assert.ok(item!.icon, `${section} has an icon`);
+    assert.ok(partnerPortalPath(item!.section).startsWith('/partner/'), `${section} has a real URL`);
+    assert.equal(matchPartnerPortalRoute(partnerPortalPath(item!.section)), item!.section, 'the URL resolves back to the entry');
   }
 });
 
@@ -182,9 +240,14 @@ test('the shell renders the professional dashboard layout (sidebar, header, main
   assert.match(html, /<main id="partner-portal-main"[^>]*>/);
   assert.match(html, /Main content goes here/);
   // The active item is marked for assistive tech.
-  const active = html.match(/<button[^>]*data-partner-nav="dashboard"[^>]*>/);
-  assert.ok(active, 'the dashboard nav button exists');
+  const active = html.match(/<a[^>]*data-partner-nav="dashboard"[^>]*>/);
+  assert.ok(active, 'the dashboard nav link exists');
   assert.match(active![0], /aria-current="page"/);
+  assert.match(active![0], /href="\/partner\/dashboard"/, 'a live entry carries its real URL');
+  // Menu labels every promoted section now shows.
+  for (const label of ['Earnings', 'Withdrawals', 'Marketing Materials', 'Partner Levels', 'Leaderboards', 'Notifications', 'Support']) {
+    assert.ok((html.match(new RegExp(`>${label}<`, 'g')) || []).length >= 2, `${label} appears in sidebar + drawer`);
+  }
 });
 
 test('the header carries the page title, partner name, partner id, bell, avatar and dropdowns (closed)', () => {
@@ -295,11 +358,11 @@ test('each portal section renders its own header title and active menu item', ()
   for (const [section, title] of cases) {
     const html = renderShell(section as (typeof PARTNER_PORTAL_SECTIONS)[number]);
     assert.match(html, new RegExp(`<h1[^>]*>${title}</h1>`), `${section} header title`);
-    const active = html.match(new RegExp(`<button[^>]*data-partner-nav="${section}"[^>]*>`));
-    assert.ok(active, `${section} nav button exists`);
+    const active = html.match(new RegExp(`<a[^>]*data-partner-nav="${section}"[^>]*>`));
+    assert.ok(active, `${section} nav link exists`);
     assert.match(active![0], /aria-current="page"/, `${section} is the active item`);
     // Non-active items carry no stale aria-current.
-    const others = (html.match(/<button[^>]*data-partner-nav="[^"]*"[^>]*>/g) ?? []).filter(
+    const others = (html.match(/<a[^>]*data-partner-nav="[^"]*"[^>]*>/g) ?? []).filter(
       (tag) => !tag.includes(`data-partner-nav="${section}"`)
     );
     assert.ok(others.length > 0);
@@ -322,16 +385,39 @@ test('the mobile drawer exists, starts closed, and is toggled by a labelled hamb
   assert.doesNotMatch(html, /data-partner-nav-backdrop/);
 });
 
-test('future modules render as disabled "Soon" slots, never as links or buttons', () => {
-  const html = renderShell('dashboard');
-  assert.match(html, /Coming soon/);
-  for (const item of PARTNER_PORTAL_PLANNED) {
-    const slot = html.match(new RegExp(`<span[^>]*data-partner-planned="${item.id}"[^>]*>`));
-    assert.ok(slot, `${item.label} has a sidebar slot`);
-    assert.match(html, new RegExp(`>${item.label}<`));
+test('every promoted section renders as a live link with its own URL and active state', () => {
+  const html = renderShell('earnings');
+  // The sidebar marks the current section…
+  const active = html.match(/<a[^>]*data-partner-nav="earnings"[^>]*>/);
+  assert.ok(active, 'Earnings is a link in the sidebar');
+  assert.match(active![0], /aria-current="page"/);
+  assert.match(active![0], /href="\/partner\/earnings"/);
+  // …the header title follows the section…
+  assert.match(html, /<h1[^>]*>Earnings<\/h1>/);
+  // …and no “Coming soon” heading or Soon badge survives anywhere in the shell
+  // (the profile menu's Account Settings slot is a separate, deliberate case).
+  assert.doesNotMatch(html, /Coming soon/);
+  assert.doesNotMatch(html, />Soon</);
+  assert.doesNotMatch(html, /data-partner-planned/);
+
+  // All seven promoted entries link to their canonical routes, in the sidebar
+  // AND in the drawer copy of the registry.
+  const expected: Array<[string, string]> = [
+    ['earnings', '/partner/earnings'],
+    ['withdrawals', '/partner/withdrawals'],
+    ['marketing-materials', '/partner/marketing'],
+    ['partner-levels', '/partner/levels'],
+    ['leaderboards', '/partner/leaderboard'],
+    ['notifications', '/partner/notifications'],
+    ['support', '/partner/support'],
+  ];
+  for (const [section, path] of expected) {
+    const link = html.match(new RegExp(`<a[^>]*data-partner-nav="${section}"[^>]*>`));
+    assert.ok(link, `${section} renders as a link`);
+    assert.match(link![0], new RegExp(`href="${path}"`), `${section} → ${path}`);
+    assert.doesNotMatch(link![0], /aria-disabled/, `${section} is not disabled`);
+    assert.ok((html.match(new RegExp(`href="${path}"`, 'g')) || []).length === 2, `${path} appears in sidebar + drawer only`);
   }
-  const soonCount = (html.match(/>Soon</g) || []).length;
-  assert.equal(soonCount, PARTNER_PORTAL_PLANNED.length * 2, 'Soon badge in sidebar + drawer, nothing more');
 });
 
 // ---------------------------------------------------------------------------

@@ -71,6 +71,14 @@ $$;
 
 `private` is not exposed by PostgREST, so the admin list is not readable over
 the API.
+* `private.is_trusted_server_or_admin()` — the ledger half of the portal gates on
+  it (`release_partner_earnings()` makes cleared commission withdrawable,
+  `admin_mark_partner_payout_paid()` pays a request out), and no migration in this
+  repository defined it. `20260919120000_partner_portal_section_reads.sql` now
+  creates the minimum — superuser, or the same `app.is_admin` claim
+  `private.is_admin()` reads, or `service_role` — **only when the function does not
+  already exist**: if your project has its own predicate for who may move money,
+  that one stays in force untouched.
 
 ## 3. Migrations, in this order
 
@@ -88,6 +96,28 @@ file is idempotent:
 | 7 | `20260918_partner_dashboard_inactive_guard.sql` | paused partners denied by the backend |
 | 8 | `20260919_growth_partner_area_contract_alignment.sql` | **required** — see below |
 | 9 | `20260920_growth_partner_application_queue.sql` | `list_growth_partner_applications` — the admin review queue (admin-only) |
+| 10 | `20260928_partner_referrals_table.sql`, `20260929_partner_referral_events_rls.sql` | `partner_referrals`, `partner_referral_events` and `growth_partners.id` — **must precede the portal sections below** |
+| 11 | `20260918035349_partner_portal_operations.sql` | the operational model the Earnings/Withdrawals/Marketing/Levels/Leaderboards/Notifications/Support sections read: `partner_earnings`, `partner_payout_requests`, `partner_level_definitions` (+ seeded tiers), `partner_notifications`, `partner_notification_preferences`, `partner_marketing_assets`, `partner_support_tickets`, `partner_support_attachments`, own-row RLS for all of it, the two private buckets, and the `get_my_partner_*` / `request_my_partner_payout` / `record_partner_subscription_commission` / `release_partner_earnings` / `admin_mark_partner_payout_paid` RPCs |
+| 12 | `20260919120000_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
+
+The two portal migrations sort earlier than they apply:
+`partner_earnings.partner_id` and the referral joins FK to
+`growth_partners(id)` / `partner_referrals` / `partner_referral_events`, which
+only exist from `20260928_partner_referrals_table.sql` /
+`20260929_partner_referral_events_rls.sql` onward. Apply them after those two.
+
+Inside that window they run on **either** `growth_partners` generation:
+`my_active_partner_id()` and `get_partner_leaderboard()` look the `status`
+column up in `information_schema` and use `is_active` alone when the table has
+no approval column — the same two-branch idiom
+`20260919_growth_partner_area_contract_alignment.sql` established, and for the
+same reason (`language sql` resolves columns at CREATE time, so an unguarded
+`gp.status` made the whole file uninstallable on a project built from this
+repository). Their storage halves are likewise conditional: with no
+`storage.buckets` (a bare Postgres, e.g. the PGlite suites) the bucket rows and
+object policies are skipped and every table and RPC above still applies. On a project where these
+two files are simply missing, every promoted section says so instead of showing
+an empty dashboard (see 7.3).
 
 **Do not apply `20260911092650_growth_partner_referred_users_production.sql` or
 `20260911092959_bind_growth_partner_referrals_private_wrapper.sql` to a project
@@ -154,6 +184,15 @@ npm run verify:growth-partner -- .env
 ```
 
 Expected tail: `The Growth Partner area is wired end to end on this project.`
+
+The verifier checks the operational model too: the seven `partner_*` tables and
+one read probe per promoted section (each probe is a read, or a write the
+function itself refuses for a key that owns no partner row — the financial
+writers are never called, a health check must not be able to move money). On a
+project where `20260918035349_partner_portal_operations.sql` has not been
+applied this fails with `partner_earnings … not found` /
+`PGRST202` lines — the same reason the seven sections print the schema hint
+(7.3), now visible before a partner has to discover it.
 
 Backend-only regression checks (no live project needed — they run the real
 migrations on PGlite):
@@ -301,17 +340,129 @@ and a quick **Logout** button (sm+ screens). On phones the header is the
 hamburger menu, the logo and the partner avatar (the avatar opens the same
 profile dropdown, where Logout lives).
 
-The **notifications dropdown** shows what is real today: the recent-activity
-feed from `get_my_partner_dashboard` (referral added / website started /
-website completed, with masked refs). Empty and loading states are honest —
-there is no notifications backend yet, so there are no unread counts or
-badges to fake; the portal therefore reads the dashboard RPC on every section
-(it also feeds the page KPIs). Dropdowns close on outside click, Escape and
-after an action, and both are keyboard/AT-labelled (`aria-expanded`,
+The **notifications dropdown** is a peek at the recent-activity feed from
+`get_my_partner_dashboard` (referral added / website started / website
+completed, with masked refs) and nothing more — no invented counts, no unread
+badge the dashboard payload cannot back up. Its footer hands off to
+`/partner/notifications`, which is where the real notification rows, their
+unread count and mark-as-read live (7.3). The portal reads the dashboard RPC on
+every section (it also feeds the page KPIs). Dropdowns close on outside click,
+Escape and after an action, and both are keyboard/AT-labelled (`aria-expanded`,
 `aria-haspopup`, `role="menu"`).
 
 Tests: the Section 2 suites above cover the header too (header structure,
 profile menu, notifications panel, `shortPartnerId`, and the click flows).
+
+### 7.3 The operational sections — Earnings, Withdrawals, Marketing Materials, Partner Levels, Leaderboards, Notifications, Support
+
+These seven sidebar entries used to be inert placeholders. They are live
+routes now, at the paths the product asked for:
+
+| Section | Path | Aliases the router still answers |
+| --- | --- | --- |
+| Earnings | `/partner/earnings` | — |
+| Withdrawals | `/partner/withdrawals` | — |
+| Marketing Materials | `/partner/marketing` | `/partner/marketing-materials` |
+| Partner Levels | `/partner/levels` | `/partner/partner-levels` |
+| Leaderboards | `/partner/leaderboard` | `/partner/leaderboards` |
+| Notifications | `/partner/notifications` | — |
+| Support | `/partner/support` | — |
+
+Nothing is disabled and no "Soon" badge remains in the shell: every entry is an
+`<a href>` (so it can be copied, opened in a tab, or deep-linked), a plain left
+click is handed to the SPA router, and the current section is marked
+`aria-current="page"` in both the sidebar and the mobile drawer.
+`tests/partnerPortalShell.test.ts` pins menu ↔ URL ↔ content sync for all
+fourteen entries; `tests/dom/partnerPortalModulesBrowserFlow.test.ts` clicks
+through the pages in jsdom.
+
+**Data path.** Each page reads through `src/lib/partnerPortalOperations.ts`,
+which calls this app's own API first and falls back to PostgREST RPCs when the
+deploy has no `/api/partner/*`:
+
+| Method + path | RPC behind it |
+| --- | --- |
+| `GET /api/partner/earnings?limit&offset` | `get_my_partner_earnings` |
+| `POST /api/partner/payout-requests` | `request_my_partner_payout` |
+| `GET /api/partner/payout-requests?limit&offset` | `get_my_partner_payout_requests` |
+| `POST /api/partner/payout-requests/cancel` | `cancel_my_partner_payout_request` |
+| `GET /api/partner/levels` | `get_my_partner_levels` |
+| `GET /api/partner/leaderboard?limit` | `get_partner_leaderboard` |
+| `GET /api/partner/notifications?limit&type` | `get_my_partner_notifications` |
+| `POST /api/partner/notifications/read` | `mark_my_partner_notifications_read` |
+| `GET`/`POST /api/partner/notification-preferences` | `get_my_partner_notification_preferences` / `update_my_partner_notification_preferences` |
+| `GET /api/partner/marketing-assets?category` | `get_partner_marketing_assets` |
+| `GET /api/partner/marketing-assets/categories` | `get_partner_marketing_asset_categories` |
+| `GET /api/partner/marketing-assets/:id/download` | signed URL from the `partner-marketing-assets` bucket, after the id is checked against the caller's published list |
+| `GET /api/partner/support-tickets?limit&status` | `get_my_partner_support_tickets` |
+| `POST /api/partner/support-tickets` | `submit_my_partner_support_ticket` |
+
+The routes are the same code in `server.ts` and `api/index.ts`
+(`server/partnerPortalRoutes.ts`), they forward the caller's own bearer token,
+and they never accept a partner id: the SQL derives it from the session, so a
+partner cannot read another partner's wallet, tickets or notifications, and the
+API layer adds no privilege of its own. Input bounds are mirrored from the
+table checks (₹500 minimum payout, 2–120-character destination, 3–180
+subject, 10–5000 message, ≤100 ids per mark-read, limits clamped to 200/100)
+so a bad request is refused with the database's own copy rather than a
+500-level surprise. Failure mapping is part of the contract:
+`schema_not_applied` (501) when the migrations above are missing, 403 for a
+non-partner, 400 for a rule the SQL refused, 401 for a dead session, 502 when
+Postgres is unreachable — and the pages render those as an explanation with a
+Retry, never as a spinner or a zero.
+
+**A paid payout stays spent.** Ledger rows keep the status
+`available_for_withdrawal` after the desk pays them (nothing allocates a payout
+against particular rows), and both `get_my_partner_earnings()` and
+`request_my_partner_payout()` originally netted off only requests that were
+*still open* — so marking ₹1,500 paid put ₹1,500 back in the wallet and a second
+₹1,500 request sailed through the ceiling check: the same commission could be
+withdrawn repeatedly. `20260919120000` redefines both functions (same
+signatures, so grants and callers are untouched) to net off every payout request
+the desk has not cancelled or rejected, and adds `cleared_paise` — the gross
+past-clearance figure — so the Withdrawals hero can still say "₹1,250 cleared ·
+₹600 reserved by an open request" next to a ₹650 wallet without the page
+subtracting the reservation twice. `tests/partnerPortalSectionSql.test.ts`
+re-requests the paid money and expects `Withdrawal exceeds available balance`.
+
+**Marketing downloads are not public.** `partner-support` (created by
+`20260918035349`) and `partner-marketing-assets` (created by the 20260919120000
+follow-up, which existed as a column default but as no bucket) are both private,
+and neither carries a storage policy for `authenticated`: a download link is signed per request
+for exactly one file the caller is allowed to see (60 seconds), and only after
+the asset id appears in `get_partner_marketing_assets` for that partner.
+Without storage configured the route answers 503 `storage_unavailable` and the
+row says so inline.
+
+**The local gateway does not run this SQL — a dedicated suite does.**
+`LOCAL_GROWTH_CHAIN` (`server/localSupabase.ts`) deliberately stops at
+`20261006`: adding eight more `partner_*` tables would silently widen the
+Part 3 guards that enumerate which tables can hold partner/referral state, and
+those invariants belong to that phase, not to the portal. So
+`tests/partnerPortalSectionSql.test.ts` replays both migrations on PGlite
+against that same chain and asserts the contract the pages rely on — the ₹500
+floor, one open request at a time, cancel limited to the caller's own row,
+ticket bounds, own-row RLS, the leaderboard's ranks and the tier unlock rules.
+
+That means `npm run dev` with no Supabase project shows `PARTNER_SCHEMA_HINT` on
+all seven sections — the honest state for a project without the migrations,
+never a fake wallet. Against a real project, put the payout lifecycle through in
+the order the backend guarantees it:
+
+```sql
+-- 1. a cleared subscription payment earns 15% (worker / SQL Editor)
+select public.record_partner_subscription_commission('<partner_referrals.id>', 'inv-1001', 1000000, now());
+-- 2. after the 7-day clearance the row becomes withdrawable (service_role only)
+select public.release_partner_earnings(now() + interval '8 days');
+-- 3. the partner requests it on /partner/withdrawals — ₹500 floor, one at a time
+```
+
+Tests: `tests/partnerPortalOperations.test.ts` (transport priority, fallback
+rules, exact RPC argument names, normalizers, error translation, the ₹500 floor
+mirrored from the SQL), `tests/partnerPortalRoutesApi.test.ts` (every registered
+route: 401 before any parsing, 503 with no project, param binding, status
+mapping, no partner id in any path or body), and the jsdom flows in
+`tests/dom/partnerPortalModulesBrowserFlow.test.ts`.
 
 ## Troubleshooting
 
@@ -322,6 +473,8 @@ profile menu, notifications panel, `shortPartnerId`, and the click flows).
 | "Growth Partners only" | signed in, but no `growth_partners` row | step 4 |
 | "Growth Partner access is paused" | `is_active = false` | re-provision with `p_active => true` |
 | `PGRST202` / "function … not found" in the verifier | a migration was never applied | step 3, in order |
+| Every operational section says "These records need the partner portal migrations" | `20260918035349_partner_portal_operations.sql` (and the 20260919120000 follow-up) are missing, or they were applied before `20260928`/`20260929` | step 3, in order — see 7.3 for the dependency |
+| Marketing download says storage is not configured (503) | no `partner-marketing-assets` bucket / no service-role storage credentials | apply the portal migration and set `SUPABASE_SERVICE_ROLE_KEY`; locally this refusal is expected |
 | "Could not load the Growth Partner area" | RPC error (see the message) | check the verifier output for the failing function |
 
 ## Known, intentional gaps
@@ -950,4 +1103,16 @@ required. No production migration or data modification has been performed.
 
 ### Sections 40–41 — final acceptance and scope
 
-Run `npm run test:partner:acceptance` for the integrated local 15-step journey, or `npm run test:partner` for all 364 partner-related tests. Evidence and remaining production/browser checks: `GROWTH_PARTNER_FINAL_ACCEPTANCE.md`. Financial/payout/ranking modules remain out of scope; no new migration was introduced for this acceptance work.
+Run `npm run test:partner:acceptance` for the integrated local 15-step journey, or `npm run test:partner` for every partner-related suite (its test count moves as coverage is added, so it is deliberately not quoted here). Evidence and remaining production/browser checks: `GROWTH_PARTNER_FINAL_ACCEPTANCE.md`. Financial/payout/ranking modules remain out of scope; no new migration was introduced for this acceptance work.
+
+### Section 42 — the seven planned modules became live
+
+The seven sidebar entries listed in 7.3 are no longer placeholders: the shell's
+planned-slot registry and its disabled/`Soon` rendering were deleted, each
+section got a real page under `src/components/partner/`, a real path in
+`src/lib/router.ts`, and a real read/write path
+(`src/lib/partnerPortalOperations.ts` → `/api/partner/*` → the section RPCs).
+`20260919120000_partner_portal_section_reads.sql` is the one new migration this
+needed; like its predecessor it has **not** been applied to any project by these
+code changes — applying migrations stays an operator step (§3). No production
+data was modified.

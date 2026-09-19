@@ -121,8 +121,12 @@ test('Section 40: all fifteen acceptance steps through React, real HTTP/Auth/RPC
     await wait(()=>!!host.querySelector('[aria-label="Referral summary"]'),'dashboard overview');passed(3);
     assert.ok(host.textContent!.includes(code));
     assert.ok(!host.textContent!.includes(otherCode));passed(4);
-    // Future modules are labels only: no link, button, input or live control.
-    for(const item of host.querySelectorAll('[data-partner-planned]'))assert.equal(item.querySelector('a,button,input'),null);
+    // No disabled placeholder slots survive: every promoted module is a real
+    // anchor to its canonical route (the sidebar is one live registry now).
+    assert.equal(host.querySelectorAll('[data-partner-planned]').length,0);
+    assert.ok(!(host.textContent||'').includes('Coming soon'));
+    for(const [section,path] of [['earnings','/partner/earnings'],['withdrawals','/partner/withdrawals'],['marketing-materials','/partner/marketing'],['partner-levels','/partner/levels'],['leaderboards','/partner/leaderboard'],['notifications','/partner/notifications'],['support','/partner/support']])
+      {const link=host.querySelector(`[data-partner-nav="${section}"]`);assert.equal(link?.tagName,'A');assert.equal(link?.getAttribute('href'),path);}
     await click(host.querySelector('[data-partner-nav="referral-code"]'));
     await wait(()=>!!host.querySelector('[aria-label="Your referral link"]'),'referral-link screen');
     await click(button('Copy Link'));

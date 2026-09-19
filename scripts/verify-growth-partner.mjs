@@ -13,14 +13,20 @@
 //      placeholders — without them the app runs in mock mode and the area
 //      shows "Growth Partner area needs a live connection".
 //   2. tables: growth_partners / growth_partner_applications /
-//      growth_onboarding exist and are exposed over PostgREST.
+//      growth_onboarding, plus the operational tables the Earnings,
+//      Withdrawals, Marketing, Levels, Leaderboards, Notifications and Support
+//      sections read, exist and are exposed over PostgREST.
 //   3. schema generation: reports whether growth_partners carries is_active
 //      (the schema this repository ships) or the older status/partner_code
 //      shape, because the two need different function bodies.
 //   4. functions the UI calls: get_my_growth_partner, get_my_partner_dashboard,
 //      get_my_partner_referrals, get_my_partner_performance,
-//      submit_growth_partner_application, review_growth_partner_application.
-//      A missing function (PGRST202) means a migration was never applied.
+//      submit_growth_partner_application, review_growth_partner_application,
+//      and one probe per operational section (earnings, payouts, levels,
+//      leaderboard, notifications, preferences, assets, tickets). Every probe
+//      is a READ or a write that cannot reach a row for this key, so the
+//      verifier never moves money or edits data; a missing function (PGRST202)
+//      means a migration was never applied.
 //   5. fail-closed: an anonymous caller must NOT be able to read
 //      get_my_growth_partner().
 //   6. queue: pending applications + approved partners, so an admin can see
@@ -115,7 +121,20 @@ function classify(error) {
 }
 
 // --- 2. tables --------------------------------------------------------------
-for (const table of ['growth_partners', 'growth_partner_applications', 'growth_onboarding']) {
+for (const table of [
+  'growth_partners',
+  'growth_partner_applications',
+  'growth_onboarding',
+  // The operational model behind the promoted sidebar sections. Their absence
+  // is precisely the state where every section prints the schema hint.
+  'partner_earnings',
+  'partner_payout_requests',
+  'partner_level_definitions',
+  'partner_notifications',
+  'partner_notification_preferences',
+  'partner_marketing_assets',
+  'partner_support_tickets',
+]) {
   const { error } = await admin.from(table).select('*', { count: 'exact', head: true });
   const kind = error ? classify(error) : null;
   record(
@@ -150,6 +169,24 @@ const FUNCTION_CHECKS = [
   ['get_my_partner_performance', {}, 'Performance section'],
   ['submit_growth_partner_application', { p_full_name: '', p_phone: null, p_kyc_document_type: '', p_kyc_document_reference: '' }, 'partner sign-up form'],
   ['review_growth_partner_application', { p_application_id: '00000000-0000-4000-8000-000000000000', p_approve: false }, 'admin KYC review'],
+  // One probe per promoted section. Deliberately: reads, or writes that the
+  // function itself refuses for a key that owns no partner row. The financial
+  // writers (record_partner_subscription_commission, release_partner_earnings,
+  // admin_mark_partner_payout_paid) are NEVER called here — a health check must
+  // not be able to move money.
+  ['get_my_partner_earnings', { p_limit: 1, p_offset: 0 }, 'Earnings section (/partner/earnings)'],
+  ['get_my_partner_payout_requests', { p_limit: 1, p_offset: 0 }, 'Withdrawals section — request history'],
+  ['request_my_partner_payout', { p_amount_paise: 0, p_method: 'upi', p_destination_label: '' }, 'Withdrawals section — payout request (refused here: below the floor)'],
+  ['cancel_my_partner_payout_request', { p_request_id: '00000000-0000-4000-8000-000000000000' }, 'Withdrawals section — cancel (no such open request)'],
+  ['get_my_partner_levels', {}, 'Partner Levels section'],
+  ['get_partner_leaderboard', { p_limit: 1 }, 'Leaderboards section'],
+  ['get_my_partner_notifications', { p_limit: 1, p_type: null }, 'Notifications section'],
+  ['mark_my_partner_notifications_read', { p_ids: null }, 'Notifications section — mark read (touches this caller only)'],
+  ['get_my_partner_notification_preferences', {}, 'Notifications section — delivery toggles'],
+  ['get_partner_marketing_assets', { p_category: null }, 'Marketing Materials section'],
+  ['get_partner_marketing_asset_categories', {}, 'Marketing Materials section — category counts'],
+  ['get_my_partner_support_tickets', { p_limit: 1, p_status: null }, 'Support section — my tickets'],
+  ['submit_my_partner_support_ticket', { p_subject: 'x', p_message: 'y' }, 'Support section — ticket form (refused here: subject too short)'],
 ];
 
 for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
