@@ -114,6 +114,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   const [formShowDuration, setFormShowDuration] = useState<boolean>(true);
   const [formIcon, setFormIcon] = useState<string>('Scissors');
   const [formError, setFormError] = useState<string>('');
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
 
   // Extract all distinct categories
   const allCategories = ['All', ...Array.from(new Set(services.map((s) => s.category || 'General')))];
@@ -164,6 +165,16 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormIcon(srv.icon || 'Scissors');
     setFormError('');
     setIsModalOpen(true);
+  };
+
+  const handleGenerateDescription = async () => {
+    if (!formName.trim()) { setFormError('Enter a service name first to generate its description.'); return; }
+    setIsGeneratingDescription(true);
+    try {
+      const response = await fetch('/api/generate-service-description', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serviceName: formName, category: formCategory === 'custom' ? formCustomCategory : formCategory }) });
+      if (response.ok) { const data = await response.json(); setFormDescription(data.description || ''); }
+    } catch { /* keep the editor usable if AI is unavailable */ }
+    setIsGeneratingDescription(false);
   };
 
   const handleSaveService = (e: React.FormEvent) => {
@@ -558,42 +569,6 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                         </span>
                       </div>
 
-                      {/* Visual Switch / Checkbox Toggle for showDuration */}
-                      <label
-                        onClick={(e) => e.stopPropagation()}
-                        className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-colors select-none ${
-                          isDurationVisible
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                        }`}
-                        title={
-                          isDurationVisible
-                            ? 'Duration is shown on public website. Click to hide.'
-                            : 'Duration is hidden on public website. Click to show.'
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isDurationVisible}
-                          onChange={(e) => handleToggleShowDuration(srv.id, e)}
-                          className="sr-only"
-                          aria-label={`Show duration on website for ${srv.name}`}
-                        />
-                        <div
-                          className={`w-7 h-4 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
-                            isDurationVisible ? 'bg-emerald-600' : 'bg-gray-300'
-                          }`}
-                        >
-                          <div
-                            className={`bg-white w-3 h-3 rounded-full shadow-xs transform transition-transform duration-200 ease-in-out ${
-                              isDurationVisible ? 'translate-x-3' : 'translate-x-0'
-                            }`}
-                          />
-                        </div>
-                        <span className="text-[11px] font-semibold whitespace-nowrap">
-                          {isDurationVisible ? 'Show Duration' : 'Duration Hidden'}
-                        </span>
-                      </label>
                     </div>
                   </div>
 
@@ -805,9 +780,13 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
                 {/* Description */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Service Description
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-gray-700">Service Description</label>
+                    <button type="button" onClick={handleGenerateDescription} disabled={isGeneratingDescription} className="text-[11px] font-bold text-purple-700 hover:text-purple-900 disabled:opacity-50 flex items-center gap-1">
+                      <Sparkles className={`w-3.5 h-3.5 ${isGeneratingDescription ? 'animate-spin' : ''}`} />
+                      {isGeneratingDescription ? 'Writing...' : 'AI write 1–2 lines'}
+                    </button>
+                  </div>
                   <textarea
                     rows={3}
                     value={formDescription}

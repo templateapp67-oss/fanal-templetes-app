@@ -22,8 +22,7 @@ import { BookingStatusBadge } from './BookingStatusBadge';
 import { AIClientReengagement } from './AIClientReengagement';
 import { PromotionalBannerConfigSection } from './PromotionalBannerConfigSection';
 import { BackupManagerModal } from './BackupManagerModal';
-import { TikTokIcon } from './TikTokIcon';
-import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
+import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
 
 interface SaaSDashboardProps {
   ownerId?: string;
@@ -1859,53 +1858,6 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* 3. TIKTOK */}
-                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-slate-800 transition-all">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold font-mono-caps text-gray-800 flex items-center gap-1.5">
-                      <span className="w-5 h-5 rounded-md bg-slate-900 text-white flex items-center justify-center text-xs shadow-2xs">
-                        <TikTokIcon className="w-3.5 h-3.5 text-cyan-300" />
-                      </span>
-                      <span>TikTok</span>
-                    </label>
-                    {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) && (
-                      <a
-                        href={formatTikTokUrl(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] font-bold text-slate-900 hover:text-cyan-600 hover:underline flex items-center gap-0.5"
-                        title="Open in TikTok"
-                      >
-                        <span>Test Link</span>
-                        <span className="material-symbols-outlined text-xs">open_in_new</span>
-                      </a>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setProfile((prev) => ({ 
-                        ...prev, 
-                        tiktokProfile: val, 
-                        tiktokHandle: val, 
-                        tiktokUrl: val 
-                      }));
-                    }}
-                    placeholder="e.g. @artsbyuma or url"
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-slate-900/20 focus:border-slate-900 outline-none font-mono"
-                    id="salon-info-tiktok-input"
-                  />
-                  <div className="text-[10px] text-gray-400 mt-1.5 flex items-center justify-between">
-                    <span>Handle or TikTok link</span>
-                    {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) && (
-                      <span className="text-slate-800 font-mono font-medium truncate max-w-[150px]">
-                        {displaySocialHandle(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl)}
-                      </span>
-                    )}
-                  </div>
-                </div>
               </div>
 
               {/* LIVE WEBSITE HEADER PREVIEW STRIP */}

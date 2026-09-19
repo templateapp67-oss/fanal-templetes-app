@@ -740,13 +740,14 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
   // AI Bio Generation Route with Gemini
   app.post("/api/generate-bio", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     try {
-      const { businessName, businessType, ownerName, vibe, specialties } = req.body;
+      const { businessName, businessType, ownerName, vibe, specialties, targetCustomers = 'Luxury', storyTone = 'Professional' } = req.body;
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         return res.json({
-          tagline: `Elevating ${businessType.replace('_', ' ')} with bespoke luxury & precision care.`,
-          bio: `Welcome to ${businessName}, founded by ${ownerName}. We are a modern sanctuary dedicated to ${specialties || 'exceptional salon services'}. Blending a ${vibe || 'luxury'} aesthetic with high-performance organic products, our mission is to make every client feel renewed and confident.`
+          tagline: `Elevating ${businessType.replace('_', ' ')} with bespoke ${targetCustomers.toLowerCase()} care.`,
+          taglines: [`Elevating ${businessType.replace('_', ' ')} with bespoke ${targetCustomers.toLowerCase()} care.`, `Where expert ${specialties || 'beauty care'} meets confidence.`, `Your ${targetCustomers.toLowerCase()} destination for beautiful results.`, `Feel renewed. Look radiant. Love your time with us.`, `Beauty, thoughtfully crafted around you.`],
+          bio: `Welcome to ${businessName}, founded by ${ownerName}. We create a calm and welcoming space where every guest can pause, recharge, and feel genuinely cared for. Our team specialises in ${specialties || 'exceptional salon services'}, combining thoughtful technique with authentic attention to your individual needs. From the moment you arrive, we listen carefully, explain each step, and tailor every experience around your comfort and goals. Whether you are visiting for a fresh new look, restorative care, or a moment of self-care, our promise is simple: honest guidance, beautiful results, and care that feels personal. We believe confidence grows when expertise is delivered with warmth, respect, and consistency, and we are proud to make that belief part of every visit.`
         });
       }
 
@@ -758,15 +759,19 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
           },
         },
       });
-      const prompt = `Write a high-converting tagline (max 10 words) and a compelling salon story/about bio (2-3 sentences) for a beauty business with the following details:
+      const prompt = `Write a high-converting tagline (max 10 words) and a compelling salon story/about bio of 100-150 words for a beauty business with the following details:
 Salon Name: ${businessName}
 Category: ${businessType}
 Founder: ${ownerName}
 Atmosphere/Vibe: ${vibe}
+Target customers: ${targetCustomers}
+Story tone: ${storyTone}
 Specialties: ${specialties}
 
+The About Us story must focus on customer comfort and authentic care, use the requested tone, and be between 100 and 150 words.
+
 Return strictly valid JSON in this format:
-{"tagline": "...", "bio": "..."}`;
+{"taglines": ["...", "...", "...", "...", "..."], "tagline": "...", "bio": "..."}`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -789,6 +794,38 @@ Return strictly valid JSON in this format:
         bio: `Welcome to ${req.body.businessName || 'our studio'}. Our passionate team offers bespoke salon treatments designed to accentuate your unique natural style.`
       });
     }
+  }));
+
+  app.post("/api/recommend-brand-identity", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    const focus = String(req.body?.focus || 'beauty and wellness').trim();
+    const businessType = String(req.body?.businessType || 'salon').trim();
+    const presets: Record<string, string> = {
+      'aura': 'Aura Sanctuary fits a modern luxury wellness template: warm taupe, muted champagne, emerald green, and soft cream. Use minimalist layouts, soft arches, warm lighting, natural stone, and refined metallic accents. Lead with premium self-care, hydrafacials, specialised hair treatments, and stress relief, followed by a calm service menu, trust signals, and an elegant consultation CTA.',
+      'luxury': 'Aura Sanctuary fits a modern luxury wellness template: warm taupe, muted champagne, emerald green, and soft cream. Use minimalist layouts, soft arches, warm lighting, natural stone, and refined metallic accents. Lead with premium self-care, hydrafacials, specialised hair treatments, and stress relief, followed by a calm service menu, trust signals, and an elegant consultation CTA.',
+      'botanica': 'Botanica Hair & Skin Lab fits a fresh, eco-conscious template: sage green, terracotta, olive, and warm sand with natural textures. Use indoor greenery, warm wood, clear glass product imagery, and calm editorial typography. Lead with organic ingredients and sustainable care, followed by herbal rituals, clean-beauty services, testimonials, and a gentle consultation CTA.',
+      'organic': 'Botanica Hair & Skin Lab fits a fresh, eco-conscious template: sage green, terracotta, olive, and warm sand with natural textures. Use indoor greenery, warm wood, clear glass product imagery, and calm editorial typography. Lead with organic ingredients and sustainable care, followed by herbal rituals, clean-beauty services, testimonials, and a gentle consultation CTA.',
+      'cut': 'The Cut & Curve Co. fits a modern, vibrant precision template: matte black, slate gray, warm white, and soft rose gold with a restrained neon accent. Use high-contrast typography, an edge-to-edge transformation hero, bold service cards, and a prominent express-booking CTA. Pair industrial-chic imagery with client before-and-after reels.',
+      'skin': 'Choose a clean clinical template with ivory, sage, and charcoal. Use generous whitespace, consultation-first messaging, results-led imagery, and clear before-and-after service sections.',
+      'barber': 'Choose a bold editorial template with charcoal, warm tan, and brass. Lead with a strong hero, service cards with pricing, and a compact booking call-to-action.',
+      'herbal': 'Choose a calm botanical template with sand, deep forest, and terracotta. Use soft sections, ingredient storytelling, treatment rituals, and an earthy gallery.'
+    };
+    const match = Object.keys(presets).find(k => focus.toLowerCase().includes(k));
+    if (!process.env.GEMINI_API_KEY) return res.json({ advice: presets[match || 'herbal'] + ` Best fit for your ${businessType} brand.` });
+    try { const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `For a Nexora ${businessType} website focused on ${focus}, recommend one template style, a 3-color palette with hex codes, and a layout in 70 words. Be practical and specific.` }); return res.json({ advice: r.text?.trim() || presets[match || 'herbal'] }); } catch { return res.json({ advice: presets[match || 'herbal'] }); }
+  }));
+
+  // Generate concise service descriptions for the website menu
+  app.post("/api/generate-service-description", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    const { serviceName, category } = req.body || {};
+    const name = String(serviceName || 'beauty treatment').trim();
+    const categoryName = String(category || 'Beauty & Wellness').trim();
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.json({ description: `${name} is a thoughtfully tailored ${categoryName.toLowerCase()} treatment designed to refresh, enhance, and leave you feeling confident. Enjoy expert care, quality products, and beautiful results in a comfortable setting.` });
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Write one polished, inviting description in 1-2 sentences (maximum 35 words) for the salon service "${name}" in the category "${categoryName}". Mention its main benefit. Return only the description, no quotes or headings.` });
+      return res.json({ description: response.text?.trim() || `${name} delivers expert care and beautiful results in a comfortable, welcoming setting.` });
+    } catch { return res.json({ description: `${name} is a thoughtfully tailored ${categoryName.toLowerCase()} treatment designed to refresh, enhance, and leave you feeling confident.` }); }
   }));
 
   // Promotional Image Generation Endpoint with Gemini
