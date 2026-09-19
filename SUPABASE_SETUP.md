@@ -228,7 +228,7 @@ remaining symptoms as follows:
 | Console / toast symptom | Root cause | Permanent fix |
 |---|---|---|
 | `permission denied for table …` (401/`42501`), "new row violates row-level security policy" (403) | The `authenticated` role has no GRANTs on the tables, or RLS policies are missing/broken — including `profiles` / `owner_editor_state`, which the CURRENT editor transaction writes through `sync_owner_contact()` | Apply **all** migrations — in particular `20261010_salon_profile_rls_and_grants.sql` (salon-profile + editor-state policies/grants, idempotent, guarded per column) and `20260907_owner_save_grants.sql` — or just run **`supabase/rls-restore-production.sql`** (idempotent repair: re-enables RLS, recreates the owner-scoped policies, re-grants). Then sign out/in. |
-| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, laptop slept, refresh token rotated elsewhere) | Automatic: the save path refreshes the session before the write and once more if the write is rejected, then retries. Only a session that cannot be refreshed at all asks the owner to sign in again — with a plain-language notice in the editor and a toast that no longer blames the database (`SESSION_EXPIRED_SAVE_MESSAGE` in `src/lib/autoSave.ts`). Edits stay in the local draft meanwhile. |
+| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, laptop slept, refresh token rotated elsewhere) | Automatic: the save path refreshes the session before the write and, if the **direct table write** or the save RPC is still refused as unauthenticated, refreshes once more and retries that same write (once) before degrading to the service-role fallback. Only a session that cannot be refreshed at all asks the owner to sign in again — with a plain-language notice in the editor and a toast that no longer blames the database (`SESSION_EXPIRED_SAVE_MESSAGE` in `src/lib/autoSave.ts`). Edits stay in the local draft meanwhile. |
 | `relation "public.…" does not exist` (`42P01`) | Migrations never applied to this project | Run `supabase db push` (or paste `supabase/migrations/*.sql` into the SQL Editor). |
 | `POST /api/website/save … HTTP 404` | The save API route is not on this deployment (older build) | Redeploy — the route ships in `api/index.ts` / `server.ts`. Edits stay on the device until then. |
 | `Failed to fetch` / "blocked by CORS" | Cross-origin caller (split dev ports, preview/custom domain) hitting the API before CORS headers existed | Fixed: `server/cors.ts` (mounted in both entrypoints) answers the preflight and echoes the origin. Also cross-check `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — a wrong project URL makes the DIRECT sync fail; the service-role fallback still saves. |
@@ -262,14 +262,18 @@ must be right for `profiles` and `owner_editor_state`:
 2. **Policies** — RLS enabled with owner-scoped policies, including the
    combined `"Users can insert/update their own profile"` policy
    (`FOR ALL TO authenticated USING (auth.uid() = <owner column>) WITH CHECK (…)`).
-   On this schema the owner column is `profiles.id`; the classic
-   `website_profiles` / `salon_profiles` shape calls the same column `user_id`
-   and the migration detects which one exists.
+   The repair covers whichever salon-profile table the project actually has —
+   `profiles` (this repo), `salon_profiles` or `website_profiles` — and detects
+   the owner column per table: `user_id` on the classic shape, `id` here.
 
 Session handling is not part of the schema problem: the client refreshes a
-stale/expiring access token before the write and retries once after an
-auth-rejection (`src/lib/authSession.ts`, `src/lib/ownerEditorState.ts`), and
-only surfaces "sign in again" when the refresh itself fails.
+stale/expiring access token before the write, and after an auth-rejection it
+refreshes once more and retries the same write — the direct table sync
+(`runSalonSavePipeline`), the save RPC (`src/lib/ownerEditorState.ts`) or the
+service-role fallback — before reporting anything (`src/lib/authSession.ts`).
+Only a session that cannot be refreshed is surfaced as "sign in again", with
+the in-editor notice; a GRANT/RLS rejection is deterministic and is reported
+immediately instead (retrying it would change nothing).
 
 ### 9b. Isolating an RLS problem manually (optional — testing only)
 

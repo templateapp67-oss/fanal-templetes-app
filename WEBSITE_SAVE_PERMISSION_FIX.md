@@ -26,6 +26,7 @@ wrong with the database.
 | Where | What it does now |
 | --- | --- |
 | `src/lib/authSession.ts` (new) | `ensureFreshSession(client)` returns a usable token, refreshing first when the token is expired or within a 120s margin. A refresh that fails while the token is still valid keeps that token instead of failing the save. `refreshSessionForSave()` forces a refresh for the retry. Never throws. |
+| `src/lib/autoSave.ts` (`runSalonSavePipeline`) | If the **direct table write** (`syncSalonToSupabase`) is refused as unauthenticated, refresh the session and retry that write once with the fresh token; only if it fails again does the pipeline degrade to the service-role fallback, which then reuses the same fresh token. |
 | `src/lib/ownerEditorState.ts` | Before the `save_owner_editor_state` RPC, refresh the session; if the RPC is still rejected as unauthenticated, refresh once and retry the same transaction before reporting a failure. Only *session* failures are retried — a missing GRANT/RLS rejection is deterministic and is surfaced immediately. |
 | `src/lib/autoSave.ts` | `runSalonSavePipeline` accepts a `refreshSession` hook and uses the fresh token for the service-role fallback (`POST /api/website/save`, which verifies the token against Supabase Auth). New `isSessionExpiryFailure()` separates session expiry from grants/RLS; `SESSION_EXPIRED_SAVE_MESSAGE` is the new owner-facing copy. |
 | `src/App.tsx` | The save pre-flight (and the hydration pre-check) now refresh the session. A save that still cannot authenticate flips `saveNeedsSignIn`, which the editor renders as a notice; it clears on a successful save or a fresh sign-in / token refresh. |
@@ -73,9 +74,11 @@ a project ends up with tables but no privileges.
      using (auth.uid() = id) with check (auth.uid() = id);
    ```
 
-   The owner column is detected: `user_id` when the project uses the classic
-   `website_profiles` / `salon_profiles` shape, otherwise `id` (this schema).
-   The four canonical `profiles_*_owner` policies are recreated as well.
+   The repair is applied to whichever salon-profile table the project has —
+   `profiles` (this repo), `salon_profiles` or `website_profiles` — and the
+   owner column is detected per table: `user_id` when present (the classic
+   shape the report names), otherwise `id`. The four canonical
+   `<table>_*_owner` policies are recreated as well.
 3. Applies `GRANT ALL` (the clause the incident report asks an operator to
    confirm) and immediately revokes the privileges that are **not** row-scoped:
 
@@ -134,7 +137,7 @@ select count(*) from public.profiles where id is distinct from auth.uid();
 
 * `tests/authSessionRefresh.test.ts` — refresh-before-save, keep-a-still-valid-token, session-vs-RLS classification, toast copy.
 * `tests/ownerEditorStateRefresh.test.ts` — pre-flight refresh, refresh-and-retry on `JWT expired`, no retry for grants/RLS errors, no-auth-client clients still save.
-* `tests/savePipeline.test.ts` — the service-role fallback uses the refreshed token and does not refresh on non-auth failures.
-* `tests/salonProfileRlsMigration.test.ts` — runs migration 20261010 in PGlite: the requested policy exists, the owner can CRUD their own row, another owner cannot, idempotency, and a minimal schema without optional columns still applies.
+* `tests/savePipeline.test.ts` — the direct table write is retried once with the refreshed token, the service-role fallback reuses it, and non-auth failures never trigger a refresh.
+* `tests/salonProfileRlsMigration.test.ts` — runs migration 20261010 in PGlite: the requested policy exists, the owner can CRUD their own row, another owner cannot, idempotency, a minimal schema without optional columns still applies, and a project whose table is literally named `salon_profiles` (owner column `user_id`) gets the reported policy + `GRANT ALL` verbatim.
 * `tests/rlsRestoreProductionScript.test.ts` — the operator repair script restores RLS/policies/grants and is safe to re-run.
 * `tests/dom/websiteEditorSessionNotice.test.ts` — the editor notice renders with both actions and disappears for a healthy session.

@@ -844,6 +844,26 @@ export async function runSalonSavePipeline(
     };
   }
 
+  // Refresh the caller's session once, returning the new access token (or null
+  // when the hook is absent / fails). Never throws: a failed refresh must not
+  // mask the original save error.
+  let sessionRefreshed = false;
+  const refreshOnce = async (): Promise<string | null> => {
+    if (!options.refreshSession) return null;
+    try {
+      const refreshed = await options.refreshSession();
+      const token = refreshed && typeof refreshed === 'object' ? refreshed.accessToken : undefined;
+      if (typeof token === 'string' && token) return token;
+      console.warn(
+        '[Nexora Sync] Session refresh did not return an access token — continuing with the current one.'
+      );
+      return null;
+    } catch (err) {
+      console.warn('[Nexora Sync] Session refresh failed:', describeError(err));
+      return null;
+    }
+  };
+
   // ---- 1) Direct Supabase client sync ------------------------------------
   let cloud: SalonSyncResult;
   try {
@@ -857,6 +877,40 @@ export async function runSalonSavePipeline(
       `direct Supabase sync threw (tables: profiles, services, stylists, loyalty_config, loyalty_rewards): ${detail}`
     );
     cloud = { ok: false, errors: [`direct supabase sync threw: ${detail}`], blockedByAuth: false };
+  }
+
+  // ---- 1b) Session-expiry recovery for the DIRECT (table) write -----------
+  // A rejected JWT is the one failure a refresh can fix: PostgREST refuses the
+  // statement before any policy is consulted, so the owner sees a database
+  // error for what is really a stale session. Refresh once and retry the SAME
+  // sync with the fresh token before degrading to the service-role fallback.
+  // Deterministic RLS/GRANT rejections are deliberately NOT retried.
+  if (
+    !cloud.ok &&
+    !sessionRefreshed &&
+    options.refreshSession &&
+    cloud.errors.some((e) => isSessionExpiryFailure(e))
+  ) {
+    const token = await refreshOnce();
+    if (token) {
+      sessionRefreshed = true;
+      apiAccessToken = token;
+      console.info('[Nexora Sync] Direct sync was rejected as unauthenticated — refreshed the session and retrying it once.');
+      try {
+        const retried = await sync(payload, { deleteRemoved: options.deleteRemoved });
+        cloud = retried.ok
+          ? retried
+          : {
+              ok: false,
+              errors: [...cloud.errors, ...retried.errors],
+              blockedByAuth: retried.blockedByAuth ?? cloud.blockedByAuth,
+            };
+      } catch (err) {
+        const detail = describeError(err);
+        console.error('[Nexora Sync Error]:', `direct Supabase sync retry threw: ${detail}`);
+        cloud = { ok: false, errors: [...cloud.errors, detail], blockedByAuth: cloud.blockedByAuth };
+      }
+    }
   }
 
   if (cloud.ok) {
@@ -888,23 +942,12 @@ export async function runSalonSavePipeline(
     // writes, so send it a FRESH token: refresh once here instead of letting a
     // recoverable session be reported as a permission problem. Failures are
     // non-fatal — the original token is simply kept.
-    if (cloud.blockedByAuth && options.refreshSession) {
-      try {
-        const refreshed = await options.refreshSession();
-        const token = refreshed && typeof refreshed === 'object' ? refreshed.accessToken : undefined;
-        if (typeof token === 'string' && token) {
-          apiAccessToken = token;
-          console.info('[Nexora Sync] Refreshed the Supabase session before the service-role fallback save.');
-        } else {
-          console.warn(
-            '[Nexora Sync] Session refresh before the service-role fallback did not return a token — using the current one.'
-          );
-        }
-      } catch (err) {
-        console.warn(
-          '[Nexora Sync] Session refresh before the service-role fallback failed:',
-          describeError(err)
-        );
+    if (cloud.blockedByAuth && !sessionRefreshed) {
+      const token = await refreshOnce();
+      if (token) {
+        apiAccessToken = token;
+        sessionRefreshed = true;
+        console.info('[Nexora Sync] Refreshed the Supabase session before the service-role fallback save.');
       }
     }
     const api = await saveViaApi(payload);

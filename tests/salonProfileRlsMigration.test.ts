@@ -100,6 +100,28 @@ async function schemaDb(): Promise<PGlite> {
   return db;
 }
 
+/** The classic deployment shape: the same logical table named `salon_profiles`. */
+async function classicSchemaDb(): Promise<PGlite> {
+  const db = new PGlite();
+  await db.exec(`
+    create role anon;
+    create role authenticated;
+    create schema auth;
+    create table auth.users (id uuid primary key);
+    create function auth.uid() returns uuid language sql stable as
+      $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+
+    create table public.salon_profiles (
+      user_id uuid primary key references auth.users(id) on delete cascade,
+      full_name text,
+      phone text,
+      city text
+    );
+    insert into auth.users values ('${OWNER}'), ('${OTHER_OWNER}');
+  `);
+  return db;
+}
+
 /** Run SQL as a signed-in PostgREST caller (auth.uid() = userId). */
 async function asUser(db: any, userId: string | null, sql: string, params?: any[]) {
   await db.exec('reset role');
@@ -306,6 +328,73 @@ test('a minimal profiles schema (no optional columns, no editor state) still app
       [OWNER]
     );
     assert.equal(row.rows[0].full_name, 'Uma Updated');
+  } finally {
+    await db.close();
+  }
+});
+
+test('a project whose table is named salon_profiles gets the reported policy verbatim', async () => {
+  // The issue names `salon_profiles` with an `auth.uid() = user_id` owner
+  // column. This repo's own migration is `public.profiles`/`id`, but the
+  // migration must repair the classic shape too — same statements, on that
+  // table — otherwise an operator following the report on such a project
+  // would change nothing.
+  const db = await classicSchemaDb();
+  try {
+    await db.exec(await migrationSql());
+
+    const policy = await db.query<any>(
+      `select cmd, roles::text[] as roles, qual, with_check
+         from pg_policies
+        where schemaname = 'public' and tablename = 'salon_profiles'
+          and policyname = 'Users can insert/update their own profile'`
+    );
+    assert.equal(policy.rows.length, 1, 'the reported policy must exist on public.salon_profiles');
+    assert.equal(policy.rows[0].cmd, 'ALL');
+    assert.deepEqual(policy.rows[0].roles, ['authenticated']);
+    assert.match(policy.rows[0].qual, /auth\.uid\(\) = user_id/);
+    assert.match(policy.rows[0].with_check, /auth\.uid\(\) = user_id/);
+
+    const rls = await db.query<{ relrowsecurity: boolean }>(
+      `select relrowsecurity from pg_class where oid = 'public.salon_profiles'::regclass`
+    );
+    assert.equal(rls.rows[0].relrowsecurity, true, 'RLS must be enabled on public.salon_profiles');
+
+    // GRANT ALL is executed; only the privileges that bypass RLS are revoked.
+    const grants = await db.query<any>(
+      `select has_table_privilege('authenticated','public.salon_profiles','SELECT') as can_select,
+              has_table_privilege('authenticated','public.salon_profiles','INSERT') as can_insert,
+              has_table_privilege('authenticated','public.salon_profiles','UPDATE') as can_update,
+              has_table_privilege('authenticated','public.salon_profiles','DELETE') as can_delete,
+              has_table_privilege('authenticated','public.salon_profiles','TRUNCATE') as can_truncate`
+    );
+    assert.equal(grants.rows[0].can_select, true);
+    assert.equal(grants.rows[0].can_insert, true);
+    assert.equal(grants.rows[0].can_update, true);
+    assert.equal(grants.rows[0].can_delete, true);
+    assert.equal(grants.rows[0].can_truncate, false, 'TRUNCATE bypasses RLS and must stay revoked');
+
+    // End to end: the owner can create/update their own row...
+    await asUser(db, OWNER, `insert into public.salon_profiles (user_id, full_name) values ($1, 'Uma')`, [OWNER]);
+    await asUser(db, OWNER, `update public.salon_profiles set full_name = 'Uma S' where user_id = $1`, [OWNER]);
+    const mine = await asUser(db, OWNER, `select count(*)::int as n from public.salon_profiles`);
+    assert.equal(mine.rows[0].n, 1);
+
+    // ...another signed-in owner can neither see nor write it.
+    const theirs = await asUser(db, OTHER_OWNER, `select count(*)::int as n from public.salon_profiles`);
+    assert.equal(theirs.rows[0].n, 0);
+    await asUser(
+      db,
+      OTHER_OWNER,
+      `insert into public.salon_profiles (user_id, full_name) values ($1, 'Not Mine')`,
+      [OWNER]
+    ).then(
+      () => assert.fail('inserting another owner’s salon profile must be rejected'),
+      (error: any) => assert.match(String(error.message), /row-level security|violates/i)
+    );
+
+    // Idempotent on this shape too.
+    await db.exec(await migrationSql());
   } finally {
     await db.close();
   }

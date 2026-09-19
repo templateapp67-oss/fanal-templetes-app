@@ -37,9 +37,11 @@
 --   2. Recreates the owner-scoped policies, including the combined
 --        "Users can insert/update their own profile"
 --          FOR ALL TO authenticated USING (auth.uid() = <owner>) WITH CHECK (…)
---      The owner column is detected (user_id when present — the classic
---      "website_profiles" shape — otherwise id, which this schema uses; both
---      mean the same thing: the row belongs to auth.uid()).
+--      Applies to whichever salon-profile table this project actually has —
+--      public.profiles (this repo), public.salon_profiles or
+--      public.website_profiles — and detects the owner column per table
+--      (user_id when present, otherwise id; both mean the row belongs to
+--      auth.uid()).
 --   3. Grants the editor needs: select/insert/update/delete on
 --      public.profiles, select/insert/update on public.owner_editor_state, and
 --      the column-scoped UPDATE grants on profiles/salons that the save
@@ -79,114 +81,138 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 1) + 2) + 3) SALON PROFILE TABLE (public.profiles).
+-- 1) + 2) + 3) SALON PROFILE TABLE(S).
 --
--- The row belongs to the signed-in owner. Some projects call the same logical
--- table `salon_profiles` / `website_profiles` and key it on `user_id`; this
--- schema keys `profiles` on `id` (both equal auth.uid()).
+-- The row belongs to the signed-in owner. Deployments name this logical table
+-- differently: `profiles` (this repo — 00001_init.sql), `salon_profiles` or
+-- `website_profiles` (the classic shape, keyed on `user_id`). They all mean
+-- the same thing, so every one of them that EXISTS on this project is repaired
+-- with the same statements — running this against a project that uses the
+-- classic names applies the reported fix verbatim
+-- (`... ON salon_profiles FOR ALL USING (auth.uid() = user_id)` and
+-- `GRANT ALL ON salon_profiles TO authenticated`) to that table.
+--
+-- The owner column is detected per table: `user_id` when present, otherwise
+-- `id` (both equal auth.uid()).
 -- ---------------------------------------------------------------------------
 do $$
 declare
-  owner_column text;
+  tbl text;
+  repaired text[] := array[]::text[];
 begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
     raise notice 'role "authenticated" is absent (not a Supabase-style project) — skipping the salon-profile repair.';
     return;
   end if;
-  if to_regclass('public.profiles') is null then
-    raise notice 'public.profiles does not exist — skipping the salon-profile repair (apply 00001_init.sql first).';
-    return;
+
+  foreach tbl in array array['profiles', 'salon_profiles', 'website_profiles']
+  loop
+    declare
+      qualified text := format('public.%I', tbl);
+      owner_column text;
+      present text;
+      wanted text[] := array[
+        'full_name', 'phone', 'mobile', 'whatsapp', 'email', 'pincode',
+        'postal_code', 'city', 'preferred_city', 'area', 'preferred_area',
+        'address', 'state', 'landmark', 'latitude', 'longitude',
+        'avatar_url', 'photo_url', 'owner_photo_url', 'date_of_birth'
+      ];
+    begin
+      if to_regclass(qualified) is null then
+        continue; -- this project does not have that spelling of the table
+      end if;
+
+      select case
+               when exists (select 1 from information_schema.columns
+                            where table_schema = 'public' and table_name = tbl
+                              and column_name = 'user_id') then 'user_id'
+               when exists (select 1 from information_schema.columns
+                            where table_schema = 'public' and table_name = tbl
+                              and column_name = 'id') then 'id'
+               else null
+             end
+        into owner_column;
+      if owner_column is null then
+        raise notice '% has no owner column (id / user_id) — skipping its policy repair.', qualified;
+        continue;
+      end if;
+
+      -- 1) Row Level Security must be ON: without it the policies below are
+      --    inert and the table is readable/writable by every role holding a
+      --    GRANT.
+      execute format('alter table %s enable row level security', qualified);
+
+      -- 2) Owner-scoped policies. DROP-then-CREATE (not CREATE IF NOT EXISTS,
+      --    which Postgres does not support for policies) so a project with a
+      --    permissive or missing policy is repaired instead of layered onto.
+      execute format('drop policy if exists %I on %s', tbl || '_select_owner', qualified);
+      execute format(
+        'create policy %I on %s for select using (auth.uid() = %I)',
+        tbl || '_select_owner', qualified, owner_column);
+      execute format('drop policy if exists %I on %s', tbl || '_insert_owner', qualified);
+      execute format(
+        'create policy %I on %s for insert with check (auth.uid() = %I)',
+        tbl || '_insert_owner', qualified, owner_column);
+      execute format('drop policy if exists %I on %s', tbl || '_update_owner', qualified);
+      execute format(
+        'create policy %I on %s for update using (auth.uid() = %I) with check (auth.uid() = %I)',
+        tbl || '_update_owner', qualified, owner_column, owner_column);
+      execute format('drop policy if exists %I on %s', tbl || '_delete_owner', qualified);
+      execute format(
+        'create policy %I on %s for delete using (auth.uid() = %I)',
+        tbl || '_delete_owner', qualified, owner_column);
+
+      -- The combined policy named in the incident report. It overlaps the four
+      -- above (permissive policies are OR-ed), so it grants the signed-in owner
+      -- nothing beyond their own row — but it is the exact "insert/update your
+      -- own profile" clause an operator checks for, scoped to `authenticated`.
+      execute format('drop policy if exists "Users can insert/update their own profile" on %s', qualified);
+      execute format(
+        'create policy "Users can insert/update their own profile" on %s for all to authenticated using (auth.uid() = %I) with check (auth.uid() = %I)',
+        qualified, owner_column, owner_column);
+
+      -- 3) Table privileges for the signed-in owner (RLS still scopes every
+      --    row). `grant all` is what the incident report asks an operator to
+      --    confirm; the non-row-scoped privileges it carries are revoked right
+      --    after it:
+      --      • TRUNCATE is NOT subject to RLS — leaving it granted would let
+      --        any signed-in user wipe every salon profile in one statement,
+      --      • REFERENCES / TRIGGER (and MAINTAIN on PG 17+) are never used by
+      --        the save path.
+      --    Net effect: the four DML privileges the editor actually needs.
+      execute format('grant all on table %s to authenticated', qualified);
+      execute format('revoke truncate, references, trigger on table %s from authenticated', qualified);
+      if current_setting('server_version_num')::int >= 170000 then
+        execute format('revoke maintain on table %s from authenticated', qualified);
+      end if;
+      if exists (select 1 from pg_roles where rolname = 'anon') then
+        -- Public salon sites read the catalogue anonymously; RLS returns only
+        -- the rows a policy allows. Never grant anon a write privilege.
+        execute format('grant select on table %s to anon', qualified);
+      end if;
+
+      -- Column-level UPDATE grants for every column sync_owner_contact()
+      -- writes. Applied per existing column so a schema missing an optional
+      -- column (which made 20260909043304/20260909045308 fail as a whole)
+      -- still ends up with the privileges the save transaction needs.
+      select string_agg(quote_ident(column_name), ', ')
+        into present
+        from information_schema.columns
+       where table_schema = 'public' and table_name = tbl
+         and column_name = any (wanted);
+      if present is not null then
+        execute format('grant update (%s) on table %s to authenticated', present, qualified);
+      end if;
+
+      repaired := repaired || tbl;
+    end;
+  end loop;
+
+  if array_length(repaired, 1) is null then
+    raise notice 'no salon-profile table found (looked for public.profiles, public.salon_profiles, public.website_profiles) — apply 00001_init.sql first (skipped).';
+  else
+    raise notice 'salon-profile policies/grants applied to: %', array_to_string(repaired, ', ');
   end if;
-
-  select case
-           when exists (select 1 from information_schema.columns
-                        where table_schema = 'public' and table_name = 'profiles'
-                          and column_name = 'user_id') then 'user_id'
-           when exists (select 1 from information_schema.columns
-                        where table_schema = 'public' and table_name = 'profiles'
-                          and column_name = 'id') then 'id'
-           else null
-         end
-    into owner_column;
-  if owner_column is null then
-    raise notice 'public.profiles has no owner column (id / user_id) — skipping the policy repair.';
-    return;
-  end if;
-
-  -- 1) Row Level Security must be ON: without it the policies below are inert
-  --    and the table is readable/writable by every role that holds a GRANT.
-  execute 'alter table public.profiles enable row level security';
-
-  -- 2) Owner-scoped policies. DROP-then-CREATE (not CREATE IF NOT EXISTS,
-  --    which Postgres does not support for policies) so a project with a
-  --    permissive or missing policy is repaired instead of layered onto.
-  execute 'drop policy if exists "profiles_select_owner" on public.profiles';
-  execute format(
-    'create policy "profiles_select_owner" on public.profiles for select using (auth.uid() = %I)',
-    owner_column);
-  execute 'drop policy if exists "profiles_insert_owner" on public.profiles';
-  execute format(
-    'create policy "profiles_insert_owner" on public.profiles for insert with check (auth.uid() = %I)',
-    owner_column);
-  execute 'drop policy if exists "profiles_update_owner" on public.profiles';
-  execute format(
-    'create policy "profiles_update_owner" on public.profiles for update using (auth.uid() = %I) with check (auth.uid() = %I)',
-    owner_column, owner_column);
-  execute 'drop policy if exists "profiles_delete_owner" on public.profiles';
-  execute format(
-    'create policy "profiles_delete_owner" on public.profiles for delete using (auth.uid() = %I)',
-    owner_column);
-
-  -- The combined policy named in the incident report. It overlaps the four
-  -- above (permissive policies are OR-ed), so it grants the signed-in owner
-  -- nothing beyond their own row — but it is the exact "insert/update your own
-  -- profile" clause an operator checks for, scoped to `authenticated`.
-  execute 'drop policy if exists "Users can insert/update their own profile" on public.profiles';
-  execute format(
-    'create policy "Users can insert/update their own profile" on public.profiles for all to authenticated using (auth.uid() = %I) with check (auth.uid() = %I)',
-    owner_column, owner_column);
-
-  -- 3) Table privileges for the signed-in owner (RLS still scopes every row).
-  --    `grant all` is what the incident report asks an operator to confirm;
-  --    the non-row-scoped privileges it carries are revoked right after it:
-  --      • TRUNCATE is NOT subject to RLS — leaving it granted would let any
-  --        signed-in user wipe every salon profile in one statement,
-  --      • REFERENCES / TRIGGER (and MAINTAIN on PG 17+) are never used by the
-  --        save path.
-  --    Net effect: the four DML privileges the editor actually needs.
-  execute 'grant all on table public.profiles to authenticated';
-  execute 'revoke truncate, references, trigger on table public.profiles from authenticated';
-  if current_setting('server_version_num')::int >= 170000 then
-    execute 'revoke maintain on table public.profiles from authenticated';
-  end if;
-  if exists (select 1 from pg_roles where rolname = 'anon') then
-    -- Public salon sites read the catalogue anonymously; RLS returns only the
-    -- rows a policy allows. Never grant anon a write privilege.
-    execute 'grant select on table public.profiles to anon';
-  end if;
-
-  -- Column-level UPDATE grants for every column sync_owner_contact() writes.
-  -- Applied per existing column so a schema missing an optional column (which
-  -- made 20260909043304/20260909045308 fail as a whole) still ends up with the
-  -- privileges the save transaction needs.
-  declare
-    wanted text[] := array[
-      'full_name', 'phone', 'mobile', 'whatsapp', 'email', 'pincode',
-      'postal_code', 'city', 'preferred_city', 'area', 'preferred_area',
-      'address', 'state', 'landmark', 'latitude', 'longitude',
-      'avatar_url', 'photo_url', 'owner_photo_url', 'date_of_birth'
-    ];
-    present text;
-  begin
-    select string_agg(quote_ident(column_name), ', ')
-      into present
-      from information_schema.columns
-     where table_schema = 'public' and table_name = 'profiles'
-       and column_name = any (wanted);
-    if present is not null then
-      execute format('grant update (%s) on table public.profiles to authenticated', present);
-    end if;
-  end;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -289,10 +315,12 @@ commit;
 --          (select count(*) from pg_policies p
 --            where p.schemaname='public' and p.tablename=c.relname) as policy_count
 --     from pg_class c join pg_namespace n on n.oid=c.relnamespace
---    where n.nspname='public' and c.relname in ('profiles','owner_editor_state')
+--    where n.nspname='public'
+--      and c.relname in ('profiles','salon_profiles','website_profiles','owner_editor_state')
 --    order by c.relname;
---   -- expect rls_enabled = t and policy_count >= 1 (profiles: 5 here),
---   -- including "Users can insert/update their own profile".
+--   -- expect one row per table this project has, each rls_enabled = t and
+--   -- policy_count >= 1 (profiles: 5 here), including
+--   -- "Users can insert/update their own profile".
 --
 -- 2) The signed-in owner has full DML on their own profile row:
 --

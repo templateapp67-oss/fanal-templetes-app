@@ -625,6 +625,85 @@ test('an auth-blocked sync refreshes the session before the service-role fallbac
   }
 });
 
+test('a session-rejected DIRECT table write is retried once with the refreshed token', async () => {
+  useMemoryStorage();
+  let refreshes = 0;
+  let syncs = 0;
+  const apiCalls: any[] = [];
+  const outcome = await runSalonSavePipeline({
+    payload: PAYLOAD as any,
+    // First attempt: PostgREST refuses the JWT before any policy runs — the
+    // reported "Database permission problem". Second attempt: the fresh token.
+    sync: async () => {
+      syncs++;
+      return syncs === 1
+        ? { ok: false as const, errors: ['save salon profile: JWT expired | code: 401'], blockedByAuth: true }
+        : { ok: true as const, errors: [], blockedByAuth: false };
+    },
+    refreshSession: async () => {
+      refreshes++;
+      return { ok: true, accessToken: 'refreshed-owner-token' };
+    },
+    saveViaApi: async () => {
+      apiCalls.push(1);
+      return { ok: true };
+    },
+    isMockMode: false,
+    authenticated: true,
+    accessToken: 'stale-owner-token',
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.target, 'cloud', 'the retried direct write must win outright');
+  assert.equal(refreshes, 1, 'exactly one refresh for a session-rejected write');
+  assert.equal(syncs, 2, 'the direct sync must be retried once');
+  assert.equal(apiCalls.length, 0, 'no server fallback is needed once the direct write succeeds');
+});
+
+test('a direct write that fails again after the refresh falls back with the fresh token', async () => {
+  useMemoryStorage();
+  const captured: Array<{ url: string; headers: any }> = [];
+  const originalFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = (async (url: string, init: any) => {
+    captured.push({ url: String(url), headers: init?.headers });
+    return new Response(JSON.stringify({ success: true, timestamp: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as any;
+  let refreshes = 0;
+  let syncs = 0;
+  try {
+    const outcome = await runSalonSavePipeline({
+      payload: PAYLOAD as any,
+      sync: async () => {
+        syncs++;
+        // The refresh token itself was revoked: the retried write is refused too.
+        return { ok: false as const, errors: ['save salon profile: JWT expired | code: 401'], blockedByAuth: true };
+      },
+      refreshSession: async () => {
+        refreshes++;
+        return { ok: true, accessToken: 'refreshed-owner-token' };
+      },
+      isMockMode: false,
+      authenticated: true,
+      accessToken: 'stale-owner-token',
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.target, 'api');
+    assert.equal(syncs, 2, 'the direct sync is retried exactly once');
+    assert.equal(refreshes, 1, 'the session must not be refreshed twice in one save');
+    const saveCall = captured.find((c) => c.url.includes('/api/website/save'));
+    assert.ok(saveCall, 'the fallback must hit POST /api/website/save');
+    assert.equal(
+      saveCall.headers?.Authorization,
+      'Bearer refreshed-owner-token',
+      'the fallback must reuse the token the retried direct write used'
+    );
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+  }
+});
+
 test('a failing refresh leaves the API fallback on the original token', async () => {
   useMemoryStorage();
   const captured: Array<{ url: string; headers: any }> = [];
