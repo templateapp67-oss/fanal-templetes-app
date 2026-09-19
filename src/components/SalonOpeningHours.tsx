@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 export function SalonOpeningHours({ hours, onSave, saving }: { hours: any[]; onSave: (hours: any[]) => Promise<void>; saving: boolean }) {
