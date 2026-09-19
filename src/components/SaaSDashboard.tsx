@@ -3,7 +3,7 @@ import { useOwnerDashboard, dashboardTotals } from '../lib/useOwnerDashboard';
 import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, AppointmentStatus, ClientRecord, LoyaltyConfig } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
-import { validateAndReadImageFile, compressAndResizeImage } from '../utils/imageUploadHelper';
+import { compressAndResizeImage } from '../utils/imageUploadHelper';
 import { ImageCompressorWidget } from './ImageCompressorWidget';
 import { TeamManagement } from './TeamManagement';
 import { ServiceManagement } from './ServiceManagement';
@@ -13,7 +13,7 @@ import { LoyaltyManagement } from './LoyaltyManagement';
 import { SocialConnectivityStep } from './SocialConnectivityStep';
 import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
 import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
-import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress, calculateTierProgress } from '../loyaltyData';
+import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
 import { getSiteUrl } from '../lib/salonStore';
 
 import { AppointmentsCalendarView } from './AppointmentsCalendarView';

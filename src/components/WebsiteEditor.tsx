@@ -1,20 +1,15 @@
 import { readPartnerProfile } from '../lib/readPartnerProfile';
-import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import { isMockSupabase } from '../lib/supabaseClient';
 import { isPartnerProfileComplete } from '../lib/profileCompletion';
 import { PartnerProfileModal } from './PartnerProfileModal';
 import React, { useRef, useState } from 'react';
 import {
   Save,
   Eye,
-  EyeOff,
   ExternalLink,
   Copy,
   Check,
-  MapPin,
   Phone,
-  Mail,
-  MessageSquare,
-  Clock,
   Scissors,
   Plus,
   Trash2,
@@ -39,7 +34,6 @@ import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
 import { isCompletionNotReadyError, recordTemplateCompletion } from '../lib/growthPartner';
-import { GuestModeBanner } from './GuestModeBanner';
 import { TikTokIcon } from './TikTokIcon';
 import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';

@@ -7,7 +7,7 @@ import {
   InfoWindow,
   useMap,
 } from '@vis.gl/react-google-maps';
-import { MapPin, Navigation, ExternalLink, Compass } from 'lucide-react';
+import { MapPin, Navigation, ExternalLink } from 'lucide-react';
 
 // Helper component to handle auto-centering when coordinates update
 const MapCenterController: React.FC<{ center: { lat: number; lng: number } }> = ({ center }) => {
