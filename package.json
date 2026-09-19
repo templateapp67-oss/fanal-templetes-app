@@ -18,6 +18,7 @@
     "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs",
     "verify:growth-partner": "node scripts/verify-growth-partner.mjs",
     "verify:partner-operations": "node --import tsx scripts/verify-partner-operations-schema.mjs",
+    "verify:withdrawals": "node --import tsx scripts/verify-withdrawals-schema.mjs",
     "apply:partner-operations": "node --import tsx scripts/apply-partner-operations-migrations.mjs",
     "reproduce:partner-tickets-error": "node --import tsx scripts/reproduce-partner-tickets-error.mjs",
     "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs",
