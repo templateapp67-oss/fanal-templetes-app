@@ -77,6 +77,11 @@ export const LOCAL_GROWTH_CHAIN = [
   // notification toggles, the security log + deactivation requests and the
   // security RPCs the /partner/account-settings page renders.
   '20260919130000_partner_account_security_settings.sql',
+  // Flushes PostgREST's schema cache after those RPCs. Without it a project
+  // that applied 20260919130000 while PostgREST was running keeps answering
+  // PGRST202 for get_my_partner_security_overview — the
+  // "Could not load your security overview. Please retry." page error.
+  '20260919130100_reload_postgrest_schema_partner_security.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
   // Referral code normalization (PHASE 4.2). Widens growth_normalize_code's

@@ -279,9 +279,10 @@ test('the danger zone files a deactivation request and can cancel it', async () 
     // Cancelling clears the pending state.
     await click(ui.action('cancel-deactivation')!, 'cancel the request');
     await wait(() => client.calls.some((entry) => entry.rpc === 'cancel_my_partner_account_deactivation'));
-    // The refresh collapses the zone again; reopening shows the request action.
+    // The refresh no longer remounts the route (it used to blank the page with
+    // a loader and reset every section's state), so the open Danger Zone stays
+    // open and offers the request action again straight away.
     await wait(() => !!ui.action('toggle-danger-zone'), 'the page re-renders');
-    await click(ui.action('toggle-danger-zone')!, 'reopen danger zone');
     await wait(() => !!ui.action('request-deactivation'), 'the request button is back');
   } finally {
     await ui.unmount();

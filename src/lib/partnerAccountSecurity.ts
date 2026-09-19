@@ -54,7 +54,7 @@ export type SecurityOverviewClient = GrowthPartnerProfileClient & {
 
 export async function fetchPartnerSecurityOverview(client: SecurityOverviewClient): Promise<PartnerSecurityOverview> {
   const { data, error } = await client.rpc('get_my_partner_security_overview');
-  if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not load your security overview. Please retry.'));
+  if (error || !data) throw classifySecurityOverviewFailure(error ?? new Error('The security overview came back empty.'));
   return {
     two_factor_enabled: data.two_factor_enabled === true,
     sessions_available: data.sessions_available !== false,
@@ -62,6 +62,148 @@ export async function fetchPartnerSecurityOverview(client: SecurityOverviewClien
     events: Array.isArray(data.events) ? data.events : [],
     deactivation: data.deactivation ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Failure classification — WHY the read failed decides what the page may
+// honestly show, and whether retrying can possibly help.
+//
+// The overview is ONE of the four things /partner/account-settings renders.
+// A single opaque message ("Could not load your security overview. Please
+// retry.") used to replace the whole route, so a missing migration, an
+// inactive partner or a dropped connection took Change Email, Change Password,
+// 2FA and the Danger Zone down with it. Naming the kind lets each section
+// degrade on its own:
+//
+//   session     — the JWT is gone/expired: re-fetching cannot help, sign in.
+//   forbidden   — no ACTIVE partner row for this caller (pending, rejected or
+//                 deactivated application): re-fetching cannot help.
+//   unavailable — the security functions are not installed in this project
+//                 (migration missing / PostgREST schema cache not reloaded).
+//   network     — transport blip: an automatic retry usually fixes it.
+//   unknown     — anything else; treat as transient, retry, then say so.
+// ---------------------------------------------------------------------------
+
+export type SecurityOverviewErrorKind = 'session' | 'forbidden' | 'unavailable' | 'network' | 'unknown';
+
+/** Exact, reviewed UI copy per kind — raw Postgres/PostgREST text never ships. */
+const SECURITY_OVERVIEW_MESSAGES: Record<SecurityOverviewErrorKind, string> = {
+  session: 'Your session expired. Please sign in again.',
+  forbidden: 'Security details are unavailable because your partner account is not active.',
+  unavailable: 'The security overview is not available on this project yet — the account security functions are not installed.',
+  network: 'Network error. Check your connection and try again.',
+  unknown: 'Could not load your security overview. Please retry.',
+};
+
+/** Only transport-level failures are worth retrying without a user action. */
+const RETRYABLE_KINDS: ReadonlySet<SecurityOverviewErrorKind> = new Set<SecurityOverviewErrorKind>(['network', 'unknown']);
+
+export class PartnerSecurityOverviewError extends Error {
+  readonly kind: SecurityOverviewErrorKind;
+  /** True when an immediate re-fetch can plausibly succeed. */
+  readonly retryable: boolean;
+
+  constructor(kind: SecurityOverviewErrorKind, message = SECURITY_OVERVIEW_MESSAGES[kind], options: { retryable?: boolean; cause?: unknown } = {}) {
+    super(message);
+    this.name = 'PartnerSecurityOverviewError';
+    this.kind = kind;
+    this.retryable = options.retryable ?? RETRYABLE_KINDS.has(kind);
+    if (options.cause !== undefined) (this as { cause?: unknown }).cause = options.cause;
+  }
+}
+
+/** Flatten the shapes a rejected `client.rpc()` can take into one string. */
+function failureText(cause: unknown): string {
+  const error = (cause ?? {}) as { message?: unknown; details?: unknown; hint?: unknown; error_description?: unknown; code?: unknown; status?: unknown };
+  const parts = [error.message, error.details, error.hint, error.error_description];
+  if (typeof cause === 'string') parts.unshift(cause);
+  else if (cause instanceof Error) parts.unshift(cause.message);
+  const code = typeof error.code === 'string' ? error.code : '';
+  return `${code} ${parts.filter((part) => typeof part === 'string').join(' ')}`.toLowerCase();
+}
+
+/**
+ * Map any rejection to a typed, UI-safe failure. Exported so the hook and the
+ * tests classify exactly the way the fetch does.
+ */
+export function classifySecurityOverviewFailure(cause: unknown): PartnerSecurityOverviewError {
+  if (cause instanceof PartnerSecurityOverviewError) return cause;
+  const text = failureText(cause);
+  const error = (cause ?? {}) as { code?: unknown; status?: unknown };
+  const code = typeof error.code === 'string' ? error.code : '';
+  const status = typeof error.status === 'number' ? error.status : 0;
+
+  // A signed-out or expired caller: PostgREST reports PGRST301 / 401.
+  if (
+    code === 'PGRST301' ||
+    status === 401 ||
+    /jwt expired|jwt malformed|invalid jwt|no api key|invalid api key|unauthorized|sign in required|session.*expired/.test(text)
+  ) {
+    return new PartnerSecurityOverviewError('session', SECURITY_OVERVIEW_MESSAGES.session, { cause });
+  }
+  // The function is simply not there (missing migration, stale schema cache,
+  // or an installation where the security migration was never applied).
+  if (code === 'PGRST202' || code === '42883' || status === 404 || /could not find the function|function .* does not exist|schema cache|is not available on this deployment/.test(text)) {
+    return new PartnerSecurityOverviewError('unavailable', SECURITY_OVERVIEW_MESSAGES.unavailable, { cause });
+  }
+  // Everything else that refuses on identity/authorization grounds.
+  if (
+    code === '42501' ||
+    status === 403 ||
+    /active growth partner required|permission denied|row-level security|violates row-level|not authorized|admin access required/.test(text)
+  ) {
+    return new PartnerSecurityOverviewError('forbidden', SECURITY_OVERVIEW_MESSAGES.forbidden, { cause });
+  }
+  if (/network|failed to fetch|fetch failed|load failed|timeout|timed out|econnreset|econnrefused|socket|offline/.test(text)) {
+    return new PartnerSecurityOverviewError('network', SECURITY_OVERVIEW_MESSAGES.network, { cause });
+  }
+  // Fall back to the reviewed generic copy — never the driver's own text.
+  return new PartnerSecurityOverviewError('unknown', safePartnerErrorMessage(cause, SECURITY_OVERVIEW_MESSAGES.unknown), { cause });
+}
+
+export interface SecurityOverviewRetryOptions {
+  /** Total attempts, including the first one (1 disables automatic retries). */
+  attempts?: number;
+  /** Delay before attempts 2..n; the last value repeats. */
+  retryDelays?: number[];
+  /** Injectable timer (tests, and any future AbortSignal plumbing). */
+  sleep?: (ms: number) => Promise<void>;
+  /** Bail out between attempts — unmounted, or superseded by a newer fetch. */
+  shouldAbort?: () => boolean;
+  onRetry?: (info: { attempt: number; error: PartnerSecurityOverviewError }) => void;
+}
+
+const DEFAULT_RETRY_DELAYS = [400, 1200];
+
+/**
+ * The read the page actually performs: the overview once, with a short
+ * automatic retry for failures that can plausibly fix themselves (transport
+ * blips). Refusals and missing functions are surfaced immediately instead of
+ * being hammered three times.
+ */
+export async function fetchPartnerSecurityOverviewWithRetry(
+  client: SecurityOverviewClient,
+  options: SecurityOverviewRetryOptions = {},
+): Promise<PartnerSecurityOverview> {
+  const attempts = Math.max(1, Math.floor(options.attempts ?? 3));
+  const delays = options.retryDelays ?? DEFAULT_RETRY_DELAYS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let last: PartnerSecurityOverviewError | null = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchPartnerSecurityOverview(client);
+    } catch (cause) {
+      const failure = classifySecurityOverviewFailure(cause);
+      last = failure;
+      if (attempt >= attempts || !failure.retryable) throw failure;
+      options.onRetry?.({ attempt, error: failure });
+      const delay = delays[attempt - 1] ?? delays[delays.length - 1] ?? 400;
+      if (delay > 0) await sleep(delay);
+      if (options.shouldAbort?.()) throw failure;
+    }
+  }
+  throw last ?? new PartnerSecurityOverviewError('unknown');
 }
 
 /** The event labels the security log renders (everything else falls through). */

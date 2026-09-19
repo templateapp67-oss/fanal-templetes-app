@@ -21,6 +21,7 @@
     "verify:withdrawals": "node --import tsx scripts/verify-withdrawals-schema.mjs",
     "apply:partner-operations": "node --import tsx scripts/apply-partner-operations-migrations.mjs",
     "reproduce:partner-tickets-error": "node --import tsx scripts/reproduce-partner-tickets-error.mjs",
+    "diagnose:partner-security": "node --import tsx scripts/diagnose-partner-security-overview.mjs",
     "validate:staff-performance": "node --import tsx scripts/validate_staff_performance_backend_migration.mjs",
     "validate:staff-commission": "node --import tsx scripts/validate_staff_commission_payouts_migration.mjs",
     "validate:staff-notifications": "node --import tsx scripts/validate_staff_performance_notifications_migration.mjs",

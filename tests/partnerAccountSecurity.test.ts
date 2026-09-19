@@ -4,14 +4,18 @@ import {
   beginPartnerTwoFactorEnrollment,
   cancelPartnerAccountDeactivation,
   changePartnerPassword,
+  classifySecurityOverviewFailure,
   confirmPartnerTwoFactor,
   describeSession,
   disablePartnerTwoFactor,
   fetchPartnerSecurityOverview,
+  fetchPartnerSecurityOverviewWithRetry,
+  PartnerSecurityOverviewError,
   requestPartnerAccountDeactivation,
   requestPartnerEmailChange,
   revokeOtherPartnerSessions,
   type SecurityOverviewClient,
+  type SecurityOverviewErrorKind,
 } from '../src/lib/partnerAccountSecurity';
 import { socialHandlesToLinks, normalizeSocialLinks } from '../src/lib/growthPartnerProfile';
 
@@ -91,11 +95,84 @@ test('security overview maps the payload and keeps missing arrays honest', async
   assert.deepEqual(overview.sessions, []);
   assert.deepEqual(overview.events, []);
   assert.equal(overview.deactivation?.status, 'pending');
-  // An RPC failure becomes a safe message, never raw Postgres text.
+  // An RPC failure becomes a CLASSIFIED, safe message — never raw Postgres
+  // text, and never the same dead-end sentence for every cause.
   const broken = mockClient();
   (broken as any).rpc = async () => ({ data: null, error: { message: 'Active Growth Partner required' } });
-  // Raw backend text never leaks to the surface.
-  await assert.rejects(fetchPartnerSecurityOverview(broken), /Could not load your security overview/);
+  const failure = await fetchPartnerSecurityOverview(broken).then(
+    () => null,
+    (cause: unknown) => cause,
+  );
+  assert.ok(failure instanceof PartnerSecurityOverviewError);
+  assert.equal(failure.kind, 'forbidden');
+  assert.equal(failure.retryable, false, 'an inactive partner cannot be fixed by retrying');
+  assert.match(failure.message, /not active/);
+  assert.doesNotMatch(failure.message, /Active Growth Partner required/, 'raw backend text never reaches the UI');
+});
+
+test('every security-overview failure is classified, and only transport blips are retried', () => {
+  const cases: Array<[unknown, SecurityOverviewErrorKind, boolean]> = [
+    [{ code: 'PGRST202', message: 'Could not find the function public.get_my_partner_security_overview() in the schema cache' }, 'unavailable', false],
+    [{ message: 'permission denied for function get_my_partner_security_overview' }, 'forbidden', false],
+    [{ code: '42501', message: 'Active Growth Partner required' }, 'forbidden', false],
+    [{ code: 'PGRST301', message: 'JWT expired' }, 'session', false],
+    [{ status: 401, message: 'No API key found in request' }, 'session', false],
+    [{ message: 'TypeError: fetch failed' }, 'network', true],
+    [{ message: 'NetworkError when attempting to fetch resource.' }, 'network', true],
+    [{ message: 'connection timeout' }, 'network', true],
+    // An unrecognised failure stays on the reviewed generic copy.
+    [{ message: 'function public.get_my_partner_security_overview(unknown) does not exist' }, 'unavailable', false],
+  ];
+  for (const [cause, kind, retryable] of cases) {
+    const failure = classifySecurityOverviewFailure(cause);
+    assert.equal(failure.kind, kind, `kind for ${JSON.stringify(cause)}`);
+    assert.equal(failure.retryable, retryable, `retryable for ${JSON.stringify(cause)}`);
+    assert.ok(failure.message.length > 0);
+    assert.doesNotMatch(failure.message, /PGRST|JWT|schema cache|permission denied/i, 'the UI only ever sees reviewed copy');
+  }
+  // Classification is idempotent (the hook re-classifies on every attempt).
+  const once = classifySecurityOverviewFailure({ message: 'fetch failed' });
+  assert.equal(classifySecurityOverviewFailure(once), once);
+});
+
+test('the retrying read retries transient failures and gives up immediately on refusals', async () => {
+  let calls = 0;
+  const flaky = mockClient();
+  (flaky as any).rpc = async () => {
+    calls += 1;
+    if (calls < 3) return { data: null, error: { message: 'fetch failed' } };
+    return { data: { two_factor_enabled: true, sessions_available: true, sessions: [], events: [], deactivation: null }, error: null };
+  };
+  const recovered = await fetchPartnerSecurityOverviewWithRetry(flaky, { attempts: 3, retryDelays: [0, 0] });
+  assert.equal(recovered.two_factor_enabled, true);
+  assert.equal(calls, 3, 'two automatic retries');
+
+  // A refusal is not retried: hammering a missing function helps nobody.
+  calls = 0;
+  const missing = mockClient();
+  (missing as any).rpc = async () => {
+    calls += 1;
+    return { data: null, error: { code: 'PGRST202', message: 'Could not find the function in the schema cache' } };
+  };
+  await assert.rejects(
+    fetchPartnerSecurityOverviewWithRetry(missing, { attempts: 3, retryDelays: [0, 0] }),
+    (error: unknown) => error instanceof PartnerSecurityOverviewError && error.kind === 'unavailable',
+  );
+  assert.equal(calls, 1, 'one attempt only');
+
+  // A retry budget that runs out reports the last failure, and an aborted
+  // attempt never keeps fetching.
+  calls = 0;
+  const alwaysDown = mockClient();
+  (alwaysDown as any).rpc = async () => {
+    calls += 1;
+    return { data: null, error: { message: 'fetch failed' } };
+  };
+  await assert.rejects(
+    fetchPartnerSecurityOverviewWithRetry(alwaysDown, { attempts: 2, retryDelays: [0], shouldAbort: () => calls >= 2 }),
+    (error: unknown) => error instanceof PartnerSecurityOverviewError && error.kind === 'network',
+  );
+  assert.equal(calls, 2, 'aborting stops further attempts');
 });
 
 test('revoke reports a count and surfaces the deployment/identification refusals', async () => {
