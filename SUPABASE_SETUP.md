@@ -67,7 +67,13 @@ supabase db push
 ### Option B — SQL Editor (no CLI)
 
 Open your Supabase dashboard → **SQL Editor**, paste the contents of
-`supabase/migrations/00001_init.sql` and run it.
+`supabase/migrations/00001_init.sql` and run it, then paste
+`supabase/migrations/20260907_owner_save_grants.sql` and
+`supabase/migrations/20261010_salon_profile_rls_and_grants.sql` (the
+owner-scoped RLS policies and the table/column GRANTs the Website Editor save
+needs — both idempotent and safe to re-run). The remaining files in
+`supabase/migrations/` are for the Growth Partner / onboarding / booking
+surfaces and can be applied the same way.
 
 This creates the tables: `profiles`, `services`, `stylists`, `bookings`,
 `appointments`, `clients`, `in_app_notifications`, `loyalty_config`,
@@ -221,15 +227,55 @@ remaining symptoms as follows:
 
 | Console / toast symptom | Root cause | Permanent fix |
 |---|---|---|
-| `permission denied for table …` (401/`42501`), "new row violates row-level security policy" (403) | The `authenticated` role has no GRANTs on the tables, or RLS policies are missing/broken | Apply **all** migrations: `00001_init.sql` + `20260907_owner_save_grants.sql` — or just run **`supabase/rls-restore-production.sql`** (idempotent repair: re-enables RLS, recreates the owner-scoped policies, re-grants). Then sign out/in. |
-| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, password changed elsewhere) | Sign in again. The app now pre-flights the session before every cloud save and self-recovers (degrades to a local draft meanwhile). |
+| `permission denied for table …` (401/`42501`), "new row violates row-level security policy" (403) | The `authenticated` role has no GRANTs on the tables, or RLS policies are missing/broken — including `profiles` / `owner_editor_state`, which the CURRENT editor transaction writes through `sync_owner_contact()` | Apply **all** migrations — in particular `20261010_salon_profile_rls_and_grants.sql` (salon-profile + editor-state policies/grants, idempotent, guarded per column) and `20260907_owner_save_grants.sql` — or just run **`supabase/rls-restore-production.sql`** (idempotent repair: re-enables RLS, recreates the owner-scoped policies, re-grants). Then sign out/in. |
+| `JWT expired` / `invalid JWT` / 401/403 | Stale or revoked session (tab left open too long, laptop slept, refresh token rotated elsewhere) | Automatic: the save path refreshes the session before the write and, if the **direct table write** or the save RPC is still refused as unauthenticated, refreshes once more and retries that same write (once) before degrading to the service-role fallback. Only a session that cannot be refreshed at all asks the owner to sign in again — with a plain-language notice in the editor and a toast that no longer blames the database (`SESSION_EXPIRED_SAVE_MESSAGE` in `src/lib/autoSave.ts`). Edits stay in the local draft meanwhile. |
 | `relation "public.…" does not exist` (`42P01`) | Migrations never applied to this project | Run `supabase db push` (or paste `supabase/migrations/*.sql` into the SQL Editor). |
 | `POST /api/website/save … HTTP 404` | The save API route is not on this deployment (older build) | Redeploy — the route ships in `api/index.ts` / `server.ts`. Edits stay on the device until then. |
 | `Failed to fetch` / "blocked by CORS" | Cross-origin caller (split dev ports, preview/custom domain) hitting the API before CORS headers existed | Fixed: `server/cors.ts` (mounted in both entrypoints) answers the preflight and echoes the origin. Also cross-check `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — a wrong project URL makes the DIRECT sync fail; the service-role fallback still saves. |
 | Network / `fetch failed` / 5xx | Transient outage | Automatic retry with backoff (3 attempts); edits stay saved on the device. |
 | "Could not load your existing data…" (legacy) | Pre-fix deployments where a one-time hydration blip blocked all later saves | Redeploy from `main` — hydration now self-heals on the next save. |
 
-### 9a. Isolating an RLS problem manually (optional — testing only)
+### 9a. Website Editor save permissions — what must be true
+
+A save that reaches Supabase travels through ONE caller-scoped transaction:
+
+```
+save_owner_editor_state(jsonb)          -- security invoker wrapper
+  └─ nexora_save_owner_workspace(jsonb) -- SECURITY DEFINER, owns the tx
+       └─ sync_owner_contact(jsonb)     -- SECURITY INVOKER → runs AS THE OWNER
+```
+
+Because the last hop runs with the signed-in owner's privileges, **both** halves
+must be right for `profiles` and `owner_editor_state`:
+
+1. **Grants** — `authenticated` needs `select, insert, update, delete` on
+   `public.profiles` and `select, insert, update` on `public.owner_editor_state`
+   (plus column-level `update` on the contact columns `sync_owner_contact()`
+   writes). Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`
+   — it is idempotent and applies per existing column (so a project missing an
+   optional column cannot half-apply it). It executes the literal
+   `grant all on table public.profiles to authenticated` and then revokes the
+   privileges that are **not** row-scoped: `TRUNCATE` bypasses RLS completely
+   (it would let any signed-in user wipe every salon's profile in one
+   statement), and `REFERENCES` / `TRIGGER` / `MAINTAIN` are never used by the
+   save path. Net effect = the four DML privileges.
+2. **Policies** — RLS enabled with owner-scoped policies, including the
+   combined `"Users can insert/update their own profile"` policy
+   (`FOR ALL TO authenticated USING (auth.uid() = <owner column>) WITH CHECK (…)`).
+   The repair covers whichever salon-profile table the project actually has —
+   `profiles` (this repo), `salon_profiles` or `website_profiles` — and detects
+   the owner column per table: `user_id` on the classic shape, `id` here.
+
+Session handling is not part of the schema problem: the client refreshes a
+stale/expiring access token before the write, and after an auth-rejection it
+refreshes once more and retries the same write — the direct table sync
+(`runSalonSavePipeline`), the save RPC (`src/lib/ownerEditorState.ts`) or the
+service-role fallback — before reporting anything (`src/lib/authSession.ts`).
+Only a session that cannot be refreshed is surfaced as "sign in again", with
+the in-editor notice; a GRANT/RLS rejection is deterministic and is reported
+immediately instead (retrying it would change nothing).
+
+### 9b. Isolating an RLS problem manually (optional — testing only)
 
 If you want to prove a save failure is RLS-caused by disabling RLS, use the
 two helper scripts (they are NOT migrations — run them from the SQL Editor):
@@ -267,10 +313,10 @@ print:
 ```sql
 -- Privileges for the authenticated role (must list select/insert/update/delete
 -- for every tenant table after applying 20260907_owner_save_grants.sql):
-select tablename, privilege_type
+select table_schema, table_name, privilege_type
 from information_schema.role_table_grants
-where grantee = 'authenticated' and schemaname = 'public'
-order by tablename, privilege_type;
+where grantee = 'authenticated' and table_schema = 'public'
+order by table_name, privilege_type;
 
 -- RLS policies per table (00001_init.sql creates owner-scoped policies):
 select tablename, policyname, cmd
@@ -299,10 +345,11 @@ schema/RLS change). Items 1–3 are hard gates; 4–6 are hygiene.
    policies each (`owner_id = auth.uid()`; profiles: `id = auth.uid()`), and
    **no** `USING (true)` / `FOR ALL` policy without a `TO <role>` clause —
    a permissive "enable full access for all" policy is a cross-tenant hole
-   in a multi-tenant app (see §9a).
+   in a multi-tenant app (see §9b).
    - Idempotent repair: run **`supabase/rls-restore-production.sql`**.
-   - Verify: the `pg_policies` query in §9a (expect `policy_count = 4` per
-     editor table, `rls_enabled = t`), **plus the cross-tenant negative
+   - Verify: the `pg_policies` query in §9b (expect `policy_count = 4` per
+     editor table — 5 on `profiles`, which also carries the combined
+     "Users can insert/update their own profile" policy — `rls_enabled = t`), **plus the cross-tenant negative
      test**: sign in as a second account and
      `SELECT count(*) FROM profiles WHERE id IS DISTINCT FROM auth.uid();`
      must return **0**. A positive "my data saved" test alone cannot catch

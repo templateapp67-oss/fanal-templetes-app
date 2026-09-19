@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SalonSyncPayload, SalonSyncResult } from './salonSync';
-import { describeError, isAuthLikeFailure } from './autoSave';
+import { describeError, isAuthLikeFailure, isSessionExpiryFailure } from './autoSave';
+import { ensureFreshSession, refreshSessionForSave, SESSION_REFRESH_HINT } from './authSession';
 import { resolveOwnerWorkspace } from './ownerWorkspace';
 
 // Serialize profile and editor writes so an older in-flight autosave cannot
@@ -32,16 +33,59 @@ async function writeOwnerEditorState(
   db: SupabaseClient,
   payload: SalonSyncPayload
 ): Promise<SalonSyncResult> {
+  // One RPC call with the caller's current token. Returns the raw error (if
+  // any) instead of throwing so the caller can decide whether an auth retry
+  // is worth it.
+  const callSaveRpc = async (): Promise<unknown | null> => {
+    const { error } = await db.rpc('save_owner_editor_state', { p_state: {
+      profile: payload.profile, services: payload.services,
+      stylists: payload.stylists, loyaltyConfig: payload.loyaltyConfig,
+      ...(payload.appointments !== undefined ? { appointments: payload.appointments } : {}),
+      ...(payload.clients !== undefined ? { clients: payload.clients } : {}),
+      ...(payload.selectedTemplateId !== undefined ? { selectedTemplateId: payload.selectedTemplateId } : {}),
+    } });
+    return error ?? null;
+  };
+
   try {
     await queueOwnerWrite(async () => {
-      const { error } = await db.rpc('save_owner_editor_state', { p_state: {
-        profile: payload.profile, services: payload.services,
-        stylists: payload.stylists, loyaltyConfig: payload.loyaltyConfig,
-        ...(payload.appointments !== undefined ? { appointments: payload.appointments } : {}),
-        ...(payload.clients !== undefined ? { clients: payload.clients } : {}),
-        ...(payload.selectedTemplateId !== undefined ? { selectedTemplateId: payload.selectedTemplateId } : {}),
-      } });
-      if (error) throw error;
+      // 1) PRE-FLIGHT REFRESH. A tab that sat in the background can hold an
+      //    access token that is already inside (or past) its expiry margin.
+      //    Refreshing here — silently, before any row is touched — is what
+      //    turns the old "Database permission problem" (a stale JWT rejected
+      //    by PostgREST) into a save that just works. A missing/incomplete
+      //    auth client (mock builds, tests) is reported as `unavailable` and
+      //    is deliberately not an error: the write proceeds unchanged.
+      const preflight = await ensureFreshSession(db);
+      if (preflight.refreshed) {
+        console.info('[AutoSave] Refreshed the Supabase session before saving the website.');
+      }
+
+      const firstError = await callSaveRpc();
+      if (!firstError) return;
+
+      const detail = describeError(firstError);
+      // Only a SESSION failure is worth retrying: a missing GRANT or a broken
+      // RLS policy ("permission denied for table …", "new row violates
+      // row-level security policy") is deterministic and would fail
+      // identically, so it is surfaced immediately (see isSessionExpiryFailure
+      // vs the broader isAuthLikeFailure).
+      if (!isSessionExpiryFailure(detail)) throw firstError;
+
+      // 2) REACTIVE REFRESH. The token can also expire (or be revoked) between
+      //    the pre-flight and the write. Refresh once and retry the SAME
+      //    transaction before reporting a permission problem — a recoverable
+      //    session must never surface as a database-permission error.
+      const retry = await refreshSessionForSave(db);
+      if (!retry.ok) {
+        console.warn(
+          `[AutoSave] Save rejected as unauthenticated (${detail}) and the session could not be refreshed (${retry.reason ?? 'unknown'}). ${SESSION_REFRESH_HINT}`
+        );
+        throw firstError;
+      }
+      const retried = await callSaveRpc();
+      if (retried) throw retried;
+      console.info('[AutoSave] Save rejected as unauthenticated — refreshed the session and the retried save succeeded.');
     });
     return { ok: true, errors: [] };
   } catch (error) {

@@ -32,6 +32,7 @@ import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
+import { SavePermissionNotice } from './SavePermissionNotice';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
 import { isCompletionNotReadyError, recordTemplateCompletion } from '../lib/growthPartner';
 import { TikTokIcon } from './TikTokIcon';
@@ -57,6 +58,13 @@ interface WebsiteEditorProps {
   showToast?: (message: string, type?: 'success' | 'error') => void;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  /**
+   * True when the last cloud save was rejected because the Supabase session is
+   * no longer usable (expired/revoked token) even after the save engine
+   * refreshed and retried once. Renders the in-editor "sign in again" notice —
+   * the owner's edits are already safe in the local draft.
+   */
+  sessionExpired?: boolean;
 }
 
 const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
@@ -77,6 +85,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   showToast,
   isAuthenticated = true,
   onRequireAuth,
+  sessionExpired = false,
 }) => {
   const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
   const [profileCompletion, setProfileCompletion] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading');
@@ -193,9 +202,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     }
   };
 
-  const handleSave = async (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleSave = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     if (isSavePending) return;
-    saveTriggerRef.current = event.currentTarget;
+    // The button handlers pass their event (so focus can be returned to the
+    // trigger from the success dialog); the session notice's "Retry Save"
+    // calls this with no event and keeps the previous trigger.
+    if (event?.currentTarget) saveTriggerRef.current = event.currentTarget;
     setIsSaving(true);
     try {
       // Only an explicit, successful save opens the next-step dialog, never an autosave.
@@ -232,11 +244,22 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const saveLabel = saveUi.label;
 
   return (
-    <div className="min-h-screen pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col gap-6">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
+      <div className="w-full max-w-full sm:max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-6 min-w-0">
+
+        {/* Session expired / permission-safe notice. Shown only when the save
+            engine decided the cloud session must be re-established; the local
+            draft already holds every edit, so nothing is lost. */}
+        <SavePermissionNotice
+          visible={sessionExpired}
+          onSignIn={onRequireAuth ? () => onRequireAuth('login') : undefined}
+          onRetry={() => {
+            void handleSave();
+          }}
+        />
 
         {/* ===== Top sticky save bar ===== */}
-        <div className="sticky top-20 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="sticky top-20 z-30 w-full min-w-0 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-11 h-11 rounded-xl bg-[#C20E5A]/10 text-[#C20E5A] flex items-center justify-center shrink-0">
               <Store className="w-5 h-5" />
@@ -255,8 +278,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </div>
           </div>
 
-          {/* Save status pill */}
-          <div className="flex items-center gap-2">
+          {/* Save status pill + actions. `flex-wrap` lets the buttons drop to
+              the next line instead of being squeezed off a phone screen. */}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <div
               role="status"
               aria-live="polite"
@@ -318,7 +342,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </div>
 
         {/* ===== 1. SALON DETAILS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <Store className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Salon Details</h2>
@@ -405,7 +429,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 2. CONTACT & LOCATION ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <UserRound className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
@@ -606,7 +630,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 4. SERVICES & PRICING ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-[#C20E5A]" />
@@ -725,7 +749,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== DIGITAL TOUCHPOINTS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1"><Globe className="w-4 h-4 text-[#C20E5A]" /><h2 className="font-display font-bold text-base">Website &amp; Digital Touchpoints</h2></div>
           <p className="text-[11px] text-gray-500 mb-4">Use this checklist to turn your brand story into a high-converting website experience.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -747,7 +771,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 5. TEMPLATE & LIVE SITE ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <Building2 className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Template &amp; Live Website</h2>
@@ -850,7 +874,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== BOTTOM SAVE BAR ===== */}
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="w-full bg-white border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-gray-600">
             {isSaveFailed ? (
               <AlertCircle className="w-4 h-4 text-rose-500" />
@@ -860,6 +884,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <span>
               {isSavePending
                 ? 'Auto-saving your changes…'
+                : sessionExpired
+                ? 'Your session expired — sign in again to publish to the cloud. Your edits are saved on this device.'
                 : isSaveFailed
                 ? 'We couldn’t save your changes. Check your connection and retry — the exact error is in the browser console.'
                 : saveStatus === 'saved_local'

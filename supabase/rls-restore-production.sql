@@ -18,7 +18,10 @@
 -- whole file into Dashboard → SQL Editor. It mirrors:
 --   • supabase/migrations/00001_init.sql           — RLS + owner policies
 --   • supabase/migrations/20260907_owner_save_grants.sql — role grants
--- for the five tables the Website Editor save writes.
+--   • supabase/migrations/20261010_salon_profile_rls_and_grants.sql — the
+--     salon-profile / owner_editor_state repair (the tables the CURRENT editor
+--     save transaction writes through sync_owner_contact)
+-- for the tables the Website Editor save writes.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -49,6 +52,33 @@ create policy "profiles_update_owner" on public.profiles
   for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "profiles_delete_owner" on public.profiles
   for delete using (id = auth.uid());
+
+-- Additional combined owner policy (also created by
+-- supabase/migrations/20261010_salon_profile_rls_and_grants.sql). It overlaps
+-- the four above — permissive policies are OR-ed — so it grants the signed-in
+-- owner nothing beyond their own row, and it is the exact
+-- "insert/update their own profile" clause operators check for. Scoped to the
+-- `authenticated` role so anon can never match it.
+drop policy if exists "Users can insert/update their own profile" on public.profiles;
+create policy "Users can insert/update their own profile" on public.profiles
+  for all to authenticated
+  using (auth.uid() = id) with check (auth.uid() = id);
+
+-- The editor's durable state row (created by 20260909045308). The save RPC
+-- upserts it AS THE CALLER, so it needs RLS + an owner policy + grants.
+-- Guarded: a project that has not applied that migration yet simply skips it.
+do $$
+begin
+  if to_regclass('public.owner_editor_state') is null then
+    raise notice 'public.owner_editor_state is absent — apply 20260909045308_contact_profile_wiring.sql (skipped).';
+    return;
+  end if;
+  execute 'alter table public.owner_editor_state enable row level security';
+  execute 'drop policy if exists editor_owner on public.owner_editor_state';
+  execute 'create policy editor_owner on public.owner_editor_state for all to authenticated '
+       || 'using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()))';
+  execute 'grant select, insert, update on public.owner_editor_state to authenticated';
+end $$;
 
 -- services
 drop policy if exists "services_select_owner" on public.services;
@@ -122,6 +152,20 @@ grant select, insert, update, delete on table
   public.loyalty_rewards
 to authenticated;
 
+-- The salon-profile table also gets the literal `GRANT ALL` the incident
+-- report asks an operator to confirm, immediately followed by a revoke of the
+-- privileges that are NOT row-scoped: TRUNCATE bypasses RLS completely (it
+-- would let any signed-in user wipe every salon profile in one statement) and
+-- REFERENCES / TRIGGER (plus MAINTAIN on PG 17+) are unused by the save path.
+grant all on table public.profiles to authenticated;
+revoke truncate, references, trigger on table public.profiles from authenticated;
+do $$
+begin
+  if current_setting('server_version_num')::int >= 170000 then
+    execute 'revoke maintain on table public.profiles from authenticated';
+  end if;
+end $$;
+
 -- Anonymous visitors: read-only (RLS returns zero rows for non-owners).
 grant select on table
   public.profiles,
@@ -135,7 +179,9 @@ to anon;
 -- 4) VERIFY — run these in the SQL Editor after the script (or look at the
 --    results the script produces):
 -- ----------------------------------------------------------------------------
--- Expected: rls_enabled = t AND policy_count = 4 for EVERY table.
+-- Expected: rls_enabled = t AND policy_count = 4 for every editor table
+-- (public.profiles now carries 5 — the four owner policies plus the combined
+-- "Users can insert/update their own profile" policy; owner_editor_state: 1).
 select c.relname as table_name,
        c.relrowsecurity as rls_enabled,
        (select count(*) from pg_policies p
@@ -143,7 +189,7 @@ select c.relname as table_name,
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public'
-  and c.relname in ('profiles', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
+  and c.relname in ('profiles', 'owner_editor_state', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
 order by c.relname;
 
 -- Expected: authenticated → select, insert, update, delete;  anon → select.
@@ -151,9 +197,9 @@ select table_name,
        grantee,
        string_agg(privilege_type, ', ' order by privilege_type) as privileges
 from information_schema.role_table_grants
-where schemaname = 'public'
+where table_schema = 'public'
   and grantee in ('anon', 'authenticated')
-  and table_name in ('profiles', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
+  and table_name in ('profiles', 'owner_editor_state', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
 group by table_name, grantee
 order by table_name, grantee;
 

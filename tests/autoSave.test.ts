@@ -171,15 +171,22 @@ test('summarizeSaveError classifies auth/RLS/grants rejections with the right re
     ),
     /permission problem/i
   );
-  // Expired / invalid JWT after the session died in a backgrounded tab.
+  // Expired / invalid JWT after the session died in a backgrounded tab: the
+  // save engine already refreshed + retried, so the toast now says what to do
+  // (sign in again) and reassures that the edits are on the device — it no
+  // longer implies the database/RLS schema is broken.
   assert.match(
     summarizeSaveError('save services: JWT expired | code: 403'),
     /sign in again/i
   );
-  // The app's own pre-flight skip when no session exists.
+  assert.match(
+    summarizeSaveError('save services: JWT expired | code: 403'),
+    /saved on this device/i
+  );
+  // The app's own pre-flight skip when the session cannot be refreshed.
   assert.match(
     summarizeSaveError('cloud sync skipped (no active session — sign in again to save to the cloud)'),
-    /permission problem/i
+    /sign in again/i
   );
 });
 

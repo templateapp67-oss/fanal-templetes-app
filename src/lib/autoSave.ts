@@ -305,6 +305,16 @@ export function summarizeSaveError(detail: string): string {
     return 'Database rejected a record id (uuid mismatch).';
   }
 
+  // 1b) The session itself is gone (expired/revoked access token, refresh token
+  // rejected). Checked BEFORE the generic permission branch: a stale JWT is
+  // reported by PostgREST as 401/42501 and must not be described as a broken
+  // RLS policy. The save engine already tried a silent refresh + retry, so at
+  // this point the owner genuinely has to sign in again — and their edits are
+  // safe in the local draft.
+  if (isSessionExpiryFailure(detail)) {
+    return SESSION_EXPIRED_SAVE_MESSAGE;
+  }
+
   // 2) Authentication / authorization problems: expired/invalid JWT or login,
   // missing table grants for the authenticated role (PostgREST: "permission
   // denied for table …", code 42501) or RLS policies rejecting the row
@@ -324,7 +334,7 @@ export function summarizeSaveError(detail: string): string {
     d.includes('42503') ||
     /\b(401|403)\b/.test(d)
   ) {
-    return 'Database permission problem — please sign in again. If it persists, confirm the Supabase schema, RLS policies and grants (supabase/migrations, SUPABASE_SETUP.md) are applied.';
+    return 'Database permission problem — please sign in again. If it persists, apply the Supabase schema, RLS policies and grants (supabase/migrations/20261010_salon_profile_rls_and_grants.sql, SUPABASE_SETUP.md §9).';
   }
 
   // 3) Missing schema/table — the SQL migrations were never applied to the
@@ -370,6 +380,45 @@ export function summarizeSaveError(detail: string): string {
   const trimmed = (detail || '').trim();
   if (!trimmed) return 'Unknown error';
   return trimmed.length > 160 ? `${trimmed.slice(0, 157)}…` : trimmed;
+}
+
+/**
+ * Owner-facing copy for a save rejected because the SESSION is gone (expired
+ * or revoked access token, rejected refresh token) — as opposed to a broken
+ * RLS policy or a missing GRANT, which no amount of refreshing can fix.
+ * Deliberately says what happened, what is safe, and what to do next; never
+ * the raw PostgREST/Postgres text.
+ */
+export const SESSION_EXPIRED_SAVE_MESSAGE =
+  'Your session expired, so we could not publish to the cloud. Your edits are saved on this device — sign in again and press Save to publish them.';
+
+/**
+ * True when the error describes an EXPIRED / UNUSABLE SESSION — the one class
+ * of auth failure a silent `refreshSession()` + retry can recover, and the one
+ * that must never be blamed on RLS policies or missing grants.
+ *
+ * `isAuthLikeFailure` is deliberately broader (it also covers "permission
+ * denied for table …" / "row-level security policy" — schema problems that a
+ * refresh cannot fix); this predicate is the narrow one.
+ */
+export function isSessionExpiryFailure(detail: string): boolean {
+  const d = (detail || '').toLowerCase();
+  return (
+    d.includes('jwt expired') ||
+    d.includes('invalid jwt') ||
+    d.includes('token has expired') ||
+    d.includes('token expired') ||
+    d.includes('expired token') ||
+    d.includes('invalid_grant') ||
+    d.includes('refresh token') ||
+    d.includes('no active session') ||
+    d.includes('not authenticated') ||
+    d.includes('missing access token') ||
+    d.includes('auth session missing') ||
+    d.includes('session missing') ||
+    d.includes('failed to fetch from auth') || // auth server unreachable during refresh
+    /\b401\b/.test(d)
+  );
 }
 
 /**
@@ -704,6 +753,15 @@ export interface SalonSavePipelineOptions {
    * service-role endpoint bypasses RLS and must authorize itself).
    */
   accessToken?: string;
+  /**
+   * Refresh the caller's Supabase session and return the new access token.
+   *
+   * Called when the DIRECT client sync was rejected for an auth-like reason
+   * (expired/revoked JWT, RLS/grants) — the service-role fallback is a second
+   * round trip, so it must use a token that is still valid when it arrives.
+   * Omitted by callers that have no auth client (tests, server-side runs).
+   */
+  refreshSession?: () => Promise<{ accessToken?: string; ok?: boolean } | void>;
 }
 
 /**
@@ -734,9 +792,12 @@ export async function runSalonSavePipeline(
   // Default fallback forwards the owner's access token so the server can
   // bind the request to owner_id; a caller-injected saveViaApi (tests /
   // custom backends) is used as-is with the plain payload signature.
+  // The token is re-read from a closure variable so an auth-blocked direct
+  // sync can retry the fallback with a freshly refreshed token.
+  let apiAccessToken = options.accessToken;
   const saveViaApi =
     options.saveViaApi ??
-    ((p: SalonSyncPayload) => saveViaWebsiteApi(p, { accessToken: options.accessToken }));
+    ((p: SalonSyncPayload) => saveViaWebsiteApi(p, { accessToken: apiAccessToken }));
   const writeDraft = options.writeDraft ?? writeLocalDraft;
 
   const draftState = {
@@ -783,6 +844,26 @@ export async function runSalonSavePipeline(
     };
   }
 
+  // Refresh the caller's session once, returning the new access token (or null
+  // when the hook is absent / fails). Never throws: a failed refresh must not
+  // mask the original save error.
+  let sessionRefreshed = false;
+  const refreshOnce = async (): Promise<string | null> => {
+    if (!options.refreshSession) return null;
+    try {
+      const refreshed = await options.refreshSession();
+      const token = refreshed && typeof refreshed === 'object' ? refreshed.accessToken : undefined;
+      if (typeof token === 'string' && token) return token;
+      console.warn(
+        '[Nexora Sync] Session refresh did not return an access token — continuing with the current one.'
+      );
+      return null;
+    } catch (err) {
+      console.warn('[Nexora Sync] Session refresh failed:', describeError(err));
+      return null;
+    }
+  };
+
   // ---- 1) Direct Supabase client sync ------------------------------------
   let cloud: SalonSyncResult;
   try {
@@ -796,6 +877,40 @@ export async function runSalonSavePipeline(
       `direct Supabase sync threw (tables: profiles, services, stylists, loyalty_config, loyalty_rewards): ${detail}`
     );
     cloud = { ok: false, errors: [`direct supabase sync threw: ${detail}`], blockedByAuth: false };
+  }
+
+  // ---- 1b) Session-expiry recovery for the DIRECT (table) write -----------
+  // A rejected JWT is the one failure a refresh can fix: PostgREST refuses the
+  // statement before any policy is consulted, so the owner sees a database
+  // error for what is really a stale session. Refresh once and retry the SAME
+  // sync with the fresh token before degrading to the service-role fallback.
+  // Deterministic RLS/GRANT rejections are deliberately NOT retried.
+  if (
+    !cloud.ok &&
+    !sessionRefreshed &&
+    options.refreshSession &&
+    cloud.errors.some((e) => isSessionExpiryFailure(e))
+  ) {
+    const token = await refreshOnce();
+    if (token) {
+      sessionRefreshed = true;
+      apiAccessToken = token;
+      console.info('[Nexora Sync] Direct sync was rejected as unauthenticated — refreshed the session and retrying it once.');
+      try {
+        const retried = await sync(payload, { deleteRemoved: options.deleteRemoved });
+        cloud = retried.ok
+          ? retried
+          : {
+              ok: false,
+              errors: [...cloud.errors, ...retried.errors],
+              blockedByAuth: retried.blockedByAuth ?? cloud.blockedByAuth,
+            };
+      } catch (err) {
+        const detail = describeError(err);
+        console.error('[Nexora Sync Error]:', `direct Supabase sync retry threw: ${detail}`);
+        cloud = { ok: false, errors: [...cloud.errors, detail], blockedByAuth: cloud.blockedByAuth };
+      }
+    }
   }
 
   if (cloud.ok) {
@@ -812,12 +927,29 @@ export async function runSalonSavePipeline(
   // ---- 2) Fallback: server-side save via the service-role API ------------
   const onlyDataShapeFailures =
     cloud.errors.length > 0 && cloud.errors.every((e) => isDataShapeFailure(e));
+  // Kept for the returned diagnostics: the fallback's own failure (HTTP status
+  // + server message) is otherwise only visible in the console, which made an
+  // expired-token 401 on the fallback look like a database error in the toast.
+  let apiFailure: string | null = null;
 
   if (!onlyDataShapeFailures) {
     console.warn(
       '[Nexora Sync] Direct client sync failed (network/auth/RLS/schema) — ' +
         'falling back to POST /api/website/save (Supabase service role).'
     );
+    // An auth-blocked direct sync usually means the access token went stale.
+    // The fallback verifies the caller's token against Supabase Auth before it
+    // writes, so send it a FRESH token: refresh once here instead of letting a
+    // recoverable session be reported as a permission problem. Failures are
+    // non-fatal — the original token is simply kept.
+    if (cloud.blockedByAuth && !sessionRefreshed) {
+      const token = await refreshOnce();
+      if (token) {
+        apiAccessToken = token;
+        sessionRefreshed = true;
+        console.info('[Nexora Sync] Refreshed the Supabase session before the service-role fallback save.');
+      }
+    }
     const api = await saveViaApi(payload);
     if (api.ok) {
       clearLocalDraft();
@@ -830,6 +962,7 @@ export async function runSalonSavePipeline(
       };
     }
     // api.error is already console-logged with the exact HTTP status.
+    apiFailure = `POST /api/website/save failed (HTTP ${api.status ?? 'no response'}) | ${api.error ?? 'unknown error'}`;
   } else {
     console.warn(
       '[Nexora Sync] Direct client sync failed with deterministic data errors — ' +
@@ -851,7 +984,7 @@ export async function runSalonSavePipeline(
     ok: draftWritten,
     target: 'local_draft',
     draftWritten,
-    errors: [...cloud.errors, ...(error ? [`local storage: ${error}`] : [])],
+    errors: [...cloud.errors, ...(apiFailure ? [apiFailure] : []), ...(error ? [`local storage: ${error}`] : [])],
     summary: draftWritten
       ? 'Cloud save failed — your changes are safely cached on this device as a local draft and will retry automatically.'
       : 'Save failed — the cloud is unreachable and local storage is unavailable.',
