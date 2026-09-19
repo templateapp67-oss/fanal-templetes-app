@@ -2,7 +2,7 @@ import { PartnerRouteGuard, usePartnerRouteGuard } from './PartnerRouteGuard';
 export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
-import { PartnerEarningsModule, PartnerLeaderboardsModule, PartnerLevelsModule, PartnerMarketingMaterialsModule, PartnerNotificationsModule, PartnerSupportModule, PartnerWithdrawalsModule } from './PartnerPortalGrowthModules';
+import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, PartnerMarketingMaterialsPage, PartnerNotificationsPage, PartnerSupportPage, PartnerWithdrawalsPage } from './partner';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
 import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
@@ -567,13 +567,25 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         return <PartnerRewardsPage />;
       case 'commission':
         return <PartnerCommissionPage />;
-      case 'earnings': return <PartnerEarningsModule />;
-      case 'withdrawals': return <PartnerWithdrawalsModule />;
-      case 'marketing-materials': return <PartnerMarketingMaterialsModule />;
-      case 'partner-levels': return <PartnerLevelsModule />;
-      case 'leaderboards': return <PartnerLeaderboardsModule />;
-      case 'notifications': return <PartnerNotificationsModule />;
-      case 'support': return <PartnerSupportModule />;
+      // The seven promoted sections. Each page owns its own reads (see
+      // src/lib/partnerPortalOperations.ts), so switching sections never
+      // refetches another module's data; the values below are display-only
+      // context from the session — a code for the share link, an id to
+      // highlight the partner's own leaderboard row.
+      case 'earnings':
+        return <PartnerEarningsPage accentHex={accentHex} navigate={navigate} />;
+      case 'withdrawals':
+        return <PartnerWithdrawalsPage accentHex={accentHex} />;
+      case 'marketing-materials':
+        return <PartnerMarketingMaterialsPage accentHex={accentHex} referralCode={partner?.referral_code ?? null} />;
+      case 'partner-levels':
+        return <PartnerLevelsPage accentHex={accentHex} />;
+      case 'leaderboards':
+        return <PartnerLeaderboardsPage accentHex={accentHex} partnerId={userId ?? undefined} />;
+      case 'notifications':
+        return <PartnerNotificationsPage accentHex={accentHex} />;
+      case 'support':
+        return <PartnerSupportPage accentHex={accentHex} />;
       case 'profile':
         return <div key={userId}><GrowthPartnerProfilePage onProfileChange={saved => {
           if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });

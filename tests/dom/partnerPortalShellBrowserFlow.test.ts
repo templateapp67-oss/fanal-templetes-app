@@ -43,6 +43,17 @@ after(() => {
 
 const PARTNER_ID = 'a0000000-0000-4000-8000-000000000001';
 
+/** The seven modules Part 3 promoted, with the URL each sidebar link must carry. */
+const PROMOTED_NAV_LINKS: Array<[string, string]> = [
+  ['earnings', '/partner/earnings'],
+  ['withdrawals', '/partner/withdrawals'],
+  ['marketing-materials', '/partner/marketing'],
+  ['partner-levels', '/partner/levels'],
+  ['leaderboards', '/partner/leaderboard'],
+  ['notifications', '/partner/notifications'],
+  ['support', '/partner/support'],
+];
+
 const PARTNER_ROW = {
   user_id: PARTNER_ID,
   referral_code: 'ALPHA01',
@@ -243,11 +254,24 @@ test('the dashboard boots through the real gate and renders the shell with backe
     const active = byData('partner-nav', 'dashboard').find((el) => el.getAttribute('aria-current') === 'page');
     assert.ok(active, 'Dashboard is the active section');
 
-    // Future modules are visible slots with a Soon badge, never links.
-    const earnings = byData('partner-planned', 'earnings');
-    assert.ok(earnings.length >= 2, 'Earnings has a sidebar + drawer slot');
-    assert.ok((earnings[0].textContent || '').includes('Soon'));
-    assert.equal(earnings[0].querySelector('a,button'), null, 'a planned slot is not clickable');
+    // The promoted modules are live anchors with their canonical URLs — no
+    // disabled "Soon" slots are left in the sidebar at all.
+    assert.equal(document.querySelectorAll('[data-partner-planned]').length, 0, 'no planned slots remain');
+    assert.ok(!(document.body.textContent || '').includes('Coming soon'), 'the Coming soon heading is gone');
+    for (const [key, href] of PROMOTED_NAV_LINKS) {
+      const links = byData('partner-nav', key);
+      assert.ok(links.length >= 2, `${key} renders in sidebar + drawer`);
+      for (const link of links) {
+        assert.equal(link.tagName, 'A', `${key} is a link, not a placeholder`);
+        assert.equal(link.getAttribute('href'), href, `${key} carries its real URL`);
+        assert.notEqual(link.getAttribute('aria-disabled'), 'true', `${key} is enabled`);
+      }
+    }
+    assert.equal(
+      byData('partner-nav', 'earnings').find((el) => el.getAttribute('aria-current') === 'page'),
+      undefined,
+      'an unvisited section is not marked current'
+    );
   } finally {
     await app.unmount();
     restoreFetch();
@@ -425,7 +449,20 @@ test('the notifications dropdown shows the real recent-activity feed', async () 
     assert.ok((panel!.textContent || '').includes('New referral added'), 'real activity label from the RPC');
     assert.ok((panel!.textContent || '').includes('Referred user …00000002'), 'the referred user (masked ref)');
 
+    // The panel is a peek: it hands off to the real section instead of
+    // pretending to be the whole feed.
+    const openAll = document.querySelector('[data-partner-notifications-open-all]') as HTMLAnchorElement | null;
+    assert.ok(openAll, 'the panel links to the Notifications section');
+    assert.equal(openAll!.getAttribute('href'), '/partner/notifications');
+    await click(openAll, 'the All notifications link');
+    assert.deepEqual(app.navigated, ['/partner/notifications'], 'the hand-off navigates the SPA');
+    assert.equal(bell()!.getAttribute('aria-expanded'), 'false', 'the panel closes after the hand-off');
+    await app.rerender();
+    assert.ok(document.querySelector('[data-partner-module="notifications"]'), 'and lands on the live section');
+
     // Backdrop closes the dropdown.
+    await click(bell(), 'the notifications bell');
+    assert.ok(document.querySelector('[data-partner-notifications-panel]'), 'panel reopens');
     await click(document.querySelector('[data-partner-menu-backdrop]'), 'the menu backdrop');
     assert.equal(bell()!.getAttribute('aria-expanded'), 'false');
     assert.equal(document.querySelector('[data-partner-notifications-panel]'), null, 'panel removed on close');

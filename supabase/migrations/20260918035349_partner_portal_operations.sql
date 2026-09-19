@@ -128,9 +128,28 @@ alter table public.partner_level_definitions enable row level security;
 revoke all on public.partner_level_definitions from public, anon, authenticated;
 grant select on public.partner_level_definitions to authenticated;
 
-create or replace function public.my_active_partner_id() returns uuid language sql stable security definer set search_path='' as $$
- select gp.id from public.growth_partners gp where gp.user_id=(select auth.uid()) and gp.is_active and gp.status='approved'
-$$;
+-- The caller's own ACTIVE partner row, or null. Two growth_partners generations
+-- are in the wild: a deployed project carries an approval `status` column,
+-- while `20260912_growth_partner_onboarding.sql` (so every project built from
+-- this repository) has only `is_active`. A `language sql` body resolves its
+-- columns at CREATE time, which made this function — and every policy and RPC
+-- below that calls it — impossible to install on such a project. plpgsql plans a
+-- statement only when it first runs it, so the branch the table cannot satisfy
+-- is never parsed. Same idiom (and the same two-branch duplication) as
+-- `partner_dashboard_caller()` in 20260919_growth_partner_area_contract_alignment.sql.
+create or replace function public.my_active_partner_id() returns uuid
+language plpgsql stable security definer set search_path='' as $$
+declare v_partner uuid; begin
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='growth_partners' and column_name='status') then
+    select gp.id into v_partner from public.growth_partners gp
+     where gp.user_id=(select auth.uid()) and gp.is_active and gp.status='approved';
+  else
+    select gp.id into v_partner from public.growth_partners gp
+     where gp.user_id=(select auth.uid()) and gp.is_active;
+  end if;
+  return v_partner;
+end $$;
 revoke all on function public.my_active_partner_id() from public, anon;
 grant execute on function public.my_active_partner_id() to authenticated, service_role;
 
@@ -144,15 +163,36 @@ create policy partner_levels_select_active on public.partner_level_definitions f
 create policy partner_assets_select_published on public.partner_marketing_assets for select to authenticated using (is_published);
 
 -- Private support uploads are organised as <partner-record-id>/<uuid>/<file>.
-insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values
- ('partner-support','partner-support',false,10485760,array['image/png','image/jpeg','application/pdf','text/plain'])
-on conflict (id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
-drop policy if exists partner_support_objects_select_own on storage.objects;
-create policy partner_support_objects_select_own on storage.objects for select to authenticated using (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text);
-drop policy if exists partner_support_objects_insert_own on storage.objects;
-create policy partner_support_objects_insert_own on storage.objects for insert to authenticated with check (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text);
-drop policy if exists partner_support_objects_delete_own on storage.objects;
-create policy partner_support_objects_delete_own on storage.objects for delete to authenticated using (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text);
+--
+-- The storage half is conditional on purpose: `storage.buckets` exists on a
+-- Supabase project and nowhere else, and this file has to stay applyable on a
+-- bare Postgres (the local gateway replays the whole migration chain in PGlite,
+-- and the tests run it too). Nothing in the tables or RPCs above depends on it.
+do $$ begin
+  if to_regclass('storage.buckets') is null then
+    return;
+  end if;
+  execute $sb$
+    insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values
+     ('partner-support','partner-support',false,10485760,array['image/png','image/jpeg','application/pdf','text/plain'])
+    on conflict (id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types
+  $sb$;
+  execute $sb$drop policy if exists partner_support_objects_select_own on storage.objects$sb$;
+  execute $sb$
+    create policy partner_support_objects_select_own on storage.objects for select to authenticated
+      using (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text)
+  $sb$;
+  execute $sb$drop policy if exists partner_support_objects_insert_own on storage.objects$sb$;
+  execute $sb$
+    create policy partner_support_objects_insert_own on storage.objects for insert to authenticated
+      with check (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text)
+  $sb$;
+  execute $sb$drop policy if exists partner_support_objects_delete_own on storage.objects$sb$;
+  execute $sb$
+    create policy partner_support_objects_delete_own on storage.objects for delete to authenticated
+      using (bucket_id='partner-support' and (storage.foldername(name))[1]=public.my_active_partner_id()::text)
+  $sb$;
+end $$;
 
 -- RPC contracts consumed by the next UI wiring phase.
 create or replace function public.get_my_partner_earnings(p_limit integer default 50, p_offset integer default 0)
@@ -226,11 +266,32 @@ returns jsonb language sql stable security definer set search_path='' as $$
  select jsonb_build_object('active_referrals',(select active_referrals from mine),'levels',coalesce((select jsonb_agg(to_jsonb(x) order by x.sort_order) from (select code,sort_order,minimum_paid_referrals,commission_bps,perks,(select active_referrals from mine)>=minimum_paid_referrals as unlocked from public.partner_level_definitions where is_active) x),'[]'::jsonb))
 $$;
 
+-- Top partners by lifetime commission, and the caller's own rank.
+--
+-- The active-partner filter has to read `status` on a deployed project and
+-- cannot read it on one built from `20260912_growth_partner_onboarding.sql`
+-- (see my_active_partner_id() above for why that split breaks a
+-- `language sql` body). One body, one interpolated filter — the fragment is a
+-- literal chosen here, never data, so there is nothing to inject.
 create or replace function public.get_partner_leaderboard(p_limit integer default 25)
-returns jsonb language sql stable security definer set search_path='' as $$
- with totals as (select e.partner_id,sum(e.amount_paise) filter(where e.status not in ('reversed','held'))::bigint earnings_paise from public.partner_earnings e group by e.partner_id), ranked as (select gp.id,gp.user_id,coalesce(t.earnings_paise,0) earnings_paise,dense_rank() over(order by coalesce(t.earnings_paise,0) desc) rank from public.growth_partners gp left join totals t on t.partner_id=gp.id where gp.is_active and gp.status='approved')
- select jsonb_build_object('items',coalesce((select jsonb_agg(jsonb_build_object('rank',rank,'partner_id',id,'earnings_paise',earnings_paise) order by rank) from (select * from ranked order by rank limit least(greatest(p_limit,1),100)) x),'[]'::jsonb),'my_rank',(select rank from ranked where id=public.my_active_partner_id()))
-$$;
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare v_rows jsonb; v_active text := 'gp.is_active'; begin
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='growth_partners' and column_name='status') then
+    v_active := 'gp.is_active and gp.status=''approved''';
+  end if;
+  execute format($q$
+    with totals as (select e.partner_id,sum(e.amount_paise) filter(where e.status not in ('reversed','held'))::bigint earnings_paise from public.partner_earnings e group by e.partner_id),
+    ranked as (select gp.id,coalesce(t.earnings_paise,0) earnings_paise,dense_rank() over(order by coalesce(t.earnings_paise,0) desc) rank
+                 from public.growth_partners gp left join totals t on t.partner_id=gp.id
+                where %s)
+    select jsonb_build_object(
+      'items', coalesce((select jsonb_agg(jsonb_build_object('rank',rank,'partner_id',id,'earnings_paise',earnings_paise) order by rank)
+                           from (select * from ranked order by rank limit least(greatest($1,1),100)) x),'[]'::jsonb),
+      'my_rank', (select min(rank) from ranked where id=public.my_active_partner_id()))
+  $q$, v_active) into v_rows using p_limit;
+  return coalesce(v_rows, jsonb_build_object('items','[]'::jsonb,'my_rank',null));
+end $$;
 
 create or replace function public.get_partner_marketing_assets(p_category text default null)
 returns jsonb language sql stable security definer set search_path='' as $$

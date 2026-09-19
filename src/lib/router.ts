@@ -249,6 +249,11 @@ export function isPartnerLoginPath(pathname: string): boolean {
  * (they are real today) but are not in the sidebar menu yet — they will appear
  * once the fuller dashboard modules (Earnings, Commission, Withdrawals, …)
  * land, without redesigning the shell.
+ *
+ * PART 3: the seven modules that used to be disabled "Soon" slots — Earnings,
+ * Withdrawals, Marketing Materials, Partner Levels, Leaderboards, Notifications
+ * and Support — are now live routes in the sidebar registry, so every section
+ * below resolves to a real page.
  */
 export type PartnerPortalSection =
   | 'dashboard'
@@ -268,16 +273,23 @@ export type PartnerPortalSection =
   | 'notifications'
   | 'support';
 
-/** Every partner-portal section, in canonical sidebar order. */
+/** Every URL-reachable partner-portal section, in canonical sidebar order. */
 export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'dashboard',
   'referral-code',
   'referred-users',
   'referral-status',
-  'profile',
   'rewards',
   'performance',
   'commission',
+  'earnings',
+  'withdrawals',
+  'marketing-materials',
+  'partner-levels',
+  'leaderboards',
+  'notifications',
+  'support',
+  'profile',
 ];
 
 /** Sidebar sections (the menu) — a subset of the URL sections. */
@@ -288,6 +300,13 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'referral-status',
   'rewards',
   'commission',
+  'earnings',
+  'withdrawals',
+  'partner-levels',
+  'leaderboards',
+  'marketing-materials',
+  'notifications',
+  'support',
   'profile',
 ];
 
@@ -304,9 +323,13 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   commission: `${PARTNER_PORTAL_ROOT}/commission`,
   earnings: `${PARTNER_PORTAL_ROOT}/earnings`,
   withdrawals: `${PARTNER_PORTAL_ROOT}/withdrawals`,
-  'marketing-materials': `${PARTNER_PORTAL_ROOT}/marketing-materials`,
-  'partner-levels': `${PARTNER_PORTAL_ROOT}/partner-levels`,
-  leaderboards: `${PARTNER_PORTAL_ROOT}/leaderboards`,
+  // The promoted modules keep short URL segments (`/partner/marketing`) while
+  // their section ids stay descriptive (`marketing-materials`) — the id names
+  // the content, the segment names the address. The long spellings stay
+  // resolvable through PARTNER_PORTAL_ALIASES below.
+  'marketing-materials': `${PARTNER_PORTAL_ROOT}/marketing`,
+  'partner-levels': `${PARTNER_PORTAL_ROOT}/levels`,
+  leaderboards: `${PARTNER_PORTAL_ROOT}/leaderboard`,
   notifications: `${PARTNER_PORTAL_ROOT}/notifications`,
   support: `${PARTNER_PORTAL_ROOT}/support`,
 };
@@ -315,12 +338,18 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
  * Legacy `/partner/:section` aliases → canonical sections. The portal briefly
  * used the growth-partner section ids (`/partner/referrals`,
  * `/partner/customers`); those links keep working and resolve to the canonical
- * menu sections.
+ * menu sections. The long-form ids of the promoted modules
+ * (`/partner/marketing-materials`, `/partner/partner-levels`,
+ * `/partner/leaderboards`) resolve too, so a link shared before the segments
+ * were shortened is never a dead end.
  */
 const PARTNER_PORTAL_ALIASES: Record<string, PartnerPortalSection> = {
   referral: 'referral-code',
   referrals: 'referred-users',
   customers: 'referral-status',
+  marketing: 'marketing-materials',
+  levels: 'partner-levels',
+  leaderboard: 'leaderboards',
 };
 
 /**

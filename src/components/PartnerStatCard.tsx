@@ -1,6 +1,7 @@
 import React from 'react';
 
-export function PartnerStatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/** `React.FC` on purpose: the portal's keyed lists pass `key` to this card. */
+export const PartnerStatCard: React.FC<{ label: string; value: string; hint?: string }> = ({ label, value, hint }) => {
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <p className="text-3xl font-black text-slate-900">{value}</p>
@@ -8,5 +9,5 @@ export function PartnerStatCard({ label, value, hint }: { label: string; value: 
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
   );
-}
+};
 

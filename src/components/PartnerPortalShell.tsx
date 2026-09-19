@@ -3,6 +3,7 @@ import {
   Banknote,
   Bell,
   ChevronDown,
+  ChevronRight,
   CircleUserRound,
   FileSpreadsheet,
   Gift,
@@ -35,58 +36,59 @@ import { formatPartnerDate } from '../lib/partnerPresentation';
  * and a collapsible navigation drawer (hamburger button, backdrop, Escape to
  * close) on mobile.
  *
- * The sidebar menu is data-driven from two registries so the portal can grow
- * (Earnings, Commission, Withdrawals, Marketing Materials, Partner Levels,
- * Leaderboards, Notifications, Support) by adding entries — no redesign:
+ * The sidebar menu is data-driven from ONE registry so the portal grows by
+ * adding an entry — no redesign:
  *
  *   - PARTNER_PORTAL_NAV       live menu items (navigable sections)
- *   - PARTNER_PORTAL_PLANNED   future modules, shown disabled with a "Soon"
- *                              badge until their backend module is real
+ *
+ * PART 3: the seven modules that used to sit in a disabled planned registry
+ * behind its own greyed-out heading (Earnings, Withdrawals, Marketing
+ * Materials, Partner Levels, Leaderboards, Notifications, Support) are live
+ * entries here — the planned registry and its badge are deleted. Each one renders as a real
+ * anchor carrying its canonical `/partner/...` URL: a plain click stays inside
+ * the SPA (history.pushState through the app's navigate), while middle-click,
+ * ⌘/Ctrl-click and "copy link address" keep working like any link. A menu entry
+ * with no page behind it is a bug, never a placeholder.
  *
  * Rendered only after the authorization gate reaches `ready` (authenticated
  * ACTIVE partner) — the shell itself never decides authorization.
  */
+
+/** Which sidebar group an entry belongs to (the small uppercase headings). */
+export type PartnerPortalNavGroup = 'portal' | 'earnings' | 'resources' | 'account';
+
+/** Sidebar group headings, in menu order. Every group label shown in the nav. */
+export const PARTNER_PORTAL_NAV_GROUPS: Array<{ id: PartnerPortalNavGroup; label: string }> = [
+  { id: 'portal', label: 'Menu' },
+  { id: 'earnings', label: 'Earnings & growth' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'account', label: 'Account' },
+];
 
 /** Live sidebar entry: a real, navigable portal section. */
 export interface PartnerPortalNavItem {
   section: PartnerPortalSection;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  group: PartnerPortalNavGroup;
 }
 
 /** Sidebar menu items, in menu order. Mirrors PARTNER_PORTAL_MENU_SECTIONS. */
 export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
-  { section: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { section: 'referral-code', label: 'My Referral Code', icon: Ticket },
-  { section: 'referred-users', label: 'Referred Users', icon: Users },
-  { section: 'referral-status', label: 'Referral Status', icon: FileSpreadsheet },
-  { section: 'rewards', label: 'Rewards', icon: Gift },
-  { section: 'commission', label: 'Extra Onboarding Reward', icon: Percent },
-  { section: 'profile', label: 'Profile', icon: CircleUserRound },
-];
-
-/**
- * Future portal modules, shown disabled with a "Soon" badge. Each entry is a
- * slot for a real module that does not exist yet (no commission model, no
- * payouts, …) — rendering them as enabled would be fake, so they navigate
- * nowhere until the section lands in the router and this registry moves.
- */
-export interface PartnerPortalPlannedItem {
-  /** Stable id for the future section (becomes its route segment). */
-  id: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-/** Planned modules — add new sidebar sections here first, then promote them. */
-export const PARTNER_PORTAL_PLANNED: PartnerPortalPlannedItem[] = [
-  { id: 'earnings', label: 'Earnings', icon: Wallet },
-  { id: 'withdrawals', label: 'Withdrawals', icon: Banknote },
-  { id: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone },
-  { id: 'partner-levels', label: 'Partner Levels', icon: Medal },
-  { id: 'leaderboards', label: 'Leaderboards', icon: Trophy },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'support', label: 'Support', icon: LifeBuoy },
+  { section: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'portal' },
+  { section: 'referral-code', label: 'My Referral Code', icon: Ticket, group: 'portal' },
+  { section: 'referred-users', label: 'Referred Users', icon: Users, group: 'portal' },
+  { section: 'referral-status', label: 'Referral Status', icon: FileSpreadsheet, group: 'portal' },
+  { section: 'rewards', label: 'Rewards', icon: Gift, group: 'earnings' },
+  { section: 'commission', label: 'Extra Onboarding Reward', icon: Percent, group: 'earnings' },
+  { section: 'earnings', label: 'Earnings', icon: Wallet, group: 'earnings' },
+  { section: 'withdrawals', label: 'Withdrawals', icon: Banknote, group: 'earnings' },
+  { section: 'partner-levels', label: 'Partner Levels', icon: Medal, group: 'earnings' },
+  { section: 'leaderboards', label: 'Leaderboards', icon: Trophy, group: 'earnings' },
+  { section: 'marketing-materials', label: 'Marketing Materials', icon: Megaphone, group: 'resources' },
+  { section: 'notifications', label: 'Notifications', icon: Bell, group: 'resources' },
+  { section: 'support', label: 'Support', icon: LifeBuoy, group: 'resources' },
+  { section: 'profile', label: 'Profile', icon: CircleUserRound, group: 'account' },
 ];
 
 /** Human title for each portal section (header + drawer use it). */
@@ -233,16 +235,21 @@ export const PartnerProfileMenu: React.FC<{
 );
 
 /**
- * Notifications dropdown (Part 2.3). There is no notifications backend yet,
- * so the panel shows what is REAL today: the recent-activity feed from
- * `get_my_partner_dashboard` (referral added / website started / completed).
- * Empty and loading states are honest — no invented notification counts, no
- * unread badges (nothing tracks read state).
+ * Notifications dropdown (Part 2.3). The panel is deliberately a PEEK at the
+ * recent-activity feed from `get_my_partner_dashboard` (referral added /
+ * website started / completed) — the rows that come with it. It shows nothing
+ * else, because the dropdown does not track read state: the real notification
+ * rows, their unread count and the mark-as-read control live in
+ * `/partner/notifications`, which the footer link below hands off to. Empty and
+ * loading states are honest — no invented notification counts, no unread badge
+ * this panel cannot back up.
  */
 export const PartnerNotificationsPanel: React.FC<{
   entries: PartnerActivityEntry[];
   loading?: boolean;
-}> = ({ entries, loading = false }) => (
+  /** Opens the full Notifications section; the panel itself never paginates. */
+  onOpenAll?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+}> = ({ entries, loading = false, onOpenAll }) => (
   <div data-partner-notifications-panel>
     <div className="border-b border-slate-100 px-4 py-3">
       <p className="text-sm font-bold text-slate-900">Notifications</p>
@@ -286,12 +293,33 @@ export const PartnerNotificationsPanel: React.FC<{
         </ul>
       )}
     </div>
+    {onOpenAll ? (
+      <div className="border-t border-slate-100 p-2">
+        <a
+          href={partnerPortalPath('notifications')}
+          onClick={onOpenAll}
+          data-partner-notifications-open-all
+          className="flex min-h-10 items-center justify-between gap-2 rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+        >
+          All notifications
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </a>
+      </div>
+    ) : null}
   </div>
 );
 
 const NAV_ITEM_CLASS = 'flex items-center gap-3 w-full rounded-xl px-3.5 py-2.5 text-sm font-bold transition-colors cursor-pointer';
 
-/** One live nav button (used by both the desktop sidebar and the drawer). */
+/**
+ * One live nav entry (used by both the desktop sidebar and the mobile drawer).
+ *
+ * An `<a href>` rather than a button, because every item now names a real
+ * route: the URL is visible before the click, the link can be opened in a new
+ * tab or copied, and the browser's own semantics apply. Plain left clicks are
+ * intercepted and handed to the SPA's navigate(), so nothing reloads; modified
+ * clicks are deliberately left to the browser.
+ */
 const PartnerPortalNavButton: React.FC<{
   item: PartnerPortalNavItem;
   active: boolean;
@@ -300,11 +328,24 @@ const PartnerPortalNavButton: React.FC<{
 }> = ({ item, active, accentHex, onSelect }) => {
   const Icon = item.icon;
   return (
-    <button
-      type="button"
+    <a
+      href={partnerPortalPath(item.section)}
       data-partner-nav={item.section}
-      onClick={onSelect}
       aria-current={active ? 'page' : undefined}
+      onClick={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          return;
+        }
+        event.preventDefault();
+        onSelect();
+      }}
       className={`${NAV_ITEM_CLASS} ${
         active ? 'text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
       }`}
@@ -312,29 +353,16 @@ const PartnerPortalNavButton: React.FC<{
     >
       <Icon className="h-[18px] w-[18px] shrink-0" />
       <span className="truncate">{item.label}</span>
-    </button>
+    </a>
   );
 };
 
-/** One planned (not-yet-real) nav entry — visible slot, never a fake link. */
-const PartnerPortalPlannedButton: React.FC<{ item: PartnerPortalPlannedItem }> = ({ item }) => {
-  const Icon = item.icon;
-  return (
-    <span
-      data-partner-planned={item.id}
-      title="Coming soon"
-      className="flex items-center gap-3 w-full rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-400 cursor-default"
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0" />
-      <span className="truncate">{item.label}</span>
-      <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-        Soon
-      </span>
-    </span>
-  );
-};
-
-/** The shared sidebar/drawer navigation content (live items + planned + logout). */
+/**
+ * The shared sidebar/drawer navigation content. Entries are grouped by the
+ * registry's `group` field, and a group heading only renders when the group
+ * actually has an entry — an empty heading is a bug the registry could
+ * otherwise introduce on its own.
+ */
 const PartnerPortalNavList: React.FC<{
   section: PartnerPortalSection;
   accentHex: string;
@@ -342,25 +370,27 @@ const PartnerPortalNavList: React.FC<{
   onSelect: (section: PartnerPortalSection) => void;
   onLogout: () => void;
 }> = ({ section, accentHex, email, onSelect, onLogout }) => (
-  <div className="flex min-h-0 flex-1 flex-col gap-1 px-3 pb-4">
-    <p className="px-3.5 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-      Menu
-    </p>
-    {PARTNER_PORTAL_NAV.map((item) => (
-      <PartnerPortalNavButton
-        key={item.section}
-        item={item}
-        active={item.section === section}
-        accentHex={accentHex}
-        onSelect={() => onSelect(item.section)}
-      />
-    ))}
-    <p className="px-3.5 pt-5 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-      Coming soon
-    </p>
-    {PARTNER_PORTAL_PLANNED.map((item) => (
-      <PartnerPortalPlannedButton key={item.id} item={item} />
-    ))}
+  <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">
+    {PARTNER_PORTAL_NAV_GROUPS.map((group) => {
+      const items = PARTNER_PORTAL_NAV.filter((item) => item.group === group.id);
+      if (!items.length) return null;
+      return (
+        <React.Fragment key={group.id}>
+          <p data-partner-nav-group={group.id} className="px-3.5 pt-5 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            {group.label}
+          </p>
+          {items.map((item) => (
+            <PartnerPortalNavButton
+              key={item.section}
+              item={item}
+              active={item.section === section}
+              accentHex={accentHex}
+              onSelect={() => onSelect(item.section)}
+            />
+          ))}
+        </React.Fragment>
+      );
+    })}
     <div className="mt-auto border-t border-slate-100 pt-3">
       <button
         type="button"
@@ -609,6 +639,14 @@ export const PartnerPortalShell: React.FC<{
                     <PartnerNotificationsPanel
                       entries={notifications}
                       loading={notificationsLoading}
+                      onOpenAll={(event) => {
+                        // Same rule as the sidebar: a plain left click stays in
+                        // the SPA, modified clicks let the browser handle the link.
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+                        event.preventDefault();
+                        setOpenMenu(null);
+                        navigate(partnerPortalPath('notifications'));
+                      }}
                     />
                   </div>
                 ) : null}

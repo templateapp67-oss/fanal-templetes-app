@@ -79,17 +79,39 @@ forgot password goes through Supabase Auth
 
 The portal dashboard shell (`PartnerPortalShell.tsx`, PART 2.2) renders the
 sidebar + top header + main layout on desktop and a hamburger drawer on
-mobile. The menu is registry-driven (live sections + planned "Soon" slots for
-Earnings, Commission, Withdrawals, Marketing Materials, Partner Levels,
-Leaderboards, Notifications, Support), so new modules plug in without
-redesigning the shell. Menu sections: Dashboard, My Referral Code (own code +
+mobile. The menu is registry-driven — `PARTNER_PORTAL_NAV_GROUPS` groups the
+entries `PARTNER_PORTAL_NAV` declares, and each entry carries its own icon,
+label, group and section id, so a new module plugs in by joining that registry
+plus `PARTNER_PORTAL_SECTIONS` in `src/lib/router.ts` without redesigning the
+shell. Menu sections: Dashboard, My Referral Code (own code +
 share link `/signup?ref=CODE` — the canonical form built by
 `src/lib/partnerReferralLink.ts`; `/onboarding/referral?ref=CODE` is also
 accepted by the router — which pre-fills the onboarding
 referral screen, backend still re-validates on submit), Referred Users,
-Referral Status (KPI chips + legend around the server-filtered list), Profile;
+Referral Status (KPI chips + legend around the server-filtered list),
+Rewards, Extra Onboarding Reward, Commission, Earnings, Withdrawals, Partner
+Levels, Leaderboards, Marketing Materials, Notifications, Support, Profile;
 Logout is an action, not a section. Legacy `/partner/referrals` and
 `/partner/customers` aliases resolve to Referred Users / Referral Status.
+
+The seven operational sections (Earnings, Withdrawals, Marketing Materials,
+Partner Levels, Leaderboards, Notifications, Support) are live pages, not
+placeholders — no sidebar entry is disabled and none carries a "Soon" badge.
+Their shared shape is `src/components/partner/*` on top of
+`PartnerModuleKit.tsx` (header, card, table, chips, toast, loading/empty/error
+states, each section tagged `data-partner-module`), and they read and write
+through one data layer: `src/lib/partnerPortalOperations.ts` calls
+`/api/partner/*` (`server/partnerPortalRoutes.ts`, registered from both
+`server.ts` and `api/index.ts`) with the caller's own bearer token and falls
+back to the `get_my_partner_*` / `request_my_partner_*` RPCs when that proxy is
+not part of the deploy. Neither path accepts a partner id from the client — the
+SQL derives it from the session, so a section can only ever see its own
+partner's rows; the API layer adds no privilege and re-raises a missing
+function as `schema_not_applied` so the page can say what to apply.
+`src/lib/partnerPortalQueries.ts` keeps the four states a real dashboard has
+(first load, refreshing, failed, zero rows) impossible to skip, and
+`src/lib/partnerPresentation.ts` is the only formatter allowed to turn paise,
+ISO dates or ledger statuses into text on screen.
 
 The header (PART 2.3) shows the page title, the partner's name and Partner ID
 (their own auth id, display-only), the notifications dropdown (the real
