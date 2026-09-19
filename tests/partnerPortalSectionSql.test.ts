@@ -10,12 +10,17 @@
 // `20260918035349_partner_portal_operations.sql` and
 // `20260919120000_partner_portal_section_reads.sql`, so they are tested there.
 //
-// Why a dedicated file instead of adding the migrations to `LOCAL_GROWTH_CHAIN`:
+// Why a dedicated file originally didn't add migrations to `LOCAL_GROWTH_CHAIN`:
 // the Part 3 guards enumerate which tables can hold partner/referral state to
 // prove no parallel store exists, and eight new `partner_*` tables arriving
-// would silently widen an invariant that phase owns. So this file boots the same
-// chain and then applies the two portal migrations on top, the way the SQL
+// would silently widen an invariant that phase owns. So this file booted the
+// same chain and then applied the two portal migrations on top, the way the SQL
 // Editor would (GROWTH_PARTNER_SETUP.md §3).
+//
+// FIX: LOCAL_GROWTH_CHAIN now DOES include the portal migrations (to fix
+// "Your tickets could not load..." in local dev). The Part 3 guard test was
+// updated to allow those tables. This file now detects if migrations are
+// already in chain and skips re-applying to avoid duplicate policy errors.
 //
 // Two `growth_partners` generations are exercised deliberately: the one this
 // repository ships (`is_active` only) and the deployed one (also `status`). A
@@ -56,7 +61,14 @@ async function portalDatabase(options: { deployedGeneration?: boolean } = {}): P
       `alter table public.growth_partners add column status text not null default 'approved'`
     );
   }
-  for (const file of PORTAL_MIGRATIONS) await db.exec(MIGRATION(file));
+  // LOCAL_GROWTH_CHAIN now includes the portal migrations (fixed for
+  // "Your tickets could not load..." error). Only apply those not already in chain.
+  const chainSet = new Set(LOCAL_GROWTH_CHAIN);
+  for (const file of PORTAL_MIGRATIONS) {
+    if (!chainSet.has(file)) {
+      await db.exec(MIGRATION(file));
+    }
+  }
   const rpc: PortalDb['rpc'] = (actor, name, args = [], admin = false) =>
     local.asRequest({ sub: actor, isAdmin: admin }, async (conn) => {
       const placeholders = args.map((_, index) => `$${index + 1}`).join(',');

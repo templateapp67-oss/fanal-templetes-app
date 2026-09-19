@@ -442,6 +442,12 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
           and (table_name ilike '%referral%' or table_name ilike '%partner%' or table_name ilike '%growth%')
         order by table_name`)
     ).rows.map((row: any) => row.table_name);
+    // The growth chain now also includes the partner portal operations tables
+    // (Earnings, Withdrawals, Marketing Materials, Partner Levels, Leaderboards,
+    // Notifications, Support, Account Settings) which were missing from the
+    // local gateway and caused "Your tickets could not load..." — they are NOT
+    // a second referral model, they are the operational model that PART 3
+    // consumes but does not write to.
     assert.deepEqual(referralTables, [
       'growth_onboarding',
       'growth_partner_applications',
@@ -449,8 +455,17 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
       'growth_referral_admin_audit',
       'growth_referral_attributions',
       'growth_referral_status_audit',
+      'partner_account_settings',
+      'partner_earnings',
+      'partner_level_definitions',
+      'partner_marketing_assets',
+      'partner_notification_preferences',
+      'partner_notifications',
+      'partner_payout_requests',
       'partner_referral_events',
       'partner_referrals',
+      'partner_support_attachments',
+      'partner_support_tickets',
     ]);
     // (c) exactly one place stores the attribution edge, plus the single-use
     //     grant snapshot that the handoff already had.
