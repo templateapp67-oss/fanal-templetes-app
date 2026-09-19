@@ -62,10 +62,10 @@ to anon;
 -- Diagnostics helper (optional): run this from the Supabase SQL editor to
 -- verify privileges + RLS for the authenticated role after applying:
 --
---   select schemaname, tablename, privilege_type
+--   select table_schema, table_name, privilege_type
 --   from information_schema.role_table_grants
---   where grantee in ('authenticated', 'anon') and schemaname = 'public'
---   order by tablename, grantee, privilege_type;
+--   where grantee in ('authenticated', 'anon') and table_schema = 'public'
+--   order by table_name, grantee, privilege_type;
 --
 --   select tablename, policyname
 --   from pg_policies

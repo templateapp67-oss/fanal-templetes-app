@@ -41,11 +41,14 @@ import {
   summarizeSaveError,
   isAuthLikeFailure,
   isSchemaLikeFailure,
+  isSessionExpiryFailure,
   isUuid,
   toDbId,
   withRetry,
   runSalonSavePipeline,
+  SESSION_EXPIRED_SAVE_MESSAGE,
 } from './lib/autoSave';
+import { ensureFreshSession, refreshSessionForSave } from './lib/authSession';
 import { applyWorkingHoursFromRow } from './lib/salonSync';
 import { saveOwnerEditorState } from './lib/ownerEditorState';
 import {
@@ -352,6 +355,11 @@ export default function App() {
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  // True when a cloud save was rejected because the Supabase session is no
+  // longer usable (expired/revoked token) even after a silent refresh + retry.
+  // The editor turns this into a friendly "sign in again" notice instead of a
+  // database-permission error; a successful save or a new sign-in clears it.
+  const [saveNeedsSignIn, setSaveNeedsSignIn] = useState(false);
   const [authStatus, setAuthStatus] = useState<RestoredAuthState['status']>(isMockSupabase ? 'ready' : 'restoring');
   const authStatusRef = useRef(authStatus);
   authStatusRef.current = authStatus;
@@ -664,6 +672,41 @@ export default function App() {
     previousTemplateIdRef.current = selectedTemplateId;
   }, [selectedTemplateId]);
 
+  // Keep the RESTORED session usable while the tab is alive. supabase-js
+  // refreshes on an interval, but browsers throttle timers in background tabs,
+  // so a laptop that wakes up (or a tab that is focused again) can hold a token
+  // that is already expired. Refreshing here means the next save does not have
+  // to recover from a stale JWT at all.
+  useEffect(() => {
+    if (isMockSupabase || typeof document === 'undefined') return;
+    const refreshWhenUsable = () => {
+      if (document.visibilityState === 'visible') void ensureFreshSession(supabase);
+    };
+    document.addEventListener('visibilitychange', refreshWhenUsable);
+    window.addEventListener('online', refreshWhenUsable);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshWhenUsable);
+      window.removeEventListener('online', refreshWhenUsable);
+    };
+  }, []);
+
+  // A fresh sign-in or a successful token refresh makes the cloud reachable
+  // again, so the editor's "sign in again" notice is cleared as soon as the
+  // session is usable (and on sign-out, when the editor is not shown at all).
+  useEffect(() => {
+    if (isMockSupabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event: string, session: any) => {
+        if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
+          setSaveNeedsSignIn(false);
+        } else if (event === 'SIGNED_OUT') {
+          setSaveNeedsSignIn(false);
+        }
+      }
+    );
+    return () => subscription.unsubscribe();
+  }, []);
+
   // The restored SDK session, not a cached user object, controls authentication.
   useEffect(() => {
     if (isMockSupabase) return;
@@ -913,13 +956,16 @@ export default function App() {
           // the tab sat in the background, every query below would fail with
           // the same auth error — detect it once instead of retrying five
           // queries three times, and surface an actionable message.
-          const { data: sessionData, error: sessionLookupError } =
-            await supabase.auth.getSession();
-          if (sessionLookupError) {
-            throw sessionLookupError;
-          }
-          if (!sessionData.session?.user) {
-            const message = 'no active Supabase session — please sign in again';
+          //
+          // ensureFreshSession() refreshes a stale token first (exactly like
+          // the save path), so a backgrounded tab can hydrate instead of
+          // reporting "no active session" for a session that is merely due for
+          // its refresh.
+          const sessionState = await ensureFreshSession(supabase);
+          if (!sessionState.ok || !sessionState.userId || sessionState.userId !== userId) {
+            const message = !sessionState.ok
+              ? `session could not be refreshed (${sessionState.reason ?? 'unknown'}) — please sign in again`
+              : 'no active Supabase session — please sign in again';
             if (hydrationUserRef.current === userId) {
               hydratedForUserRef.current = false;
               hydrationErrorRef.current = message;
@@ -978,8 +1024,10 @@ export default function App() {
             hydratedForUserRef.current = false;
             hydrationErrorRef.current = describeError(err);
             // Classify the root cause so the console shows the exact remedy.
-            const hint = isAuthLikeFailure(hydrationErrorRef.current)
-              ? 'AUTH/RLS: the authenticated role is missing table grants or RLS policies — re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.'
+            const hint = isSessionExpiryFailure(hydrationErrorRef.current)
+              ? 'SESSION: the stored token was refreshed automatically; if the refresh token was revoked the owner must sign in again (the console warning above names the exact reason).'
+              : isAuthLikeFailure(hydrationErrorRef.current)
+              ? 'AUTH/RLS: the authenticated role is missing table grants or RLS policies — re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql and 20261010_salon_profile_rls_and_grants.sql) and sign in again.'
               : isSchemaLikeFailure(hydrationErrorRef.current)
               ? 'SCHEMA: tables are missing — apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).'
               : 'TRANSIENT: network/server — retried automatically; saves continue locally.';
@@ -1121,20 +1169,30 @@ export default function App() {
           // the same owner we are saving for. A dead session is no longer a
           // hard failure — the pipeline degrades to SUCCESS (Local Draft) —
           // the auth observer alone controls the signed-in UI.
+          //
+          // ensureFreshSession() also REFRESHES a token that is expired or
+          // inside its expiry margin (the tab sat in the background, the
+          // laptop slept, the auto-refresh tick never ran). Without this the
+          // write went out with a stale JWT and came back as a 401/42501,
+          // which the owner could only see as "Database permission problem —
+          // please sign in again".
           try {
-            const { data: sessionData, error: sessionLookupError } =
-              await supabase.auth.getSession();
-            if (sessionLookupError) {
-              throw sessionLookupError;
+            const sessionState = await ensureFreshSession(supabase);
+            const sessionUser = sessionState.userId ? { id: sessionState.userId } : null;
+            if (sessionState.refreshed) {
+              console.info('[AutoSave] Supabase session refreshed before the save.');
             }
-            const sessionUser = sessionData?.session?.user ?? null;
             if (sessionUser) {
               // Forwarded to POST /api/website/save so the server can prove
               // the caller is really liveOwnerId (identity binding).
-              liveAccessToken = sessionData?.session?.access_token || undefined;
+              liveAccessToken = sessionState.accessToken || undefined;
             }
             if (!sessionUser) {
               sessionOk = false;
+              // The editor shows a "sign in again" notice: the account is
+              // signed in per the UI, but the cloud session is unusable, so
+              // publishing is impossible until they re-authenticate.
+              setSaveNeedsSignIn(true);
               console.error(
                 '[AutoSave] No active Supabase session — saving as a local draft (SUCCESS (Local Draft)) instead of failing. Sign in again to resume cloud sync (local edits are already saved on this device).'
               );
@@ -1181,8 +1239,16 @@ export default function App() {
         }
 
         // 2c) Run the pipeline: client sync → service-role API → local draft.
+        //     `refreshSession` lets the service-role fallback retry with a
+        //     freshly refreshed token when the direct sync was rejected as
+        //     unauthenticated (the token may have expired between the
+        //     pre-flight and the write).
         const cloud = await runSalonSavePipeline({
           sync: (p) => saveOwnerEditorState(supabase, p),
+          refreshSession: async () => {
+            const refreshed = await refreshSessionForSave(supabase);
+            return { accessToken: refreshed.accessToken ?? undefined, ok: refreshed.ok };
+          },
           payload: {
             ownerId: liveOwnerId,
             profile: state.profile,
@@ -1201,9 +1267,14 @@ export default function App() {
           const joined = cloud.errors.join(' · ');
           // Classify the exact root cause for the console (the pipeline has
           // already logged each failure with table name + HTTP status).
-          if (isAuthLikeFailure(joined)) {
+          if (isSessionExpiryFailure(joined)) {
             console.error(
-              '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql) and sign in again.',
+              '[AutoSave] Cloud save rejected (SESSION): the access token was refreshed automatically before/after the write and still could not authenticate. The refresh token is expired or revoked — sign in again (edits are safe in the local draft).',
+              cloud.errors
+            );
+          } else if (isAuthLikeFailure(joined)) {
+            console.error(
+              '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql and 20261010_salon_profile_rls_and_grants.sql) and sign in again.',
               cloud.errors
             );
           } else if (isSchemaLikeFailure(joined)) {
@@ -1244,10 +1315,20 @@ export default function App() {
           // local draft cache could take the state (storage disabled/quota
           // even after degradation). Surface it once; auto-saves stay quiet.
           const detail = cloud.errors.join(' · ') || cloud.summary;
-          console.error('[Nexora Sync Error]:', { stage: 'save pipeline — no persistence target available', target: cloud.target, errors: cloud.errors });
+          const sessionGone = isSessionExpiryFailure(detail);
+          console.error('[Nexora Sync Error]:', { stage: 'save pipeline — no persistence target available', target: cloud.target, errors: cloud.errors, sessionGone });
           setSaveStatus('error');
+          // A dead session is not a database-permission problem: the save
+          // engine already refreshed + retried once, so tell the owner
+          // exactly what to do and let the editor show the same notice.
+          if (sessionGone) setSaveNeedsSignIn(true);
           if (source === 'manual' || lastErrorToastRef.current !== detail) {
-            showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
+            showToast(
+              sessionGone
+                ? `Save failed: ${SESSION_EXPIRED_SAVE_MESSAGE}`
+                : `Save failed: ${summarizeSaveError(detail)}`,
+              'error'
+            );
           }
           lastErrorToastRef.current = detail;
           return false;
@@ -1260,6 +1341,7 @@ export default function App() {
         const publishedToCloud = cloud.target === 'cloud' || cloud.target === 'api';
         if (publishedToCloud) {
           setSaveStatus('saved');
+          setSaveNeedsSignIn(false); // a cloud write proves the session works again
           // Auto-saves update quietly via the status pill; only explicit
           // saves interrupt the owner with a toast.
           if (source === 'manual') {
@@ -1714,6 +1796,7 @@ export default function App() {
           showToast={showToast}
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
+          sessionExpired={saveNeedsSignIn}
         />
       )}
 

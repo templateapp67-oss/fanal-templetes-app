@@ -584,6 +584,106 @@ test('saveViaWebsiteApi without accessToken sends no Authorization header', asyn
   assert.equal(capturedInit?.headers?.Authorization, undefined);
 });
 
+test('an auth-blocked sync refreshes the session before the service-role fallback', async () => {
+  useMemoryStorage();
+  const captured: Array<{ url: string; headers: any }> = [];
+  const originalFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = (async (url: string, init: any) => {
+    captured.push({ url: String(url), headers: init?.headers });
+    return new Response(JSON.stringify({ success: true, timestamp: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as any;
+  let refreshes = 0;
+  try {
+    const outcome = await runSalonSavePipeline({
+      payload: PAYLOAD as any,
+      sync: async () => ({
+        ok: false,
+        errors: ['save salon profile: JWT expired | code: 401'],
+        blockedByAuth: true,
+      }),
+      // The tab's token went stale; the pipeline must not send it to an
+      // endpoint that verifies identity against Supabase Auth.
+      refreshSession: async () => {
+        refreshes++;
+        return { ok: true, accessToken: 'refreshed-owner-token' };
+      },
+      isMockMode: false,
+      authenticated: true,
+      accessToken: 'stale-owner-token',
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.target, 'api');
+    assert.equal(refreshes, 1, 'the refresh hook must run once for an auth-blocked sync');
+    const saveCall = captured.find((c) => c.url.includes('/api/website/save'));
+    assert.ok(saveCall, 'the fallback must hit POST /api/website/save');
+    assert.equal(saveCall.headers?.Authorization, 'Bearer refreshed-owner-token');
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+  }
+});
+
+test('a failing refresh leaves the API fallback on the original token', async () => {
+  useMemoryStorage();
+  const captured: Array<{ url: string; headers: any }> = [];
+  const originalFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = (async (url: string, init: any) => {
+    captured.push({ url: String(url), headers: init?.headers });
+    return new Response(JSON.stringify({ success: true, timestamp: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as any;
+  try {
+    const outcome = await runSalonSavePipeline({
+      payload: PAYLOAD as any,
+      sync: async () => ({
+        ok: false,
+        errors: ['save salon profile: JWT expired | code: 401'],
+        blockedByAuth: true,
+      }),
+      refreshSession: async () => {
+        throw new Error('Invalid Refresh Token');
+      },
+      isMockMode: false,
+      authenticated: true,
+      accessToken: 'stale-owner-token',
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.target, 'api');
+    const saveCall = captured.find((c) => c.url.includes('/api/website/save'));
+    assert.equal(saveCall.headers?.Authorization, 'Bearer stale-owner-token');
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+  }
+});
+
+test('the pipeline does not refresh the session for non-auth failures', async () => {
+  useMemoryStorage();
+  let refreshes = 0;
+  const apiCalls: any[] = [];
+  const outcome = await runSalonSavePipeline({
+    payload: PAYLOAD as any,
+    sync: async () => ({ ok: false, errors: ['save services: fetch failed'], blockedByAuth: false }),
+    refreshSession: async () => {
+      refreshes++;
+      return { ok: true, accessToken: 'unused' };
+    },
+    saveViaApi: async () => {
+      apiCalls.push(1);
+      return { ok: true };
+    },
+    isMockMode: false,
+    authenticated: true,
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.target, 'api');
+  assert.equal(refreshes, 0, 'a network failure must not trigger a token refresh');
+  assert.equal(apiCalls.length, 1);
+});
+
 test('the pipeline forwards the owner token to the default API fallback', async () => {
   useMemoryStorage();
   const captured: Array<{ url: string; headers: any }> = [];

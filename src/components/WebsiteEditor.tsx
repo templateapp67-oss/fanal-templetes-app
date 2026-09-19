@@ -32,6 +32,7 @@ import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
+import { SavePermissionNotice } from './SavePermissionNotice';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
 import { isCompletionNotReadyError, recordTemplateCompletion } from '../lib/growthPartner';
 import { TikTokIcon } from './TikTokIcon';
@@ -57,6 +58,13 @@ interface WebsiteEditorProps {
   showToast?: (message: string, type?: 'success' | 'error') => void;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  /**
+   * True when the last cloud save was rejected because the Supabase session is
+   * no longer usable (expired/revoked token) even after the save engine
+   * refreshed and retried once. Renders the in-editor "sign in again" notice —
+   * the owner's edits are already safe in the local draft.
+   */
+  sessionExpired?: boolean;
 }
 
 const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
@@ -77,6 +85,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   showToast,
   isAuthenticated = true,
   onRequireAuth,
+  sessionExpired = false,
 }) => {
   const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
   const [profileCompletion, setProfileCompletion] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading');
@@ -193,9 +202,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     }
   };
 
-  const handleSave = async (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleSave = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     if (isSavePending) return;
-    saveTriggerRef.current = event.currentTarget;
+    // The button handlers pass their event (so focus can be returned to the
+    // trigger from the success dialog); the session notice's "Retry Save"
+    // calls this with no event and keeps the previous trigger.
+    if (event?.currentTarget) saveTriggerRef.current = event.currentTarget;
     setIsSaving(true);
     try {
       // Only an explicit, successful save opens the next-step dialog, never an autosave.
@@ -234,6 +246,17 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   return (
     <div className="min-h-screen pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col gap-6">
+
+        {/* Session expired / permission-safe notice. Shown only when the save
+            engine decided the cloud session must be re-established; the local
+            draft already holds every edit, so nothing is lost. */}
+        <SavePermissionNotice
+          visible={sessionExpired}
+          onSignIn={onRequireAuth ? () => onRequireAuth('login') : undefined}
+          onRetry={() => {
+            void handleSave();
+          }}
+        />
 
         {/* ===== Top sticky save bar ===== */}
         <div className="sticky top-20 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -860,6 +883,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <span>
               {isSavePending
                 ? 'Auto-saving your changes…'
+                : sessionExpired
+                ? 'Your session expired — sign in again to publish to the cloud. Your edits are saved on this device.'
                 : isSaveFailed
                 ? 'We couldn’t save your changes. Check your connection and retry — the exact error is in the browser console.'
                 : saveStatus === 'saved_local'

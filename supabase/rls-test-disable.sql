@@ -57,7 +57,7 @@ select table_name,
        grantee,
        string_agg(privilege_type, ', ' order by privilege_type) as privileges
 from information_schema.role_table_grants
-where schemaname = 'public'
+where table_schema = 'public'
   and grantee in ('anon', 'authenticated')
   and table_name in ('profiles', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
 group by table_name, grantee
