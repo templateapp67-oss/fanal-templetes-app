@@ -140,7 +140,7 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
       }}
     >
       <div 
-        className="bg-white border border-gray-200 rounded-2xl w-[92%] sm:w-[90%] md:w-[600px] max-w-[600px] p-6 shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto my-auto"
+        className="mx-auto flex my-auto max-h-[90dvh] w-full max-w-[min(600px,95vw)] flex-col gap-5 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center border-b border-gray-100 pb-4">

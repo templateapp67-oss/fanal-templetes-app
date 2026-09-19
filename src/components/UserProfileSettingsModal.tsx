@@ -161,12 +161,12 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]"
+        className="mx-auto flex max-h-[90dvh] w-full max-w-[min(36rem,95vw)] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-2xl sm:rounded-3xl"
       >
         {/* Modal Header */}
         <div className="px-6 py-5 bg-gradient-to-r from-rose-50 to-pink-50 border-b border-gray-100 flex items-center justify-between">

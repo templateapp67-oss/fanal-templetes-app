@@ -244,8 +244,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const saveLabel = saveUi.label;
 
   return (
-    <div className="min-h-screen pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col gap-6">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
+      <div className="w-full max-w-full sm:max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-6 min-w-0">
 
         {/* Session expired / permission-safe notice. Shown only when the save
             engine decided the cloud session must be re-established; the local
@@ -259,7 +259,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         />
 
         {/* ===== Top sticky save bar ===== */}
-        <div className="sticky top-20 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="sticky top-20 z-30 w-full min-w-0 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-11 h-11 rounded-xl bg-[#C20E5A]/10 text-[#C20E5A] flex items-center justify-center shrink-0">
               <Store className="w-5 h-5" />
@@ -278,8 +278,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             </div>
           </div>
 
-          {/* Save status pill */}
-          <div className="flex items-center gap-2">
+          {/* Save status pill + actions. `flex-wrap` lets the buttons drop to
+              the next line instead of being squeezed off a phone screen. */}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <div
               role="status"
               aria-live="polite"
@@ -341,7 +342,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </div>
 
         {/* ===== 1. SALON DETAILS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <Store className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Salon Details</h2>
@@ -428,7 +429,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 2. CONTACT & LOCATION ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <UserRound className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
@@ -629,7 +630,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 4. SERVICES & PRICING ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-[#C20E5A]" />
@@ -748,7 +749,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== DIGITAL TOUCHPOINTS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1"><Globe className="w-4 h-4 text-[#C20E5A]" /><h2 className="font-display font-bold text-base">Website &amp; Digital Touchpoints</h2></div>
           <p className="text-[11px] text-gray-500 mb-4">Use this checklist to turn your brand story into a high-converting website experience.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -770,7 +771,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 5. TEMPLATE & LIVE SITE ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <Building2 className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Template &amp; Live Website</h2>
@@ -873,7 +874,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== BOTTOM SAVE BAR ===== */}
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="w-full bg-white border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-gray-600">
             {isSaveFailed ? (
               <AlertCircle className="w-4 h-4 text-rose-500" />

@@ -7,6 +7,7 @@ import {
   Check, 
   ChevronRight, 
   ChevronLeft, 
+  ChevronDown,
   X, 
   Eye, 
   EyeOff, 
@@ -259,12 +260,18 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
 
   return (
     <aside 
-      className="fixed right-0 top-20 bottom-0 z-40 w-80 sm:w-96 bg-white border-l border-slate-200 shadow-2xl flex flex-col transition-all duration-300 animate-in slide-in-from-right font-sans"
+      // Mobile: full-width bottom sheet so the controls are reachable and the
+      // canvas underneath is never pushed sideways. md+: the original right
+      // rail. The panel must win over the canvas' own overflow rules, hence
+      // `max-w-full` is deliberately NOT applied here.
+      className="fixed inset-x-0 bottom-0 top-auto z-40 flex max-h-[85dvh] w-full flex-col rounded-t-2xl border-t border-slate-200 bg-white font-sans shadow-2xl transition-all duration-300 md:inset-x-auto md:right-0 md:top-20 md:bottom-0 md:max-h-none md:w-96 md:rounded-none md:border-l md:border-t-0"
       id="side-panel-customizer"
+      role="complementary"
+      aria-label="Website customizer"
     >
       {/* Toast Notification */}
       {toastNotice && (
-        <div className="absolute top-14 left-4 right-4 z-50 bg-slate-900 text-white text-[11px] font-medium py-2 px-3 rounded-xl shadow-xl flex items-center gap-2 border border-slate-700">
+        <div className="absolute left-3 right-3 top-14 z-50 flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] font-medium text-white shadow-xl sm:left-4 sm:right-4">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span className="truncate">{toastNotice}</span>
         </div>
@@ -294,10 +301,14 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           )}
           <button
             onClick={onToggle}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200/60 hover:text-slate-700 cursor-pointer"
             title="Close Customizer Panel"
+            aria-label="Close the website customizer"
           >
-            <ChevronRight className="w-5 h-5" />
+            {/* Points where the panel will actually go: down (it is a bottom
+                sheet) on phones, right (it is a rail) from md up. */}
+            <ChevronRight className="hidden h-5 w-5 md:block" />
+            <ChevronDown className="h-5 w-5 md:hidden" />
           </button>
         </div>
       </div>
@@ -306,12 +317,12 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
       <div className="grid grid-cols-7 p-1 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
         <button
           onClick={() => setActiveTab('theme')}
-          className={`py-2 px-1 rounded-lg flex flex-col items-center gap-1 transition-all cursor-pointer ${
+          className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg px-0.5 py-2 transition-all sm:px-1 ${
             activeTab === 'theme' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'
           }`}
         >
           <Palette className="w-3.5 h-3.5" />
-          <span className="text-[9px]">Theme</span>
+          <span className="hidden text-[9px] min-[380px]:inline">Theme</span>
         </button>
 
         <button
@@ -321,7 +332,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <ImageIcon className="w-3.5 h-3.5 text-purple-600" />
-          <span className="text-[9px]">Branding</span>
+          <span className="hidden text-[9px] min-[380px]:inline">Branding</span>
         </button>
 
         <button
@@ -331,7 +342,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Scissors className="w-3.5 h-3.5 text-blue-600" />
-          <span className="text-[9px]">Services</span>
+          <span className="hidden text-[9px] min-[380px]:inline">Services</span>
         </button>
 
         <button
@@ -341,7 +352,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <MapPin className="w-3.5 h-3.5" />
-          <span className="text-[9px]">Location</span>
+          <span className="hidden text-[9px] min-[380px]:inline">Location</span>
         </button>
 
         <button
@@ -351,7 +362,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Share2 className="w-3.5 h-3.5 text-teal-600" />
-          <span className="text-[9px]">Sync</span>
+          <span className="hidden text-[9px] min-[380px]:inline">Sync</span>
         </button>
 
         <button
@@ -361,7 +372,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Sliders className="w-3.5 h-3.5" />
-          <span className="text-[9px]">Sections</span>
+          <span className="hidden text-[9px] min-[380px]:inline">Sections</span>
         </button>
 
         <button
@@ -371,7 +382,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
           }`}
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span className="text-[9px]">AI Studio</span>
+          <span className="hidden text-[9px] min-[380px]:inline">AI Studio</span>
         </button>
       </div>
 

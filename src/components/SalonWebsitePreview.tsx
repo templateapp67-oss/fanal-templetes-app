@@ -799,7 +799,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   return (
     <div 
-      className={`min-h-screen flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
+      className={`min-h-screen w-full max-w-full overflow-x-clip flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': primaryAccentColor,
         '--theme-primary': primaryAccentColor,
@@ -821,7 +821,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-24 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs border border-slate-700 font-medium"
+            className="fixed right-3 top-24 z-50 flex max-w-[calc(100vw-1.5rem)] items-center gap-2.5 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs font-medium text-white shadow-2xl sm:right-5"
           >
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{notificationToast}</span>
@@ -833,14 +833,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 1. TOP UNIFIED NAVIGATION & AI STUDIO CONTROLS BAR (OWNER ONLY) */}
       {/* ============================================================ */}
       {!publicView && (
-      <div className="w-full bg-white border-b border-slate-200 sticky top-20 z-40 shadow-xs">
-        <div className="max-w-[1440px] mx-auto p-2 sm:p-4 flex flex-col gap-2.5">
+      <div className="relative z-40 w-full max-w-full border-b border-slate-200 bg-white shadow-xs md:sticky md:top-20">
+        <div className="mx-auto flex w-full min-w-0 max-w-[1440px] flex-col gap-2.5 p-2 sm:p-4">
           
           {/* Main Controls Row */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             
             {/* Left Status & Subdomain */}
-            <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700">
                 <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-bold border border-emerald-200 shrink-0">
@@ -882,7 +882,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Mode Switcher: Inline Edit Mode vs Preview Mode */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full flex-wrap sm:flex-nowrap justify-center">
+            <div className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
               <button
                 type="button"
                 onClick={() => setIsEditMode(!isEditMode)}
@@ -914,7 +914,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Viewport Device Switcher */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full flex-wrap sm:flex-nowrap justify-center">
+            <div className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
               <button
                 type="button"
                 onClick={() => setDeviceMode('desktop')}
@@ -951,27 +951,30 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Right Action Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {/* Customizer Side-Panel Toggle Button */}
               <button
                 type="button"
                 onClick={() => setIsCustomizerOpen(!isCustomizerOpen)}
-                className={`text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 border shadow-xs transition-all cursor-pointer ${
+                className={`flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold shadow-xs transition-all sm:px-3.5 ${
                   isCustomizerOpen
                     ? 'bg-slate-900 text-white border-slate-900'
                     : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
                 }`}
                 id="toggle-customizer-top-btn"
+                aria-label="Toggle the side customizer"
               >
                 <Sliders className="w-4 h-4 text-amber-500" />
-                <span>Side Customizer</span>
+                {/* Desktop-only label: on phones the icon alone opens the
+                    customizer as a full-width sheet. */}
+                <span className="hidden md:inline">Side Customizer</span>
               </button>
 
               {/* Fast Test Booking Modal Button */}
               <button
                 type="button"
                 onClick={() => handleOpenBooking()}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-xs transition-all hover:bg-emerald-700 sm:px-4"
                 id="test-booking-flow-btn"
               >
                 <CalendarCheck className="w-4 h-4" />
@@ -1014,7 +1017,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Quick 1-Click AI Tone Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-thin text-xs shrink-0">
+            <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-1 text-xs scrollbar-thin md:pb-0">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
                 AI Presets:
               </span>
@@ -1050,7 +1053,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           </div>
 
           {/* 14 Category Template Switcher Ribbon */}
-          <div className="pt-2 border-t border-slate-100 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          <div className="flex flex-wrap items-center gap-2 overflow-x-auto border-t border-slate-100 pt-2 pb-1 scrollbar-thin">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">category</span>
               14 Category Templates:
@@ -1104,8 +1107,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
       {/* Edit Mode Notice Banner (OWNER ONLY) */}
       {!publicView && isEditMode && (
-        <div className="w-full max-w-[1240px] px-4 mt-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-amber-900 shadow-xs">
+        <div className="mt-4 w-full max-w-[1240px] min-w-0 px-4">
+          <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 shadow-xs sm:flex-row sm:items-center">
             <div className="flex items-center gap-2">
               <Edit3 className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
@@ -1126,7 +1129,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
       <div 
-        className={`mt-8 transition-all duration-300 max-w-full min-w-0 overflow-x-hidden p-2 sm:p-4 ${deviceWidthClass} min-h-[800px] box-border [&_*]:max-w-full ${
+        className={`mt-8 w-full max-w-full min-w-0 box-border overflow-x-hidden p-2 transition-all duration-300 sm:p-4 ${deviceWidthClass} min-h-[800px] [&_*]:max-w-full ${
           isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
         }`}
         style={{

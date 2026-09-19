@@ -78,7 +78,7 @@ export const WebsiteSavedModal: React.FC<WebsiteSavedModalProps> = ({
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
-      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-gray-200 bg-white p-0 text-[#151c27] shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm"
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-[min(32rem,95vw)] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-0 text-[#151c27] shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm sm:w-[calc(100%-2rem)] sm:rounded-3xl"
     >
       <div className="relative p-6 sm:p-8">
         <button

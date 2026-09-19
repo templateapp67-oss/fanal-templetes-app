@@ -1944,10 +1944,13 @@ export default function App() {
         <div
           role={toast.type === 'error' ? 'alert' : 'status'}
           aria-atomic="true"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1200] animate-in slide-in-from-bottom"
+          // Width-safe on phones: a long message (e.g. the session-expired
+          // copy) used to be laid out at its natural width and pushed the
+          // whole page sideways.
+          className="pointer-events-none fixed inset-x-0 bottom-6 z-[1200] flex justify-center px-4"
         >
           <div
-            className={`flex items-center gap-2 px-5 py-3 rounded-2xl shadow-2xl text-sm font-bold border ${
+            className={`flex max-w-full min-w-0 items-start gap-2 rounded-2xl border px-4 py-3 text-sm font-bold shadow-2xl sm:items-center sm:px-5 ${
               toast.type === 'error'
                 ? 'bg-rose-600 text-white border-rose-500'
                 : 'bg-emerald-600 text-white border-emerald-500'
@@ -1958,7 +1961,7 @@ export default function App() {
             ) : (
               <span className="material-symbols-outlined text-lg">check_circle</span>
             )}
-            <span>{toast.message}</span>
+            <span className="min-w-0 break-words">{toast.message}</span>
           </div>
         </div>
       )}
