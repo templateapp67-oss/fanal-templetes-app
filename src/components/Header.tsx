@@ -38,7 +38,31 @@ export interface HeaderNavEntry {
 
 export const HEADER_NAV_ENTRIES: HeaderNavEntry[] = [
   { view: 'landing', label: 'Home', icon: 'home', activeViews: ['landing'] },
-  { view: 'dashboard', label: 'SaaS Dashboard', icon: 'dashboard', activeViews: ['dashboard', 'staffPerformance', 'staffCommission'] },
+  {
+    view: 'wizard',
+    label: 'Explore Templates',
+    icon: 'devices',
+    activeViews: ['preview', 'wizard'],
+    badge: 'Live',
+  },
+  {
+    view: 'dashboard',
+    label: 'SaaS Dashboard',
+    icon: 'dashboard',
+    activeViews: ['dashboard', 'staffPerformance', 'staffCommission'],
+  },
+  // Growth Partner area — `/partner/dashboard` (PART 2 canonical route; the
+  // legacy `/growth-partner` alias keeps working). Same routing as every other
+  // entry: `setCurrentView('growthPartner')` pushes the route, and the page
+  // itself decides sign-in / partner-only / ready (unauthenticated visitors
+  // are redirected to `/partner/login`), so the entry is safe to show to
+  // every visitor.
+  {
+    view: 'growthPartner',
+    label: 'Growth Partner',
+    icon: 'handshake',
+    activeViews: ['growthPartner'],
+  },
   { view: 'bookings', label: 'My Bookings', icon: 'event_available', activeViews: ['bookings'] },
 ];
 
