@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toDataURL } from 'qrcode';
 import {
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   LogOut,
   Mail,
   MonitorSmartphone,
+  RefreshCw,
   ShieldCheck,
   ShieldAlert,
   ShieldOff,
@@ -32,20 +33,22 @@ import {
   confirmPartnerTwoFactor,
   describeSession,
   disablePartnerTwoFactor,
-  fetchPartnerSecurityOverview,
   listPartnerTwoFactorFactors,
   requestPartnerAccountDeactivation,
   requestPartnerEmailChange,
   revokeOtherPartnerSessions,
   type PartnerSecurityEvent,
   type PartnerSecurityOverview,
+  type PartnerSecurityOverviewError,
   type PartnerSecuritySession,
   type SecurityOverviewClient,
   type TotpEnrollment,
 } from '../lib/partnerAccountSecurity';
+import { usePartnerSecurityOverview } from '../lib/usePartnerSecurityOverview';
 import { supabase } from '../lib/supabaseClient';
 import { PartnerToastCenter, showPartnerToast } from './PartnerToastCenter';
 import { PartnerLoading } from './PartnerLoading';
+import { PartnerSectionErrorBoundary } from './PartnerSectionErrorBoundary';
 
 // ============================================================================
 // ACCOUNT SETTINGS (/partner/account-settings).
@@ -374,11 +377,23 @@ const ChangePasswordSection: React.FC<{
 // 2b. Two-factor authentication (TOTP + QR enrollment modal)
 // ---------------------------------------------------------------------------
 
+/**
+ * The saved 2FA state as the page knows it.
+ *
+ * `unknown` is NOT "off": when the security overview cannot be read the page
+ * must not claim an account is unprotected — it says the status could not be
+ * loaded and still lets the partner start a setup (enrollment asks the auth
+ * backend, which answers honestly if an authenticator already exists).
+ */
+export type TwoFactorState = 'on' | 'off' | 'unknown';
+
 const TwoFactorSection: React.FC<{
   client: SecurityOverviewClient;
-  enabled: boolean;
+  state: TwoFactorState;
   onChanged: () => void;
-}> = ({ client, enabled, onChanged }) => {
+  onRetry?: () => void;
+  refreshing?: boolean;
+}> = ({ client, state, onChanged, onRetry, refreshing }) => {
   const [setup, setSetup] = useState<TotpEnrollment | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [code, setCode] = useState('');
@@ -471,19 +486,33 @@ const TwoFactorSection: React.FC<{
     <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/60 p-4" data-account-section="two-factor">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-            {enabled ? <ShieldCheck className="h-5 w-5" aria-hidden="true" /> : <ShieldOff className="h-5 w-5" aria-hidden="true" />}
+          <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${state === 'on' ? 'bg-emerald-100 text-emerald-700' : state === 'unknown' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+            {state === 'on' ? <ShieldCheck className="h-5 w-5" aria-hidden="true" /> : <ShieldOff className="h-5 w-5" aria-hidden="true" />}
           </span>
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-900">Two-Factor Authentication (2FA)</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              {enabled
+              {state === 'on'
                 ? 'On — an authenticator app must confirm your sign-in codes.'
-                : 'Add an authenticator app (Google Authenticator, Authy, 1Password…) as a second sign-in factor.'}
+                : state === 'unknown'
+                  ? 'Your saved 2FA status could not be loaded. You can still start a setup — the authenticator itself is checked with the sign-in provider.'
+                  : 'Add an authenticator app (Google Authenticator, Authy, 1Password…) as a second sign-in factor.'}
             </p>
           </div>
         </div>
-        {enabled ? (
+        {state === 'unknown' && onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={refreshing}
+            data-account-action="retry-security-overview-2fa"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden="true" />
+            {refreshing ? 'Checking…' : 'Check status'}
+          </button>
+        ) : null}
+        {state === 'on' ? (
           <button
             type="button"
             onClick={() => setConfirmOff(true)}
@@ -502,7 +531,7 @@ const TwoFactorSection: React.FC<{
             className="inline-flex items-center gap-2 rounded-xl bg-pink-600 px-4 py-2 text-xs font-bold text-white hover:bg-pink-700 disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-            {busy ? 'Preparing…' : 'Enable 2FA'}
+            {busy ? 'Preparing…' : state === 'unknown' ? 'Set up 2FA' : 'Enable 2FA'}
           </button>
         )}
       </div>
@@ -621,7 +650,11 @@ const SessionsSection: React.FC<{
   sessions: PartnerSecuritySession[];
   sessionsAvailable: boolean;
   onChanged: () => void;
-}> = ({ client, sessions, sessionsAvailable, onChanged }) => {
+  /** True when the overview read failed, so "no sessions" would be a lie. */
+  unavailable?: boolean;
+  onRetry?: () => void;
+  refreshing?: boolean;
+}> = ({ client, sessions, sessionsAvailable, onChanged, unavailable, onRetry, refreshing }) => {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -661,7 +694,25 @@ const SessionsSection: React.FC<{
           Log out of all other sessions{others.length ? ` (${others.length})` : ''}
         </button>
       </div>
-      {!sessionsAvailable ? (
+      {unavailable ? (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3" data-account-sessions-unavailable>
+          <p className="text-xs text-slate-500">
+            Sessions could not be loaded, so this list is empty rather than wrong. Your sign-in sessions are unaffected.
+          </p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={refreshing}
+              data-account-action="retry-security-overview-sessions"
+              className="mt-2.5 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden="true" />
+              {refreshing ? 'Retrying…' : 'Retry'}
+            </button>
+          ) : null}
+        </div>
+      ) : !sessionsAvailable ? (
         <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
           The session list is not available on this deployment. Sign-in sessions still work — this page just cannot enumerate them here.
         </p>
@@ -704,11 +755,15 @@ const SessionsSection: React.FC<{
   );
 };
 
-const SecurityLogSection: React.FC<{ events: PartnerSecurityEvent[] }> = ({ events }) => (
+const SecurityLogSection: React.FC<{ events: PartnerSecurityEvent[]; unavailable?: boolean }> = ({ events, unavailable }) => (
   <div className="mt-6 border-t border-slate-100 pt-5" data-account-section="security-log">
     <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Security Log</h3>
     <p className="mt-0.5 text-xs text-slate-500">The latest security-related events on your account.</p>
-    {events.length === 0 ? (
+    {unavailable ? (
+      <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500" data-account-security-log-unavailable>
+        The security log could not be loaded. Events are still recorded — they will appear here once the overview loads.
+      </p>
+    ) : events.length === 0 ? (
       <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
         Nothing logged yet. Password changes, 2FA changes and session revocations will appear here.
       </p>
@@ -736,7 +791,9 @@ const DangerZoneSection: React.FC<{
   client: SecurityOverviewClient;
   deactivation: PartnerSecurityOverview['deactivation'];
   onChanged: () => void;
-}> = ({ client, deactivation, onChanged }) => {
+  /** True when the overview read failed: pending-request state is unknown. */
+  unavailable?: boolean;
+}> = ({ client, deactivation, onChanged, unavailable }) => {
   const [open, setOpen] = useState(Boolean(deactivation));
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState('');
@@ -795,6 +852,11 @@ const DangerZoneSection: React.FC<{
       </button>
       {open ? (
         <div id="partner-danger-zone-body" className="mt-5 rounded-2xl border border-rose-100 bg-rose-50/50 p-4">
+          {unavailable ? (
+            <p className="mb-3 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
+              Your pending-request status could not be loaded. Filing a request still works — the backend refuses a second open request and tells you if one exists.
+            </p>
+          ) : null}
           {deactivation?.status === 'pending' ? (
             <div className="flex flex-wrap items-start justify-between gap-3" data-account-deactivation="pending">
               <div className="min-w-0">
@@ -873,6 +935,63 @@ const DangerZoneSection: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
+// The security overview's OWN failure surface — one card, not the route
+// ---------------------------------------------------------------------------
+
+const SecurityOverviewNotice: React.FC<{
+  error: PartnerSecurityOverviewError;
+  refreshing: boolean;
+  onRetry: () => void;
+}> = ({ error, refreshing, onRetry }) => {
+  // What the partner can DO about it — a dead-end message is not error handling.
+  const hint =
+    error.kind === 'session'
+      ? 'Sign in again to see your sessions, 2FA status and security log.'
+      : error.kind === 'forbidden'
+        ? 'Everything else on this page still works. Contact support if your application was approved.'
+        : error.kind === 'unavailable'
+          ? 'Everything else on this page still works. This is a project setup problem (the account security functions are not installed), not something you can fix here.'
+          : 'Everything else on this page still works, and retrying usually fixes this.';
+
+  const tone =
+    error.kind === 'session' || error.kind === 'forbidden'
+      ? 'border-amber-200 bg-amber-50 text-amber-900'
+      : 'border-rose-200 bg-rose-50 text-rose-900';
+
+  return (
+    <section
+      role="alert"
+      data-account-overview-error
+      data-account-overview-error-kind={error.kind}
+      className={`rounded-3xl border p-5 shadow-sm sm:p-6 ${tone}`}
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/70">
+          <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-black uppercase tracking-wide">Security overview unavailable</h2>
+          <p className="mt-1 text-sm font-semibold">{error.message}</p>
+          <p className="mt-1 text-xs opacity-90">{hint}</p>
+          {error.kind === 'session' ? null : (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={refreshing}
+              data-account-action="retry-security-overview"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden="true" />
+              {refreshing ? 'Retrying…' : 'Retry'}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------
 
@@ -896,52 +1015,20 @@ export function PartnerAccountSettingsPage({
   // The portal mounts this page without an injected client; fall back to the
   // shared Supabase client so the live route never renders a dead overview.
   const resolvedClient: SecurityOverviewClient = client ?? (supabase as SecurityOverviewClient);
-  const [overview, setOverview] = useState<PartnerSecurityOverview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [reloadKey, setReloadKey] = useState(0);
+  // One read, typed failures, automatic retry for transport blips, and a
+  // manual `retry()` that starts a fresh attempt (see usePartnerSecurityOverview).
+  const { overview, error, loading, refreshing, retry } = usePartnerSecurityOverview(resolvedClient);
 
-  const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
+  // ONLY the first load may own the whole route. From then on a failed refresh
+  // degrades the security sections and leaves email, password, 2FA and the
+  // danger zone on screen — the bug was the opposite: one dead RPC replaced
+  // the entire page with an error card.
+  if (loading && !overview) return <PartnerLoading label="Loading your account settings…" kind="profile" />;
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setLoadError('');
-    fetchPartnerSecurityOverview(resolvedClient)
-      .then((data) => {
-        if (!cancelled) {
-          setOverview(data);
-          setLoading(false);
-        }
-      })
-      .catch((cause) => {
-        if (!cancelled) {
-          setLoadError(cause instanceof Error ? cause.message : 'Could not load your security overview.');
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [resolvedClient, reloadKey]);
-
-  const twoFactorOn = overview?.two_factor_enabled === true;
+  const overviewUnavailable = !overview;
+  const twoFactorState: TwoFactorState = overview ? (overview.two_factor_enabled ? 'on' : 'off') : 'unknown';
   const pendingDeactivation = overview?.deactivation?.status === 'pending' ? overview.deactivation : null;
-
-  if (loading) return <PartnerLoading label="Loading your account settings…" kind="profile" />;
-
-  if (!overview) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <div role="alert" className={cardClass}>
-          <p className="text-sm font-semibold text-slate-800">{loadError || 'Could not load your account settings.'}</p>
-          <button type="button" onClick={refresh} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white">
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const sessionCount = overview?.sessions.length ?? 0;
 
   return (
     <div className="min-w-0 space-y-5" data-partner-account-settings>
@@ -956,16 +1043,26 @@ export function PartnerAccountSettingsPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
-            {twoFactorOn ? (
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 font-bold text-emerald-700">
+            {twoFactorState === 'on' ? (
+              <span data-account-2fa-state="on" className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 font-bold text-emerald-700">
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" /> 2FA on
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 font-bold text-amber-700">
+            ) : twoFactorState === 'off' ? (
+              <span data-account-2fa-state="off" className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 font-bold text-amber-700">
                 <ShieldOff className="h-4 w-4" aria-hidden="true" /> 2FA off
               </span>
+            ) : (
+              // Unknown is never rendered as "off" — that would claim the
+              // account is unprotected when we simply could not look.
+              <span data-account-2fa-state="unknown" className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 font-bold text-slate-600">
+                <ShieldOff className="h-4 w-4" aria-hidden="true" /> 2FA status unavailable
+              </span>
             )}
-            <span className="rounded-xl bg-slate-100 px-3 py-2 font-bold text-slate-700">{overview.sessions.length} active session{overview.sessions.length === 1 ? '' : 's'}</span>
+            {overview ? (
+              <span data-account-session-count={sessionCount} className="rounded-xl bg-slate-100 px-3 py-2 font-bold text-slate-700">
+                {sessionCount} active session{sessionCount === 1 ? '' : 's'}
+              </span>
+            ) : null}
             {displayName ? <span className="rounded-xl bg-pink-50 px-3 py-2 font-bold text-pink-700">{displayName}</span> : null}
           </div>
         </div>
@@ -976,8 +1073,12 @@ export function PartnerAccountSettingsPage({
         ) : null}
       </section>
 
+      {error ? <SecurityOverviewNotice error={error} refreshing={refreshing} onRetry={retry} /> : null}
+
       <section className={cardClass} aria-label="Email and password">
-        <ChangeEmailSection client={resolvedClient} currentEmail={email} expectedUserId={expectedUserId} />
+        <PartnerSectionErrorBoundary label="Change email">
+          <ChangeEmailSection client={resolvedClient} currentEmail={email} expectedUserId={expectedUserId} />
+        </PartnerSectionErrorBoundary>
         <div className="mt-7 border-t border-slate-100 pt-6">
           <div className="flex items-center gap-3">
             <span className={sectionIconClass}>
@@ -988,21 +1089,43 @@ export function PartnerAccountSettingsPage({
               <p className="mt-0.5 text-sm text-slate-500">Rotate your password and manage the second sign-in factor.</p>
             </div>
           </div>
-          <ChangePasswordSection client={resolvedClient} email={email} onChanged={refresh} />
-          <TwoFactorSection client={resolvedClient} enabled={twoFactorOn} onChanged={refresh} />
-          <div className="mt-6 border-t border-slate-100 pt-5">
-            <SessionsSection
+          <PartnerSectionErrorBoundary label="Change password">
+            <ChangePasswordSection client={resolvedClient} email={email} onChanged={retry} />
+          </PartnerSectionErrorBoundary>
+          <PartnerSectionErrorBoundary label="Two-factor authentication" resetKey={twoFactorState}>
+            <TwoFactorSection
               client={resolvedClient}
-              sessions={overview.sessions}
-              sessionsAvailable={overview.sessions_available}
-              onChanged={refresh}
+              state={twoFactorState}
+              onChanged={retry}
+              onRetry={retry}
+              refreshing={refreshing}
             />
-            <SecurityLogSection events={overview.events} />
+          </PartnerSectionErrorBoundary>
+          <div className="mt-6 border-t border-slate-100 pt-5">
+            <PartnerSectionErrorBoundary label="Sessions and security log" resetKey={overview ? 'loaded' : 'unavailable'}>
+              <SessionsSection
+                client={resolvedClient}
+                sessions={overview?.sessions ?? []}
+                sessionsAvailable={overview?.sessions_available !== false}
+                onChanged={retry}
+                unavailable={overviewUnavailable}
+                onRetry={retry}
+                refreshing={refreshing}
+              />
+              <SecurityLogSection events={overview?.events ?? []} unavailable={overviewUnavailable} />
+            </PartnerSectionErrorBoundary>
           </div>
         </div>
       </section>
 
-      <DangerZoneSection client={resolvedClient} deactivation={pendingDeactivation} onChanged={refresh} />
+      <PartnerSectionErrorBoundary label="Danger zone" resetKey={pendingDeactivation?.id ?? 'none'}>
+        <DangerZoneSection
+          client={resolvedClient}
+          deactivation={pendingDeactivation}
+          unavailable={overviewUnavailable}
+          onChanged={retry}
+        />
+      </PartnerSectionErrorBoundary>
 
       <section className={cardClass}>
         <div className="flex flex-wrap items-center justify-between gap-3">

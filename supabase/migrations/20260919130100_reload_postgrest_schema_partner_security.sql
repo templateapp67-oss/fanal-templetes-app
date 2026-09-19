@@ -1,0 +1,33 @@
+-- ============================================================================
+-- Reload PostgREST's schema cache after the partner security RPCs.
+--
+-- WHY THIS EXISTS (the "Could not load your security overview. Please retry."
+-- error on /partner/account-settings):
+--
+--   20260919130000_partner_account_security_settings.sql creates the five RPCs
+--   that page calls (get_my_partner_security_overview,
+--   revoke_my_other_partner_sessions, set_my_partner_two_factor,
+--   request_my_partner_account_deactivation,
+--   cancel_my_partner_account_deactivation) — but, unlike its neighbours
+--   (20260911094853, 20260911101201, 20260919120000 …), it never asks
+--   PostgREST to reload its schema cache.
+--
+--   PostgREST caches the schema at startup. On a project where the security
+--   migration was applied while it was already running, the function is absent
+--   from that cache until it expires or is reloaded, so the browser's
+--   `rpc('get_my_partner_security_overview')` is answered with:
+--
+--       PGRST202  Could not find the function
+--       public.get_my_partner_security_overview() in the schema cache
+--
+--   …which the page surfaced as "Could not load your security overview. Please
+--   retry." and, because the old component replaced the whole route on that
+--   one failure, it also hid Change Email, Change Password, 2FA, Sessions and
+--   the Danger Zone.
+--
+-- `notify pgrst, 'reload schema';` is the documented way to flush that cache.
+-- It is a no-op outside Supabase's PostgREST listener, costs nothing to run
+-- twice, and changes no data — so re-running this migration is always safe.
+-- ============================================================================
+
+notify pgrst, 'reload schema';
