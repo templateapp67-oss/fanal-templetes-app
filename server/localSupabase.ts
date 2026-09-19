@@ -59,6 +59,19 @@ export const LOCAL_GROWTH_CHAIN = [
   '20260927_growth_partner_profile.sql',
   '20260928_partner_referrals_table.sql',
   '20260929_partner_referral_events_rls.sql',
+  // Partner portal operations — the schema behind Earnings, Withdrawals,
+  // Marketing Materials, Partner Levels, Leaderboards, Notifications, Support.
+  // Previously missing from the local gateway, which caused:
+  // "Your tickets could not load. The partner operations schema is not applied..."
+  // NOTE: These must run AFTER 20260928/29 because:
+  //   - growth_partners.id is added in 20260928 (operations references it)
+  //   - partner_referrals and partner_referral_events are created in 28/29
+  //     (operations has FKs to them)
+  // GROWTH_PARTNER_SETUP.md §3 explicitly says 28/29 must precede portal sections.
+  // The timestamp 20260918 is misleading — logical dependency order is 28,29,18,19.
+  '20260918035349_partner_portal_operations.sql',
+  '20260918070000_partner_account_settings.sql',
+  '20260919120000_partner_portal_section_reads.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
   // Referral code normalization (PHASE 4.2). Widens growth_normalize_code's
