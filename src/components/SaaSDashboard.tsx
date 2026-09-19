@@ -23,6 +23,7 @@ import { AIClientReengagement } from './AIClientReengagement';
 import { PromotionalBannerConfigSection } from './PromotionalBannerConfigSection';
 import { BackupManagerModal } from './BackupManagerModal';
 import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
+import { TikTokIcon } from './TikTokIcon';
 
 interface SaaSDashboardProps {
   ownerId?: string;

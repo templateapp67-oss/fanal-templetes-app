@@ -814,6 +814,7 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
             </div>
           </div>
         </div>
+        </div>
 
         {/* ============================================================ */}
         {/* RIGHT PANEL: INTERACTIVE LIVE WEBSITE PREVIEW */}
