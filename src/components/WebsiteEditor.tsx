@@ -472,9 +472,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                       zoom={15}
                       interactive={false}
                       onPositionChange={undefined} // Location is set by address autocomplete only
-              /* onPositionChange={(lat, lng) => {
-                        upd({ latitude: lat, longitude: lng });
-                      }}
                       accentColor={profile.brandColor || '#C20E5A'}
                     />
                   </div>
@@ -578,6 +575,37 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 {profile.facebookPage ? displaySocialHandle(profile.facebookPage, '') : 'Add page URL'}
               </div>
             </div>
+
+            {/* TikTok */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-slate-400 transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded bg-slate-950 text-white flex items-center justify-center text-[10px]">
+                    <TikTokIcon className="w-3 h-3" />
+                  </span>
+                  <span>TikTok</span>
+                </label>
+                {profile.tiktokHandle && (
+                  <a
+                    href={formatTikTokUrl(profile.tiktokHandle)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-bold text-slate-700 hover:text-slate-900 hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Test</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              <input
+                type="text"
+                value={profile.tiktokHandle || ''}
+                onChange={(e) => upd({ tiktokHandle: e.target.value })}
+                placeholder="e.g. @arts_by_uma or url"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+              />
+              <div className="text-[10px] text-gray-400 mt-1">
+                {profile.tiktokHandle ? displaySocialHandle(profile.tiktokHandle) : 'Add handle or URL'}
               </div>
             </div>
           </div>
@@ -720,7 +748,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
           <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-[#C20E5A]/5 border border-[#C20E5A]/10 p-3">
             <div><p className="text-xs font-bold text-gray-800">Ready to review your customer journey?</p><p className="text-[10px] text-gray-500">Preview your story, service benefits, transformations, and booking CTA together.</p></div>
-            <button type="button" onClick={onNavigateToPreview} className="shrink-0 px-3 py-2 rounded-lg bg-[#C20E5A] text-white text-[11px] font-bold hover:opacity-90">View Preview</button>
+            <button type="button" onClick={onComplete} className="shrink-0 px-3 py-2 rounded-lg bg-[#C20E5A] text-white text-[11px] font-bold hover:opacity-90">View Preview</button>
           </div>
         </section>
 
