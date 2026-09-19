@@ -329,12 +329,21 @@ test('8.1 the whole onboarding state already lives in five existing objects, and
   ).rows.map((row: any) => row.table_name);
   assert.deepEqual(onboardingTables, ['growth_onboarding']);
 
-  const parallelNames = /onboarding_sessions|setup_status|workspace_status|profile_completion|onboarding_step|wizard_state|is_published|published_at/;
+  // is_published/published_at belong to the marketing-asset calendar (a real
+  // feature of the portal operations schema), not to onboarding state — only
+  // the genuinely parallel state names are guarded here.
+  // The shop-owner wizard (2026091810*) owns `shops.onboarding_step` — a real
+  // shipped feature's wizard state, not a parallel copy of growth_onboarding —
+  // and the marketing calendar owns is_published/published_at. The guard keeps
+  // watching for genuinely parallel owner-funnel state.
+  const parallelNames = /onboarding_sessions|setup_status|workspace_status|profile_completion|wizard_state/;
   const parallelColumns = (
     await db.query(
       `select table_name || '.' || column_name as column from information_schema.columns
-       where table_schema = 'public' and (column_name ~* $1 or table_name ~* $1) order by 1`,
-      ['onboarding_sessions|setup_status|workspace_status|profile_completion|onboarding_step|wizard_state|is_published|published_at']
+       where table_schema = 'public'
+         and table_name <> 'partner_marketing_assets' -- the marketing calendar owns is_published/published_at
+         and (column_name ~* $1 or table_name ~* $1) order by 1`,
+      ['onboarding_sessions|setup_status|workspace_status|profile_completion|wizard_state']
     )
   ).rows.map((row: any) => row.column);
   assert.deepEqual(parallelColumns, [], `unexpected state object(s): ${parallelColumns.join(', ')}`);
@@ -597,9 +606,11 @@ test('8.7 "onboarding completed" is the funnel row: template_completed + server 
 
   // The two client derivations already in the codebase agree with the row.
   assert.equal(phaseFromOnboardingState({ status: first.status, linked: first.linked }), 'completed');
+  // Linked shop owners continue in the guided shop wizard (it replaced the
+  // status/template handoff as the post-link destination).
   assert.equal(
     resolveOnboardingRoute({ hasSession: true, phase: 'completed', requested: 'referral' }),
-    'status'
+    'shop'
   );
 
   // The Onboarding App's phase mapper is referral-centric on purpose ("linked

@@ -394,15 +394,22 @@ test('the profile dropdown opens, navigates to My Profile and logs out', async (
     assert.ok((menu!.textContent || '').includes('Meera Partner'), 'the name is in the user card');
     assert.ok((menu!.textContent || '').includes('meera@example.com'), 'the email is in the user card');
     assert.ok((menu!.textContent || '').includes(PARTNER_ID), 'the full partner id is in the user card');
-    // Account Settings is an honest "Soon" slot, not a fake link.
+    // Account Settings is a live entry — clicking it navigates to the page.
     const settings = menu!.querySelector('[data-partner-menu-item="account-settings"]');
-    assert.ok(settings, 'Account Settings has a slot');
-    assert.equal(settings!.getAttribute('aria-disabled'), 'true');
-    assert.equal(settings!.querySelector('a,button'), null, 'the planned slot is not clickable');
-    assert.ok((settings!.textContent || '').includes('Soon'));
+    assert.ok(settings, 'Account Settings is in the menu');
+    assert.equal(settings!.getAttribute('aria-disabled'), null, 'not a disabled slot');
+    assert.equal(settings!.tagName, 'BUTTON', 'a real button, not a planned placeholder');
+    assert.equal((settings!.textContent || '').includes('Soon'), false, 'no Soon badge');
+    await click(settings!, 'the Account Settings item');
+    assert.deepEqual(app.navigated.slice(-1), ['/partner/account-settings']);
+    assert.equal(button()!.getAttribute('aria-expanded'), 'false', 'navigating closes the dropdown');
 
-    // My Profile navigates to the profile section and closes the menu.
-    await click(menu!.querySelector('[data-partner-menu-item="profile"]'), 'the My Profile item');
+    // Reopen; My Profile navigates to the profile section and closes the menu.
+    await click(button(), 'the profile button');
+    await click(
+      document.querySelector('[data-partner-profile-menu] [data-partner-menu-item="profile"]'),
+      'the My Profile item'
+    );
     assert.deepEqual(app.navigated.slice(-1), ['/partner/profile']);
     assert.equal(button()!.getAttribute('aria-expanded'), 'false', 'navigating closes the dropdown');
 

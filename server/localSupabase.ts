@@ -32,6 +32,7 @@ import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafe
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Express, Request, Response } from 'express';
+import QRCode from 'qrcode';
 
 /** Documented local-only admin account, created on first boot (see README note). */
 export const LOCAL_DEV_ADMIN_EMAIL = 'admin@nexora.local';
@@ -72,6 +73,10 @@ export const LOCAL_GROWTH_CHAIN = [
   '20260918035349_partner_portal_operations.sql',
   '20260918070000_partner_account_settings.sql',
   '20260919120000_partner_portal_section_reads.sql',
+  // Account Settings v2 — structured social links, bank/PAN fields,
+  // notification toggles, the security log + deactivation requests and the
+  // security RPCs the /partner/account-settings page renders.
+  '20260919130000_partner_account_security_settings.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
   // Referral code normalization (PHASE 4.2). Widens growth_normalize_code's
@@ -151,6 +156,42 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
   );
   grant usage on schema auth to authenticated, anon;
 
+  -- GoTrue's session table, modelled with the columns the partner security
+  -- page renders. Hosted Supabase owns the real one; here the gateway keeps
+  -- it in step with the tokens it issues, so "Active Sessions" and "log out
+  -- of all other sessions" are exercised against real rows, and the
+  -- request.jwt.claims GUC carries the same session_id claim GoTrue would.
+  create table if not exists auth.sessions (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    not_after timestamptz,
+    user_agent text,
+    ip text
+  );
+  create index if not exists auth_sessions_user_idx on auth.sessions(user_id);
+
+  -- GoTrue's TOTP factor tables, so 2FA enrollment (QR → challenge → verify →
+  -- unenroll) runs against real state locally. The secret is stored plain here
+  -- only because this gateway is a local stand-in; hosted Supabase encrypts it.
+  create table if not exists auth.mfa_factors (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    friendly_name text,
+    factor_type text not null default 'totp',
+    status text not null default 'unverified',
+    secret text not null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  );
+  create table if not exists auth.mfa_challenges (
+    id uuid primary key,
+    factor_id uuid not null references auth.mfa_factors(id) on delete cascade,
+    created_at timestamptz not null default now(),
+    verified_at timestamptz
+  );
+
   -- auth.uid() reads the JWT subject exactly like PostgREST/GoTrue expose it.
   create or replace function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
@@ -223,10 +264,15 @@ export interface LocalDatabase {
 
 /** Who the request runs as. An admin claim maps to service_role — the same
  *  privileged role an admin console / SQL Editor session uses — because the
- *  admin-only RPCs have no EXECUTE grant for `authenticated` at all. */
+ *  admin-only RPCs have no EXECUTE grant for `authenticated` at all.
+ *  `sessionId` is the JWT's session_id claim (GoTrue issues one per session);
+ *  when present it is exposed to RPCs through the request.jwt.claims GUC
+ *  exactly the way PostgREST would, so "revoke my OTHER sessions" can tell
+ *  which session is the caller's. */
 export interface RequestContext {
   sub: string | null;
   isAdmin: boolean;
+  sessionId?: string | null;
 }
 
 export function roleFor(context: RequestContext): 'service_role' | 'authenticated' | 'anon' {
@@ -249,6 +295,10 @@ export async function createLocalDatabase(dataDir?: string): Promise<LocalDataba
   const asRequest = async <T,>(context: RequestContext, fn: (db: any) => Promise<T>): Promise<T> => {
     const run = queue.then(async () => {
       await db.query("select set_config('request.jwt.claim.sub', $1, false)", [context.sub || '']);
+      await db.query(
+        "select set_config('request.jwt.claims', $1, false)",
+        [JSON.stringify({ sub: context.sub, session_id: context.sessionId ?? null })]
+      );
       await db.query("select set_config('app.is_admin', $1, false)", [context.isAdmin ? 'true' : 'false']);
       await db.exec(`set role ${roleFor(context)}`);
       try {
@@ -256,6 +306,7 @@ export async function createLocalDatabase(dataDir?: string): Promise<LocalDataba
       } finally {
         await db.exec('reset role');
         await db.query("select set_config('request.jwt.claim.sub', '', false)");
+        await db.query("select set_config('request.jwt.claims', '', false)");
         await db.query("select set_config('app.is_admin', '', false)");
       }
     });
@@ -298,6 +349,8 @@ export interface LocalClaims {
   email: string;
   isAdmin: boolean;
   fullName: string | null;
+  /** GoTrue's session_id claim — present on every gateway-issued token. */
+  sessionId?: string;
 }
 
 export function signLocalToken(claims: LocalClaims): { accessToken: string; expiresAt: number } {
@@ -312,7 +365,7 @@ export function signLocalToken(claims: LocalClaims): { accessToken: string; expi
       email: claims.email,
       iat: issuedAt,
       exp: expiresAt,
-      session_id: randomUUID(),
+      session_id: claims.sessionId || randomUUID(),
       user_metadata: { full_name: claims.fullName },
       app_metadata: { provider: 'email', providers: ['email'], is_admin: claims.isAdmin },
     })
@@ -346,7 +399,75 @@ export function verifyLocalToken(token: string | null | undefined): LocalClaims 
     email: String(payload.email || ''),
     isAdmin: payload.app_metadata?.is_admin === true,
     fullName: payload.user_metadata?.full_name ?? null,
+    sessionId: typeof payload.session_id === 'string' ? payload.session_id : undefined,
   };
+}
+
+// ---------------------------------------------------------------------------
+// TOTP (RFC 6238) — the local stand-in for GoTrue's two-factor enrollment.
+// The browser verifies the QR against an authenticator app; the gateway
+// verifies the 6-digit code here with the standard ±1 step window.
+// ---------------------------------------------------------------------------
+
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function base32Decode(value: string): Buffer {
+  const clean = value.replace(/=+$/, '').replace(/\s/g, '').toUpperCase();
+  let bits = 0;
+  let buffer = 0;
+  const out: number[] = [];
+  for (const char of clean) {
+    const index = BASE32_ALPHABET.indexOf(char);
+    if (index < 0) throw new Error('Invalid base32 secret');
+    buffer = (buffer << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buffer >> bits) & 0xff);
+    }
+  }
+  return Buffer.from(out);
+}
+
+function hotp(secret: Buffer, counter: number): string {
+  const buffer = Buffer.alloc(8);
+  buffer.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac('sha1', secret).update(buffer).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, '0');
+}
+
+export function verifyTotp(secret: string, code: string, stepSeconds = 30, window = 1): boolean {
+  const normalized = String(code || '').replace(/\s/g, '');
+  if (!/^[0-9]{6}$/.test(normalized)) return false;
+  const key = base32Decode(secret);
+  const counter = Math.floor(Date.now() / 1000 / stepSeconds);
+  for (let offset = -window; offset <= window; offset += 1) {
+    if (hotp(key, counter + offset) === normalized) return true;
+  }
+  return false;
+}
+
+function generateBase32Secret(bytes = 20): string {
+  const raw = randomBytes(bytes);
+  let bits = 0;
+  let buffer = 0;
+  let out = '';
+  for (const byte of raw) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      out += BASE32_ALPHABET[(buffer >> bits) & 31];
+    }
+  }
+  if (bits > 0) out += BASE32_ALPHABET[(buffer << (5 - bits)) & 31];
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,7 +480,16 @@ function bearerOf(req: Request): string | null {
   return match ? match[1] : null;
 }
 
-function publicUser(row: any) {
+/** Where this session started — the user agent / IP the security page shows. */
+function clientMeta(req: Request): { userAgent: string | null; ip: string | null } {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return {
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 300) || null,
+    ip: (forwarded || req.socket?.remoteAddress || '').slice(0, 64) || null,
+  };
+}
+
+function publicUser(row: any, factors: any[] = []) {
   const metadata = row?.raw_user_meta_data || {};
   const appMetadata = row?.raw_app_meta_data || {};
   return {
@@ -375,19 +505,34 @@ function publicUser(row: any) {
     updated_at: row.created_at,
     app_metadata: { provider: 'email', providers: ['email'], ...appMetadata },
     user_metadata: { ...metadata },
+    // auth.mfa.listFactors() reads the factors off the user object (GoTrue
+    // embeds them in the user payload), so the account page can tell whether
+    // 2FA is actually enrolled without a privileged key.
+    factors,
     identities: [],
   };
 }
 
-function sessionFor(row: any, refreshToken: string) {
+/** Public shape of the caller's MFA factors (never the secrets). */
+async function factorsFor(db: { ownerQuery: (sql: string, params?: any[]) => Promise<any> }, userId: string): Promise<any[]> {
+  const found = await db.ownerQuery(
+    `select id, friendly_name, factor_type, status, created_at, updated_at
+       from auth.mfa_factors where user_id = $1 order by created_at asc`,
+    [userId]
+  );
+  return found.rows;
+}
+
+function sessionFor(row: any, refreshToken: string, sessionId: string, factors: any[] = []) {
   const claims: LocalClaims = {
     sub: row.id,
     email: row.email,
     isAdmin: row.raw_app_meta_data?.is_admin === true,
     fullName: row.raw_user_meta_data?.full_name ?? null,
+    sessionId,
   };
   const { accessToken, expiresAt } = signLocalToken(claims);
-  const user = publicUser(row);
+  const user = publicUser(row, factors);
   return {
     access_token: accessToken,
     token_type: 'bearer',
@@ -522,17 +667,29 @@ export async function registerLocalSupabaseGateway(
   const revokeUser = (userId: string) => {
     for (const [key,value] of refreshSessions) if (value.userId === userId) refreshSessions.delete(key);
     for (const [key,value] of accessSessions) if (value.userId === userId) accessSessions.delete(key);
+    // Keep auth.sessions in step: revoked tokens must not linger as "active".
+    void local.ownerQuery('delete from auth.sessions where user_id = $1', [userId]).catch(() => undefined);
   };
   // Opt-in: mirror a project whose Auth settings require email confirmation,
   // so the "check your inbox" branch is exercisable end to end. Default off —
   // the local gateway has always auto-confirmed.
   const requireEmailConfirmation = process.env.LOCAL_SUPABASE_REQUIRE_EMAIL_CONFIRMATION === 'true';
 
-  const issueSession = (row: any) => {
+  const issueSession = async (row: any, meta?: { userAgent?: string | null; ip?: string | null }) => {
     pruneSessions();
     const refreshToken = randomBytes(32).toString('hex');
-    const session = sessionFor(row, refreshToken);
-    const record = { userId: row.id, expiresAt: session.expires_at * 1000, accessHash: digest(session.access_token) };
+    const sessionId = randomUUID();
+    // One auth.sessions row per issued session — the rows the security page's
+    // "Active Sessions" list and revoke-my-other-sessions RPC operate on.
+    await local
+      .ownerQuery(
+        `insert into auth.sessions(id, user_id, user_agent, ip) values ($1, $2, $3, $4)`,
+        [sessionId, row.id, meta?.userAgent ?? null, meta?.ip ?? null]
+      )
+      .catch(() => undefined);
+    const factors = await factorsFor(local, row.id);
+    const session = sessionFor(row, refreshToken, sessionId, factors);
+    const record = { userId: row.id, expiresAt: session.expires_at * 1000, accessHash: digest(session.access_token), sessionId };
     refreshSessions.set(digest(refreshToken),record);
     accessSessions.set(record.accessHash,record);
     return session;
@@ -542,6 +699,16 @@ export async function registerLocalSupabaseGateway(
     const token = bearerOf(req);
     const claims = verifyLocalToken(token);
     if (!token || !claims || !accessSessions.has(digest(token))) return null;
+    // The session row must still exist: revoke-my-other-sessions deletes rows,
+    // and a still-valid JWT for a revoked session must stop working (hosted
+    // GoTrue enforces the same at refresh time).
+    if (claims.sessionId) {
+      const sessionRow = await local.ownerQuery(
+        'select 1 from auth.sessions where id = $1 and user_id = $2',
+        [claims.sessionId, claims.sub]
+      );
+      if (sessionRow.rows.length === 0) return null;
+    }
     const row = (await local.ownerQuery('select raw_app_meta_data from auth.users where id=$1',[claims.sub])).rows[0];
     if (!row) return null;
     // Re-check trusted database metadata, so demotion takes effect immediately.
@@ -574,7 +741,7 @@ export async function registerLocalSupabaseGateway(
       log(`[local-supabase] signup for ${email} requires email confirmation (no email is sent locally)`);
       return res.status(200).json({ user: publicUser(created.rows[0]) });
     }
-    return res.status(200).json(issueSession(created.rows[0]));
+    return res.status(200).json(await issueSession(created.rows[0], clientMeta(req)));
   });
 
   app.post('/auth/v1/token', async (req: Request, res: Response) => {
@@ -590,7 +757,7 @@ export async function registerLocalSupabaseGateway(
       accessSessions.delete(record.accessHash);
       const found = await local.ownerQuery('select * from auth.users where id=$1',[record.userId]);
       if (!found.rows.length) return res.status(400).json({error:'invalid_grant',error_description:'Invalid Refresh Token'});
-      return res.status(200).json(issueSession(found.rows[0]));
+      return res.status(200).json(await issueSession(found.rows[0], clientMeta(req)));
     }
     if (grant !== 'password') return res.status(400).json({error:'unsupported_grant_type'});
 
@@ -613,7 +780,7 @@ export async function registerLocalSupabaseGateway(
       return res.status(400).json({ error: 'email_not_confirmed', error_description: 'Email not confirmed' });
     }
     await local.ownerQuery('update auth.users set last_sign_in_at = now() where id = $1', [row.id]);
-    return res.status(200).json(issueSession(row));
+    return res.status(200).json(await issueSession(row, clientMeta(req)));
   });
 
   app.get('/auth/v1/user', async (req: Request, res: Response) => {
@@ -623,7 +790,7 @@ export async function registerLocalSupabaseGateway(
     if (found.rows.length === 0) {
       return res.status(401).json({ error: 'invalid_token', error_description: 'Sign in required' });
     }
-    return res.status(200).json(publicUser(found.rows[0]));
+    return res.status(200).json(publicUser(found.rows[0], await factorsFor(local, claims.sub)));
   });
 
   app.post('/auth/v1/logout', async (req: Request, res: Response) => {
@@ -678,7 +845,7 @@ export async function registerLocalSupabaseGateway(
     const origin =
       (typeof req.headers.origin === 'string' && req.headers.origin) ||
       `${req.protocol}://${req.get('host') || `127.0.0.1:${process.env.PORT || 3000}`}`;
-    const session = issueSession(row);
+    const session = await issueSession(row, clientMeta(req));
     const link =
       `${origin}${redirectTo}` +
       `#access_token=${encodeURIComponent(session.access_token)}` +
@@ -720,7 +887,133 @@ export async function registerLocalSupabaseGateway(
     if (found.rows.length === 0) {
       return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
     }
-    return res.status(200).json(publicUser(found.rows[0]));
+    return res.status(200).json(publicUser(found.rows[0], await factorsFor(local, claims.sub)));
+  });
+
+  // ---------------- MFA (TOTP two-factor) ----------------------------------
+  // GoTrue's /factors surface, sufficient for the partner account page's QR
+  // enrollment: enroll (secret + otpauth URI + SVG QR), challenge, verify
+  // (marks the factor verified, returns a fresh aal2-style session), list and
+  // unenroll. The browser talks to these through supabase-js auth.mfa.
+  const mfaIssuer = () => 'Nexora Growth Partner';
+
+  app.post('/auth/v1/factors', async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims) return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    if (String(req.body?.factor_type || '') !== 'totp') {
+      return res.status(422).json({ error: 'unsupported_factor_type', error_description: 'Only TOTP factors are supported.' });
+    }
+    const existing = await local.ownerQuery(
+      `select id from auth.mfa_factors where user_id = $1 and factor_type = 'totp' and status = 'verified'`,
+      [claims.sub]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(422).json({ error: 'factor_already_verified', error_description: 'An authenticator is already enrolled.' });
+    }
+    const secret = generateBase32Secret();
+    const id = randomUUID();
+    const friendlyName = String(req.body?.friendly_name || '').slice(0, 120) || null;
+    const userRow = (await local.ownerQuery('select * from auth.users where id = $1', [claims.sub])).rows[0];
+    const uri =
+      `otpauth://totp/${encodeURIComponent(mfaIssuer())}:${encodeURIComponent(userRow?.email || claims.sub)}` +
+      `?secret=${secret}&issuer=${encodeURIComponent(mfaIssuer())}`;
+    await local.ownerQuery(
+      `insert into auth.mfa_factors(id, user_id, friendly_name, factor_type, status, secret)
+       values ($1, $2, $3, 'totp', 'unverified', $4)`,
+      [id, claims.sub, friendlyName, secret]
+    );
+    // Raw SVG, URL-encoded on purpose: supabase-js prefixes the data URL
+    // (data:image/svg+xml;utf-8,), and a raw SVG's "#" would truncate it.
+    const qrSvg = await QRCode.toString(uri, { type: 'svg', margin: 1, width: 220 });
+    return res.status(200).json({
+      id,
+      type: 'totp',
+      factor_type: 'totp',
+      friendly_name: friendlyName,
+      status: 'unverified',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      totp: { qr_code: encodeURIComponent(qrSvg), secret, uri },
+    });
+  });
+
+  app.get('/auth/v1/factors', async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims) return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    return res.status(200).json({ factors: await factorsFor(local, claims.sub) });
+  });
+
+  app.post('/auth/v1/factors/:factorId/challenge', async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims) return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    const factorId = String(req.params.factorId || '');
+    const factor = (await local.ownerQuery(
+      `select * from auth.mfa_factors where id = $1 and user_id = $2`,
+      [factorId, claims.sub]
+    )).rows[0];
+    if (!factor || factor.factor_type !== 'totp') {
+      return res.status(404).json({ error: 'factor_not_found', error_description: 'Authenticator not found.' });
+    }
+    if (factor.status !== 'verified') {
+      return res.status(403).json({ error: 'factor_not_verified', error_description: 'The authenticator has not been verified yet.' });
+    }
+    const challengeId = randomUUID();
+    await local.ownerQuery(`insert into auth.mfa_challenges(id, factor_id) values ($1, $2)`, [challengeId, factor.id]);
+    return res.status(200).json({
+      id: challengeId,
+      factor_id: factor.id,
+      type: 'totp',
+      expires_at: Math.floor(Date.now() / 1000) + 300,
+      friendly_name: factor.friendly_name,
+    });
+  });
+
+  app.post('/auth/v1/factors/:factorId/verify', async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims) return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    const factorId = String(req.params.factorId || '');
+    const factor = (await local.ownerQuery(
+      `select * from auth.mfa_factors where id = $1 and user_id = $2`,
+      [factorId, claims.sub]
+    )).rows[0];
+    if (!factor || factor.factor_type !== 'totp') {
+      return res.status(404).json({ error: 'factor_not_found', error_description: 'Authenticator not found.' });
+    }
+    const challengeId = String(req.body?.challenge_id || '');
+    const challenge = (await local.ownerQuery(
+      `select * from auth.mfa_challenges where id = $1 and factor_id = $2 and verified_at is null`,
+      [challengeId, factor.id]
+    )).rows[0];
+    if (!challenge) {
+      return res.status(400).json({ error: 'challenge_not_found', error_description: 'Start the challenge again.' });
+    }
+    if (!verifyTotp(factor.secret, String(req.body?.code || ''))) {
+      return res.status(422).json({ error: 'totp_ver_failed', error_description: 'Invalid authenticator code. Check the code and retry.' });
+    }
+    await local.ownerQuery(`update auth.mfa_challenges set verified_at = now() where id = $1`, [challenge.id]);
+    await local.ownerQuery(
+      `update auth.mfa_factors set status = 'verified', updated_at = now() where id = $1`,
+      [factor.id]
+    );
+    // GoTrue answers verify with a fresh session at a higher assurance level;
+    // the client saves it, so the gateway returns the same shape a login does.
+    const userRow = (await local.ownerQuery('select * from auth.users where id = $1', [claims.sub])).rows[0];
+    const session = await issueSession(userRow, clientMeta(req));
+    return res.status(200).json({ ...session, factor_id: factor.id });
+  });
+
+  app.delete('/auth/v1/factors/:factorId', async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims) return res.status(401).json({ error: 'unauthorized', error_description: 'Sign in required' });
+    const factorId = String(req.params.factorId || '');
+    const gone = await local.ownerQuery(
+      `delete from auth.mfa_factors where id = $1 and user_id = $2 returning id`,
+      [factorId, claims.sub]
+    );
+    if (gone.rows.length === 0) {
+      return res.status(404).json({ error: 'factor_not_found', error_description: 'Authenticator not found.' });
+    }
+    return res.status(200).json({ id: gone.rows[0].id });
   });
 
   // ---------------- PostgREST RPC -----------------------------------------
@@ -745,7 +1038,7 @@ export async function registerLocalSupabaseGateway(
       }
 
       const result = await local.asRequest(
-        { sub: claims?.sub ?? null, isAdmin: claims?.isAdmin ?? false },
+        { sub: claims?.sub ?? null, isAdmin: claims?.isAdmin ?? false, sessionId: claims?.sessionId ?? null },
         async (db) => {
           const { rows } = await db.query(resolved.sql, resolved.params);
           return resolved.returnsSet ? rows : rows[0]?.result ?? null;
@@ -816,7 +1109,7 @@ export async function registerLocalSupabaseGateway(
     const claims = await authenticate(req);
     try {
       const rows = await local.asRequest(
-        { sub: claims?.sub ?? null, isAdmin: claims?.isAdmin ?? false },
+        { sub: claims?.sub ?? null, isAdmin: claims?.isAdmin ?? false, sessionId: claims?.sessionId ?? null },
         async (db) =>
           (
             await db.query(

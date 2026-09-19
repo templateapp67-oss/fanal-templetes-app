@@ -290,6 +290,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'notifications',
   'support',
   'profile',
+  'account-settings',
 ];
 
 /** Sidebar sections (the menu) — a subset of the URL sections. */
@@ -308,6 +309,7 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'notifications',
   'support',
   'profile',
+  'account-settings',
 ];
 
 /** Canonical URL for each partner-portal section. */

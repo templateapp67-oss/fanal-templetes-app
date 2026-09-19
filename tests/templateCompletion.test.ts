@@ -611,8 +611,11 @@ test('the status screen shows a completed ready state with a plain Template App 
 
 test('completed users always resolve to the status screen — never referral, login or signup again', () => {
   assert.equal(phaseFromOnboardingState({ status: 'template_completed', linked: true }), 'completed');
+  // The guided shop wizard is the post-link destination now; the property the
+  // test pins is unchanged — no completed user is sent back through
+  // referral/login/signup.
   for (const requested of ['login', 'signup', 'forgot-password', 'referral', 'status'] as const) {
-    assert.equal(resolveOnboardingRoute({ hasSession: true, phase: 'completed', requested }), 'status');
+    assert.equal(resolveOnboardingRoute({ hasSession: true, phase: 'completed', requested }), 'shop');
   }
   const source = readFileSync(new URL('../src/onboarding/OnboardingApp.tsx', import.meta.url), 'utf8');
   assert.match(source, /completed=\{phase === 'completed'\}/);

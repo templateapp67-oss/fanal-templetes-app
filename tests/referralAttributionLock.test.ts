@@ -82,6 +82,10 @@ test('6.1. the referral domain reuses the canonical tables; no parallel schema e
     ).rows.map((row: any) => row.table_name);
 
     // The exact canonical set. A new "referral" table — under any name — fails here.
+    // The canonical referral set plus the partner OPERATIONS tables the later
+    // phases added (earnings, payouts, tickets, account settings, security
+    // log, deactivation requests) — they are the operational model the portal
+    // consumes, never a second referral store.
     assert.deepEqual(tables, [
       'growth_onboarding',
       'growth_partner_applications',
@@ -89,8 +93,19 @@ test('6.1. the referral domain reuses the canonical tables; no parallel schema e
       'growth_referral_admin_audit',
       'growth_referral_attributions',
       'growth_referral_status_audit',
+      'partner_account_settings',
+      'partner_deactivation_requests',
+      'partner_earnings',
+      'partner_level_definitions',
+      'partner_marketing_assets',
+      'partner_notification_preferences',
+      'partner_notifications',
+      'partner_payout_requests',
       'partner_referral_events',
       'partner_referrals',
+      'partner_security_events',
+      'partner_support_attachments',
+      'partner_support_tickets',
     ]);
 
     // The remaining name in the domain is a read-only projection, not a store.
@@ -196,9 +211,22 @@ test('6.1. no committed migration creates a parallel referral table (this phase 
     'growth_referral_admin_audit',
     'growth_referral_attributions',
     'growth_referral_status_audit',
+    'partner_account_settings',
+    'partner_deactivation_requests',
+    'partner_earnings',
+    'partner_level_definitions',
+    'partner_marketing_assets',
+    'partner_notification_preferences',
+    'partner_notifications',
+    'partner_payout_requests',
     'partner_referral_events',
     'partner_referrals',
+    'partner_security_events',
     'partner_settings',
+    'partner_shop_daily_qualification',
+    'partner_shop_onboarding_rewards',
+    'partner_support_attachments',
+    'partner_support_tickets',
     'referrals',
   ]);
   for (const forbidden of ['owner_referrals_v2', 'new_referrals', 'referral_system_new']) {
