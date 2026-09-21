@@ -521,6 +521,10 @@ export function getSaveUiState(
  */
 export const DRAFT_STORAGE_KEY = 'nexora_draft_salon_data';
 
+export function getScopedDraftStorageKey(ownerId?: string | null): string {
+  return ownerId ? `nexora:draft:${ownerId}` : 'nexora:draft:anonymous';
+}
+
 export interface LocalDraftEnvelope {
   ownerId: string;
   profile: unknown;
@@ -531,21 +535,38 @@ export interface LocalDraftEnvelope {
 }
 
 /**
- * Cache the full draft state under `nexora_draft_salon_data`. Never throws —
+ * Cache the full draft state under `nexora:draft:${ownerId}`. Never throws —
  * quota errors degrade (inline images stripped) or are reported via the
  * returned result, never by crashing the save flow.
  */
 export function writeLocalDraft(
-  state: Omit<LocalDraftEnvelope, 'savedAt'> & { savedAt?: number }
+  state: Omit<LocalDraftEnvelope, 'savedAt'> & { savedAt?: number },
+  ownerId?: string | null
 ): LocalStorageWriteResult {
-  const envelope: LocalDraftEnvelope = { ...state, savedAt: state.savedAt ?? Date.now() };
-  return safeWriteLocalStorage(DRAFT_STORAGE_KEY, JSON.stringify(envelope));
+  const targetOwner = ownerId ?? state.ownerId;
+  const envelope: LocalDraftEnvelope = { ...state, ownerId: targetOwner, savedAt: state.savedAt ?? Date.now() };
+  const scopedKey = getScopedDraftStorageKey(targetOwner);
+  const result = safeWriteLocalStorage(scopedKey, JSON.stringify(envelope));
+  // If purely anonymous, also write to legacy key for compatibility
+  if (!targetOwner) {
+    safeWriteLocalStorage(DRAFT_STORAGE_KEY, JSON.stringify(envelope));
+  } else {
+    // Ensure un-scoped key is NOT populated with authenticated tenant data!
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {}
+  }
+  return result;
 }
 
 /** Remove a previously cached draft (called after a successful cloud save). */
-export function clearLocalDraft(): void {
+export function clearLocalDraft(ownerId?: string | null): void {
   if (typeof localStorage === 'undefined') return;
   try {
+    if (ownerId) {
+      localStorage.removeItem(getScopedDraftStorageKey(ownerId));
+    }
+    localStorage.removeItem(getScopedDraftStorageKey(null));
     localStorage.removeItem(DRAFT_STORAGE_KEY);
   } catch (err) {
     console.warn('[Nexora Sync] Failed to clear the local draft cache:', describeError(err));
@@ -553,23 +574,42 @@ export function clearLocalDraft(): void {
 }
 
 /** True when a pending draft is currently cached on this device. */
-export function hasLocalDraft(): boolean {
+export function hasLocalDraft(ownerId?: string | null): boolean {
   if (typeof localStorage === 'undefined') return false;
   try {
-    return localStorage.getItem(DRAFT_STORAGE_KEY) !== null;
+    const key = getScopedDraftStorageKey(ownerId);
+    if (localStorage.getItem(key) !== null) return true;
+    if (!ownerId && localStorage.getItem(DRAFT_STORAGE_KEY) !== null) return true;
+    return false;
   } catch {
     return false;
   }
 }
 
 /** Read a previously cached draft (recovery / diagnostics helper). */
-export function loadLocalDraft(): LocalDraftEnvelope | null {
+export function loadLocalDraft(ownerId?: string | null): LocalDraftEnvelope | null {
   if (typeof localStorage === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    const key = getScopedDraftStorageKey(ownerId);
+    let raw = localStorage.getItem(key);
+    if (!raw && !ownerId) {
+      raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as LocalDraftEnvelope) : null;
+    if (parsed && typeof parsed === 'object') {
+      const envelope = parsed as LocalDraftEnvelope;
+      // Cross-tenant guard: if ownerId is given and envelope belongs to another owner, reject!
+      if (ownerId && envelope.ownerId && envelope.ownerId !== ownerId) {
+        return null;
+      }
+      // If NO ownerId is given, do NOT return an authenticated draft!
+      if (!ownerId && envelope.ownerId) {
+        return null;
+      }
+      return envelope;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -814,10 +854,10 @@ export async function runSalonSavePipeline(
   };
 
   const storeLocalDraft = (): { draftWritten: boolean; error?: string } => {
-    const result = writeDraft(draftState);
+    const result = writeDraft(draftState, payload.ownerId);
     if (result.ok) return { draftWritten: true };
     const error = result.error || 'unknown localStorage error';
-    console.error('[Nexora Sync Error]:', `local draft write failed (key: ${DRAFT_STORAGE_KEY}): ${error}`);
+    console.error('[Nexora Sync Error]:', `local draft write failed (owner: ${payload.ownerId || 'anon'}): ${error}`);
     return { draftWritten: false, error };
   };
 
@@ -919,7 +959,7 @@ export async function runSalonSavePipeline(
   }
 
   if (cloud.ok) {
-    clearLocalDraft(); // the cloud now holds the state — drop any stale draft
+    clearLocalDraft(payload.ownerId); // the cloud now holds the state — drop any stale draft
     return {
       ok: true,
       target: 'cloud',
@@ -971,7 +1011,7 @@ export async function runSalonSavePipeline(
       }
     }
     if (api.ok) {
-      clearLocalDraft();
+      clearLocalDraft(payload.ownerId);
       return {
         ok: true,
         target: 'api',

@@ -96,11 +96,27 @@ export interface AuthenticatedProfileState {
 
 const AUTH_PROFILE_STORAGE_KEY = 'nexora_auth_profile_state';
 
+/**
+ * Scoped storage key for tenant salon state:
+ * `nexora:salon:${userId}:${salonId}`
+ */
+export function getScopedSalonStateKey(userId: string, salonId?: string | null): string {
+  const sid = salonId || 'default';
+  return `nexora:salon:${userId}:${sid}`;
+}
+
+export function getScopedAuthProfileKey(userId: string): string {
+  return `nexora:auth_profile:${userId}`;
+}
+
 export function getStoredAuthenticatedProfile(userId?: string | null): AuthenticatedProfileState | null {
   try {
-    if (typeof window === 'undefined') return null;
-    const key = userId ? `${AUTH_PROFILE_STORAGE_KEY}_${userId}` : AUTH_PROFILE_STORAGE_KEY;
-    const raw = localStorage.getItem(key);
+    if (typeof window === 'undefined' || !userId) return null;
+    const key = getScopedAuthProfileKey(userId);
+    let raw = localStorage.getItem(key);
+    if (!raw) {
+      raw = localStorage.getItem(`${AUTH_PROFILE_STORAGE_KEY}_${userId}`);
+    }
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
@@ -110,19 +126,18 @@ export function getStoredAuthenticatedProfile(userId?: string | null): Authentic
 
 export function setStoredAuthenticatedProfile(profile: Partial<AuthenticatedProfileState> | null, userId?: string | null) {
   try {
-    if (typeof window === 'undefined') return;
-    const key = userId ? `${AUTH_PROFILE_STORAGE_KEY}_${userId}` : AUTH_PROFILE_STORAGE_KEY;
+    if (typeof window === 'undefined' || !userId) return;
+    const key = getScopedAuthProfileKey(userId);
     if (!profile) {
       localStorage.removeItem(key);
-      if (!userId) localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+      localStorage.removeItem(`${AUTH_PROFILE_STORAGE_KEY}_${userId}`);
       return;
     }
     const current = getStoredAuthenticatedProfile(userId) || {};
     const merged = { ...current, ...profile };
     localStorage.setItem(key, JSON.stringify(merged));
-    if (userId) {
-      localStorage.setItem(AUTH_PROFILE_STORAGE_KEY, JSON.stringify(merged));
-    }
+    localStorage.setItem(`${AUTH_PROFILE_STORAGE_KEY}_${userId}`, JSON.stringify(merged));
+    // NEVER write to un-scoped AUTH_PROFILE_STORAGE_KEY
   } catch {
     // ignore quota/storage issues
   }
@@ -302,78 +317,111 @@ export function mergeTemplateStylists(
 // ============================================================================
 // localStorage helpers
 // ============================================================================
-export function clearAllLocalUserState(): void {
+export function clearAllLocalUserState(targetUserId?: string | null): void {
   try {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem(SALON_STATE_STORAGE_KEY);
-    localStorage.removeItem('nexora_draft_salon_data');
-    localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
-    localStorage.removeItem('nexora_authenticated_profile');
-    localStorage.removeItem('pinky_nails_salon_profile_v1');
-    localStorage.removeItem(ONBOARDING_COMPLETED_KEY);
-    localStorage.removeItem('nexora_auth_user_v1');
-  } catch {}
-}
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    // 1. Remove all un-scoped global tenant keys
+    const globalKeys = [
+      SALON_STATE_STORAGE_KEY,
+      'nexora_draft_salon_data',
+      AUTH_PROFILE_STORAGE_KEY,
+      'nexora_authenticated_profile',
+      'pinky_nails_salon_profile_v1',
+      ONBOARDING_COMPLETED_KEY,
+      'nexora_auth_user_v1',
+      'salonState',
+      'profile',
+      'currentSalon',
+      'websiteState',
+      'partnerProfile',
+      'salon_guest_booking_info',
+    ];
+    for (const key of globalKeys) {
+      localStorage.removeItem(key);
+    }
 
-export function loadSalonState(userId?: string | null): SalonState | null {
-  try {
-    const key = userId ? `${SALON_STATE_STORAGE_KEY}_${userId}` : SALON_STATE_STORAGE_KEY;
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        const profile = parsed.profile && typeof parsed.profile === 'object' && parsed.profile.businessName ? parsed.profile : null;
-        if (profile) {
-          // Cross-tenant guard: if userId is requested and profile belongs to another owner, never leak!
-          if (userId && profile.ownerId && profile.ownerId !== userId) {
-            return null;
-          }
-          return {
-            profile,
-            services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : null,
-            stylists: Array.isArray(parsed.stylists) && parsed.stylists.length > 0 ? parsed.stylists : null,
-            loyaltyConfig: parsed.loyaltyConfig && typeof parsed.loyaltyConfig === 'object' ? parsed.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
-            selectedTemplateId: parsed.selectedTemplateId || parsed.profile?.businessType || 1,
-          };
+    // 2. Clear tenant-scoped keys matching patterns
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (targetUserId) {
+        if (
+          k.startsWith(`nexora:salon:${targetUserId}:`) ||
+          k === `nexora:auth_profile:${targetUserId}` ||
+          k === `nexora:draft:${targetUserId}` ||
+          k.startsWith(`nexora:backup:${targetUserId}:`) ||
+          k === `${SALON_STATE_STORAGE_KEY}_${targetUserId}` ||
+          k === `${AUTH_PROFILE_STORAGE_KEY}_${targetUserId}`
+        ) {
+          doomed.push(k);
+        }
+      } else {
+        if (
+          k.startsWith('nexora:salon:') ||
+          k.startsWith('nexora:auth_profile:') ||
+          k.startsWith('nexora:draft:') ||
+          k.startsWith('nexora:backup:') ||
+          k.startsWith(`${SALON_STATE_STORAGE_KEY}_`) ||
+          k.startsWith(`${AUTH_PROFILE_STORAGE_KEY}_`) ||
+          k.startsWith('salon_snapshots_history_')
+        ) {
+          doomed.push(k);
         }
       }
     }
-  } catch {}
-
-  // If a specific userId was requested and no user-scoped state exists,
-  // do NOT fall back to generic/stale localStorage from previous users!
-  if (userId) return null;
-
-  // Fallback 1: nexora_draft_salon_data (anonymous/visitor only)
-  try {
-    const rawDraft = localStorage.getItem('nexora_draft_salon_data');
-    if (rawDraft) {
-      const parsedDraft = JSON.parse(rawDraft);
-      const draft = parsedDraft?.draft || parsedDraft;
-      if (draft && typeof draft === 'object' && draft.profile && draft.profile.businessName) {
-        return {
-          profile: draft.profile,
-          services: Array.isArray(draft.services) && draft.services.length > 0 ? draft.services : null,
-          stylists: Array.isArray(draft.stylists) && draft.stylists.length > 0 ? draft.stylists : null,
-          loyaltyConfig: draft.loyaltyConfig && typeof draft.loyaltyConfig === 'object' ? draft.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
-          selectedTemplateId: draft.selectedTemplateId || draft.profile?.businessType || 1,
-        };
-      }
+    for (const k of doomed) {
+      localStorage.removeItem(k);
     }
   } catch {}
+}
 
-  // Fallback 2: nexora_authenticated_profile (anonymous/visitor only)
+export function loadSalonState(userId?: string | null, salonId?: string | null): SalonState | null {
   try {
-    const rawAuth = localStorage.getItem('nexora_authenticated_profile');
-    if (rawAuth) {
-      const parsedAuth = JSON.parse(rawAuth);
-      if (parsedAuth && typeof parsedAuth === 'object' && parsedAuth.businessName) {
+    if (typeof localStorage === 'undefined') return null;
+    if (userId) {
+      const targetSalon = salonId || 'default';
+      const scopedKey = getScopedSalonStateKey(userId, targetSalon);
+      let raw = localStorage.getItem(scopedKey);
+      if (!raw) {
+        raw = localStorage.getItem(`${SALON_STATE_STORAGE_KEY}_${userId}`);
+      }
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          const profile = parsed.profile && typeof parsed.profile === 'object' && parsed.profile.businessName ? parsed.profile : null;
+          if (profile) {
+            // Strict ownership guard
+            if (profile.ownerId && profile.ownerId !== userId) {
+              return null;
+            }
+            return {
+              profile,
+              services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : null,
+              stylists: Array.isArray(parsed.stylists) && parsed.stylists.length > 0 ? parsed.stylists : null,
+              loyaltyConfig: parsed.loyaltyConfig && typeof parsed.loyaltyConfig === 'object' ? parsed.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
+              selectedTemplateId: parsed.selectedTemplateId || parsed.profile?.businessType || 1,
+            };
+          }
+        }
+      }
+      return null;
+    }
+
+    // When NO userId is provided:
+    // NEVER return any cached data that has an ownerId!
+    // Check purely anonymous visitor cache if any:
+    const anonKey = 'nexora:salon:anonymous:default';
+    const anonRaw = localStorage.getItem(anonKey);
+    if (anonRaw) {
+      const parsed = JSON.parse(anonRaw);
+      if (parsed?.profile && !parsed.profile.ownerId && parsed.profile.businessName) {
         return {
-          profile: parsedAuth,
-          services: null,
-          stylists: null,
-          loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
-          selectedTemplateId: parsedAuth.businessType || 1,
+          profile: parsed.profile,
+          services: Array.isArray(parsed.services) ? parsed.services : null,
+          stylists: Array.isArray(parsed.stylists) ? parsed.stylists : null,
+          loyaltyConfig: parsed.loyaltyConfig || DEFAULT_LOYALTY_CONFIG,
+          selectedTemplateId: parsed.selectedTemplateId || parsed.profile?.businessType || 1,
         };
       }
     }
@@ -382,16 +430,22 @@ export function loadSalonState(userId?: string | null): SalonState | null {
   return null;
 }
 
-export function saveSalonState(state: SalonState, userId?: string | null): LocalStorageWriteResult {
+export function saveSalonState(state: SalonState, userId?: string | null, salonId?: string | null): LocalStorageWriteResult {
   // Quota-aware write: uploaded images are stored as data URLs and can exceed
   // the ~5MB localStorage budget. safeWriteLocalStorage never throws — it
   // retries once without inline images and reports the exact error instead of
   // failing the whole save flow with a generic "Save failed".
   const targetUser = userId || state.profile?.ownerId;
+  const targetSalon = salonId || state.profile?.id || 'default';
   if (targetUser) {
+    const scopedKey = getScopedSalonStateKey(targetUser, targetSalon);
+    const res = safeWriteLocalStorage(scopedKey, JSON.stringify(state));
     safeWriteLocalStorage(`${SALON_STATE_STORAGE_KEY}_${targetUser}`, JSON.stringify(state));
+    // NEVER write to un-scoped global key `SALON_STATE_STORAGE_KEY`!
+    return res;
   }
-  return safeWriteLocalStorage(SALON_STATE_STORAGE_KEY, JSON.stringify(state));
+  // Purely anonymous visitor before login/signup:
+  return safeWriteLocalStorage('nexora:salon:anonymous:default', JSON.stringify(state));
 }
 
 // Legacy key the app previously wrote to; we migrate it on first load.

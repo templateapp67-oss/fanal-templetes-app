@@ -1304,7 +1304,7 @@ export default function App() {
           stylists: state.stylists,
           loyaltyConfig: state.loyaltyConfig,
           selectedTemplateId: state.selectedTemplateId,
-        });
+        }, state.user?.id, state.profile?.id);
         if (!local.ok) {
           failures.push(`local storage: ${local.error}`);
           console.error('[AutoSave] localStorage write failed:', local.error);

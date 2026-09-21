@@ -4,6 +4,7 @@ import { PartnerProfileModal } from './PartnerProfileModal';
 import { NotificationBell } from './NotificationBell';
 import { AuthModal } from './AuthModal';
 import { supabase } from '../lib/supabaseClient';
+import { clearAllLocalUserState } from '../lib/salonStore';
 
 interface HeaderProps {
   currentView: AppView;
@@ -96,6 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [mobileNavOpen]);
 
   const handleLogout = async () => {
+    clearAllLocalUserState();
     await supabase.auth.signOut();
   };
 

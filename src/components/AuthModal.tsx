@@ -109,6 +109,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       if (mode === 'signup') {
+        // Clear any previous tenant state before new account creation
+        clearAllLocalUserState();
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -146,7 +148,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               city: city || (data.user.user_metadata?.city as string),
               ownerName: fullName || (data.user.user_metadata?.full_name as string),
               email: email,
-            });
+            }, data.user.id);
 
             const { error: profileError } = await supabase
               .from('profiles')
@@ -167,6 +169,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           onClose();
         }
       } else {
+        // Clear previous tenant state before logging in
+        clearAllLocalUserState();
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -182,7 +186,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               city: uMeta.city,
               ownerName: uMeta.full_name,
               email: data.user.email,
-            });
+            }, data.user.id);
           }
           onSuccess(data.user);
           onClose();

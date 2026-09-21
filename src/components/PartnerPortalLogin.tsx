@@ -33,6 +33,7 @@ import {
   signOutGrowthPartner,
   type GrowthPartnerViewer,
 } from '../lib/growthPartnerLogin';
+import { clearAllLocalUserState } from '../lib/salonStore';
 import {
   beginPartnerSessionLifetime,
   completePartnerPasswordReset,
@@ -920,9 +921,7 @@ export const PartnerPortalLogin: React.FC<{
   const clearSession = async () => {
     await signOutGrowthPartner(sb);
     clearAuthSessionLifetime();
-    try {
-      localStorage.removeItem('nexora_auth_user_v1');
-    } catch {}
+    clearAllLocalUserState();
     onLogout?.();
     setSessionUser(null);
     setPartnerRow(null);
