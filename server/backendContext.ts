@@ -107,7 +107,7 @@ export async function resolveOwnerSalonResolution(
 }
 
 export function createOwnerSalonHandler(db: any) {
-  return async (req: any, res: any) => {
+  return async (req: any, res: any, next: any) => {
     try {
       const identity = await verifyBackendUser(db, req);
       const resolution = await resolveOwnerSalonResolution(
@@ -115,16 +115,15 @@ export function createOwnerSalonHandler(db: any) {
         identity.user.id,
         res.locals?.requestDeadlineAt
       );
-      return res.json(resolution);
+      return res.status(200).json(resolution);
     } catch (error: any) {
-      if (error instanceof BackendError && error.status === 401) {
-        return res.status(401).json({ status: 'needs_onboarding', salon: null, error: error.message });
-      }
-      return res.status(error?.status || 500).json({
-        status: 'needs_onboarding',
-        salon: null,
-        error: error?.message || 'Resolution failed',
-      });
+      // Phase 12: surface real HTTP status instead of collapsing every error
+      // into a 200 with status:'needs_onboarding'. The frontend route guard
+      // already redirects to onboarding when salon === null on 200; 401/403/5xx
+      // must be forwarded to the central error handler so the UI can show a
+      // retry prompt instead of a silent "needs onboarding" loop.
+      if (error instanceof BackendError) return next(error);
+      return next(error);
     }
   };
 }
