@@ -70,7 +70,7 @@ export function getSiteUrl(profile: SalonProfile, publishedOrigin?: string): str
   return `https://${sub}.nexora.in`;
 }
 
-/** Get the official subdomain format URL (e.g. https://arts-by-uma.nexora.in). */
+/** Get the official subdomain format URL (e.g. https://mysalon.nexora.in). */
 export function getSubdomainUrl(profile: SalonProfile): string {
   if (profile.customDomain) {
     return `https://${profile.customDomain}`;
@@ -315,8 +315,9 @@ export function mergeTemplateStylists(
 }
 
 // ============================================================================
-// localStorage helpers
+// localStorage helpers & tenant isolation
 // ============================================================================
+
 export function clearAllLocalUserState(targetUserId?: string | null): void {
   try {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
@@ -376,6 +377,53 @@ export function clearAllLocalUserState(targetUserId?: string | null): void {
   } catch {}
 }
 
+/** Clear all local salon state caches to prevent data leaking across users. */
+export function clearStoredSalonState(targetUserId?: string | null): void {
+  clearAllLocalUserState(targetUserId);
+}
+
+/** Helper to generate a clean, blank onboarding profile for a new user without inheriting old data. */
+export function getBlankOnboardingProfile(user?: any): SalonProfile {
+  const meta = user?.user_metadata || {};
+  const businessName = (meta.salon_name || meta.business_name || '').trim();
+  const ownerName = (meta.full_name || meta.owner_name || '').trim();
+  const phone = (meta.phone_number || meta.phone || '').trim();
+  const email = (user?.email || meta.email || '').trim();
+  const city = (meta.city || '').trim();
+
+  return {
+    businessType: 'hair_salon',
+    businessName: businessName,
+    ownerName: ownerName,
+    ownerRole: 'Salon Owner',
+    phone: phone,
+    whatsapp: phone ? (phone.startsWith('+') ? phone : `+91${phone}`) : '',
+    email: email,
+    tagline: '',
+    about: '',
+    ownerPhotoUrl: '',
+    coverImageUrl: '',
+    themePreset: 'slate_silver',
+    themeAccentKey: 'slate',
+    currency: '₹',
+    subdomain: businessName ? slugifySalonName(businessName) : '',
+    address: '',
+    city: city,
+    areaLocality: '',
+    postalCode: '',
+    instagramHandle: '',
+    facebookPage: '',
+    tiktokHandle: '',
+    tiktokProfile: '',
+    requireDeposit: false,
+    depositPercentage: 20,
+    whiteLabelEnabled: true,
+    ownerId: user?.id,
+    promotionalBanner: { enabled: false, text: '' },
+    offers: [],
+  };
+}
+
 export function loadSalonState(userId?: string | null, salonId?: string | null): SalonState | null {
   try {
     if (typeof localStorage === 'undefined') return null;
@@ -426,7 +474,6 @@ export function loadSalonState(userId?: string | null, salonId?: string | null):
       }
     }
   } catch {}
-
   return null;
 }
 
@@ -437,15 +484,36 @@ export function saveSalonState(state: SalonState, userId?: string | null, salonI
   // failing the whole save flow with a generic "Save failed".
   const targetUser = userId || state.profile?.ownerId;
   const targetSalon = salonId || state.profile?.id || 'default';
+  const serialized = JSON.stringify(state);
+
   if (targetUser) {
     const scopedKey = getScopedSalonStateKey(targetUser, targetSalon);
-    const res = safeWriteLocalStorage(scopedKey, JSON.stringify(state));
-    safeWriteLocalStorage(`${SALON_STATE_STORAGE_KEY}_${targetUser}`, JSON.stringify(state));
-    // NEVER write to un-scoped global key `SALON_STATE_STORAGE_KEY`!
+    const res = safeWriteLocalStorage(scopedKey, serialized);
+    safeWriteLocalStorage(`${SALON_STATE_STORAGE_KEY}_${targetUser}`, serialized);
+    // Ensure un-scoped key is NOT populated with authenticated tenant data!
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(SALON_STATE_STORAGE_KEY);
+    } catch {}
+    console.info('[saveSalonState] Scoped local storage write executed:', {
+      key: scopedKey,
+      bytes: serialized.length,
+      ok: res.ok,
+      degraded: res.degraded,
+      error: res.error || null,
+    });
     return res;
   }
+
   // Purely anonymous visitor before login/signup:
-  return safeWriteLocalStorage('nexora:salon:anonymous:default', JSON.stringify(state));
+  const result = safeWriteLocalStorage('nexora:salon:anonymous:default', serialized);
+  console.info('[saveSalonState] Anonymous local storage write executed:', {
+    key: 'nexora:salon:anonymous:default',
+    bytes: serialized.length,
+    ok: result.ok,
+    degraded: result.degraded,
+    error: result.error || null,
+  });
+  return result;
 }
 
 // Legacy key the app previously wrote to; we migrate it on first load.
@@ -458,4 +526,18 @@ export function loadLegacyProfile(): SalonProfile | null {
   } catch {
     return null;
   }
+}
+
+export function clearAllSalonLocalData(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(SALON_STATE_STORAGE_KEY);
+    localStorage.removeItem('nexora_draft_salon_data');
+    localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+    localStorage.removeItem('nexora_authenticated_profile');
+    localStorage.removeItem(ONBOARDING_COMPLETED_KEY);
+    localStorage.removeItem('nexora_auth_user_v1');
+    localStorage.removeItem('salon_profile_v1');
+    localStorage.removeItem(LEGACY_PROFILE_KEY);
+  } catch {}
 }

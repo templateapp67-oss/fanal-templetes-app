@@ -169,17 +169,25 @@ export const PartnerProfileMenu: React.FC<{
   onNavigateProfile: () => void;
   onNavigateAccountSettings?: () => void;
   onLogout: () => void;
-}> = ({ displayName, email, partnerId, onNavigateProfile, onNavigateAccountSettings, onLogout }) => (
+}> = ({ displayName, email, partnerId, avatarUrl, onNavigateProfile, onNavigateAccountSettings, onLogout }) => (
   <div data-partner-profile-menu>
     <div className="border-b border-slate-100 px-4 py-3">
       <div className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-          style={{ backgroundColor: '#0f172a' }}
-        >
-          {displayName.slice(0, 1).toUpperCase()}
-        </span>
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt="Profile"
+            className="h-10 w-10 shrink-0 rounded-full object-cover border border-slate-200"
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
+            style={{ backgroundColor: '#0f172a' }}
+          >
+            {displayName.slice(0, 1).toUpperCase()}
+          </span>
+        )}
         <div className="min-w-0 leading-tight">
           <p className="truncate text-sm font-bold text-slate-900">{displayName}</p>
           <p className="truncate text-xs text-slate-500" title={email}>
@@ -701,6 +709,7 @@ export const PartnerPortalShell: React.FC<{
                       displayName={displayName}
                       email={email}
                       partnerId={partnerId}
+                      avatarUrl={avatarUrl}
                       onNavigateProfile={() => {
                         setOpenMenu(null);
                         navigate(partnerPortalPath('profile'));

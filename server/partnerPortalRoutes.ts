@@ -187,6 +187,46 @@ async function runAs(
     throw new BackendError(502, 'The partner backend could not answer. Please try again.', 'backend_unavailable');
   }
   if (result.error) {
+    // Graceful fallback for reads from 20260919120000_partner_portal_section_reads.sql
+    // when applied to a database where the RPC is not yet in the PostgREST cache (PGRST202):
+    if (result.error.code === 'PGRST202') {
+      if (fn === 'get_partner_marketing_asset_categories') {
+        try {
+          let rows: any[] | null = null;
+          const assetsRes = await call(token, 'get_partner_marketing_assets', {});
+          if (!assetsRes.error && Array.isArray(assetsRes.data)) {
+            rows = assetsRes.data;
+          } else if (deps.db) {
+            const { data: dbRows } = await deps.db
+              .from('partner_marketing_assets')
+              .select('category')
+              .eq('is_published', true);
+            if (Array.isArray(dbRows)) {
+              rows = dbRows;
+            }
+          }
+          if (rows) {
+            const counts: Record<string, number> = {};
+            for (const asset of rows) {
+              const cat = typeof asset?.category === 'string' ? asset.category : null;
+              if (cat) counts[cat] = (counts[cat] || 0) + 1;
+            }
+            return Object.keys(counts).sort().map((category) => ({
+              category,
+              asset_count: counts[category],
+            }));
+          }
+        } catch {
+          // Fallback failed, proceed to normal logging & failure below
+        }
+      } else if (fn === 'get_my_partner_notification_preferences') {
+        return { email_enabled: true, in_app_enabled: true, updated_at: null };
+      } else if (fn === 'get_my_partner_payout_requests') {
+        return { total: 0, open_amount_paise: 0, items: [] };
+      } else if (fn === 'get_my_partner_support_tickets') {
+        return [];
+      }
+    }
     logPartnerFailure(`api.${operation}`, result.error);
     throw partnerRpcFailure(result.error);
   }

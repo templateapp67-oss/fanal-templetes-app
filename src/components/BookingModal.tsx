@@ -161,6 +161,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   // Step 1: Branch, Service & Specialist
   const [selectedBranch, setSelectedBranch] = useState<string>('main');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   // MULTI-SERVICE selection: customers can tick several treatments (e.g.
   // haircut + balayage + nails) and every later step — totals, draft, payment
   // and confirmation — works from the whole array. Order = click order; the
@@ -174,7 +175,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Backward compatibility alias across modal steps and draft contracts
   const selectedUpgrades = selectedAddons;
   const setSelectedUpgrades = setSelectedAddons;
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(
     initialStylist || (stylists && stylists[0]) || ANY_SPECIALIST
   );
@@ -190,7 +190,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     return ['All', ...Array.from(set)];
   }, [services]);
 
-  const displayedServices = React.useMemo(() => {
+  const filteredServices = React.useMemo(() => {
     if (selectedCategory === 'All') return services || [];
     return (services || []).filter((s) => s.category === selectedCategory);
   }, [services, selectedCategory]);
@@ -585,7 +585,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     primarySelectedService
       ? services.filter((s) => s.category === primarySelectedService.category && !chosenServiceIds.has(s.id))
       : []
-  ).slice(0, 4);
+  ).slice(0, 6);
   const advanceTokenAmount = computeAdvanceDeposit(totalAmount, depositPercent).rupees;
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
 
@@ -698,6 +698,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       .filter(Boolean)
       .join(' + ');
 
+  /** Clear all active service and upgrade selections. */
+  const handleClearAllServices = () => {
+    setSelectedServices([]);
+    setSelectedUpgrades([]);
+  };
+
   /** Toggle one treatment in/out of the multi-service selection. */
   const toggleServiceSelection = (srv: SalonService) => {
     const alreadyChosen = selectedServices.some((s) => s.id === srv.id);
@@ -707,6 +713,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       if (nextServices.length === 0) {
         // Deselected all services: reset all add-ons immediately
         setSelectedAddons([]);
+        setSelectedUpgrades([]);
       } else {
         const nextPrimaryId = nextServices[0]?.id;
         const wasPrimary = selectedServices[0]?.id === srv.id;
@@ -721,12 +728,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             prev.filter((u) => u.parentServiceId !== srv.id && u.serviceId !== srv.id && u.id !== srv.id)
           );
         }
+        const remainingCategories = new Set(nextServices.map((s) => s.category).filter(Boolean));
+        setSelectedUpgrades((prev) =>
+          prev.filter(
+            (u) => remainingCategories.has(u.category) && !nextServices.some((ns) => ns.id === u.id)
+          )
+        );
       }
     } else {
       setSelectedServices((prev) => [...prev, srv]);
       // A treatment can only live in one basket: if it was ticked earlier as
       // an add-on (step 2), promote it to a fully selected service.
       setSelectedAddons((prev) => (prev.some((u) => u.id === srv.id) ? prev.filter((u) => u.id !== srv.id) : prev));
+      setSelectedUpgrades((prev) => prev.filter((u) => u.id !== srv.id));
     }
   };
 
@@ -1241,13 +1255,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setCurrentStep('service');
     setSelectedCategory('All');
     clearAllSelections();
-    if (services.length > 0) {
-      setSelectedServices([services[0]]);
-    }
+    const resetInitial = initialService || (services && services[0]) || null;
+    setSelectedServices(resetInitial ? [resetInitial] : []);
+    setSelectedUpgrades([]);
     setSelectedStylist(initialStylist || ANY_SPECIALIST);
     setBookingType('salon');
     setPaymentMethod('pay_advance_token');
-
+    setBookingTime('');
+    setSlotStaffId('');
     setOtpDigits(['', '', '', '']);
     setOtpError('');
     setIsWhatsappVerified(false);
@@ -1429,7 +1444,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   explicit Add to Booking / Remove toggle, and the summary bar
                   at the bottom of the modal updates price + duration live. */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold font-mono-caps text-slate-700">
                     2. Select Treatment / Service
                   </label>
@@ -1440,6 +1455,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         onClick={handleClearAll}
                         data-testid="clear-all-services-button"
                         className="text-[10px] font-mono font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer transition-colors"
+                        title="Clear all selected services and add-ons"
                       >
                         Clear All
                       </button>
@@ -1455,6 +1471,36 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     </span>
                   </div>
                 </div>
+
+                {/* Category Filter Pills */}
+                {serviceCategories.length > 2 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1 scrollbar-none">
+                    {serviceCategories.map((cat) => {
+                      const isActive = selectedCategory === cat;
+                      const count = cat === 'All'
+                        ? (services || []).length
+                        : (services || []).filter((s) => s.category === cat).length;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setSelectedCategory(cat)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                            isActive
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                          }`}
+                        >
+                          <span>{cat}</span>
+                          <span className={`text-[9px] px-1 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-500 mb-2">
                   Combine treatments in one visit (e.g. haircut + balayage + nails) — tap a card or use its button. Price &amp; duration update instantly.
                 </p>
@@ -1489,17 +1535,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   </div>
                 )}
 
-                {services.length === 0 ? (
-                  <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
-                    The service menu is still loading — please try again in a moment.
-                  </div>
-                ) : displayedServices.length === 0 ? (
+                {filteredServices.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
                     No services found in category &quot;{selectedCategory}&quot;.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1" role="group" aria-label="Available services">
-                    {(displayedServices || []).map((srv) => {
+                    {filteredServices.map((srv) => {
                       const isSelected = selectedServices.some((s) => s.id === srv.id);
                       return (
                         <div
@@ -1685,12 +1727,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               exit={{ opacity: 0, x: -10 }}
               className="flex flex-col gap-4"
             >
-              <h4 className="font-bold text-sm text-slate-900">Make your service even better!</h4>
-              <p className="text-[11px] text-slate-500">
-                {activeUpgrades.length > 0
-                  ? `${activeUpgrades.length} add-on${activeUpgrades.length > 1 ? 's' : ''} added · same-category extras for ${primarySelectedService?.name || 'your visit'}`
-                  : `Popular add-ons for ${primarySelectedService?.name || 'your visit'}`}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">Make your service even better!</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {selectedUpgrades.length > 0
+                      ? `${selectedUpgrades.length} add-on${selectedUpgrades.length > 1 ? 's' : ''} added · recommended extras for your visit`
+                      : `Popular add-ons for ${primarySelectedService?.name || 'your visit'}`}
+                  </p>
+                </div>
+                {selectedUpgrades.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUpgrades([])}
+                    className="text-[10px] text-rose-600 hover:text-rose-700 font-bold cursor-pointer underline shrink-0 mt-0.5"
+                    title="Remove all optional add-ons"
+                  >
+                    Clear Add-ons
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
                 {addonCandidates.length === 0 ? (

@@ -1,32 +1,33 @@
+import { slugifySalonName } from './lib/salonStore';
 import { BusinessTypeOption, SalonProfile, SalonService, Stylist, Appointment, ClientRecord } from './types';
 import { CATEGORY_TEMPLATES, ALL_CATEGORY_OPTIONS } from './categoryTemplates';
 
 export const BUSINESS_TYPES: BusinessTypeOption[] = ALL_CATEGORY_OPTIONS;
 
-// Default template config
+// Default hair salon template
 const defaultTemplate = CATEGORY_TEMPLATES.hair_salon;
 
 export const INITIAL_SALON_PROFILE: SalonProfile = {
   businessType: 'hair_salon',
-  businessName: 'Nexora Hair Studio',
-  ownerName: 'Studio Director',
+  businessName: 'Luxe Hair & Styling Studio',
+  ownerName: 'Salon Owner',
   ownerRole: 'Founder & Master Stylist',
-  phone: '+91 98000 00000',
-  whatsapp: '+91 98000 00000',
-  email: 'contact@nexora.in',
+  phone: '9845077654',
+  whatsapp: '+919845077654',
+  email: '',
   tagline: 'Precision Cuts, Creative Hair Artistry & Luxury Salon Lounge',
-  about: 'Welcome to Nexora Hair Studio. Our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary.',
-  ownerPhotoUrl: '',
+  about: 'Welcome to our studio. Bringing together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary.',
+  ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
   coverImageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
   themePreset: 'slate_silver',
   themeAccentKey: 'slate',
   currency: '₹',
-  subdomain: 'demo-salon',
-  address: '100 Feet Road, Indiranagar',
+  subdomain: 'luxe-hair-studio',
+  address: '100 Feet Road, 12th Main, Indiranagar',
   city: 'Bengaluru',
   areaLocality: 'Indiranagar',
   postalCode: '560038',
-  instagramHandle: '@nexorastudio',
+  instagramHandle: '@luxehair_studio',
   facebookPage: '',
   tiktokHandle: '',
   tiktokProfile: '',
@@ -172,12 +173,12 @@ export const INITIAL_SERVICES: SalonService[] = [
 
 export const INITIAL_STYLISTS: Stylist[] = [
   {
-    id: 'hs-st-uma',
-    name: 'Elena',
+    id: 'hs-st-101',
+    name: 'Aria Sen',
     role: 'Founder & Master Stylist',
     avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
-    bio: 'Master stylist with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.',
-    phone: '+91 98000 00001',
+    bio: 'Founder with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.',
+    phone: '+91 98450 77654',
     specialties: ['Structural Cuts', 'Balayage Color', 'Keratin Smoothing', 'Gel-X Extensions'],
     assignedServices: ['hs-1', 'hs-3', 'hs-4', 'hs-5', 'hs-7'],
     rating: 4.98,
@@ -246,8 +247,8 @@ export const INITIAL_APPOINTMENTS: Appointment[] = [
     serviceId: 'hs-3',
     serviceName: 'Signature Caramel Balayage & Olaplex Glaze',
     servicePrice: 5200,
-    stylistId: 'hs-st-uma',
-    stylistName: 'Elena',
+    stylistId: 'hs-st-101',
+    stylistName: 'Aria Sen',
     date: '2026-09-06',
     time: '11:00',
     status: 'confirmed',
@@ -280,8 +281,8 @@ export const INITIAL_APPOINTMENTS: Appointment[] = [
     serviceId: 'hs-4',
     serviceName: 'Full Set Gel-X Sculpted Extensions & Nail Art',
     servicePrice: 2400,
-    stylistId: 'hs-st-uma',
-    stylistName: 'Elena',
+    stylistId: 'hs-st-101',
+    stylistName: 'Aria Sen',
     date: '2026-09-07',
     time: '10:00',
     status: 'confirmed',
@@ -314,8 +315,8 @@ export const INITIAL_APPOINTMENTS: Appointment[] = [
     serviceId: 'hs-5',
     serviceName: 'Formaldehyde-Free Keratin Smoothing',
     servicePrice: 4200,
-    stylistId: 'hs-st-uma',
-    stylistName: 'Elena',
+    stylistId: 'hs-st-101',
+    stylistName: 'Aria Sen',
     date: '2026-07-15',
     time: '12:30',
     status: 'completed',
@@ -385,8 +386,8 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     totalVisits: 7,
     totalSpent: 18400,
     lastVisit: '2026-08-28',
-    notes: 'Regular Balayage & Keratin client. Prefers Elena for color formulations.',
-    favoriteStylist: 'Elena',
+    notes: 'Regular Balayage & Keratin client. Prefers Aria for color formulations.',
+    favoriteStylist: 'Aria Sen',
     points: 1150,
     lifetimePoints: 2190,
     loyaltyTier: 'platinum',
@@ -436,8 +437,8 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     totalVisits: 4,
     totalSpent: 12200,
     lastVisit: '2026-08-15',
-    notes: 'Loves Gel-X chrome designs and customized 3D nail charms by Elena.',
-    favoriteStylist: 'Elena',
+    notes: 'Loves Gel-X chrome designs and customized 3D nail charms.',
+    favoriteStylist: 'Aria Sen',
     points: 1220,
     lifetimePoints: 1450,
     loyaltyTier: 'gold',
@@ -473,8 +474,8 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     totalVisits: 9,
     totalSpent: 26500,
     lastVisit: '2026-08-25',
-    notes: 'Bridal consultation scheduled with Elena. VIP client.',
-    favoriteStylist: 'Elena',
+    notes: 'Bridal consultation scheduled with top stylists. VIP client.',
+    favoriteStylist: 'Aria Sen',
     points: 1650,
     lifetimePoints: 3100,
     loyaltyTier: 'platinum',
@@ -503,9 +504,9 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     email: 'kavya.nambiar@gmail.com',
     totalVisits: 4,
     totalSpent: 14800,
-    lastVisit: '2026-07-15', // 55 days ago
+    lastVisit: '2026-07-15',
     notes: 'Keratin smoothing & hair botox specialist fan. Usually repeats keratin treatment every 8 weeks.',
-    favoriteStylist: 'Elena',
+    favoriteStylist: 'Aria Sen',
     points: 880,
     lifetimePoints: 1620,
     loyaltyTier: 'gold',
@@ -568,3 +569,60 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     ],
   },
 ];
+
+export function createBlankSalonProfile(userMeta?: {
+  full_name?: string;
+  salon_name?: string;
+  phone_number?: string;
+  city?: string;
+  email?: string;
+  ownerName?: string;
+  businessName?: string;
+  phone?: string;
+}): SalonProfile {
+  const businessName = userMeta?.salon_name || userMeta?.businessName || '';
+  const ownerName = userMeta?.full_name || userMeta?.ownerName || '';
+  const phone = userMeta?.phone_number || userMeta?.phone || '';
+  const email = userMeta?.email || '';
+  const city = userMeta?.city || '';
+
+  return {
+    businessType: 'hair_salon',
+    businessName,
+    ownerName,
+    ownerRole: '',
+    phone,
+    whatsapp: phone ? '+91' + phone.replace(/\D/g, '') : '',
+    email,
+    tagline: '',
+    about: '',
+    ownerPhotoUrl: '',
+    coverImageUrl: '',
+    themePreset: 'slate_silver',
+    themeAccentKey: 'slate',
+    currency: '₹',
+    subdomain: businessName ? slugifySalonName(businessName) : '',
+    address: '',
+    city,
+    areaLocality: '',
+    postalCode: '',
+    instagramHandle: '',
+    facebookPage: '',
+    tiktokHandle: '',
+    tiktokProfile: '',
+    requireDeposit: true,
+    depositPercentage: 20,
+    whiteLabelEnabled: true,
+    promotionalBanner: {
+      enabled: false,
+      text: '',
+      discountCode: '',
+      badgeText: '',
+      buttonText: '',
+      buttonAction: 'book',
+      themePreset: 'royal_gold',
+    },
+    offers: [],
+    customDomain: '',
+  };
+}

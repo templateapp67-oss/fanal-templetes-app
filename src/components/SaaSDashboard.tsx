@@ -82,6 +82,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [appointmentsSubTab, setAppointmentsSubTab] = useState<'calendar' | 'live_bookings'>('calendar');
+  const [overviewStatusFilter, setOverviewStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [dashboardTierClientSearch, setDashboardTierClientSearch] = useState<string>('');
   const [dashboardTierFilter, setDashboardTierFilter] = useState<string>('all');
@@ -584,104 +585,317 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </button>
             </div>
 
-            {/* Upcoming Appointments Table */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 border-b border-gray-100 pb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-display font-bold text-lg text-gray-900">Salon Appointments</h2>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                      {appointments.length} Records
-                    </span>
-                  </div>
-                  <span className="text-xs text-slate-500 font-mono">Currency: INR (₹)</span>
-                </div>
+            {/* PENDING VS CONFIRMED APPOINTMENTS STATUS INDICATOR CARDS */}
+            {(() => {
+              const pendingAppointments = appointments.filter((a) => a.status === 'pending');
+              const confirmedAppointments = appointments.filter((a) => a.status === 'confirmed');
+              const completedAppointments = appointments.filter((a) => a.status === 'completed');
+              const cancelledAppointments = appointments.filter((a) => a.status === 'cancelled' || a.status === 'no_show');
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setAppointmentsSubTab('calendar');
-                      setActiveTab('calendar');
-                    }}
-                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                    title="Open Full Visual Calendar"
-                    id="overview-open-calendar-btn"
-                  >
-                    <span className="material-symbols-outlined text-sm">calendar_month</span>
-                    <span>Calendar Schedule</span>
-                  </button>
-                  <button
-                    onClick={handleDownloadAppointmentsCSV}
-                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                    title="Download appointments list as CSV"
-                    id="download-appointments-csv-btn"
-                  >
-                    <span className="material-symbols-outlined text-sm">download</span>
-                    <span>Download CSV</span>
-                  </button>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-gray-500 font-mono-caps">
-                      <th className="py-3 px-2">Client</th>
-                      <th className="py-3 px-2">Service</th>
-                      <th className="py-3 px-2">Stylist</th>
-                      <th className="py-3 px-2">Date & Time</th>
-                      <th className="py-3 px-2">Payment (INR)</th>
-                      <th className="py-3 px-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {appointments.map((apt) => (
-                      <tr key={apt.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-2 font-bold">{apt.clientName}</td>
-                        <td className="py-3 px-2">{apt.serviceName} (₹{apt.servicePrice.toLocaleString('en-IN')})</td>
-                        <td className="py-3 px-2">{apt.stylistName}</td>
-                        <td className="py-3 px-2 font-mono">{apt.date} at {apt.time}</td>
-                        <td className="py-3 px-2">
-                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                            apt.paymentStatus === 'paid_full' 
-                              ? 'bg-emerald-100 text-emerald-700' 
-                              : apt.paymentStatus === 'paid_deposit'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {apt.paymentStatus.replace('_', ' ').toUpperCase()} (₹{apt.amountPaid})
+              const filteredOverviewAppointments = appointments.filter((a) => {
+                if (overviewStatusFilter === 'pending') return a.status === 'pending';
+                if (overviewStatusFilter === 'confirmed') return a.status === 'confirmed';
+                if (overviewStatusFilter === 'completed') return a.status === 'completed';
+                if (overviewStatusFilter === 'cancelled') return a.status === 'cancelled' || a.status === 'no_show';
+                return true;
+              });
+
+              return (
+                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">
+                  {/* Visual Status Indicator Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setOverviewStatusFilter(overviewStatusFilter === 'pending' ? 'all' : 'pending')}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        overviewStatusFilter === 'pending'
+                          ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400 shadow-sm'
+                          : 'bg-white border-gray-200 hover:bg-amber-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-amber-800 mb-1">
+                        <span className="text-xs font-bold font-mono-caps flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-base text-amber-600">schedule</span>
+                          <span>Pending Confirmation</span>
+                        </span>
+                        {pendingAppointments.length > 0 && (
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
                           </span>
-                        </td>
-                        <td className="py-3 px-2 text-right">
-                          {apt.status === 'confirmed' ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => updateAppointmentStatus(apt.id, 'completed')}
-                                className="text-xs bg-emerald-600 text-white font-bold px-2.5 py-1 rounded hover:bg-emerald-700 cursor-pointer"
-                              >
-                                Complete
-                              </button>
-                              {/* No-show is not a cancellation: the advance is
-                                  forfeited rather than refunded, and no loyalty
-                                  points are earned. It needs its own action. */}
-                              <button
-                                onClick={() => updateAppointmentStatus(apt.id, 'no_show')}
-                                className="text-xs bg-orange-100 text-orange-700 font-bold px-2.5 py-1 rounded hover:bg-orange-200 cursor-pointer"
-                              >
-                                No-show
-                              </button>
-                            </div>
-                          ) : (
-                            // Was a bare "Done" for every non-confirmed row, so
-                            // a cancelled booking and a no-show both read Done.
-                            <BookingStatusBadge status={apt.status} compact />
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                        )}
+                      </div>
+                      <div className="flex items-baseline justify-between mt-2">
+                        <div className="text-2xl font-extrabold text-amber-900 font-display">
+                          {pendingAppointments.length}
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          pendingAppointments.length > 0 ? 'bg-amber-200/80 text-amber-900' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {pendingAppointments.length === 0 ? 'All processed' : 'Action Needed'}
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOverviewStatusFilter(overviewStatusFilter === 'confirmed' ? 'all' : 'confirmed')}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        overviewStatusFilter === 'confirmed'
+                          ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400 shadow-sm'
+                          : 'bg-white border-gray-200 hover:bg-emerald-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-emerald-800 mb-1">
+                        <span className="text-xs font-bold font-mono-caps flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-base text-emerald-600">check_circle</span>
+                          <span>Confirmed Bookings</span>
+                        </span>
+                        <span className="material-symbols-outlined text-sm text-emerald-600">verified</span>
+                      </div>
+                      <div className="flex items-baseline justify-between mt-2">
+                        <div className="text-2xl font-extrabold text-emerald-900 font-display">
+                          {confirmedAppointments.length}
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          Ready for Visit
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOverviewStatusFilter(overviewStatusFilter === 'completed' ? 'all' : 'completed')}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        overviewStatusFilter === 'completed'
+                          ? 'bg-sky-50 border-sky-300 ring-2 ring-sky-400 shadow-sm'
+                          : 'bg-white border-gray-200 hover:bg-sky-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-sky-800 mb-1">
+                        <span className="text-xs font-bold font-mono-caps flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-base text-sky-600">task_alt</span>
+                          <span>Completed</span>
+                        </span>
+                        <span className="material-symbols-outlined text-sm text-sky-600">event_available</span>
+                      </div>
+                      <div className="flex items-baseline justify-between mt-2">
+                        <div className="text-2xl font-extrabold text-sky-900 font-display">
+                          {completedAppointments.length}
+                        </div>
+                        <span className="text-[10px] font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded-full">
+                          Fulfilled
+                        </span>
+                      </div>
+                    </button>
+
+                    <div className="p-4 rounded-xl border border-slate-800 bg-slate-900 text-white flex flex-col justify-between shadow-xs">
+                      <div className="flex items-center justify-between text-slate-300 mb-1">
+                        <span className="text-xs font-bold font-mono-caps flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-base text-emerald-400">sync</span>
+                          <span>Real-Time DB Sync</span>
+                        </span>
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-300 leading-snug">
+                        Subscribed to <span className="font-mono text-emerald-300 font-bold">appointments</span> updates live.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Header and Controls */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gray-100 pb-3 mt-1">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-display font-bold text-lg text-gray-900">Salon Appointments</h2>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                          {filteredOverviewAppointments.length} of {appointments.length}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-500 font-mono">Currency: INR (₹)</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Filter Dropdown */}
+                      <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-xs hover:border-slate-300 transition-colors">
+                        <span className="material-symbols-outlined text-base text-slate-500">filter_alt</span>
+                        <label htmlFor="appointment-status-filter-select" className="text-xs font-bold text-slate-700 shrink-0">
+                          Status:
+                        </label>
+                        <select
+                          id="appointment-status-filter-select"
+                          value={overviewStatusFilter}
+                          onChange={(e) => setOverviewStatusFilter(e.target.value as any)}
+                          className="text-xs font-bold bg-transparent text-slate-900 focus:outline-none cursor-pointer pr-1"
+                          aria-label="Filter appointments by status"
+                        >
+                          <option value="all">All Statuses ({appointments.length})</option>
+                          <option value="pending">Pending ({pendingAppointments.length})</option>
+                          <option value="confirmed">Confirmed ({confirmedAppointments.length})</option>
+                          <option value="completed">Completed ({completedAppointments.length})</option>
+                          <option value="cancelled">Cancelled / No-show ({cancelledAppointments.length})</option>
+                        </select>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setAppointmentsSubTab('calendar');
+                          setActiveTab('calendar');
+                        }}
+                        className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                        title="Open Full Visual Calendar"
+                        id="overview-open-calendar-btn"
+                      >
+                        <span className="material-symbols-outlined text-sm">calendar_month</span>
+                        <span>Calendar Schedule</span>
+                      </button>
+                      <button
+                        onClick={handleDownloadAppointmentsCSV}
+                        className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                        title="Download appointments list as CSV"
+                        id="download-appointments-csv-btn"
+                      >
+                        <span className="material-symbols-outlined text-sm">download</span>
+                        <span>Download CSV</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Pills */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { id: 'all', label: 'All Records', count: appointments.length },
+                      { id: 'pending', label: 'Pending Action', count: pendingAppointments.length, badgeClass: 'bg-amber-100 text-amber-800 border-amber-300' },
+                      { id: 'confirmed', label: 'Confirmed', count: confirmedAppointments.length, badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+                      { id: 'completed', label: 'Completed', count: completedAppointments.length, badgeClass: 'bg-sky-100 text-sky-800 border-sky-300' },
+                      { id: 'cancelled', label: 'Cancelled / No-show', count: cancelledAppointments.length, badgeClass: 'bg-rose-100 text-rose-800 border-rose-300' },
+                    ].map((tab) => {
+                      const isSelected = overviewStatusFilter === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setOverviewStatusFilter(tab.id as any)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                            isSelected
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>{tab.label}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                            isSelected ? 'bg-slate-800 text-white' : tab.badgeClass || 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {tab.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Appointments Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-gray-500 font-mono-caps">
+                          <th className="py-3 px-2">Client</th>
+                          <th className="py-3 px-2">Service</th>
+                          <th className="py-3 px-2">Stylist</th>
+                          <th className="py-3 px-2">Date & Time</th>
+                          <th className="py-3 px-2">Status</th>
+                          <th className="py-3 px-2">Payment (INR)</th>
+                          <th className="py-3 px-2 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredOverviewAppointments.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
+                              No {overviewStatusFilter !== 'all' ? overviewStatusFilter : ''} appointments found.
+                            </td>
+                          </tr>
+                        )}
+                        {filteredOverviewAppointments.map((apt) => (
+                          <tr
+                            key={apt.id}
+                            className={`border-b border-gray-100 hover:bg-gray-50/80 transition-colors ${
+                              apt.status === 'pending' ? 'bg-amber-50/30' : apt.status === 'confirmed' ? 'bg-emerald-50/20' : ''
+                            }`}
+                          >
+                            <td className="py-3 px-2 font-bold">{apt.clientName}</td>
+                            <td className="py-3 px-2">{apt.serviceName} (₹{apt.servicePrice.toLocaleString('en-IN')})</td>
+                            <td className="py-3 px-2">{apt.stylistName}</td>
+                            <td className="py-3 px-2 font-mono">{apt.date} at {apt.time}</td>
+                            <td className="py-3 px-2">
+                              <BookingStatusBadge status={apt.status} compact />
+                            </td>
+                            <td className="py-3 px-2">
+                              <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                apt.paymentStatus === 'paid_full' 
+                                  ? 'bg-emerald-100 text-emerald-700' 
+                                  : apt.paymentStatus === 'paid_deposit'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {apt.paymentStatus.replace('_', ' ').toUpperCase()} (₹{apt.amountPaid})
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 text-right">
+                              {apt.status === 'pending' ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => updateAppointmentStatus(apt.id, 'confirmed')}
+                                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer shadow-xs transition-colors flex items-center gap-1"
+                                    title="Confirm Appointment"
+                                  >
+                                    <span className="material-symbols-outlined text-xs">check</span>
+                                    <span>Confirm</span>
+                                  </button>
+                                  <button
+                                    onClick={() => updateAppointmentStatus(apt.id, 'cancelled')}
+                                    className="text-xs bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
+                                    title="Decline / Cancel Appointment"
+                                  >
+                                    <span className="material-symbols-outlined text-xs">close</span>
+                                    <span>Decline</span>
+                                  </button>
+                                </div>
+                              ) : apt.status === 'confirmed' ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => updateAppointmentStatus(apt.id, 'completed')}
+                                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer shadow-xs transition-colors"
+                                  >
+                                    Complete
+                                  </button>
+                                  <button
+                                    onClick={() => updateAppointmentStatus(apt.id, 'no_show')}
+                                    className="text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+                                  >
+                                    No-show
+                                  </button>
+                                  <button
+                                    onClick={() => updateAppointmentStatus(apt.id, 'cancelled')}
+                                    className="text-xs bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <BookingStatusBadge status={apt.status} compact />
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* CLIENT LOYALTY TIER PROGRESSION & VIP LEADERBOARD */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">

@@ -20,10 +20,8 @@ try {
 
 import {StrictMode, Component, ReactNode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
-import './index.css';
 
-class ErrorBoundary extends Component<any, any> {
+export class ErrorBoundary extends Component<any, any> {
   state = { hasError: false, error: null };
   props: any;
   static getDerivedStateFromError(error: Error) {
@@ -67,6 +65,9 @@ class ErrorBoundary extends Component<any, any> {
     return this.props.children;
   }
 }
+
+import App from './App.tsx';
+import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

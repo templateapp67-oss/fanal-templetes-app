@@ -22,7 +22,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   const [formData, setFormData] = useState({
     ownerName: profile.ownerName || '',
     ownerPhotoUrl: profile.ownerPhotoUrl || '',
-    whatsapp: profile.whatsapp || '',
+    whatsapp: profile.whatsapp || profile.phone || '',
     dob: profile.dob || '',
     postalCode: profile.postalCode || '',
     city: profile.city || '',
@@ -141,37 +141,31 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     const newErrors: Record<string, string> = {};
 
     if (!formData.ownerName.trim()) newErrors.ownerName = 'Full Name is required.';
-    if (!formData.ownerPhotoUrl.trim()) newErrors.ownerPhotoUrl = 'Avatar image is required.';
     
     const rawWhatsapp = formData.whatsapp.replace(/\D/g, '');
-    if (!formData.whatsapp.trim() || rawWhatsapp.length < 10) {
+    if (formData.whatsapp.trim() && rawWhatsapp.length < 10) {
       newErrors.whatsapp = 'Valid 10-digit WhatsApp number required.';
     }
     
-    if (!formData.dob.trim()) newErrors.dob = 'Date of Birth is required.';
-    
-    if (!formData.postalCode.trim() || formData.postalCode.length !== 6) {
+    if (formData.postalCode.trim() && formData.postalCode.length !== 6) {
       newErrors.postalCode = 'Pin code must be exactly 6 digits.';
     }
-    
-    if (!formData.city.trim()) newErrors.city = 'City is required.';
-    if (!formData.areaLocality.trim()) newErrors.areaLocality = 'Area / Locality is required.';
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      showToast('Please check all compulsory fields and formatting requirements.', 'error');
+      showToast('Please check the required fields.', 'error');
       return;
     }
 
     const updatedProfile: SalonProfile = {
       ...profile,
-      ownerName: formData.ownerName,
-      ownerPhotoUrl: formData.ownerPhotoUrl,
-      whatsapp: formData.whatsapp,
+      ownerName: formData.ownerName.trim(),
+      ownerPhotoUrl: formData.ownerPhotoUrl || profile.ownerPhotoUrl,
+      whatsapp: formData.whatsapp.trim(),
       dob: formData.dob,
-      postalCode: formData.postalCode,
-      city: formData.city,
-      areaLocality: formData.areaLocality,
+      postalCode: formData.postalCode.trim(),
+      city: formData.city.trim(),
+      areaLocality: formData.areaLocality.trim(),
       whatsappNotificationsEnabled,
     };
 
@@ -200,7 +194,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">User Profile Settings</h2>
-              <p className="text-xs text-gray-500">Manage compulsory partner account & location details</p>
+              <p className="text-xs text-gray-500">Manage account owner & contact details</p>
             </div>
           </div>
           <button
@@ -216,15 +210,21 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
           {/* Avatar Section */}
           <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
             <div className="relative group">
-              <img
-                src={formData.ownerPhotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
-                alt="Avatar Preview"
-                className="w-20 h-20 rounded-full object-cover ring-4 ring-white shadow-md"
-              />
+              {formData.ownerPhotoUrl ? (
+                <img
+                  src={formData.ownerPhotoUrl}
+                  alt="Avatar Preview"
+                  className="w-20 h-20 rounded-full object-cover ring-4 ring-white shadow-md"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-rose-100 text-[#C20E5A] flex items-center justify-center font-bold text-2xl ring-4 ring-white shadow-md">
+                  {formData.ownerName ? formData.ownerName.charAt(0).toUpperCase() : '👤'}
+                </div>
+              )}
             </div>
             <div className="flex-1 w-full space-y-2">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>Partner Avatar Image <span className="text-rose-500">*</span></span>
+                <span>Partner Avatar Image</span>
                 {errors.ownerPhotoUrl && <span className="text-rose-600 font-medium">{errors.ownerPhotoUrl}</span>}
               </label>
               <input
@@ -240,9 +240,9 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 className="px-4 py-2.5 rounded-xl text-xs font-bold text-[#C20E5A] bg-rose-50 hover:bg-rose-100 border border-rose-200 flex items-center gap-2 transition-all shadow-xs"
               >
                 <span className="material-symbols-outlined text-base">upload</span>
-                Upload Avatar Image
+                {formData.ownerPhotoUrl ? 'Change Avatar' : 'Upload Avatar'}
               </button>
-              <p className="text-[10px] text-gray-400">Max size 5MB. Automatically compressed (max 500px).</p>
+              <p className="text-[10px] text-gray-400">Max size 5MB. Automatically optimized for web.</p>
             </div>
           </div>
 
@@ -257,7 +257,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 type="text"
                 value={formData.ownerName}
                 onChange={(e) => handleChange('ownerName', e.target.value)}
-                placeholder="e.g. Full Name"
+                placeholder="e.g. Alex Morgan"
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all ${
                   errors.ownerName ? 'border-rose-300 ring-2 ring-rose-100' : 'border-gray-200'
                 }`}
@@ -267,7 +267,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* WhatsApp Number */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>WhatsApp Number <span className="text-rose-500">*</span></span>
+                <span>WhatsApp Number</span>
                 {errors.whatsapp && <span className="text-rose-600 font-medium">{errors.whatsapp}</span>}
               </label>
               <input
@@ -284,7 +284,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* Date of Birth (DOB) */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>Date of Birth (DOB) <span className="text-rose-500">*</span></span>
+                <span>Date of Birth (DOB)</span>
                 {errors.dob && <span className="text-rose-600 font-medium">{errors.dob}</span>}
               </label>
               <input
@@ -300,7 +300,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* Pin Code */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>Pin Code / Postal Code <span className="text-rose-500">*</span></span>
+                <span>Pin Code / Postal Code</span>
                 {errors.postalCode && <span className="text-rose-600 font-medium">{errors.postalCode}</span>}
               </label>
               <input
@@ -317,14 +317,14 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* City */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>City <span className="text-rose-500">*</span></span>
+                <span>City</span>
                 {errors.city && <span className="text-rose-600 font-medium">{errors.city}</span>}
               </label>
               <input
                 type="text"
                 value={formData.city}
                 onChange={(e) => handleChange('city', e.target.value)}
-                placeholder="Mumbai"
+                placeholder="e.g. Mumbai"
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all ${
                   errors.city ? 'border-rose-300 ring-2 ring-rose-100' : 'border-gray-200'
                 }`}
@@ -334,14 +334,14 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* Area / Locality */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>Area / Locality <span className="text-rose-500">*</span></span>
+                <span>Area / Locality</span>
                 {errors.areaLocality && <span className="text-rose-600 font-medium">{errors.areaLocality}</span>}
               </label>
               <input
                 type="text"
                 value={formData.areaLocality}
                 onChange={(e) => handleChange('areaLocality', e.target.value)}
-                placeholder="Bandra West"
+                placeholder="e.g. Bandra West"
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all ${
                   errors.areaLocality ? 'border-rose-300 ring-2 ring-rose-100' : 'border-gray-200'
                 }`}

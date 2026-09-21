@@ -228,3 +228,262 @@ export function refreshSessionForSave(
 /** Console remediation hint printed next to a session-refresh failure. */
 export const SESSION_REFRESH_HINT =
   'Signing in again restores cloud sync; the pending changes stay in the local draft (nexora_draft_salon_data) until then.';
+
+// ============================================================================
+// Environment & Client Connection Diagnostic Utility
+// Checks NEXT_PUBLIC_SUPABASE_*, VITE_SUPABASE_*, and client connection state
+// to identify configuration mismatches or credential leakage on Vercel/production.
+// ============================================================================
+
+export interface AuthEnvDiagnostics {
+  timestamp: string;
+  isBrowser: boolean;
+  isVercel: boolean;
+  vercelEnv: string | null;
+  runtimeOrigin: string | null;
+  envVars: {
+    nextPublicSupabaseUrl: string | null;
+    nextPublicSupabaseAnonKey: string | null; // masked
+    viteSupabaseUrl: string | null;
+    viteSupabaseAnonKey: string | null; // masked
+    supabaseUrl: string | null;
+    supabaseAnonKey: string | null; // masked
+    hasServiceRoleKeyLeaked: boolean;
+  };
+  clientState: {
+    clientProvided: boolean;
+    clientUrl: string | null;
+    clientKeyMasked: string | null;
+    isPlaceholder: boolean;
+    isMock: boolean;
+    authEndpoint: string | null;
+  };
+  sessionState: {
+    hasActiveSession: boolean;
+    userId: string | null;
+    expiresAt: string | null;
+    isExpired: boolean;
+    isExpiringSoon: boolean;
+  };
+  anomalies: string[];
+}
+
+/** Safely inspect an environment variable across Vite and Node/Next runtime formats. */
+function safeReadEnv(key: string): string | null {
+  try {
+    const metaEnv = (import.meta as any)?.env;
+    if (metaEnv && typeof metaEnv[key] === 'string' && metaEnv[key]) {
+      return metaEnv[key].trim();
+    }
+  } catch {
+    // import.meta not available
+  }
+
+  try {
+    if (typeof process !== 'undefined' && process.env && typeof process.env[key] === 'string' && process.env[key]) {
+      return process.env[key].trim();
+    }
+  } catch {
+    // process not available
+  }
+
+  try {
+    const nextData = (globalThis as any)?.__NEXT_DATA__?.env;
+    if (nextData && typeof nextData[key] === 'string' && nextData[key]) {
+      return nextData[key].trim();
+    }
+  } catch {
+    // __NEXT_DATA__ not available
+  }
+
+  return null;
+}
+
+/** Mask a sensitive token/key showing only length and boundary characters. */
+export function maskSecret(val: string | null | undefined): string | null {
+  if (!val) return null;
+  const str = String(val).trim();
+  if (str.length <= 8) return `[length: ${str.length}]`;
+  return `${str.slice(0, 6)}...${str.slice(-4)} (len: ${str.length})`;
+}
+
+/** Detect if running under a Vercel environment or hostname. */
+function detectVercelEnvironment(): { isVercel: boolean; vercelEnv: string | null } {
+  const vercelFlag = safeReadEnv('VERCEL') === '1' || safeReadEnv('VERCEL') === 'true';
+  const vercelEnv = safeReadEnv('VERCEL_ENV') || safeReadEnv('NEXT_PUBLIC_VERCEL_ENV');
+  const isVercelHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel'));
+  return {
+    isVercel: vercelFlag || isVercelHost || !!vercelEnv,
+    vercelEnv: vercelEnv || (isVercelHost ? 'preview/production' : null),
+  };
+}
+
+/**
+ * Diagnoses environment variable configuration vs. actual Supabase client connection state.
+ * Identifies:
+ *  - NEXT_PUBLIC_ vs VITE_ variable mismatches
+ *  - Service role secret leakage to client
+ *  - Placeholder/localhost URLs deployed on Vercel
+ *  - Stale/expired auth session states
+ */
+export async function diagnoseAuthEnvironment(client?: any): Promise<AuthEnvDiagnostics> {
+  const isBrowser = typeof window !== 'undefined';
+  const { isVercel, vercelEnv } = detectVercelEnvironment();
+  const runtimeOrigin = isBrowser ? window.location.origin : null;
+
+  const nextPublicUrl = safeReadEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const nextPublicAnonKey = safeReadEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || safeReadEnv('NEXT_PUBLIC_SUPABASE_KEY');
+  const viteUrl = safeReadEnv('VITE_SUPABASE_URL');
+  const viteAnonKey = safeReadEnv('VITE_SUPABASE_ANON_KEY');
+  const rawUrl = safeReadEnv('SUPABASE_URL');
+  const rawAnonKey = safeReadEnv('SUPABASE_ANON_KEY') || safeReadEnv('SUPABASE_KEY');
+
+  // Check if service role key is accessible in browser runtime
+  const leakedServiceRole = isBrowser
+    ? !!(
+        safeReadEnv('SUPABASE_SERVICE_ROLE_KEY') ||
+        safeReadEnv('VITE_SUPABASE_SERVICE_ROLE_KEY') ||
+        safeReadEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY')
+      )
+    : false;
+
+  // Inspect Client State
+  const clientProvided = !!client;
+  const clientUrl = client?.supabaseUrl || client?.restUrl?.replace(/\/rest\/v1\/?$/, '') || client?.auth?.url || null;
+  const clientKey = client?.supabaseKey || client?.auth?.headers?.apikey || null;
+  const isPlaceholder =
+    !clientUrl ||
+    clientUrl.includes('placeholder-project') ||
+    clientUrl.includes('placeholder') ||
+    (typeof clientKey === 'string' && clientKey.includes('placeholder'));
+  const isMock = !clientUrl || isPlaceholder || clientUrl.includes('127.0.0.1:3000') || clientUrl.includes('localhost:3000');
+
+  // Inspect Session State
+  let sessionState = {
+    hasActiveSession: false,
+    userId: null as string | null,
+    expiresAt: null as string | null,
+    isExpired: false,
+    isExpiringSoon: false,
+  };
+
+  if (client?.auth && typeof client.auth.getSession === 'function') {
+    try {
+      const { data } = await client.auth.getSession();
+      const session = data?.session;
+      if (session) {
+        const expMs = sessionExpiresAt(session);
+        sessionState = {
+          hasActiveSession: !!session.access_token,
+          userId: session.user?.id ?? null,
+          expiresAt: expMs ? new Date(expMs).toISOString() : null,
+          isExpired: isSessionExpired(session),
+          isExpiringSoon: isSessionExpiringSoon(session),
+        };
+      }
+    } catch {
+      // Session fetch error
+    }
+  }
+
+  // Detect Anomalies
+  const anomalies: string[] = [];
+
+  if (leakedServiceRole) {
+    anomalies.push('SECURITY ALERT: SUPABASE_SERVICE_ROLE_KEY is detected in browser client environment!');
+  }
+
+  if (isVercel) {
+    if (!nextPublicUrl && !viteUrl && !rawUrl) {
+      anomalies.push('Vercel deployment is missing Supabase URL environment variable (NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL).');
+    }
+    if (!nextPublicAnonKey && !viteAnonKey && !rawAnonKey) {
+      anomalies.push('Vercel deployment is missing Supabase Anon Key environment variable (NEXT_PUBLIC_SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY).');
+    }
+    if (clientUrl && (clientUrl.includes('127.0.0.1') || clientUrl.includes('localhost'))) {
+      anomalies.push(`Vercel deployment is connecting to a localhost/internal URL (${clientUrl}) instead of a cloud Supabase instance.`);
+    }
+  }
+
+  if (nextPublicUrl && viteUrl && nextPublicUrl !== viteUrl) {
+    anomalies.push(`URL Mismatch: NEXT_PUBLIC_SUPABASE_URL (${nextPublicUrl}) does not match VITE_SUPABASE_URL (${viteUrl}).`);
+  }
+
+  if (nextPublicAnonKey && viteAnonKey && nextPublicAnonKey !== viteAnonKey) {
+    anomalies.push('Key Mismatch: NEXT_PUBLIC_SUPABASE_ANON_KEY does not match VITE_SUPABASE_ANON_KEY.');
+  }
+
+  if (clientUrl && (nextPublicUrl || viteUrl)) {
+    const expectedUrl = nextPublicUrl || viteUrl;
+    if (expectedUrl && !clientUrl.includes(expectedUrl.replace(/^https?:\/\//, ''))) {
+      anomalies.push(`Client Connection Mismatch: Client is initialized with "${clientUrl}", but environment declares "${expectedUrl}".`);
+    }
+  }
+
+  if (sessionState.isExpired) {
+    anomalies.push('Active session token is expired. User must refresh or re-authenticate.');
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    isBrowser,
+    isVercel,
+    vercelEnv,
+    runtimeOrigin,
+    envVars: {
+      nextPublicSupabaseUrl: nextPublicUrl,
+      nextPublicSupabaseAnonKey: maskSecret(nextPublicAnonKey),
+      viteSupabaseUrl: viteUrl,
+      viteSupabaseAnonKey: maskSecret(viteAnonKey),
+      supabaseUrl: rawUrl,
+      supabaseAnonKey: maskSecret(rawAnonKey),
+      hasServiceRoleKeyLeaked: leakedServiceRole,
+    },
+    clientState: {
+      clientProvided,
+      clientUrl,
+      clientKeyMasked: maskSecret(clientKey),
+      isPlaceholder,
+      isMock,
+      authEndpoint: client?.auth?.url || (clientUrl ? `${clientUrl}/auth/v1` : null),
+    },
+    sessionState,
+    anomalies,
+  };
+}
+
+/**
+ * Formats and logs the environment and client connection diagnostics to the console.
+ */
+export async function logAuthEnvironmentDiagnostics(
+  client?: any,
+  options: { label?: string; forceLogAnomaliesOnly?: boolean } = {}
+): Promise<AuthEnvDiagnostics> {
+  const diag = await diagnoseAuthEnvironment(client);
+  const header = options.label || 'Auth Environment & Client Connection Diagnostics';
+
+  if (diag.anomalies.length > 0 || !options.forceLogAnomaliesOnly) {
+    console.group(`[Nexora Diagnostics] === ${header} ===`);
+    console.info('Runtime Context:', {
+      timestamp: diag.timestamp,
+      isBrowser: diag.isBrowser,
+      isVercel: diag.isVercel,
+      vercelEnv: diag.vercelEnv,
+      origin: diag.runtimeOrigin,
+    });
+    console.info('Configured Environment Variables:', diag.envVars);
+    console.info('Supabase Client Connection State:', diag.clientState);
+    console.info('Active Auth Session State:', diag.sessionState);
+
+    if (diag.anomalies.length > 0) {
+      console.warn('[Nexora Diagnostics] Detected Anomalies / Potential Issues:', diag.anomalies);
+    } else {
+      console.info('[Nexora Diagnostics] All environment variables and client connection parameters match cleanly.');
+    }
+    console.groupEnd();
+  }
+
+  return diag;
+}

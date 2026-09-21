@@ -30,7 +30,35 @@ export function useOwnerDashboard(ownerId?: string, subdomain?: string) {
     const update = () => { void refresh(); };
     window.addEventListener('owner-bookings-changed', update);
     window.addEventListener('focus', update);
-    return () => { generation.current++; clearInterval(timer); window.removeEventListener('owner-bookings-changed', update); window.removeEventListener('focus', update); };
+
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    if (ownerId) {
+      channel = supabase
+        .channel(`owner-appointments-realtime-${ownerId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'appointments',
+          },
+          () => {
+            void refresh();
+            window.dispatchEvent(new Event('owner-bookings-changed'));
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      generation.current++;
+      clearInterval(timer);
+      window.removeEventListener('owner-bookings-changed', update);
+      window.removeEventListener('focus', update);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [refresh, ownerId]);
   const mutate = async (url: string, body: any) => {
     if (busy.current) throw new Error('An appointment is already being saved.');

@@ -85,7 +85,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           id: 'mock-user-123',
           email: email,
           user_metadata: {
-            full_name: fullName || (isCustomer ? 'Demo Customer' : 'Demo Owner'),
+            full_name: fullName || (isCustomer ? 'Customer' : 'Salon Owner'),
             ...(isCustomer ? {} : { salon_name: salonName || 'My Salon' }),
             ...(isCustomer ? {} : { phone_number: phoneNumber || '' }),
             ...(isCustomer ? {} : { city: city || '' }),
@@ -96,7 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             salonName: salonName || 'My Salon',
             phone: phoneNumber || '',
             city: city || '',
-            ownerName: fullName || 'Demo Owner',
+            ownerName: fullName || 'Salon Owner',
             email: email,
           });
         }

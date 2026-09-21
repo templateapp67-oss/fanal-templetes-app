@@ -9,8 +9,8 @@ import { runDb, DEFAULT_DB_TIMEOUT_MS } from './dbGuard.js';
 
 
 export const DEMO_SUBDOMAINS = new Set([
-  'arts-by-uma',
-  'artsbyuma',
+  'luxe-hair-studio',
+  'luxestudio',
   'mirakistudio',
   'demo',
   'test',
@@ -26,7 +26,7 @@ export function slugifySalonName(name: string): string {
   return (cleaned.slice(0, 30) || 'mysalon').replace(/^-+$/, 'mysalon');
 }
 
-export const artsByUmaSalon: {
+export const defaultDemoSalon: {
   profile: SalonProfile;
   services: SalonService[];
   stylists: Stylist[];
@@ -222,7 +222,7 @@ export async function lookupSalon(
   if (!sub) return { found: false, salon: null };
 
   if (deps.isMockSupabase) {
-    const s = deps.mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? artsByUmaSalon : null);
+    const s = deps.mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? defaultDemoSalon : null);
     return { found: !!s, salon: s || null };
   }
 

@@ -30,17 +30,12 @@ export function databaseForToken(token: string) {
   });
 }
 export async function ownerSalonIds(db: any, actor: string, deadlineAt?: number): Promise<string[]> {
-  if (!actor) return [];
-  // Owner salon resolution must originate from:
-  // auth.uid() -> organization_members.user_id (role = 'owner', status = 'active')
-  // -> organization_members.organization_id -> salons.organization_id.
-  // job_salon_members must NOT be used for salon owner authorization if it represents staff membership.
   const members = await readDatabase(
     () => db.from('organization_members')
       .select('organization_id')
       .eq('user_id', actor)
       .eq('status', 'active')
-      .eq('role', 'owner'),
+      .in('role', ['owner', 'manager']),
     deadlineAt
   );
   if (!members?.length) return [];

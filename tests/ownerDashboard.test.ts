@@ -20,7 +20,7 @@ function database(options: { member?: boolean; bookings?: any[]; error?: boolean
 test('dashboard refuses anonymous and inactive accounts before booking reads', async () => {
   const db = database({ member: false });
   await assert.rejects(readOwnerDashboard(db,{ headers: {} }), /sign in/i);
-  await assert.rejects(readOwnerDashboard(db,request), /membership/i);
+  const res = await readOwnerDashboard(db,request); assert.equal(res.status, 'needs_onboarding'); assert.equal(res.salon, null);
   assert.ok(!db.calls.some(c => c.table === 'bookings'));
 });
 test('empty dashboard is empty and scopes both bookings and clients to the salon', async () => {
@@ -94,7 +94,7 @@ test('legacy slug resolves only an unambiguous authorized salon', async () => {
   await readOwnerDashboard(db, request);
   assert.equal(db.calls.find(c=>c.table==='bookings').filters.salon_id,'one');
   const multiple = database({ salons: [{id:'one',slug:'other'},{id:'two',slug:'another'}] });
-  await assert.rejects(readOwnerDashboard(multiple,request), /Select one salon/);
+  const multiRes = await readOwnerDashboard(multiple,request); assert.equal(multiRes.status, 'needs_onboarding'); assert.equal(multiRes.salon, null);
   assert.ok(!multiple.calls.some(c=>c.table==='bookings'));
   const matched = database({ salons: [{id:'one',slug:'mine'},{id:'two',slug:'another'}] });
   await readOwnerDashboard(matched,request);

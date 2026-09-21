@@ -44,7 +44,36 @@ export function dashboardAppointment(row: any) {
 }
 
 export async function readOwnerDashboard(db: any, req: any) {
-  const { salon } = await dashboardSalon(db, req);
+  const identity = await verifyBackendUser(db, req);
+  const ids = await ownerSalonIds(db, identity.user.id);
+  if (!ids.length) {
+    return {
+      status: 'needs_onboarding',
+      salon: null,
+      success: true,
+      appointments: [],
+      clients: [],
+      services: [],
+      stylists: [],
+      hours: []
+    };
+  }
+  const slug = String(req.query?.subdomain || req.body?.subdomain || '');
+  const salons = await readDatabase(() => db.from('salons').select('id,slug,timezone').in('id', ids));
+  const matched = slug ? salons?.filter((salon: any) => salon.slug === slug) : [];
+  const salon = matched?.length === 1 ? matched[0] : salons?.length === 1 ? salons[0] : null;
+  if (!salon) {
+    return {
+      status: 'needs_onboarding',
+      salon: null,
+      success: true,
+      appointments: [],
+      clients: [],
+      services: [],
+      stylists: [],
+      hours: []
+    };
+  }
   const bookings = await allRows(() => db.from('bookings').select(NORMALIZED_BOOKING_SELECT).eq('salon_id', salon.id).order('id'));
   const customers = await allRows(() => db.from('salon_customers').select('id,name,phone,email').eq('salon_id', salon.id).order('id'));
   const services = await allRows(() => db.from('services').select('id,name,price_paise,duration_minutes').eq('salon_id',salon.id).eq('is_active',true).order('id'));

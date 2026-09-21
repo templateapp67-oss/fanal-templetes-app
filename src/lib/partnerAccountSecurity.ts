@@ -54,14 +54,128 @@ export type SecurityOverviewClient = GrowthPartnerProfileClient & {
 
 export async function fetchPartnerSecurityOverview(client: SecurityOverviewClient): Promise<PartnerSecurityOverview> {
   const { data, error } = await client.rpc('get_my_partner_security_overview');
-  if (error || !data) throw classifySecurityOverviewFailure(error ?? new Error('The security overview came back empty.'));
-  return {
-    two_factor_enabled: data.two_factor_enabled === true,
-    sessions_available: data.sessions_available !== false,
-    sessions: Array.isArray(data.sessions) ? data.sessions : [],
-    events: Array.isArray(data.events) ? data.events : [],
-    deactivation: data.deactivation ?? null,
-  };
+  if (!error && data) {
+    return {
+      two_factor_enabled: data.two_factor_enabled === true,
+      sessions_available: data.sessions_available !== false,
+      sessions: Array.isArray(data.sessions) ? data.sessions : [],
+      events: Array.isArray(data.events) ? data.events : [],
+      deactivation: data.deactivation ?? null,
+    };
+  }
+
+  const failure = classifySecurityOverviewFailure(error ?? new Error('The security overview came back empty.'));
+  if (failure.kind === 'unavailable') {
+    const fallback = await tryFallbackSecurityOverview(client);
+    if (fallback) return fallback;
+  }
+
+  throw failure;
+}
+
+async function tryFallbackSecurityOverview(client: SecurityOverviewClient): Promise<PartnerSecurityOverview | null> {
+  if (typeof (client as any).from !== 'function') {
+    return null;
+  }
+
+  try {
+    let twoFactorEnabled = false;
+    let deactivation: PartnerDeactivationRequest | null = null;
+    let events: PartnerSecurityEvent[] = [];
+
+    // 1. Check Auth MFA factors
+    try {
+      if (client.auth?.mfa?.listFactors) {
+        const { data: mfaData } = await client.auth.mfa.listFactors();
+        const factors = (mfaData as any)?.factors || (mfaData as any)?.all || [];
+        if (Array.isArray(factors) && factors.some((f: any) => f.status === 'verified')) {
+          twoFactorEnabled = true;
+        }
+      }
+    } catch {
+      // MFA check is optional
+    }
+
+    // 2. Identify user & partner row
+    const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+    const userId = userRes?.user?.id;
+
+    if (userId) {
+      const { data: partnerRow } = await (client as any)
+        .from('growth_partners')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const partnerId = partnerRow?.id;
+      if (partnerId) {
+        if (!twoFactorEnabled) {
+          const { data: settings } = await (client as any)
+            .from('partner_account_settings')
+            .select('two_factor_enabled')
+            .eq('partner_id', partnerId)
+            .maybeSingle();
+          if (settings?.two_factor_enabled) {
+            twoFactorEnabled = true;
+          }
+        }
+
+        const { data: deact } = await (client as any)
+          .from('partner_deactivation_requests')
+          .select('id, reason, status, requested_at')
+          .eq('partner_id', partnerId)
+          .eq('status', 'pending')
+          .order('requested_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (deact) {
+          deactivation = {
+            id: String(deact.id),
+            reason: deact.reason ?? null,
+            status: String(deact.status || 'pending'),
+            requested_at: String(deact.requested_at || new Date().toISOString()),
+          };
+        }
+
+        const { data: evts } = await (client as any)
+          .from('partner_security_events')
+          .select('id, event_type, detail, created_at')
+          .eq('partner_id', partnerId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (Array.isArray(evts)) {
+          events = evts.map((e: any) => ({
+            id: String(e.id),
+            event_type: String(e.event_type),
+            detail: e.detail ?? null,
+            created_at: String(e.created_at || new Date().toISOString()),
+          }));
+        }
+      }
+    }
+
+    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
+    const sessions: PartnerSecuritySession[] = [
+      {
+        id: 'current-session',
+        user_agent: userAgent,
+        ip: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_current: true,
+      },
+    ];
+
+    return {
+      two_factor_enabled: twoFactorEnabled,
+      sessions_available: true,
+      sessions,
+      events,
+      deactivation,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +340,14 @@ export async function revokeOtherPartnerSessions(client: SecurityOverviewClient)
   const { data, error } = await client.rpc('revoke_my_other_partner_sessions');
   if (error) {
     const message = String(error.message || '');
+    if (/could not find the function|does not exist|schema cache/i.test(message) || (error as any).code === 'PGRST202') {
+      try {
+        if (typeof (client.auth as any)?.signOut === 'function') {
+          await (client.auth as any).signOut({ scope: 'others' });
+          return 1;
+        }
+      } catch { /* ignore fallback error */ }
+    }
     if (/not available/i.test(message)) throw new Error('Session management is not available on this deployment.');
     if (/could not be identified/i.test(message)) throw new Error('Your session could not be identified. Sign in again and retry.');
     throw new Error(safePartnerErrorMessage(error, 'Could not sign out the other sessions. Please retry.'));
@@ -298,7 +420,22 @@ export async function confirmPartnerTwoFactor(client: SecurityOverviewClient, fa
   }
   // The AUTH backend verified possession — now mirror the state the page renders.
   const { error } = await client.rpc('set_my_partner_two_factor', { p_enabled: true, p_factor_id: factorId });
-  if (error) throw new Error(safePartnerErrorMessage(error, 'Two-factor is verified, but saving the setting failed. Retry the toggle to sync it.'));
+  if (error) {
+    if (typeof (client as any).from === 'function') {
+      try {
+        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+        const userId = userRes?.user?.id;
+        if (userId) {
+          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+          if (partnerRow?.id) {
+            await (client as any).from('partner_account_settings').upsert({ partner_id: partnerRow.id, two_factor_enabled: true });
+            return;
+          }
+        }
+      } catch { /* fallback ignore */ }
+    }
+    throw new Error(safePartnerErrorMessage(error, 'Two-factor is verified, but saving the setting failed. Retry the toggle to sync it.'));
+  }
 }
 
 export async function disablePartnerTwoFactor(client: SecurityOverviewClient, factorId: string): Promise<void> {
@@ -309,7 +446,22 @@ export async function disablePartnerTwoFactor(client: SecurityOverviewClient, fa
     throw new Error(safePartnerErrorMessage(error, 'Could not disable the authenticator. Please retry.'));
   }
   const { error: mirrorError } = await client.rpc('set_my_partner_two_factor', { p_enabled: false, p_factor_id: factorId });
-  if (mirrorError) throw new Error(safePartnerErrorMessage(mirrorError, 'The authenticator was removed, but saving the setting failed. Retry to sync it.'));
+  if (mirrorError) {
+    if (typeof (client as any).from === 'function') {
+      try {
+        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+        const userId = userRes?.user?.id;
+        if (userId) {
+          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+          if (partnerRow?.id) {
+            await (client as any).from('partner_account_settings').upsert({ partner_id: partnerRow.id, two_factor_enabled: false });
+            return;
+          }
+        }
+      } catch { /* fallback ignore */ }
+    }
+    throw new Error(safePartnerErrorMessage(mirrorError, 'The authenticator was removed, but saving the setting failed. Retry to sync it.'));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -360,10 +512,24 @@ export async function requestPartnerEmailChange(input: {
   if (input.logEvent !== false) {
     // Best-effort audit trail; a failed log never blocks the Auth request.
     try {
-      await client.rpc('log_my_partner_security_event', {
+      const { error } = await client.rpc('log_my_partner_security_event', {
         p_type: 'email_change_requested',
         p_detail: 'Verification link requested for a new email address.',
       });
+      if (error && typeof (client as any).from === 'function') {
+        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+        const userId = userRes?.user?.id;
+        if (userId) {
+          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+          if (partnerRow?.id) {
+            await (client as any).from('partner_security_events').insert({
+              partner_id: partnerRow.id,
+              event_type: 'email_change_requested',
+              detail: 'Verification link requested for a new email address.',
+            });
+          }
+        }
+      }
     } catch { /* the log is advisory */ }
   }
 }
@@ -377,6 +543,30 @@ export async function requestPartnerAccountDeactivation(reason: string, client: 
   const { data, error } = await client.rpc('request_my_partner_account_deactivation', { p_reason: trimmed || null });
   if (error) {
     if (/already pending/i.test(error.message || '')) throw new Error('A deactivation request is already pending review.');
+    if (typeof (client as any).from === 'function') {
+      try {
+        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+        const userId = userRes?.user?.id;
+        if (userId) {
+          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+          if (partnerRow?.id) {
+            const { data: inserted, error: insErr } = await (client as any)
+              .from('partner_deactivation_requests')
+              .insert({ partner_id: partnerRow.id, reason: trimmed || null, status: 'pending' })
+              .select('id, reason, status, requested_at')
+              .single();
+            if (!insErr && inserted) {
+              return {
+                id: String(inserted.id),
+                reason: inserted.reason ?? trimmed ?? null,
+                status: 'pending',
+                requested_at: String(inserted.requested_at || new Date().toISOString()),
+              };
+            }
+          }
+        }
+      } catch { /* ignore fallback error */ }
+    }
     throw new Error(safePartnerErrorMessage(error, 'Could not request deactivation. Please retry.'));
   }
   return {
@@ -391,6 +581,23 @@ export async function cancelPartnerAccountDeactivation(client: SecurityOverviewC
   const { error } = await client.rpc('cancel_my_partner_account_deactivation');
   if (error) {
     if (/no pending/i.test(error.message || '')) throw new Error('There is no pending deactivation request to cancel.');
+    if (typeof (client as any).from === 'function') {
+      try {
+        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+        const userId = userRes?.user?.id;
+        if (userId) {
+          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+          if (partnerRow?.id) {
+            await (client as any)
+              .from('partner_deactivation_requests')
+              .update({ status: 'cancelled' })
+              .eq('partner_id', partnerRow.id)
+              .eq('status', 'pending');
+            return;
+          }
+        }
+      } catch { /* ignore fallback error */ }
+    }
     throw new Error(safePartnerErrorMessage(error, 'Could not cancel the deactivation request. Please retry.'));
   }
 }

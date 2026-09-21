@@ -102,24 +102,129 @@ export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClie
 }
 export async function fetchPartnerAccountSettings(client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
   const { data, error } = await client.rpc('get_my_partner_account_settings');
+  if (!error && data) {
+    return data as PartnerAccountSettings;
+  }
+  if (typeof (client as any).from === 'function') {
+    try {
+      const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+      const userId = userRes?.user?.id;
+      if (userId) {
+        const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+        if (partnerRow?.id) {
+          const { data: row } = await (client as any).from('partner_account_settings').select('*').eq('partner_id', partnerRow.id).maybeSingle();
+          if (row) return row as PartnerAccountSettings;
+        }
+      }
+    } catch { /* ignore fallback error */ }
+  }
   if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not load account settings.'));
   return data as PartnerAccountSettings;
 }
 export async function savePartnerAccountSettings(patch: Partial<PartnerAccountSettings>, client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
   const { data, error } = await client.rpc('save_my_partner_account_settings', { p_patch: patch });
+  if (!error && data) {
+    return data as PartnerAccountSettings;
+  }
+  if (typeof (client as any).from === 'function') {
+    try {
+      const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
+      const userId = userRes?.user?.id;
+      if (userId) {
+        const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
+        if (partnerRow?.id) {
+          const { data: updated, error: upsertErr } = await (client as any)
+            .from('partner_account_settings')
+            .upsert({ partner_id: partnerRow.id, ...patch, updated_at: new Date().toISOString() })
+            .select()
+            .single();
+          if (!upsertErr && updated) return updated as PartnerAccountSettings;
+        }
+      }
+    } catch { /* ignore fallback error */ }
+  }
   if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not save account settings.'));
   return data as PartnerAccountSettings;
 }
-export function growthPartnerPhotoUrl(path: string | null, client: GrowthPartnerProfileClient = defaultClient): string {
-  if (!path) return '';
+export function growthPartnerPhotoUrl(path: string | null | undefined, client: GrowthPartnerProfileClient = defaultClient): string {
+  if (!path || typeof path !== 'string') return '';
   const trimmed = path.trim();
-  if (/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|jpeg)$/i.test(trimmed)) {
-    return client.storage.from('partner-avatars').getPublicUrl(trimmed).data.publicUrl;
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) {
+    // Only permit trusted supabase storage URLs for partner avatars or current origin
+    if (trimmed.includes('/storage/v1/object/public/partner-avatars/') || trimmed.includes('/partner-avatars/')) {
+      return trimmed;
+    }
+    return '';
   }
-  if (/^https:\/\/[a-z0-9.-]+\.supabase\.(co|in)\/storage\/v1\/object\/public\/partner-avatars\/[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|jpeg)$/i.test(trimmed)) {
+  if (/^(data:image\/|blob:)/i.test(trimmed)) {
     return trimmed;
   }
-  return '';
+  if (!/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|jpeg)$/i.test(trimmed)) {
+    // Also allow paths like <uuid>/<filename> with standard image extension
+    if (/^[a-f0-9-]{36}\/[^/]+\.(jpg|jpeg|png|webp)$/i.test(trimmed)) {
+      try {
+        return client.storage.from('partner-avatars').getPublicUrl(trimmed).data.publicUrl;
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  }
+  return client.storage.from('partner-avatars').getPublicUrl(trimmed).data.publicUrl;
+}
+
+export function resolvePartnerAvatarUrl(
+  input:
+    | {
+        avatarUrl?: string | null;
+        profilePhoto?: string | null;
+        avatar_url?: string | null;
+        profile_photo?: string | null;
+        photo_path?: string | null;
+        partnerProfile?: { photo_path?: string | null; avatar_url?: string | null; profile_photo?: string | null } | null;
+        user?: any;
+      }
+    | string
+    | null
+    | undefined,
+  client: GrowthPartnerProfileClient = defaultClient
+): string {
+  if (!input) return '';
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed) || /^(data:image\/|blob:)/i.test(trimmed)) {
+      return trimmed;
+    }
+    return growthPartnerPhotoUrl(trimmed, client);
+  }
+
+  const candidate =
+    input.avatarUrl ||
+    input.profilePhoto ||
+    input.avatar_url ||
+    input.profile_photo ||
+    input.photo_path ||
+    input.partnerProfile?.photo_path ||
+    input.partnerProfile?.avatar_url ||
+    input.partnerProfile?.profile_photo ||
+    input.user?.user_metadata?.avatar_url ||
+    input.user?.user_metadata?.profile_photo ||
+    input.user?.user_metadata?.photo_url ||
+    input.user?.user_metadata?.picture ||
+    input.user?.avatar_url ||
+    input.user?.profile_photo ||
+    input.user?.photo_url ||
+    '';
+
+  if (!candidate || typeof candidate !== 'string') return '';
+  const trimmed = candidate.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed) || /^(data:image\/|blob:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  return growthPartnerPhotoUrl(trimmed, client);
 }
 
 export async function saveGrowthPartnerProfile(input: {
