@@ -171,10 +171,71 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const initial = initialService || (services && services[0]);
     return initial ? [initial] : [];
   });
-  const [selectedUpgrades, setSelectedUpgrades] = useState<SalonService[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<SalonService[]>([]);
+  // Backward compatibility alias across modal steps and draft contracts
+  const selectedUpgrades = selectedAddons;
+  const setSelectedUpgrades = setSelectedAddons;
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(
     initialStylist || (stylists && stylists[0]) || ANY_SPECIALIST
   );
+
+  // Dynamic category extraction and filtering for the service catalog
+  const serviceCategories = React.useMemo(() => {
+    const set = new Set<string>();
+    (services || []).forEach((s) => {
+      if (s.category && s.category.trim()) {
+        set.add(s.category.trim());
+      }
+    });
+    return ['All', ...Array.from(set)];
+  }, [services]);
+
+  const filteredServices = React.useMemo(() => {
+    if (selectedCategory === 'All') return services || [];
+    return (services || []).filter((s) => s.category === selectedCategory);
+  }, [services, selectedCategory]);
+
+  // Keep track of the active primary service to automatically prune unlinked add-ons/upgrades
+  const prevPrimaryIdRef = useRef<string | null>(initialService?.id || (services && services[0]?.id) || null);
+  useEffect(() => {
+    const currentPrimaryId = selectedServices[0]?.id || null;
+    if (prevPrimaryIdRef.current !== currentPrimaryId) {
+      if (!currentPrimaryId) {
+        // Deselected all services: reset all add-ons/upgrades immediately
+        setSelectedAddons([]);
+      } else {
+        // Primary service changed: prune any add-on not explicitly linked to the current primary service
+        setSelectedAddons((prev) =>
+          prev.filter((u) => u.parentServiceId === currentPrimaryId || u.serviceId === currentPrimaryId)
+        );
+      }
+      prevPrimaryIdRef.current = currentPrimaryId;
+    }
+  }, [selectedServices]);
+
+  /**
+   * Reset helper: clears all service selections and add-ons/upgrades.
+   */
+  const clearAllSelections = () => {
+    setSelectedServices([]);
+    setSelectedAddons([]);
+    setBookingTime('');
+    setSlotStaffId('');
+  };
+
+  const handleClearAll = () => {
+    clearAllSelections();
+  };
+
+  /**
+   * Main category switch handler.
+   */
+  const handleCategorySwitch = (category: string, resetSelections: boolean = false) => {
+    setSelectedCategory(category);
+    if (resetSelections) {
+      clearAllSelections();
+    }
+  };
 
   // Step 2: Date & Time Slot
   const todayStr = new Date().toISOString().split('T')[0];
@@ -301,20 +362,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // the effect does not refire (isOpen unchanged, same target id), so choices
   // made inside the flow — and while navigating steps — are never clobbered.
   const targetServiceId = initialService?.id ?? null;
+  const catalogSeededRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      catalogSeededRef.current = false;
+      return;
+    }
     const target = initialService || (services && services[0]) || null;
     setSelectedServices(target ? [target] : []);
     setSelectedUpgrades([]);
-    setSelectedCategory('All');
+    if (target) {
+      catalogSeededRef.current = true;
+    }
   }, [isOpen, targetServiceId]);
 
-  // Catalog loaded after the modal opened (first load): seed the default pick.
+  // Catalog loaded after the modal opened (first load): seed the default pick once.
   useEffect(() => {
-    if (!isOpen || selectedServices.length > 0 || services.length === 0) return;
+    if (!isOpen || catalogSeededRef.current || services.length === 0) return;
+    catalogSeededRef.current = true;
     setSelectedServices([services[0]]);
-    setSelectedUpgrades([]);
-  }, [isOpen, services, selectedServices.length]);
+  }, [isOpen, services]);
 
   // Offer to resume a draft whose payment was interrupted (same salon only,
   // unpaid, less than 30 minutes old). Checked once per open.
@@ -478,32 +545,49 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // when the order is created, so the ₹ on the button and the paise in the
   // Razorpay order can never disagree (src/lib/advanceDeposit.ts).
   const homeServiceCharge = bookingType === 'home' ? (profile.homeService?.baseCharge || 0) : 0;
-  // Combined totals over EVERY chosen service (+ optional add-ons + home visit
-  // fee). These drive the live summary bar, the deposit maths, the payment
-  // step and the confirmation — always strictly derived from what the customer picked.
-  const servicesTotalPrice = selectedServices.reduce((sum, service) => sum + (Number(service.price) || 0), 0);
-  const servicesTotalMinutes = selectedServices.reduce((sum, service) => sum + (Number(service.durationMinutes) || 0), 0);
-  const upgradesPrice = selectedUpgrades.reduce((sum, upgrade) => sum + (Number(upgrade.price) || 0), 0);
-  const upgradesTotalMinutes = selectedUpgrades.reduce((sum, upgrade) => sum + (Number(upgrade.durationMinutes) || 0), 0);
-  const totalAmount = servicesTotalPrice + upgradesPrice + homeServiceCharge;
-  const totalDurationMinutes = servicesTotalMinutes + upgradesTotalMinutes;
-  const depositPercent = DEFAULT_DEPOSIT_PERCENT;
-  // First-picked treatment — drives single-service legacy columns if needed
+
+  // First-picked treatment — drives the single-service columns the database
+  // still stores and the add-on suggestions shown on step 2.
   const primarySelectedService: SalonService | null = selectedServices[0] || null;
-  // Optional-upgrades list: recommended menu items for active service categories
-  // that are not already chosen anywhere (services or add-ons), so nothing is offered twice.
-  const activeCategories = new Set(selectedServices.map((s) => s.category).filter(Boolean));
-  const chosenServiceIds = new Set([...selectedServices, ...selectedUpgrades].map((s) => s.id));
-  const addonCandidates = selectedServices.length > 0
-    ? services.filter((s) => activeCategories.has(s.category) && !chosenServiceIds.has(s.id)).slice(0, 6)
+
+  // Active add-ons: strictly requires an active primary service and drops any
+  // add-on not linked to an active selected service.
+  const activeAddons = selectedServices.length > 0
+    ? selectedAddons.filter((u) => {
+        const linkedId = u.parentServiceId || u.serviceId;
+        if (linkedId) {
+          return selectedServices.some((s) => s.id === linkedId);
+        }
+        return primarySelectedService && u.category === primarySelectedService.category;
+      })
     : [];
+  const activeUpgrades = activeAddons;
+
+  // Strictly derived calculation from current active selections only:
+  // const totalDuration = selectedServices.reduce(...) + selectedAddons.reduce(...)
+  const totalDuration =
+    selectedServices.reduce((sum, service) => sum + (Number(service.durationMinutes) || 0), 0) +
+    selectedAddons.reduce((sum, addon) => sum + (Number(addon.durationMinutes) || 0), 0);
+
+  const totalPrice =
+    selectedServices.reduce((sum, service) => sum + (Number(service.price) || 0), 0) +
+    selectedAddons.reduce((sum, addon) => sum + (Number(addon.price) || 0), 0) +
+    homeServiceCharge;
+
+  const totalAmount = totalPrice;
+  const totalDurationMinutes = totalDuration;
+  const depositPercent = DEFAULT_DEPOSIT_PERCENT;
+
+  // Optional-upgrades list: same-category menu items that are not already
+  // chosen anywhere (services or add-ons), so nothing is offered twice.
+  const chosenServiceIds = new Set([...selectedServices, ...activeUpgrades].map((s) => s.id));
+  const addonCandidates = (
+    primarySelectedService
+      ? services.filter((s) => s.category === primarySelectedService.category && !chosenServiceIds.has(s.id))
+      : []
+  ).slice(0, 6);
   const advanceTokenAmount = computeAdvanceDeposit(totalAmount, depositPercent).rupees;
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
-
-  const serviceCategories = ['All', ...Array.from(new Set((services || []).map((s) => s.category).filter(Boolean)))];
-  const filteredServices = selectedCategory === 'All'
-    ? (services || [])
-    : (services || []).filter((s) => s.category === selectedCategory);
 
   // ==========================================================================
   // CONFIRMATION PAGE DATA
@@ -524,7 +608,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     salonName: profile.businessName,
     // Full list — "Haircut + Balayage + Gel-X Nails" — so the pass, the
     // calendar event and the WhatsApp message all describe the real booking.
-    serviceName: [...selectedServices, ...selectedUpgrades].map((s) => s.name).join(' + ') || 'Selected service',
+    serviceName: [...selectedServices, ...activeUpgrades].map((s) => s.name).join(' + ') || 'Selected service',
     staffName: selectedStylist.name,
     date: bookingDate,
     time: bookingTime,
@@ -587,7 +671,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         : { id: 'none', name: 'Unselected service', price: 0 },
       upgrades: [
         ...extraServices.map((s) => ({ id: s.id, name: s.name, price: s.price, durationMinutes: s.durationMinutes })),
-        ...selectedUpgrades.map((u) => ({ id: u.id, name: u.name, price: u.price, durationMinutes: u.durationMinutes })),
+        ...activeUpgrades.map((u) => ({ id: u.id, name: u.name, price: u.price, durationMinutes: u.durationMinutes })),
       ],
       stylist: { id: selectedStylist.id, name: selectedStylist.name },
       date: bookingDate,
@@ -627,9 +711,23 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const nextServices = selectedServices.filter((s) => s.id !== srv.id);
       setSelectedServices(nextServices);
       if (nextServices.length === 0) {
+        // Deselected all services: reset all add-ons immediately
+        setSelectedAddons([]);
         setSelectedUpgrades([]);
       } else {
-        // Automatically prune any add-ons whose category no longer matches remaining services
+        const nextPrimaryId = nextServices[0]?.id;
+        const wasPrimary = selectedServices[0]?.id === srv.id;
+        if (wasPrimary) {
+          // Primary service deselected: clear add-ons unless explicitly linked to the new primary service
+          setSelectedAddons((prev) =>
+            prev.filter((u) => u.parentServiceId === nextPrimaryId || u.serviceId === nextPrimaryId)
+          );
+        } else {
+          // Non-primary service deselected: clear any add-on linked to this specific service
+          setSelectedAddons((prev) =>
+            prev.filter((u) => u.parentServiceId !== srv.id && u.serviceId !== srv.id && u.id !== srv.id)
+          );
+        }
         const remainingCategories = new Set(nextServices.map((s) => s.category).filter(Boolean));
         setSelectedUpgrades((prev) =>
           prev.filter(
@@ -638,13 +736,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         );
       }
     } else {
-      const nextServices = [...selectedServices, srv];
-      setSelectedServices(nextServices);
-      // A treatment can only live in one basket: promote it out of upgrades
-      const activeCats = new Set(nextServices.map((s) => s.category).filter(Boolean));
-      setSelectedUpgrades((prev) =>
-        prev.filter((u) => u.id !== srv.id && activeCats.has(u.category))
-      );
+      setSelectedServices((prev) => [...prev, srv]);
+      // A treatment can only live in one basket: if it was ticked earlier as
+      // an add-on (step 2), promote it to a fully selected service.
+      setSelectedAddons((prev) => (prev.some((u) => u.id === srv.id) ? prev.filter((u) => u.id !== srv.id) : prev));
+      setSelectedUpgrades((prev) => prev.filter((u) => u.id !== srv.id));
     }
   };
 
@@ -1157,10 +1253,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Reset modal state to start fresh
   const handleReset = () => {
     setCurrentStep('service');
+    setSelectedCategory('All');
+    clearAllSelections();
     const resetInitial = initialService || (services && services[0]) || null;
     setSelectedServices(resetInitial ? [resetInitial] : []);
     setSelectedUpgrades([]);
-    setSelectedCategory('All');
+    setSelectedStylist(initialStylist || ANY_SPECIALIST);
+    setBookingType('salon');
+    setPaymentMethod('pay_advance_token');
     setBookingTime('');
     setSlotStaffId('');
     setOtpDigits(['', '', '', '']);
@@ -1352,11 +1452,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     {selectedServices.length > 0 && (
                       <button
                         type="button"
-                        onClick={handleClearAllServices}
-                        className="text-[10px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-0.5 cursor-pointer underline"
+                        onClick={handleClearAll}
+                        data-testid="clear-all-services-button"
+                        className="text-[10px] font-mono font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer transition-colors"
                         title="Clear all selected services and add-ons"
                       >
-                        <RotateCcw className="w-2.5 h-2.5" /> Clear All
+                        Clear All
                       </button>
                     )}
                     <span
@@ -1403,9 +1504,40 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <p className="text-[10px] text-slate-500 mb-2">
                   Combine treatments in one visit (e.g. haircut + balayage + nails) — tap a card or use its button. Price &amp; duration update instantly.
                 </p>
+
+                {/* Main Category Filter Tabs */}
+                {serviceCategories.length > 2 && (
+                  <div
+                    className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-2 scrollbar-none"
+                    role="tablist"
+                    aria-label="Filter services by category"
+                  >
+                    {serviceCategories.map((cat) => {
+                      const isCatActive = selectedCategory === cat;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          role="tab"
+                          aria-selected={isCatActive}
+                          data-testid={`category-tab-${cat.toLowerCase().replace(/\s+/g, '-')}`}
+                          onClick={() => handleCategorySwitch(cat)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                            isCatActive
+                              ? 'bg-slate-900 text-white font-bold shadow-xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {filteredServices.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
-                    No services found in this category.
+                    No services found in category &quot;{selectedCategory}&quot;.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1" role="group" aria-label="Available services">
@@ -1624,18 +1756,31 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 ) : (
                   addonCandidates.map(addon => {
                     const isSelected = selectedUpgrades.some(u => u.id === addon.id);
+                    const handleToggleAddon = () => {
+                      if (isSelected) {
+                        setSelectedUpgrades(prev => prev.filter(u => u.id !== addon.id));
+                      } else {
+                        const linkedAddon: SalonService = {
+                          ...addon,
+                          parentServiceId: primarySelectedService ? primarySelectedService.id : undefined,
+                          serviceId: primarySelectedService ? primarySelectedService.id : undefined,
+                        };
+                        setSelectedUpgrades(prev => [...prev, linkedAddon]);
+                      }
+                    };
                     return (
                         <div
                             key={addon.id}
                             role="checkbox"
                             aria-checked={isSelected}
-                            onClick={() => {
-                                if (isSelected) {
-                                    setSelectedUpgrades(prev => prev.filter(u => u.id !== addon.id));
-                                } else {
-                                    setSelectedUpgrades(prev => [...prev, addon]);
-                                }
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleToggleAddon();
+                              }
                             }}
+                            onClick={handleToggleAddon}
                             className={`group p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${
                                 isSelected ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300 bg-white'
                             }`}
@@ -2151,7 +2296,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       <span className="font-mono font-bold text-slate-900 shrink-0">₹{formatIndianMoney(srv.price)}</span>
                     </div>
                   ))}
-                  {selectedUpgrades.map((upgrade) => (
+                  {activeUpgrades.map((upgrade) => (
                     <div key={upgrade.id} className="flex items-start justify-between gap-3">
                       <span className="min-w-0 text-slate-700">
                         <span className="text-[9px] font-mono font-bold uppercase tracking-wide text-slate-400 mr-1">Add-on:</span>
@@ -2178,7 +2323,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <div>
                     <span className="text-slate-400 block font-mono text-[10px] uppercase">Total Fee</span>
                     <span className="text-[10px] text-slate-500 font-mono">
-                      {selectedServices.length + selectedUpgrades.length} item{selectedServices.length + selectedUpgrades.length !== 1 ? 's' : ''} • {totalDurationMinutes} mins
+                      {selectedServices.length + activeUpgrades.length} item{selectedServices.length + activeUpgrades.length !== 1 ? 's' : ''} • {totalDurationMinutes} mins
                     </span>
                   </div>
                   <div className="font-bold text-base text-slate-900 font-mono">
@@ -2414,15 +2559,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           >
             <div className="flex items-center gap-2 min-w-0">
               <span
+                data-testid="summary-services-count"
                 className={`px-2 py-1 rounded-lg text-[10px] font-extrabold font-mono shrink-0 ${
                   selectedServices.length > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
                 }`}
               >
                 {selectedServices.length} Service{selectedServices.length !== 1 ? 's' : ''} Selected
               </span>
-              {selectedUpgrades.length > 0 && (
-                <span className="px-2 py-1 rounded-lg text-[10px] font-extrabold font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
-                  +{selectedUpgrades.length} Add-on{selectedUpgrades.length !== 1 ? 's' : ''}
+              {selectedAddons.length > 0 && (
+                <span
+                  data-testid="summary-upgrades-count"
+                  className="px-2 py-1 rounded-lg text-[10px] font-extrabold font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0"
+                >
+                  +{selectedAddons.length} Add-on{selectedAddons.length !== 1 ? 's' : ''}
                 </span>
               )}
               <span className="hidden md:inline text-[10px] text-slate-500 font-mono truncate min-w-0 max-w-[240px]">
@@ -2430,12 +2579,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-3 text-xs font-mono shrink-0">
-              <span className="text-slate-700">
-                Total: <strong className="text-slate-900 font-extrabold">₹{formatIndianMoney(totalAmount)}</strong>
+              <span className="text-slate-700" data-testid="summary-total-price">
+                Total: <strong className="text-slate-900 font-extrabold">₹{formatIndianMoney(totalPrice)}</strong>
               </span>
-              <span className="flex items-center gap-1 text-slate-600">
+              <span className="flex items-center gap-1 text-slate-600" data-testid="summary-total-duration">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <strong className="text-slate-900 font-extrabold">{totalDurationMinutes}</strong> mins
+                <strong className="text-slate-900 font-extrabold">{totalDuration}</strong> mins
               </span>
             </div>
           </div>

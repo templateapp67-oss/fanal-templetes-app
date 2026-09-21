@@ -165,6 +165,9 @@ test('session expiry is distinguished from RLS/grant permission errors', () => {
     'cloud sync skipped (no active session — sign in again to save to the cloud)',
     'Failed to fetch from auth server',
     'POST /api/website/save failed → HTTP 401 Unauthorized',
+    'POST /api/website/save failed (HTTP 401) | Unauthorized',
+    'save_owner_editor_state: Sign in required | code: 42501',
+    'Please sign in again',
   ]) {
     assert.equal(isSessionExpiryFailure(message), true, `expected a session failure: ${message}`);
   }
@@ -184,6 +187,15 @@ test('session expiry is distinguished from RLS/grant permission errors', () => {
   ]) {
     assert.equal(isAuthLikeFailure(message), true, `still auth-like for remediation hints: ${message}`);
   }
+});
+
+test('userId is recovered from JWT sub claim when session.user is omitted', async () => {
+  const fakePayload = Buffer.from(JSON.stringify({ sub: 'user-uuid-from-jwt' })).toString('base64');
+  const fakeJwt = `header.${fakePayload}.signature`;
+  const { client } = fakeAuth({ session: { access_token: fakeJwt, expires_at: seconds(3600) } });
+  const result = await ensureFreshSession(client);
+  assert.equal(result.ok, true);
+  assert.equal(result.userId, 'user-uuid-from-jwt');
 });
 
 test('the toast copy explains what happened instead of blaming the database', () => {

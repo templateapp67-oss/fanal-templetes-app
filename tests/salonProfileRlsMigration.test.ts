@@ -399,3 +399,106 @@ test('a project whose table is named salon_profiles gets the reported policy ver
     await db.close();
   }
 });
+
+test('the migration configures RLS, owner policies, and grants on related tenant tables (services, stylists, loyalty)', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`
+      create role anon;
+      create role authenticated;
+      create role service_role;
+      create schema auth;
+      create table auth.users (id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as
+        $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+
+      create table public.profiles (
+        id uuid primary key references auth.users(id) on delete cascade,
+        full_name text
+      );
+      create table public.services (
+        id uuid primary key default gen_random_uuid(),
+        owner_id uuid references auth.users(id) on delete cascade,
+        name text,
+        price numeric
+      );
+      create table public.stylists (
+        id uuid primary key default gen_random_uuid(),
+        owner_id uuid references auth.users(id) on delete cascade,
+        name text,
+        role text
+      );
+      create table public.loyalty_config (
+        owner_id uuid primary key references auth.users(id) on delete cascade,
+        enabled boolean default true
+      );
+      create table public.loyalty_rewards (
+        id uuid primary key default gen_random_uuid(),
+        owner_id uuid references auth.users(id) on delete cascade,
+        name text,
+        points_required integer
+      );
+      insert into auth.users values ('${OWNER}'), ('${OTHER_OWNER}');
+    `);
+
+    await db.exec(await migrationSql());
+
+    // Verify RLS is enabled on all related tables
+    for (const table of ['services', 'stylists', 'loyalty_config', 'loyalty_rewards']) {
+      const rls = await db.query<{ relrowsecurity: boolean }>(
+        `select relrowsecurity from pg_class where oid = ('public.' || $1)::regclass`,
+        [table]
+      );
+      assert.equal(rls.rows[0].relrowsecurity, true, `RLS must be enabled on public.${table}`);
+
+      const privileges = await db.query<any>(
+        `select has_table_privilege('authenticated', ('public.' || $1), 'SELECT') as can_select,
+                has_table_privilege('authenticated', ('public.' || $1), 'INSERT') as can_insert,
+                has_table_privilege('authenticated', ('public.' || $1), 'UPDATE') as can_update,
+                has_table_privilege('authenticated', ('public.' || $1), 'DELETE') as can_delete,
+                has_table_privilege('authenticated', ('public.' || $1), 'TRUNCATE') as can_truncate`,
+        [table]
+      );
+      assert.equal(privileges.rows[0].can_select, true);
+      assert.equal(privileges.rows[0].can_insert, true);
+      assert.equal(privileges.rows[0].can_update, true);
+      assert.equal(privileges.rows[0].can_delete, true);
+      assert.equal(privileges.rows[0].can_truncate, false, `TRUNCATE must be false on public.${table}`);
+
+      const policies = await db.query<any>(
+        `select policyname, cmd from pg_policies where schemaname = 'public' and tablename = $1`,
+        [table]
+      );
+      const policyNames = policies.rows.map((r) => r.policyname);
+      assert.ok(policyNames.includes(`Users can insert/update their own ${table}`));
+    }
+
+    // Owner can insert and manage their own services
+    await asUser(
+      db,
+      OWNER,
+      `insert into public.services (owner_id, name, price) values ($1, 'Haircut', 500)`,
+      [OWNER]
+    );
+    const myServices = await asUser(db, OWNER, `select name, price from public.services where owner_id = $1`, [OWNER]);
+    assert.equal(myServices.rows.length, 1);
+    assert.equal(myServices.rows[0].name, 'Haircut');
+
+    // Cross-tenant: other owner cannot see or modify OWNER's services
+    const hiddenServices = await asUser(db, OTHER_OWNER, `select * from public.services where owner_id = $1`, [OWNER]);
+    assert.equal(hiddenServices.rows.length, 0);
+
+    await assert.rejects(
+      asUser(
+        db,
+        OTHER_OWNER,
+        `insert into public.services (owner_id, name, price) values ($1, 'Unauthorized', 999)`,
+        [OWNER]
+      ),
+      /row-level security|violates/i
+    );
+  } finally {
+    await db.close();
+  }
+});
+

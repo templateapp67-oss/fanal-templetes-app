@@ -44,7 +44,7 @@ import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, Salon
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { CATEGORY_STANDARDIZED_DATA, Testimonial } from '../templateData';
-import { INITIAL_SALON_PROFILE } from '../mockData';
+import { createBlankSalonProfile } from '../lib/ownerSalonResolution';
 import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
 import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
@@ -61,6 +61,7 @@ import {
   isYouTubeVideoId,
   YOUTUBE_IFRAME_ALLOW,
 } from '../utils/youtube';
+import { slugifySalonName } from '../lib/salonStore';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -214,7 +215,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [internalServices, setInternalServices] = useState<SalonService[]>(services);
   const [internalStylists, setInternalStylists] = useState<Stylist[]>(stylists);
 
-  const activeProfile = (setProfileProp ? profile : internalProfile) || INITIAL_SALON_PROFILE;
+  const activeProfile = (setProfileProp ? profile : internalProfile) || createBlankSalonProfile();
   const setProfile = setProfileProp || setInternalProfile;
 
   const activeServices = setServicesProp ? services : internalServices;

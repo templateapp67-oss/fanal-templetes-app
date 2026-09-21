@@ -81,6 +81,30 @@ function failure(
   };
 }
 
+function extractUserId(session: any): string | null {
+  if (typeof session?.user?.id === 'string' && session.user.id) {
+    return session.user.id;
+  }
+  if (typeof session?.access_token === 'string') {
+    try {
+      const parts = session.access_token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(
+          typeof atob === 'function'
+            ? atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+            : Buffer.from(parts[1], 'base64').toString('utf8')
+        );
+        if (typeof payload?.sub === 'string' && payload.sub) {
+          return payload.sub;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
 function success(
   session: { access_token?: unknown; expires_at?: unknown; user?: { id?: unknown } | null },
   refreshed: boolean,
@@ -89,7 +113,7 @@ function success(
   return {
     ok: true,
     accessToken: typeof session.access_token === 'string' ? session.access_token : null,
-    userId: typeof session.user?.id === 'string' ? session.user.id : null,
+    userId: extractUserId(session),
     expiresAt: typeof session.expires_at === 'number' ? session.expires_at * 1000 : null,
     refreshed,
     ...(error !== undefined ? { error: describeError(error) } : {}),
@@ -164,7 +188,17 @@ export async function ensureFreshSession(
   }
 
   try {
-    const { data, error } = await auth.refreshSession();
+    let res: any;
+    if (session?.refresh_token) {
+      try {
+        res = await auth.refreshSession({ refresh_token: session.refresh_token });
+      } catch {
+        res = await auth.refreshSession();
+      }
+    } else {
+      res = await auth.refreshSession();
+    }
+    const { data, error } = res || {};
     if (error) throw error;
     const next = data?.session ?? null;
     if (!next?.access_token) throw new Error('refreshSession returned no session');

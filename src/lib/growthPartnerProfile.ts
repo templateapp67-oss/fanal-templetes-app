@@ -160,7 +160,7 @@ export function growthPartnerPhotoUrl(path: string | null | undefined, client: G
   if (/^(data:image\/|blob:)/i.test(trimmed)) {
     return trimmed;
   }
-  if (!/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp)$/.test(trimmed)) {
+  if (!/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|jpeg)$/i.test(trimmed)) {
     // Also allow paths like <uuid>/<filename> with standard image extension
     if (/^[a-f0-9-]{36}\/[^/]+\.(jpg|jpeg|png|webp)$/i.test(trimmed)) {
       try {

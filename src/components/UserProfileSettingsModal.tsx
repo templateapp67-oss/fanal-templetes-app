@@ -8,6 +8,7 @@ interface UserProfileSettingsModalProps {
   profile: SalonProfile;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   showToast: (msg: string, type?: 'success' | 'error') => void;
+  onSave?: (updatedProfile: SalonProfile) => Promise<void> | void;
 }
 
 export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> = ({
@@ -16,6 +17,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   profile,
   setProfile,
   showToast,
+  onSave,
 }) => {
   const [formData, setFormData] = useState({
     ownerName: profile.ownerName || '',
@@ -34,6 +36,23 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Re-sync form state from profile whenever the modal opens or the active profile updates
+  React.useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        ownerName: profile.ownerName || '',
+        ownerPhotoUrl: profile.ownerPhotoUrl || '',
+        whatsapp: profile.whatsapp || '',
+        dob: profile.dob || '',
+        postalCode: profile.postalCode || '',
+        city: profile.city || '',
+        areaLocality: profile.areaLocality || '',
+      });
+      setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
+      setErrors({});
+    }
+  }, [isOpen, profile]);
 
   if (!isOpen) return null;
 
@@ -138,19 +157,24 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       return;
     }
 
-    setProfile((prev) => ({
-      ...prev,
+    const updatedProfile: SalonProfile = {
+      ...profile,
       ownerName: formData.ownerName.trim(),
-      ownerPhotoUrl: formData.ownerPhotoUrl || prev.ownerPhotoUrl,
+      ownerPhotoUrl: formData.ownerPhotoUrl || profile.ownerPhotoUrl,
       whatsapp: formData.whatsapp.trim(),
       dob: formData.dob,
       postalCode: formData.postalCode.trim(),
       city: formData.city.trim(),
       areaLocality: formData.areaLocality.trim(),
       whatsappNotificationsEnabled,
-    }));
+    };
 
-    showToast('User profile settings saved successfully!');
+    setProfile(updatedProfile);
+    if (onSave) {
+      void onSave(updatedProfile);
+    } else {
+      showToast('User profile settings saved successfully!');
+    }
     onClose();
   };
 

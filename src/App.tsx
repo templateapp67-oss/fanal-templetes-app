@@ -7,6 +7,7 @@ import {
   readOwnerEntryFacts,
   type OwnerEntryStage,
 } from './lib/ownerEntryRoute';
+import { resolveOwnerSalon, createBlankSalonProfile } from './lib/ownerSalonResolution';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
@@ -24,12 +25,14 @@ import { UserProfileSettingsModal } from './components/UserProfileSettingsModal'
 import {
   loadSalonState,
   saveSalonState,
-  getBlankOnboardingProfile,
+  clearAllLocalUserState,
   clearStoredSalonState,
+  getBlankOnboardingProfile,
   mergeTemplatePreservingUserData,
   mergeTemplateServices,
   mergeTemplateStylists,
   getSiteUrl,
+  slugifySalonName,
   ONBOARDING_COMPLETED_KEY,
   getStoredAuthenticatedProfile,
   setStoredAuthenticatedProfile,
@@ -349,12 +352,13 @@ export default function App() {
 
   // Load the persistent salon state from localStorage on initial mount.
   const initialSaved = typeof window !== 'undefined' ? loadSalonState() : null;
+  const defaultInitialProfile = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
   const previousTemplateIdRef = React.useRef<BusinessTypeId>(
-    initialSaved?.selectedTemplateId || INITIAL_SALON_PROFILE.businessType
+    initialSaved?.selectedTemplateId || defaultInitialProfile.businessType
   );
 
   const [profile, setProfile] = useState<SalonProfile>(
-    initialSaved?.profile && typeof initialSaved.profile === 'object' ? initialSaved.profile : INITIAL_SALON_PROFILE
+    initialSaved?.profile && typeof initialSaved.profile === 'object' ? initialSaved.profile : defaultInitialProfile
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -392,10 +396,10 @@ export default function App() {
   }, [user]);
 
   const [services, setServices] = useState<SalonService[]>(
-    initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : INITIAL_SERVICES
+    initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : (isMockSupabase ? INITIAL_SERVICES : [])
   );
   const [stylists, setStylists] = useState<Stylist[]>(
-    initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : INITIAL_STYLISTS
+    initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : (isMockSupabase ? INITIAL_STYLISTS : [])
   );
   const [appointments, setAppointments] = useState<Appointment[]>(isMockSupabase ? INITIAL_APPOINTMENTS : []);
   const [clients, setClients] = useState<ClientRecord[]>(isMockSupabase ? INITIAL_CLIENTS : []);
@@ -619,7 +623,7 @@ export default function App() {
           setSiteTenant({
             isTenant: true,
             found: true,
-            subdomain: profile.subdomain || 'salon-studio',
+            subdomain: profile.subdomain || slugifySalonName(profile.businessName) || 'salon-studio',
             customDomain: null,
             profile: profile,
             services: services,
@@ -636,7 +640,7 @@ export default function App() {
           setSiteTenant({
             isTenant: true,
             found: true,
-            subdomain: requestedSite || profile.subdomain || 'salon-studio',
+            subdomain: requestedSite || profile.subdomain || slugifySalonName(profile.businessName) || 'salon-studio',
             customDomain: null,
             profile: profile,
             services: services,
@@ -701,6 +705,9 @@ export default function App() {
   // A fresh sign-in or a successful token refresh makes the cloud reachable
   // again, so the editor's "sign in again" notice is cleared as soon as the
   // session is usable (and on sign-out, when the editor is not shown at all).
+  const previousUserIdRef = useRef<string | null>(user?.id ?? null);
+  const startHydrationRef = useRef<(userId: string) => Promise<boolean>>(() => Promise.resolve(false));
+
   useEffect(() => {
     if (isMockSupabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -709,6 +716,20 @@ export default function App() {
           setSaveNeedsSignIn(false);
         } else if (event === 'SIGNED_OUT') {
           setSaveNeedsSignIn(false);
+          clearAllLocalUserState();
+          const clean = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
+          setProfile(clean);
+          setServices(isMockSupabase ? INITIAL_SERVICES : []);
+          setStylists(isMockSupabase ? INITIAL_STYLISTS : []);
+          setAppointments([]);
+          setClients([]);
+          setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+          const tId = (clean.businessType || 1) as BusinessTypeId;
+          setSelectedTemplateId(tId);
+          previousTemplateIdRef.current = tId;
+          hydratedForUserRef.current = false;
+          hydrationUserRef.current = null;
+          lastPersistedSnapshotRef.current = '';
         }
       }
     );
@@ -719,6 +740,89 @@ export default function App() {
   useEffect(() => {
     if (isMockSupabase) return;
     const observer = observeAuthSession(supabase.auth, (state) => {
+      const prevId = previousUserIdRef.current;
+      const nextId = state.user?.id ?? null;
+      if (prevId !== nextId) {
+        previousUserIdRef.current = nextId;
+
+        if (debounceTimerRef.current) {
+          window.clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = undefined;
+        }
+        hasPendingSaveRef.current = false;
+        setSaveStatus('idle');
+
+        clearAllLocalUserState();
+        hydratedForUserRef.current = false;
+        hydrationUserRef.current = null;
+        resolvedOwnerRef.current = null;
+        entryRoutedForRef.current = null;
+
+        if (state.user) {
+          const userSaved = loadSalonState(state.user.id);
+          if (userSaved && userSaved.profile) {
+            setProfile(userSaved.profile);
+            setServices(userSaved.services || []);
+            setStylists(userSaved.stylists || []);
+            setAppointments([]);
+            setClients([]);
+            setLoyaltyConfig(userSaved.loyaltyConfig || DEFAULT_LOYALTY_CONFIG);
+            const templateId = (userSaved.selectedTemplateId || userSaved.profile.businessType || 1) as BusinessTypeId;
+            setSelectedTemplateId(templateId);
+            previousTemplateIdRef.current = templateId;
+            salonStateRef.current = {
+              profile: userSaved.profile,
+              services: userSaved.services || [],
+              stylists: userSaved.stylists || [],
+              loyaltyConfig: userSaved.loyaltyConfig || DEFAULT_LOYALTY_CONFIG,
+              selectedTemplateId: templateId,
+              user: state.user,
+            };
+            lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
+          } else {
+            const blank = createBlankSalonProfile(state.user);
+            setProfile(blank);
+            setServices([]);
+            setStylists([]);
+            setAppointments([]);
+            setClients([]);
+            setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+            const templateId = (blank.businessType || 1) as BusinessTypeId;
+            setSelectedTemplateId(templateId);
+            previousTemplateIdRef.current = templateId;
+            salonStateRef.current = {
+              profile: blank,
+              services: [],
+              stylists: [],
+              loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+              selectedTemplateId: templateId,
+              user: state.user,
+            };
+            lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
+          }
+          void startHydrationRef.current(state.user.id);
+        } else {
+          const blank = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
+          setProfile(blank);
+          setServices(isMockSupabase ? INITIAL_SERVICES : []);
+          setStylists(isMockSupabase ? INITIAL_STYLISTS : []);
+          setAppointments([]);
+          setClients([]);
+          setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+          const templateId = (blank.businessType || 1) as BusinessTypeId;
+          setSelectedTemplateId(templateId);
+          previousTemplateIdRef.current = templateId;
+          salonStateRef.current = {
+            profile: blank,
+            services: isMockSupabase ? INITIAL_SERVICES : [],
+            stylists: isMockSupabase ? INITIAL_STYLISTS : [],
+            loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+            selectedTemplateId: templateId,
+            user: null,
+          };
+          lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
+        }
+      }
       setUser(state.user);
       setAuthStatus(state.status);
     });
@@ -801,6 +905,44 @@ export default function App() {
     }
   }, [user?.id, isMockSupabase]);
 
+  // PHASE 2 — Multi-tenant Isolation & Ownership Resolution:
+  // When an authenticated user exists, resolve their salon using:
+  // auth.uid() -> organization_members.user_id (role = 'owner', status = 'active')
+  // -> organization_members.organization_id -> salons.organization_id.
+  // If resolution returns status: "needs_onboarding":
+  // Render onboarding, use blank/default form values, do NOT load another salon,
+  // do NOT show previous avatar, do NOT load old website state, services, or bookings.
+  const resolvedOwnerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isMockSupabase || !user?.id) return;
+    if (resolvedOwnerRef.current === user.id) return;
+    resolvedOwnerRef.current = user.id;
+
+    let cancelled = false;
+    void resolveOwnerSalon(supabase, user.id).then((res) => {
+      if (cancelled) return;
+      if (res.status === 'needs_onboarding') {
+        console.info('[Tenant Isolation] User has no active owner salon (needs_onboarding) — applying clean slate.');
+        const blank = createBlankSalonProfile(user);
+        setProfile(blank);
+        setServices([]);
+        setStylists([]);
+        setAppointments([]);
+        setClients([]);
+        setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+        setSiteTenant({ isTenant: false, found: false });
+        if (normalizePath(path) === '/') {
+          setCurrentView('wizard');
+          setWizardStartingStep(1);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, path, setCurrentView]);
+
   // Auto-Fetch Profile Sync
   useEffect(() => {
     let cancelled = false;
@@ -853,7 +995,7 @@ export default function App() {
           subdomain: data?.subdomain,
         };
         if (authState.salonName || authState.phone || authState.city) {
-          setStoredAuthenticatedProfile(authState);
+          setStoredAuthenticatedProfile(authState, user.id);
         }
 
         if (!data) {
@@ -870,7 +1012,7 @@ export default function App() {
           console.warn(
             '[Profile] No profile row exists yet for this user — using sign-up metadata until the first save creates it.'
           );
-          const blank = getBlankOnboardingProfile(user);
+          const blank = createBlankSalonProfile(user);
           setProfile({
             ...blank,
             businessName: meta.salon_name || blank.businessName,
@@ -879,6 +1021,10 @@ export default function App() {
             email: user.email || blank.email,
             city: meta.city || blank.city,
           });
+          setServices([]);
+          setStylists([]);
+          setAppointments([]);
+          setClients([]);
           return;
         }
 
@@ -893,36 +1039,40 @@ export default function App() {
           return;
         }
 
-        setProfile((prev) =>
-          applyWorkingHoursFromRow(
+        setProfile((prev) => {
+          const isDifferentUser = prev.ownerId && prev.ownerId !== user.id;
+          const base = isDifferentUser ? createBlankSalonProfile(user) : prev;
+          const resolvedBusinessName = data.salon_name || meta.salon_name || base.businessName || '';
+          return applyWorkingHoursFromRow(
             {
-              ...prev,
-              businessName: data.salon_name || meta.salon_name || prev.businessName,
-              ownerName: data.full_name || meta.full_name || prev.ownerName,
-              ownerRole: data.owner_role || prev.ownerRole,
-              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || prev.phone,
-              whatsapp: data.whatsapp || prev.whatsapp,
-              email: data.email || user.email || prev.email,
-              ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || prev.ownerPhotoUrl,
-              coverImageUrl: data.cover_image_url || prev.coverImageUrl,
-              tagline: data.tagline || prev.tagline,
-              about: data.about || prev.about,
-              address: data.full_address || prev.address,
-              city: data.city || data.preferred_city || meta.city || prev.city,
-              areaLocality: data.area ?? data.preferred_area ?? prev.areaLocality,
-              postalCode: data.postal_code || data.pincode || prev.postalCode,
-              landmark: data.landmark || prev.landmark,
-              subdomain: data.subdomain || prev.subdomain,
-              instagramHandle: data.instagram_handle || prev.instagramHandle,
-              homeService: data.home_service ?? prev.homeService,
-              offers: data.offers ?? prev.offers,
-              themePreset: data.theme_preset || prev.themePreset,
-              themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
-              customAccentColor: data.custom_accent_color || prev.customAccentColor,
+              ...base,
+              ownerId: user.id,
+              businessName: resolvedBusinessName,
+              ownerName: data.full_name || meta.full_name || base.ownerName || '',
+              ownerRole: data.owner_role || base.ownerRole || '',
+              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || base.phone || '',
+              whatsapp: data.whatsapp || base.whatsapp || '',
+              email: data.email || user.email || base.email || '',
+              ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || (isDifferentUser ? '' : base.ownerPhotoUrl),
+              coverImageUrl: data.cover_image_url || (isDifferentUser ? '' : base.coverImageUrl),
+              tagline: data.tagline || (isDifferentUser ? '' : base.tagline),
+              about: data.about || (isDifferentUser ? '' : base.about),
+              address: data.full_address || (isDifferentUser ? '' : base.address),
+              city: data.city || data.preferred_city || meta.city || base.city || '',
+              areaLocality: data.area ?? data.preferred_area ?? (isDifferentUser ? '' : base.areaLocality),
+              postalCode: data.postal_code || data.pincode || (isDifferentUser ? '' : base.postalCode),
+              landmark: data.landmark || (isDifferentUser ? '' : base.landmark),
+              subdomain: data.subdomain || slugifySalonName(resolvedBusinessName),
+              instagramHandle: data.instagram_handle || (isDifferentUser ? '' : base.instagramHandle),
+              homeService: data.home_service ?? base.homeService,
+              offers: Array.isArray(data.offers) ? data.offers : [],
+              themePreset: data.theme_preset || base.themePreset,
+              themeAccentKey: data.theme_accent_key || base.themeAccentKey,
+              customAccentColor: data.custom_accent_color || base.customAccentColor,
             },
             data
-          )
-        );
+          );
+        });
       } catch (err: any) {
         if (cancelled) return;
         const isNetworkErr =
@@ -999,13 +1149,13 @@ export default function App() {
         return false;
       }
       const { svc, stf, lc, rw } = snapshot;
-      if (svc.data && svc.data.length) setServices(svc.data.map(fromServiceRow));
-      if (stf.data && stf.data.length) setStylists(stf.data.map(fromStylistRow));
-      if (lc.data) {
+      if (svc && Array.isArray(svc.data)) setServices(svc.data.map(fromServiceRow));
+      if (stf && Array.isArray(stf.data)) setStylists(stf.data.map(fromStylistRow));
+      if (lc && lc.data) {
         setLoyaltyConfig((prev) => ({
           ...fromLoyaltyConfigRow(lc.data),
           rewards:
-            rw.data && rw.data.length
+            rw && Array.isArray(rw.data) && rw.data.length
               ? (rw.data.map(fromRewardRow) as RewardThreshold[])
               : prev.rewards,
         }));
@@ -1082,6 +1232,21 @@ export default function App() {
                 // them — the exact data loss this is meant to prevent.
                 previousTemplateIdRef.current = next.selectedTemplateId as BusinessTypeId;
               }
+            } else {
+              const ownerRes = await resolveOwnerSalon(supabase, userId);
+              if (ownerRes.status === 'active' && ownerRes.salon) {
+                const s = ownerRes.salon;
+                setProfile((prev) => ({
+                  ...prev,
+                  ownerId: userId,
+                  businessName: s.name || prev.businessName,
+                  subdomain: s.slug || prev.subdomain,
+                  phone: s.phone || prev.phone,
+                  email: s.email || prev.email,
+                  address: s.address || prev.address,
+                  city: s.city || prev.city,
+                }));
+              }
             }
             hydratedForUserRef.current = true;
             hydrationErrorRef.current = null;
@@ -1115,6 +1280,7 @@ export default function App() {
     },
     [applyHydrationSnapshot]
   );
+  startHydrationRef.current = startHydration;
 
   useEffect(() => {
     if (!user || isMockSupabase) {
@@ -1169,8 +1335,14 @@ export default function App() {
   }, []);
 
   const persistSalonState = useCallback(
-    async (options?: { source?: 'auto' | 'manual'; message?: string }): Promise<boolean> => {
+    async (options?: { source?: 'auto' | 'manual'; message?: string; explicitProfile?: SalonProfile }): Promise<boolean> => {
       const source = options?.source ?? 'manual';
+      if (options?.explicitProfile) {
+        salonStateRef.current = {
+          ...salonStateRef.current,
+          profile: options.explicitProfile,
+        };
+      }
       if (salonStateRef.current.user && !isMockSupabase && !hydratedForUserRef.current) {
         const loaded = await startHydration(salonStateRef.current.user.id);
         if (!loaded || !hydratedForUserRef.current) {
@@ -1220,7 +1392,7 @@ export default function App() {
           stylists: state.stylists,
           loyaltyConfig: state.loyaltyConfig,
           selectedTemplateId: state.selectedTemplateId,
-        });
+        }, state.user?.id, state.profile?.id);
         if (!local.ok) {
           failures.push(`local storage: ${local.error}`);
           console.error('[Nexora Save Pipeline] Stage 1 (Local Storage Write) FAILED:', local.error);
@@ -1541,7 +1713,6 @@ export default function App() {
     stylists,
     loyaltyConfig,
     selectedTemplateId,
-    user?.id,
     isMockSupabase,
     isPublicSite,
     isCustomerApp,
@@ -1581,8 +1752,9 @@ export default function App() {
     return persistSalonState({
       source: 'manual',
       message: 'Website details updated successfully!',
+      explicitProfile: profile,
     });
-  }, [persistSalonState]);
+  }, [persistSalonState, profile]);
 
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
@@ -2066,6 +2238,15 @@ export default function App() {
         profile={profile}
         setProfile={setProfile}
         showToast={showToast}
+        onSave={async (updated) => {
+          setProfile(updated);
+          salonStateRef.current = { ...salonStateRef.current, profile: updated };
+          void persistSalonState({
+            source: 'manual',
+            message: 'User profile settings saved successfully!',
+            explicitProfile: updated,
+          });
+        }}
       />
 
       {/* Global save toast */}

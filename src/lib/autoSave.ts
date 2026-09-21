@@ -416,8 +416,13 @@ export function isSessionExpiryFailure(detail: string): boolean {
     d.includes('missing access token') ||
     d.includes('auth session missing') ||
     d.includes('session missing') ||
+    d.includes('please sign in again') ||
+    d.includes('sign in required') ||
+    d.includes('sign in again') ||
+    d.includes('pgrst301') ||
     d.includes('failed to fetch from auth') || // auth server unreachable during refresh
-    /\b401\b/.test(d)
+    /\b401\b/.test(d) ||
+    d.includes('unauthorized')
   );
 }
 
@@ -516,6 +521,10 @@ export function getSaveUiState(
  */
 export const DRAFT_STORAGE_KEY = 'nexora_draft_salon_data';
 
+export function getScopedDraftStorageKey(ownerId?: string | null): string {
+  return ownerId ? `nexora:draft:${ownerId}` : 'nexora:draft:anonymous';
+}
+
 export interface LocalDraftEnvelope {
   ownerId: string;
   profile: unknown;
@@ -526,24 +535,37 @@ export interface LocalDraftEnvelope {
 }
 
 /**
- * Cache the full draft state under `nexora_draft_salon_data`. Never throws —
+ * Cache the full draft state under `nexora:draft:${ownerId}`. Never throws —
  * quota errors degrade (inline images stripped) or are reported via the
  * returned result, never by crashing the save flow.
  */
 export function writeLocalDraft(
-  state: Omit<LocalDraftEnvelope, 'savedAt'> & { savedAt?: number }
+  state: Omit<LocalDraftEnvelope, 'savedAt'> & { savedAt?: number },
+  ownerId?: string | null
 ): LocalStorageWriteResult {
+  const targetOwner = ownerId ?? state.ownerId;
   const savedAt = state.savedAt ?? Date.now();
-  const envelope: LocalDraftEnvelope = { ...state, savedAt };
+  const envelope: LocalDraftEnvelope = { ...state, ownerId: targetOwner, savedAt };
+  const scopedKey = getScopedDraftStorageKey(targetOwner);
   const serialized = JSON.stringify(envelope);
-  console.info('[autoSave:writeLocalDraft] Writing local draft envelope to localStorage["' + DRAFT_STORAGE_KEY + '"]...', {
-    ownerId: state.ownerId,
+
+  console.info('[autoSave:writeLocalDraft] Writing local draft envelope to localStorage["' + scopedKey + '"]...', {
+    ownerId: targetOwner,
     servicesCount: Array.isArray(state.services) ? state.services.length : 0,
     stylistsCount: Array.isArray(state.stylists) ? state.stylists.length : 0,
     hasLoyalty: !!state.loyaltyConfig,
     payloadBytes: serialized.length,
   });
-  const result = safeWriteLocalStorage(DRAFT_STORAGE_KEY, serialized);
+
+  const result = safeWriteLocalStorage(scopedKey, serialized);
+  if (!targetOwner) {
+    safeWriteLocalStorage(DRAFT_STORAGE_KEY, serialized);
+  } else {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {}
+  }
+
   if (result.ok) {
     console.info('[autoSave:writeLocalDraft] Local draft write SUCCESS:', {
       degraded: result.degraded,
@@ -558,13 +580,22 @@ export function writeLocalDraft(
 }
 
 /** Remove a previously cached draft (called after a successful cloud save). */
-export function clearLocalDraft(): void {
+export function clearLocalDraft(ownerId?: string | null): void {
   if (typeof localStorage === 'undefined') return;
   try {
-    const existed = localStorage.getItem(DRAFT_STORAGE_KEY) !== null;
+    let existed = false;
+    if (ownerId) {
+      const key = getScopedDraftStorageKey(ownerId);
+      if (localStorage.getItem(key) !== null) existed = true;
+      localStorage.removeItem(key);
+    }
+    const anonKey = getScopedDraftStorageKey(null);
+    if (localStorage.getItem(anonKey) !== null) existed = true;
+    localStorage.removeItem(anonKey);
+    if (localStorage.getItem(DRAFT_STORAGE_KEY) !== null) existed = true;
     localStorage.removeItem(DRAFT_STORAGE_KEY);
     if (existed) {
-      console.info('[autoSave:clearLocalDraft] Cleared stale local draft cache (localStorage["' + DRAFT_STORAGE_KEY + '"]) after cloud success.');
+      console.info('[autoSave:clearLocalDraft] Cleared stale local draft cache after cloud success.');
     }
   } catch (err) {
     console.warn('[Nexora Sync] Failed to clear the local draft cache:', describeError(err));
@@ -572,23 +603,42 @@ export function clearLocalDraft(): void {
 }
 
 /** True when a pending draft is currently cached on this device. */
-export function hasLocalDraft(): boolean {
+export function hasLocalDraft(ownerId?: string | null): boolean {
   if (typeof localStorage === 'undefined') return false;
   try {
-    return localStorage.getItem(DRAFT_STORAGE_KEY) !== null;
+    const key = getScopedDraftStorageKey(ownerId);
+    if (localStorage.getItem(key) !== null) return true;
+    if (!ownerId && localStorage.getItem(DRAFT_STORAGE_KEY) !== null) return true;
+    return false;
   } catch {
     return false;
   }
 }
 
 /** Read a previously cached draft (recovery / diagnostics helper). */
-export function loadLocalDraft(): LocalDraftEnvelope | null {
+export function loadLocalDraft(ownerId?: string | null): LocalDraftEnvelope | null {
   if (typeof localStorage === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    const key = getScopedDraftStorageKey(ownerId);
+    let raw = localStorage.getItem(key);
+    if (!raw && !ownerId) {
+      raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as LocalDraftEnvelope) : null;
+    if (parsed && typeof parsed === 'object') {
+      const envelope = parsed as LocalDraftEnvelope;
+      // Cross-tenant guard: if ownerId is given and envelope belongs to another owner, reject!
+      if (ownerId && envelope.ownerId && envelope.ownerId !== ownerId) {
+        return null;
+      }
+      // If NO ownerId is given, do NOT return an authenticated draft!
+      if (!ownerId && envelope.ownerId) {
+        return null;
+      }
+      return envelope;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -870,14 +920,14 @@ export async function runSalonSavePipeline(
 
   const storeLocalDraft = (): { draftWritten: boolean; error?: string } => {
     console.info('[autoSave:runSalonSavePipeline] Executing local draft fallback store...');
-    const result = writeDraft(draftState);
+    const result = writeDraft(draftState, payload.ownerId);
     if (result.ok) {
       console.info('[autoSave:runSalonSavePipeline] Local draft successfully written.');
       return { draftWritten: true };
     }
     const error = result.error || 'unknown localStorage error';
     console.error('[autoSave:runSalonSavePipeline] Local draft write failed:', {
-      key: DRAFT_STORAGE_KEY,
+      key: getScopedDraftStorageKey(payload.ownerId),
       error,
     });
     return { draftWritten: false, error };
@@ -1004,7 +1054,7 @@ export async function runSalonSavePipeline(
 
   if (cloud.ok) {
     console.info('[autoSave:runSalonSavePipeline] Step 1 SUCCESS: Direct cloud sync succeeded. Clearing local draft cache.');
-    clearLocalDraft(); // the cloud now holds the state — drop any stale draft
+    clearLocalDraft(payload.ownerId); // the cloud now holds the state — drop any stale draft
     return {
       ok: true,
       target: 'cloud',
@@ -1044,7 +1094,21 @@ export async function runSalonSavePipeline(
         console.info('[autoSave:runSalonSavePipeline] Refreshed session token attached for API fallback.');
       }
     }
-    const api = await saveViaApi(payload);
+    let api = await saveViaApi(payload);
+    if (
+      !api.ok &&
+      !sessionRefreshed &&
+      options.refreshSession &&
+      (api.status === 401 || isSessionExpiryFailure(api.error || ''))
+    ) {
+      const token = await refreshOnce();
+      if (token) {
+        apiAccessToken = token;
+        sessionRefreshed = true;
+        console.info('[autoSave:runSalonSavePipeline] Fallback API rejected as unauthenticated — retrying with refreshed token.');
+        api = await saveViaApi(payload);
+      }
+    }
     console.info('[autoSave:runSalonSavePipeline] Step 2 API fallback result:', {
       ok: api.ok,
       status: api.status,
@@ -1053,7 +1117,7 @@ export async function runSalonSavePipeline(
     });
     if (api.ok) {
       console.info('[autoSave:runSalonSavePipeline] Step 2 SUCCESS: Server API fallback succeeded. Clearing local draft cache.');
-      clearLocalDraft();
+      clearLocalDraft(payload.ownerId);
       return {
         ok: true,
         target: 'api',

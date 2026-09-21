@@ -131,3 +131,16 @@ test('the summary bar and Continue button agree that booking needs a service', (
   assert.match(emptyHtml, /The service menu is still loading/);
   assert.match(html, /data-testid="booking-summary-bar"/);
 });
+
+test('category filter tabs and clear-all button render appropriately', () => {
+  const html = renderModal();
+  // Clear all button rendered when a service is selected
+  assert.match(html, /data-testid="clear-all-services-button"/);
+  assert.match(html, /Clear All/);
+
+  // Category filter tabs are rendered when multiple categories exist (All, Hair Artistry, Nail Couture, Color Alchemy)
+  assert.match(html, /data-testid="category-tab-all"/);
+  assert.match(html, /data-testid="category-tab-hair-artistry"/);
+  assert.match(html, /data-testid="category-tab-nail-couture"/);
+  assert.match(html, /data-testid="category-tab-color-alchemy"/);
+});

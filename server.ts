@@ -1,6 +1,7 @@
 import { registerReferralAttributionRoutes } from './server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from './server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from './server/ownerDashboard.js';
+import { createOwnerSalonHandler } from './server/backendContext.js';
 // Loads process env > .env > .env.development (see server/env.ts).
 import "./server/env";
 import express from "express";
@@ -187,6 +188,7 @@ const defaultDemoSalon = {
 };
 
 // Seed demo salons
+mockSalons['demo'] = defaultDemoSalon;
 mockSalons['luxe-hair-studio'] = defaultDemoSalon;
 mockSalons['luxestudio'] = defaultDemoSalon;
 mockSalons['mirakistudio'] = {
@@ -273,8 +275,8 @@ async function startServer() {
           email,
           user_metadata: {
             full_name: req.body?.fullName || (purpose === 'customer' ? 'Mock Customer' : 'Mock Owner'),
-            salon_name: req.body?.salonName || 'Arts By Uma',
-            phone_number: req.body?.phoneNumber || '+91 98450 77654',
+            salon_name: req.body?.salonName || 'My Salon',
+            phone_number: req.body?.phoneNumber || '',
             city: req.body?.city || 'Jaipur',
           },
         };
@@ -338,9 +340,9 @@ async function startServer() {
           id: 'mock-user-123',
           email: targetEmail,
           user_metadata: {
-            full_name: 'Template App',
-            salon_name: 'Arts By Uma',
-            phone_number: '9782105055',
+            full_name: 'Salon Owner',
+            salon_name: 'My Salon',
+            phone_number: '',
             city: 'Jaipur',
           },
         };
@@ -403,28 +405,28 @@ async function startServer() {
       homeService: row.home_service || undefined,
       ownerId: row.id,
       businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
-      businessName: row.salon_name || 'Arts By Uma',
-      ownerName: row.full_name || 'Uma',
-      ownerRole: row.owner_role || 'Founder & Master Stylist',
-      phone: row.phone_number || '+91 98450 77654',
-      whatsapp: row.whatsapp || row.phone_number || '+91 98450 77654',
-      email: row.email || 'hello@artsbyuma.com',
-      tagline: row.tagline || 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
-      about: row.about || 'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies.',
+      businessName: row.salon_name || row.name || 'My Salon',
+      ownerName: row.full_name || '',
+      ownerRole: row.owner_role || '',
+      phone: row.phone_number || '',
+      whatsapp: row.whatsapp || row.phone_number || '',
+      email: row.email || '',
+      tagline: row.tagline || '',
+      about: row.about || '',
       ownerPhotoUrl: row.owner_photo_url || '',
       coverImageUrl: row.cover_image_url || '',
       logoUrl: row.logo_url || undefined,
       themePreset: (row.theme_preset as SalonProfile['themePreset']) || 'slate_silver',
       currency: row.currency || '₹',
-      subdomain: row.subdomain || 'arts-by-uma',
+      subdomain: row.subdomain || '',
       customDomain: row.custom_domain || undefined,
-      address: row.full_address || '100 Feet Road, 12th Main, Indiranagar',
-      city: row.city || 'Bengaluru',
-      postalCode: row.postal_code || '560038',
-      state: row.state || 'Karnataka',
+      address: row.full_address || '',
+      city: row.city || '',
+      postalCode: row.postal_code || '',
+      state: row.state || '',
       latitude: row.latitude ?? undefined,
       longitude: row.longitude ?? undefined,
-      instagramHandle: row.instagram_handle || 'arts_by_uma',
+      instagramHandle: row.instagram_handle || '',
       facebookPage: row.facebook_page || undefined,
       youtubeChannel: row.youtube_channel || undefined,
       tiktokProfile: row.tiktok_profile || undefined,
@@ -615,7 +617,9 @@ async function startServer() {
 
   app.post("/api/owner/hours", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(salonHoursHandler(db)));
 app.get("/api/bookings/availability", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(availabilityHandler(db)));
-app.get("/api/owner/dashboard", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db)));
+  app.get("/api/owner/salon", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createOwnerSalonHandler(db)));
+  app.get("/api/owner/resolution", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createOwnerSalonHandler(db)));
+  app.get("/api/owner/dashboard", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db)));
 app.post("/api/owner/appointments", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(ownerDashboardHandler(db, true)));
 app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingsListHandler(bookingRouteDeps)));
   app.get("/api/bookings/:id", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(createBookingGetHandler(bookingRouteDeps)));

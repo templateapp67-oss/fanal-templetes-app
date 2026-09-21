@@ -22,6 +22,7 @@ import {
   type OnboardingViewer,
   type OnboardingSnapshot,
 } from './lib/auth';
+import { clearAllLocalUserState } from '../lib/salonStore';
 import {
   buildTemplateHandoffUrl,
   createTemplateHandoff,
@@ -285,6 +286,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   }, [sb, refreshSnapshot]);
 
   const handleLogout = useCallback(async () => {
+    clearAllLocalUserState();
     await signOutViewer(sb);
     if (!mounted.current) return;
     setViewer(null);

@@ -433,17 +433,17 @@ export const GrowthPartnerLoginUnauthorized: React.FC<{
     >
       <button
         type="button"
-        onClick={() => onBack?.()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
+        onClick={() => onSwitchAccount?.()}
+        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 shadow-sm"
       >
-        Back to app
+        Sign in with a different account
       </button>
       <button
         type="button"
-        onClick={() => onSwitchAccount?.()}
-        className="mt-3 w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+        onClick={() => onBack?.()}
+        className="mt-3 w-full py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-700 transition-opacity hover:opacity-90"
       >
-        Sign in with a different account
+        Back to app
       </button>
     </StateCard>
   </main>
@@ -622,7 +622,8 @@ export const GrowthPartnerLogin: React.FC<{
   accentHex?: string;
   /** Injected in tests; defaults to the shared anon-key client. */
   client?: GrowthPartnerAuthClient;
-}> = ({ user, navigate, onBack, accentHex = '#C20E5A', client }) => {
+  onLogout?: () => void;
+}> = ({ user, navigate, onBack, accentHex = '#C20E5A', client, onLogout }) => {
   const sb = useMemo(
     () => client ?? (supabase as unknown as GrowthPartnerAuthClient),
     [client]
@@ -785,6 +786,7 @@ export const GrowthPartnerLogin: React.FC<{
 
   const clearSession = async () => {
     await signOutGrowthPartner(sb);
+    onLogout?.();
     setSessionUser(null);
     setPartnerRow(null);
     setApplication(null);

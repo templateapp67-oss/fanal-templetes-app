@@ -87,7 +87,9 @@ export const BackupManagerModal: React.FC<BackupManagerModalProps> = ({
   const [restoreScope, setRestoreScope] = useState<'all' | 'config_only' | 'services_only' | 'team_only' | 'loyalty_only'>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const storageKey = `${STORAGE_KEY_PREFIX}${profile.subdomain || 'default'}`;
+  const storageKey = profile.ownerId
+    ? `nexora:backup:${profile.ownerId}:${profile.subdomain || 'default'}`
+    : `${STORAGE_KEY_PREFIX}${profile.subdomain || 'default'}`;
 
   // Load history on open
   useEffect(() => {

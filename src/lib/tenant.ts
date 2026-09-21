@@ -23,12 +23,21 @@ export const BASE_DOMAIN =
 export function getAppOwnedHosts(): string[] {
   const hosts: string[] = ['localhost', '127.0.0.1', '0.0.0.0', 'www.' + BASE_DOMAIN, BASE_DOMAIN];
   if (typeof process !== 'undefined') {
-    const url = process.env.APP_URL || process.env.VITE_APP_URL || '';
-    if (url) {
-      try {
-        hosts.push(new URL(url).host);
-      } catch {
-        // ignore malformed APP_URL
+    const rawUrls = [
+      process.env.APP_URL,
+      process.env.VITE_APP_URL,
+      process.env.SITE_URL,
+      process.env.NEXTAUTH_URL,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
+    ];
+    for (const raw of rawUrls) {
+      if (raw) {
+        try {
+          const parsed = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+          hosts.push(parsed.host);
+        } catch {
+          // ignore malformed URLs
+        }
       }
     }
     // Allow extra app-owned hosts via a comma-separated env var.

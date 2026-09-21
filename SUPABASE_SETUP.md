@@ -246,25 +246,72 @@ save_owner_editor_state(jsonb)          -- security invoker wrapper
 ```
 
 Because the last hop runs with the signed-in owner's privileges, **both** halves
-must be right for `profiles` and `owner_editor_state`:
+must be right for `profiles`, `owner_editor_state`, and related tables (`services`,
+`stylists`, `loyalty_config`, `loyalty_rewards`):
 
-1. **Grants** — `authenticated` needs `select, insert, update, delete` on
-   `public.profiles` and `select, insert, update` on `public.owner_editor_state`
-   (plus column-level `update` on the contact columns `sync_owner_contact()`
-   writes). Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`
-   — it is idempotent and applies per existing column (so a project missing an
-   optional column cannot half-apply it). It executes the literal
-   `grant all on table public.profiles to authenticated` and then revokes the
-   privileges that are **not** row-scoped: `TRUNCATE` bypasses RLS completely
-   (it would let any signed-in user wipe every salon's profile in one
-   statement), and `REFERENCES` / `TRIGGER` / `MAINTAIN` are never used by the
-   save path. Net effect = the four DML privileges.
-2. **Policies** — RLS enabled with owner-scoped policies, including the
-   combined `"Users can insert/update their own profile"` policy
-   (`FOR ALL TO authenticated USING (auth.uid() = <owner column>) WITH CHECK (…)`).
-   The repair covers whichever salon-profile table the project actually has —
-   `profiles` (this repo), `salon_profiles` or `website_profiles` — and detects
-   the owner column per table: `user_id` on the classic shape, `id` here.
+1. **Grants** — `authenticated` needs `select, insert, update, delete` across all
+   public tables in the schema. Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`,
+   `supabase/migrations/20261011_comprehensive_tenant_rls_audit.sql`, and
+   `supabase/migrations/20261012_production_schema_reconciliation.sql`
+   (either via `supabase db push` or by pasting into Supabase Dashboard → SQL Editor).
+   They execute:
+   - `GRANT USAGE ON SCHEMA public TO authenticated;`
+   - `GRANT SELECT, INSERT, UPDATE, DELETE ON <tables> TO authenticated;`
+   - `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;`
+   - and immediately revoke privileges that are **not** row-scoped:
+     `TRUNCATE` bypasses RLS completely (it would let any signed-in user wipe every
+     salon's data in one statement), and `REFERENCES` / `TRIGGER` / `MAINTAIN` are never
+     used by the save path. Net effect = full row-scoped DML privileges for the owner.
+2. **Policies** — RLS enabled with tenant-scoped policies (`FOR SELECT`, `FOR INSERT`,
+   `FOR UPDATE`, `FOR DELETE`), including:
+   - `profiles` / `salon_profiles` / `website_profiles`
+   - `salons`, `organizations`, `organization_members`, `salon_hours`, `salon_customers`
+   - `owner_editor_state`
+   - `services`, `stylists`, `staff`, `staff_services`, `staff_schedules`
+   - `bookings`, `booking_items`, `reviews`
+   - `loyalty_config`, `loyalty_rewards`
+   - `in_app_notifications` / `notifications`
+
+### 9b. Applying the migrations in Supabase SQL Editor
+
+To apply all required permissions, schema reconciliation, and RLS policies at once:
+
+1. Open your **Supabase Project Dashboard** → **SQL Editor** → **New Query**.
+2. Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`, `supabase/migrations/20261011_comprehensive_tenant_rls_audit.sql`, and `supabase/migrations/20261012_production_schema_reconciliation.sql` from this repository.
+3. Click **Run** (or press `Ctrl+Enter` / `Cmd+Enter`).
+4. Verify execution in the Results panel: PostgREST schema cache reloads automatically via `NOTIFY pgrst, 'reload schema'`.
+
+To verify that permissions and RLS policies are active:
+
+```sql
+-- 1) Verify RLS is enabled and owner policies are present:
+select c.relname as table_name,
+       c.relrowsecurity as rls_enabled,
+       (select count(*) from pg_policies p
+        where p.schemaname = 'public' and p.tablename = c.relname) as policy_count
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname in ('profiles', 'owner_editor_state', 'services', 'stylists', 'staff', 'bookings', 'booking_items', 'loyalty_config', 'loyalty_rewards')
+order by c.relname;
+-- Expected: rls_enabled = true for all, policy_count >= 1 for each table.
+
+-- 2) Verify privileges for the authenticated role:
+select table_name,
+       grantee,
+       string_agg(privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and grantee = 'authenticated'
+  and table_name in ('profiles', 'owner_editor_state', 'services', 'stylists', 'staff', 'bookings', 'booking_items', 'loyalty_config', 'loyalty_rewards')
+group by table_name, grantee
+order by table_name;
+-- Expected: SELECT, INSERT, UPDATE, DELETE present on all tables.
+
+-- 3) Verify TRUNCATE is NOT granted (RLS safety check):
+select has_table_privilege('authenticated', 'public.profiles', 'TRUNCATE') as can_truncate;
+-- Expected: false
+```
 
 Session handling is not part of the schema problem: the client refreshes a
 stale/expiring access token before the write, and after an auth-rejection it
@@ -275,7 +322,7 @@ Only a session that cannot be refreshed is surfaced as "sign in again", with
 the in-editor notice; a GRANT/RLS rejection is deterministic and is reported
 immediately instead (retrying it would change nothing).
 
-### 9b. Isolating an RLS problem manually (optional — testing only)
+### 9c. Isolating an RLS problem manually (optional — testing only)
 
 If you want to prove a save failure is RLS-caused by disabling RLS, use the
 two helper scripts (they are NOT migrations — run them from the SQL Editor):

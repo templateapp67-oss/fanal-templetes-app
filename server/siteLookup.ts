@@ -34,25 +34,25 @@ export const defaultDemoSalon: {
   profile: {
     ownerId: null,
     businessType: 'hair_salon',
-    businessName: 'Luxe Hair & Styling Studio',
-    ownerName: 'Aria Sen',
+    businessName: 'Nexora Hair Studio',
+    ownerName: 'Studio Director',
     ownerRole: 'Founder & Master Stylist',
-    phone: '+91 98450 77654',
-    whatsapp: '+91 98450 77654',
-    email: 'hello@luxestudio.in',
+    phone: '+91 98000 00000',
+    whatsapp: '+91 98000 00000',
+    email: 'contact@nexora.in',
     tagline: 'Precision Cuts, Creative Hair Artistry & Luxury Salon Lounge',
     about:
-      'Welcome to Luxe Hair & Styling Studio. Bringing together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary. We craft personalized looks that elevate your confidence and natural beauty.',
-    ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
+      'Welcome to our boutique studio. We bring together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary. We craft personalized looks that elevate your confidence and natural beauty.',
+    ownerPhotoUrl: '',
     coverImageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
     themePreset: 'slate_silver',
     currency: '₹',
-    subdomain: 'luxe-hair-studio',
+    subdomain: 'demo',
     address: '100 Feet Road, 12th Main, Indiranagar',
     city: 'Bengaluru',
     postalCode: '560038',
     state: 'Karnataka',
-    instagramHandle: 'luxehair_studio',
+    instagramHandle: 'nexorastudio',
     requireDeposit: true,
     depositPercentage: 20,
     themeAccentKey: 'slate',
@@ -70,10 +70,10 @@ export const defaultDemoSalon: {
     { id: 'hs-9', name: 'Express Glow Organic Cleanup & De-Tan', category: 'Skin & Spa', description: 'Gentle fruit peel scrub, pore steam, blackhead removal, and saffron brightening mask.', icon: 'sparkles', price: 850, durationMinutes: 40, popular: false, showDuration: true },
   ],
   stylists: [
-    { id: 'hs-st-101', name: 'Aria Sen', role: 'Founder & Master Stylist', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80', bio: 'Founder with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.', phone: '+91 98450 77654', specialties: ['Structural Cuts', 'Balayage Color', 'Keratin Smoothing', 'Gel-X Extensions'], assignedServices: ['hs-1', 'hs-3', 'hs-4', 'hs-5', 'hs-7'], rating: 4.98, commissionRate: 35, status: 'Available', accessRole: 'Manager (Full Access)', hidePhone: false, schedule: [] },
-    { id: 'hs-st-1', name: 'Ananya Sharma', role: 'Senior Precision Stylist', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80', bio: 'Senior colorist and stylist with extensive background in balayage, ombre, and volume blowouts.', phone: '+91 98450 12890', specialties: ['Precision Fringes', 'Balayage & Color', 'Volume Blowouts'], assignedServices: ['hs-1', 'hs-2', 'hs-3', 'hs-5'], rating: 4.95, commissionRate: 30, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
-    { id: 'hs-st-2', name: 'Rohan Kapoor', role: 'Stylist & Hair Craftsman', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80', bio: 'Men and women haircut specialist with expertise in dry cutting, skin fades, and textured styling.', phone: '+91 98450 33412', specialties: ['Dry Cutting', 'Men & Women Styling', 'Fade Geometry'], assignedServices: ['hs-1', 'hs-2', 'hs-6'], rating: 4.92, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
-    { id: 'hs-st-3', name: 'Kavita Deshmukh', role: 'Hair Texture & Scalp Specialist', avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80', bio: 'Trichology-trained scalp and hair botox specialist focusing on restorative therapies.', phone: '+91 98450 99881', specialties: ['Hair Botox', 'Scalp Analysis', 'Thermal Tongs'], assignedServices: ['hs-5', 'hs-6', 'hs-9'], rating: 4.89, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
+    { id: 'hs-st-10', name: 'Elena', role: 'Founder & Master Stylist', avatarUrl: '', bio: 'Founder with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.', phone: '+91 98000 00001', specialties: ['Structural Cuts', 'Balayage Color', 'Keratin Smoothing', 'Gel-X Extensions'], assignedServices: ['hs-1', 'hs-3', 'hs-4', 'hs-5', 'hs-7'], rating: 4.98, commissionRate: 35, status: 'Available', accessRole: 'Manager (Full Access)', hidePhone: false, schedule: [] },
+    { id: 'hs-st-1', name: 'Ananya Sharma', role: 'Senior Precision Stylist', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80', bio: 'Senior colorist and stylist with extensive background in balayage, ombre, and volume blowouts.', phone: '+91 98000 00002', specialties: ['Precision Fringes', 'Balayage & Color', 'Volume Blowouts'], assignedServices: ['hs-1', 'hs-2', 'hs-3', 'hs-5'], rating: 4.95, commissionRate: 30, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
+    { id: 'hs-st-2', name: 'Rohan Kapoor', role: 'Stylist & Hair Craftsman', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80', bio: 'Men and women haircut specialist with expertise in dry cutting, skin fades, and textured styling.', phone: '+91 98000 00003', specialties: ['Dry Cutting', 'Men & Women Styling', 'Fade Geometry'], assignedServices: ['hs-1', 'hs-2', 'hs-6'], rating: 4.92, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
+    { id: 'hs-st-3', name: 'Kavita Deshmukh', role: 'Hair Texture & Scalp Specialist', avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80', bio: 'Trichology-trained scalp and hair botox specialist focusing on restorative therapies.', phone: '+91 98000 00004', specialties: ['Hair Botox', 'Scalp Analysis', 'Thermal Tongs'], assignedServices: ['hs-5', 'hs-6', 'hs-9'], rating: 4.89, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
   ],
 };
 
@@ -88,7 +88,33 @@ export interface SiteLookupDeps {
  * table) to the app's SalonProfile shape.
  */
 export function mapProfileRow(row: any): SalonProfile {
-  if (!row) return defaultDemoSalon.profile;
+  if (!row) {
+    return {
+      businessType: 'hair_salon',
+      businessName: '',
+      ownerName: '',
+      ownerRole: '',
+      phone: '',
+      whatsapp: '',
+      email: '',
+      tagline: '',
+      about: '',
+      ownerPhotoUrl: '',
+      coverImageUrl: '',
+      themePreset: 'slate_silver',
+      currency: '₹',
+      subdomain: '',
+      address: '',
+      city: '',
+      postalCode: '',
+      state: '',
+      instagramHandle: '',
+      requireDeposit: false,
+      depositPercentage: 20,
+      themeAccentKey: 'slate',
+      whiteLabelEnabled: true,
+    };
+  }
 
   const config = row.data?.editor_profile && typeof row.data.editor_profile === 'object' ? row.data.editor_profile : {};
   const data = { ...(row.data || {}), ...Object.fromEntries(Object.entries(config).map(([key,value]) => [key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase()),value])) };
