@@ -170,7 +170,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const initial = initialService || (services && services[0]);
     return initial ? [initial] : [];
   });
-  const [selectedUpgrades, setSelectedUpgrades] = useState<SalonService[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<SalonService[]>([]);
+  // Backward compatibility alias across modal steps and draft contracts
+  const selectedUpgrades = selectedAddons;
+  const setSelectedUpgrades = setSelectedAddons;
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(
     initialStylist || (stylists && stylists[0]) || ANY_SPECIALIST
@@ -199,10 +202,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (prevPrimaryIdRef.current !== currentPrimaryId) {
       if (!currentPrimaryId) {
         // Deselected all services: reset all add-ons/upgrades immediately
-        setSelectedUpgrades([]);
+        setSelectedAddons([]);
       } else {
         // Primary service changed: prune any add-on not explicitly linked to the current primary service
-        setSelectedUpgrades((prev) =>
+        setSelectedAddons((prev) =>
           prev.filter((u) => u.parentServiceId === currentPrimaryId || u.serviceId === currentPrimaryId)
         );
       }
@@ -215,7 +218,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
    */
   const clearAllSelections = () => {
     setSelectedServices([]);
-    setSelectedUpgrades([]);
+    setSelectedAddons([]);
     setBookingTime('');
     setSlotStaffId('');
   };
@@ -547,10 +550,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // still stores and the add-on suggestions shown on step 2.
   const primarySelectedService: SalonService | null = selectedServices[0] || null;
 
-  // Active upgrades: strictly requires an active primary service and drops any
-  // upgrade not linked to an active selected service.
-  const activeUpgrades = selectedServices.length > 0
-    ? selectedUpgrades.filter((u) => {
+  // Active add-ons: strictly requires an active primary service and drops any
+  // add-on not linked to an active selected service.
+  const activeAddons = selectedServices.length > 0
+    ? selectedAddons.filter((u) => {
         const linkedId = u.parentServiceId || u.serviceId;
         if (linkedId) {
           return selectedServices.some((s) => s.id === linkedId);
@@ -558,17 +561,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         return primarySelectedService && u.category === primarySelectedService.category;
       })
     : [];
+  const activeUpgrades = activeAddons;
 
   // Combined totals over EVERY chosen service (+ optional add-ons + home visit
-  // fee). These drive the live summary bar, the deposit maths, the payment
-  // step and the confirmation — strictly derived from current active selections only.
-  const servicesTotalPrice = selectedServices.reduce((sum, service) => sum + (Number(service.price) || 0), 0);
-  const servicesTotalMinutes = selectedServices.reduce((sum, service) => sum + (Number(service.durationMinutes) || 0), 0);
-  const upgradesPrice = activeUpgrades.reduce((sum, upgrade) => sum + (Number(upgrade.price) || 0), 0);
-  const upgradesTotalMinutes = activeUpgrades.reduce((sum, upgrade) => sum + (Number(upgrade.durationMinutes) || 0), 0);
+  // fee). Strictly derived calculation from current active selections only:
+  // services.reduce(...) + addons.reduce(...)
+  const totalDuration =
+    selectedServices.reduce((sum, service) => sum + (Number(service.durationMinutes) || 0), 0) +
+    activeAddons.reduce((sum, addon) => sum + (Number(addon.durationMinutes) || 0), 0);
 
-  const totalPrice = servicesTotalPrice + upgradesPrice + homeServiceCharge;
-  const totalDuration = servicesTotalMinutes + upgradesTotalMinutes;
+  const totalPrice =
+    selectedServices.reduce((sum, service) => sum + (Number(service.price) || 0), 0) +
+    activeAddons.reduce((sum, addon) => sum + (Number(addon.price) || 0), 0) +
+    homeServiceCharge;
+
   const totalAmount = totalPrice;
   const totalDurationMinutes = totalDuration;
   const depositPercent = DEFAULT_DEPOSIT_PERCENT;
@@ -700,19 +706,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const nextServices = selectedServices.filter((s) => s.id !== srv.id);
       setSelectedServices(nextServices);
       if (nextServices.length === 0) {
-        // Deselected all services: reset all upgrades immediately
-        setSelectedUpgrades([]);
+        // Deselected all services: reset all add-ons immediately
+        setSelectedAddons([]);
       } else {
         const nextPrimaryId = nextServices[0]?.id;
         const wasPrimary = selectedServices[0]?.id === srv.id;
         if (wasPrimary) {
-          // Primary service deselected: clear upgrades unless explicitly linked to the new primary service
-          setSelectedUpgrades((prev) =>
+          // Primary service deselected: clear add-ons unless explicitly linked to the new primary service
+          setSelectedAddons((prev) =>
             prev.filter((u) => u.parentServiceId === nextPrimaryId || u.serviceId === nextPrimaryId)
           );
         } else {
-          // Non-primary service deselected: clear any upgrade linked to this specific service
-          setSelectedUpgrades((prev) =>
+          // Non-primary service deselected: clear any add-on linked to this specific service
+          setSelectedAddons((prev) =>
             prev.filter((u) => u.parentServiceId !== srv.id && u.serviceId !== srv.id && u.id !== srv.id)
           );
         }
@@ -721,7 +727,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setSelectedServices((prev) => [...prev, srv]);
       // A treatment can only live in one basket: if it was ticked earlier as
       // an add-on (step 2), promote it to a fully selected service.
-      setSelectedUpgrades((prev) => (prev.some((u) => u.id === srv.id) ? prev.filter((u) => u.id !== srv.id) : prev));
+      setSelectedAddons((prev) => (prev.some((u) => u.id === srv.id) ? prev.filter((u) => u.id !== srv.id) : prev));
     }
   };
 
