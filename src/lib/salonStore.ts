@@ -368,3 +368,17 @@ export function loadLegacyProfile(): SalonProfile | null {
     return null;
   }
 }
+
+export function clearAllSalonLocalData(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(SALON_STATE_STORAGE_KEY);
+    localStorage.removeItem('nexora_draft_salon_data');
+    localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+    localStorage.removeItem('nexora_authenticated_profile');
+    localStorage.removeItem(ONBOARDING_COMPLETED_KEY);
+    localStorage.removeItem('nexora_auth_user_v1');
+    localStorage.removeItem('salon_profile_v1');
+    localStorage.removeItem(LEGACY_PROFILE_KEY);
+  } catch {}
+}

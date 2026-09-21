@@ -10,7 +10,7 @@ import {
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
-import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
+import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS, createBlankSalonProfile } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
 import { ACCENT_PALETTES, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
 import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
@@ -32,6 +32,7 @@ import {
   getStoredAuthenticatedProfile,
   setStoredAuthenticatedProfile,
   AuthenticatedProfileState,
+  clearAllSalonLocalData,
 } from './lib/salonStore';
 import {
   AUTOSAVE_DEBOUNCE_MS,
@@ -701,6 +702,7 @@ export default function App() {
           setSaveNeedsSignIn(false);
         } else if (event === 'SIGNED_OUT') {
           setSaveNeedsSignIn(false);
+          clearAllSalonLocalData();
         }
       }
     );
@@ -809,16 +811,7 @@ export default function App() {
             '[Profile] Could not read the owner profile row (auth/RLS/grants issue — apply supabase/migrations):',
             error
           );
-          if (!hasUnsavedEdits()) {
-            setProfile((prev) => ({
-              ...prev,
-              businessName: meta.salon_name || prev.businessName,
-              ownerName: meta.full_name || prev.ownerName,
-              phone: meta.phone_number || prev.phone,
-              email: user.email || prev.email,
-              city: meta.city || prev.city,
-            }));
-          }
+          if (!hasUnsavedEdits()) { setProfile(createBlankSalonProfile({ ...meta, email: user.email })); }
           return;
         }
 
@@ -850,14 +843,7 @@ export default function App() {
           console.warn(
             '[Profile] No profile row exists yet for this user — using sign-up metadata until the first save creates it.'
           );
-          setProfile((prev) => ({
-            ...prev,
-            businessName: meta.salon_name || prev.businessName,
-            ownerName: meta.full_name || prev.ownerName,
-            phone: meta.phone_number || prev.phone,
-            email: user.email || prev.email,
-            city: meta.city || prev.city,
-          }));
+          setProfile(createBlankSalonProfile({ ...meta, email: user.email }));
           return;
         }
 
@@ -910,16 +896,7 @@ export default function App() {
 
         if (isNetworkErr) {
           console.warn('[Profile] Transient network error while fetching profile, falling back to metadata:', err?.message || err);
-          if (!hasUnsavedEdits()) {
-            setProfile((prev) => ({
-              ...prev,
-              businessName: meta.salon_name || prev.businessName,
-              ownerName: meta.full_name || prev.ownerName,
-              phone: meta.phone_number || prev.phone,
-              email: user.email || prev.email,
-              city: meta.city || prev.city,
-            }));
-          }
+          if (!hasUnsavedEdits()) { setProfile(createBlankSalonProfile({ ...meta, email: user.email })); }
           if (retryCount < 3) {
             retryTimer = setTimeout(() => {
               void fetchProfile(retryCount + 1);

@@ -1,3 +1,4 @@
+import { slugifySalonName } from './lib/salonStore';
 import { BusinessTypeOption, SalonProfile, SalonService, Stylist, Appointment, ClientRecord } from './types';
 import { CATEGORY_TEMPLATES, ALL_CATEGORY_OPTIONS } from './categoryTemplates';
 
@@ -568,3 +569,60 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     ],
   },
 ];
+
+export function createBlankSalonProfile(userMeta?: {
+  full_name?: string;
+  salon_name?: string;
+  phone_number?: string;
+  city?: string;
+  email?: string;
+  ownerName?: string;
+  businessName?: string;
+  phone?: string;
+}): SalonProfile {
+  const businessName = userMeta?.salon_name || userMeta?.businessName || '';
+  const ownerName = userMeta?.full_name || userMeta?.ownerName || '';
+  const phone = userMeta?.phone_number || userMeta?.phone || '';
+  const email = userMeta?.email || '';
+  const city = userMeta?.city || '';
+
+  return {
+    businessType: 'hair_salon',
+    businessName,
+    ownerName,
+    ownerRole: '',
+    phone,
+    whatsapp: phone ? '+91' + phone.replace(/\D/g, '') : '',
+    email,
+    tagline: '',
+    about: '',
+    ownerPhotoUrl: '',
+    coverImageUrl: '',
+    themePreset: 'slate_silver',
+    themeAccentKey: 'slate',
+    currency: '₹',
+    subdomain: businessName ? slugifySalonName(businessName) : '',
+    address: '',
+    city,
+    areaLocality: '',
+    postalCode: '',
+    instagramHandle: '',
+    facebookPage: '',
+    tiktokHandle: '',
+    tiktokProfile: '',
+    requireDeposit: true,
+    depositPercentage: 20,
+    whiteLabelEnabled: true,
+    promotionalBanner: {
+      enabled: false,
+      text: '',
+      discountCode: '',
+      badgeText: '',
+      buttonText: '',
+      buttonAction: 'book',
+      themePreset: 'royal_gold',
+    },
+    offers: [],
+    customDomain: '',
+  };
+}
