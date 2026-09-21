@@ -617,7 +617,7 @@ export default function App() {
           setSiteTenant({
             isTenant: true,
             found: true,
-            subdomain: profile.subdomain || 'arts-by-uma',
+            subdomain: profile.subdomain || slugifySalonName(profile.businessName) || 'salon',
             customDomain: null,
             profile: profile,
             services: services,
@@ -634,7 +634,7 @@ export default function App() {
           setSiteTenant({
             isTenant: true,
             found: true,
-            subdomain: requestedSite || profile.subdomain || 'arts-by-uma',
+            subdomain: requestedSite || profile.subdomain || slugifySalonName(profile.businessName) || 'salon',
             customDomain: null,
             profile: profile,
             services: services,
