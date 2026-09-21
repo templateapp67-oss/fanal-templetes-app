@@ -1180,8 +1180,19 @@ export default function App() {
       setSaveStatus('saving');
       const failures: string[] = [];
 
+      console.info('[Nexora Save Pipeline] === SAVE OPERATION INITIATED ===', {
+        source,
+        timestamp: new Date().toISOString(),
+        userId: state.user?.id || null,
+        ownerId: state.profile.ownerId || null,
+        subdomain: state.profile.subdomain,
+        businessName: state.profile.businessName,
+        isMockSupabase,
+      });
+
       try {
         // -- 1) Local persistence (never throws; quota-aware) ---------------
+        console.info('[Nexora Save Pipeline] Stage 1 (Local Storage Write): Writing state to localStorage["nexora_salon_state_v1"]...');
         const local = saveSalonState({
           profile: state.profile,
           services: state.services,
@@ -1191,10 +1202,12 @@ export default function App() {
         });
         if (!local.ok) {
           failures.push(`local storage: ${local.error}`);
-          console.error('[AutoSave] localStorage write failed:', local.error);
+          console.error('[Nexora Save Pipeline] Stage 1 (Local Storage Write) FAILED:', local.error);
         } else if (local.degraded) {
           // Saved, but inline images had to be dropped to fit the quota.
-          console.warn('[AutoSave] localStorage quota exceeded — saved without inline images:', local.error);
+          console.warn('[Nexora Save Pipeline] Stage 1 (Local Storage Write) DEGRADED (quota exceeded — saved without inline images):', local.error);
+        } else {
+          console.info('[Nexora Save Pipeline] Stage 1 (Local Storage Write) SUCCESS: Local state persisted cleanly.');
         }
 
         // -- 2) Cloud persistence — full fallback pipeline ------------------
@@ -1214,6 +1227,13 @@ export default function App() {
         let canCleanUpCloudRows = false;
         let liveAccessToken: string | undefined;
 
+        console.info('[Nexora Save Pipeline] Stage 2 (Auth & Session Verification): Checking session state...', {
+          hasUser: !!state.user,
+          isMockSupabase,
+          liveOwnerId,
+          authStatus: authStatusRef.current,
+        });
+
         if (state.user && !isMockSupabase) {
           // 2a) Pre-flight: the Supabase client must hold a LIVE session for
           // the same owner we are saving for. A dead session is no longer a
@@ -1230,7 +1250,7 @@ export default function App() {
             const sessionState = await ensureFreshSession(supabase);
             const sessionUser = sessionState.userId ? { id: sessionState.userId } : null;
             if (sessionState.refreshed) {
-              console.info('[AutoSave] Supabase session refreshed before the save.');
+              console.info('[Nexora Save Pipeline] Stage 2: Supabase session refreshed before cloud save.');
             }
             if (sessionUser) {
               // Forwarded to POST /api/website/save so the server can prove
@@ -1244,24 +1264,26 @@ export default function App() {
               // publishing is impossible until they re-authenticate.
               setSaveNeedsSignIn(true);
               console.error(
-                '[AutoSave] No active Supabase session — saving as a local draft (SUCCESS (Local Draft)) instead of failing. Sign in again to resume cloud sync (local edits are already saved on this device).'
+                '[Nexora Save Pipeline] Stage 2 WARNING: No active Supabase session — saving as a local draft (SUCCESS (Local Draft)) instead of failing. Sign in again to resume cloud sync (local edits are already saved on this device).'
               );
               // Only the auth listener changes login state; a data read cannot log the user out.
             } else if (sessionUser.id !== liveOwnerId) {
               // A save started before an account switch. Keep its original
               // identity and prevent this snapshot from reaching the new account.
               console.warn(
-                `[AutoSave] Session user changed (${liveOwnerId} → ${sessionUser.id}); preserving the old account draft without a cloud write.`
+                `[Nexora Save Pipeline] Stage 2 WARNING: Session user changed (${liveOwnerId} → ${sessionUser.id}); preserving the old account draft without a cloud write.`
               );
               // This snapshot belongs to the previous account. Never save it as the new user.
               sessionOk = false;
               liveAccessToken = undefined;
+            } else {
+              console.info('[Nexora Save Pipeline] Stage 2 SUCCESS: Session verified for user:', sessionUser.id);
             }
           } catch (err) {
             // An unverified session cannot authorize a cloud write.
             sessionOk = false;
             liveAccessToken = undefined;
-            console.warn('[AutoSave] Session verification failed; preserving a local draft:', err);
+            console.warn('[Nexora Save Pipeline] Stage 2: Session verification failed; preserving a local draft:', err);
           }
 
           // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
@@ -1282,7 +1304,7 @@ export default function App() {
             if (!canCleanUpCloudRows) {
               const reason = hydrationErrorRef.current || 'hydration still pending';
               console.warn(
-                `[AutoSave] Cloud hydration unavailable (${reason}) — preserving a local draft until the complete cloud workspace has loaded.`
+                `[Nexora Save Pipeline] Cloud hydration unavailable (${reason}) — preserving a local draft until the complete cloud workspace has loaded.`
               );
             }
           }
@@ -1293,6 +1315,12 @@ export default function App() {
         //     freshly refreshed token when the direct sync was rejected as
         //     unauthenticated (the token may have expired between the
         //     pre-flight and the write).
+        console.info('[Nexora Save Pipeline] Stage 3 & 4: Executing cloud persistence pipeline (direct RPC sync with API fallback)...', {
+          authenticated: sessionOk && !!liveOwnerId,
+          isMockMode: isMockSupabase,
+          hasAccessToken: !!liveAccessToken,
+        });
+
         const cloud = await runSalonSavePipeline({
           sync: (p) => saveOwnerEditorState(supabase, p),
           refreshSession: async () => {
@@ -1313,34 +1341,45 @@ export default function App() {
           accessToken: liveAccessToken,
         });
 
+        console.info('[Nexora Save Pipeline] Cloud pipeline stage outcome:', {
+          target: cloud.target,
+          ok: cloud.ok,
+          errorsCount: cloud.errors.length,
+          errors: cloud.errors,
+          summary: cloud.summary,
+        });
+
+        if (cloud.target === 'cloud') {
+          console.info('[Nexora Save Pipeline] Stage 3 (Direct Cloud Sync) SUCCESS: Direct client RPC save confirmed by Supabase.');
+        } else if (cloud.target === 'api') {
+          console.info('[Nexora Save Pipeline] Stage 3 Direct Sync was bypassed/failed -> Stage 4 (API Fallback) SUCCESS: Server service-role persisted site state via POST /api/website/save.');
+        } else if (cloud.target === 'local_draft') {
+          console.warn('[Nexora Save Pipeline] Stage 3 & 4 (Cloud Sync & API Fallback) UNSUCCESSFUL -> Stage 4b (Local Draft): Persisted to local draft cache.');
+        }
+
         if (cloud.errors.length) {
           const joined = cloud.errors.join(' · ');
           // Classify the exact root cause for the console (the pipeline has
           // already logged each failure with table name + HTTP status).
           if (isSessionExpiryFailure(joined)) {
             console.error(
-              '[AutoSave] Cloud save rejected (SESSION): the access token was refreshed automatically before/after the write and still could not authenticate. The refresh token is expired or revoked — sign in again (edits are safe in the local draft).',
+              '[Nexora Save Pipeline] Cloud save rejected (SESSION): the access token was refreshed automatically before/after the write and still could not authenticate. The refresh token is expired or revoked — sign in again (edits are safe in the local draft).',
               cloud.errors
             );
           } else if (isAuthLikeFailure(joined)) {
             console.error(
-              '[AutoSave] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql and 20261010_salon_profile_rls_and_grants.sql) and sign in again.',
+              '[Nexora Save Pipeline] Cloud save rejected (AUTH/RLS/GRANTS): the authenticated role lacks table privileges or RLS policies. Re-apply supabase/migrations (incl. 20260907_owner_save_grants.sql and 20261010_salon_profile_rls_and_grants.sql) and sign in again.',
               cloud.errors
             );
           } else if (isSchemaLikeFailure(joined)) {
             console.error(
-              '[AutoSave] Cloud save rejected (SCHEMA): tables are missing. Apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).',
+              '[Nexora Save Pipeline] Cloud save rejected (SCHEMA): tables are missing. Apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).',
               cloud.errors
             );
           }
         } else if (cloud.target === 'cloud' && state.user && !isMockSupabase && !canCleanUpCloudRows) {
           console.warn(
-            '[AutoSave] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
-          );
-        }
-        if (cloud.target === 'api') {
-          console.warn(
-            '[AutoSave] Direct client sync failed — the server saved your site state via POST /api/website/save (authenticated workspace transaction).'
+            '[Nexora Save Pipeline] Cloud sync succeeded in safe (non-destructive) mode; destructive cleanup resumes after a successful hydrate.'
           );
         }
 
@@ -1349,7 +1388,7 @@ export default function App() {
           // handled by the pipeline and never block the editor with a
           // "couldn't save your changes" error.
           const detail = failures.join(' · ');
-          console.error('[AutoSave] Save failed:', detail);
+          console.error('[Nexora Save Pipeline] Stage 1 CRITICAL: Local storage failure blocked save:', detail);
           setSaveStatus('error');
           // Show the root cause in the toast (throttled so a burst of edits
           // doesn't spam identical errors), keep the full detail in console.
@@ -1366,7 +1405,13 @@ export default function App() {
           // even after degradation). Surface it once; auto-saves stay quiet.
           const detail = cloud.errors.join(' · ') || cloud.summary;
           const sessionGone = isSessionExpiryFailure(detail);
-          console.error('[Nexora Sync Error]:', { stage: 'save pipeline — no persistence target available', target: cloud.target, errors: cloud.errors, sessionGone });
+          console.error('[Nexora Save Pipeline] Stage 5 HARD FAILURE: No persistence target succeeded:', {
+            stage: 'save pipeline — no persistence target available',
+            target: cloud.target,
+            errors: cloud.errors,
+            sessionGone,
+            sessionOk,
+          });
           setSaveStatus('error');
           // A dead session is not a database-permission problem: the save
           // engine already refreshed + retried once, so tell the owner
@@ -1389,6 +1434,13 @@ export default function App() {
         setLastSavedAt(Date.now());
 
         const publishedToCloud = cloud.target === 'cloud' || cloud.target === 'api';
+        console.info('[Nexora Save Pipeline] Stage 5 (Save Status Resolution): Finished save pipeline ->', {
+          publishedToCloud,
+          target: cloud.target,
+          source,
+          resultingStatus: publishedToCloud ? 'saved' : 'saved_local',
+        });
+
         if (publishedToCloud) {
           setSaveStatus('saved');
           setSaveNeedsSignIn(false); // a cloud write proves the session works again
@@ -1422,7 +1474,7 @@ export default function App() {
       } catch (err) {
         // Unexpected (programming) errors — surface with full detail.
         const detail = describeError(err);
-        console.error('[Nexora Sync Error]:', {
+        console.error('[Nexora Save Pipeline] Stage 5 CRITICAL: Unexpected exception caught:', {
           stage: 'save engine — unexpected exception',
           message: detail,
         });

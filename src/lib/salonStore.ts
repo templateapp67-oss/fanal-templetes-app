@@ -354,7 +354,16 @@ export function saveSalonState(state: SalonState): LocalStorageWriteResult {
   // the ~5MB localStorage budget. safeWriteLocalStorage never throws — it
   // retries once without inline images and reports the exact error instead of
   // failing the whole save flow with a generic "Save failed".
-  return safeWriteLocalStorage(SALON_STATE_STORAGE_KEY, JSON.stringify(state));
+  const serialized = JSON.stringify(state);
+  const result = safeWriteLocalStorage(SALON_STATE_STORAGE_KEY, serialized);
+  console.info('[saveSalonState] Local storage write executed:', {
+    key: SALON_STATE_STORAGE_KEY,
+    bytes: serialized.length,
+    ok: result.ok,
+    degraded: result.degraded,
+    error: result.error || null,
+  });
+  return result;
 }
 
 // Legacy key the app previously wrote to; we migrate it on first load.

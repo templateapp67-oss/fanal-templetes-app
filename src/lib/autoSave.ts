@@ -533,15 +533,39 @@ export interface LocalDraftEnvelope {
 export function writeLocalDraft(
   state: Omit<LocalDraftEnvelope, 'savedAt'> & { savedAt?: number }
 ): LocalStorageWriteResult {
-  const envelope: LocalDraftEnvelope = { ...state, savedAt: state.savedAt ?? Date.now() };
-  return safeWriteLocalStorage(DRAFT_STORAGE_KEY, JSON.stringify(envelope));
+  const savedAt = state.savedAt ?? Date.now();
+  const envelope: LocalDraftEnvelope = { ...state, savedAt };
+  const serialized = JSON.stringify(envelope);
+  console.info('[autoSave:writeLocalDraft] Writing local draft envelope to localStorage["' + DRAFT_STORAGE_KEY + '"]...', {
+    ownerId: state.ownerId,
+    servicesCount: Array.isArray(state.services) ? state.services.length : 0,
+    stylistsCount: Array.isArray(state.stylists) ? state.stylists.length : 0,
+    hasLoyalty: !!state.loyaltyConfig,
+    payloadBytes: serialized.length,
+  });
+  const result = safeWriteLocalStorage(DRAFT_STORAGE_KEY, serialized);
+  if (result.ok) {
+    console.info('[autoSave:writeLocalDraft] Local draft write SUCCESS:', {
+      degraded: result.degraded,
+      savedAt,
+    });
+  } else {
+    console.error('[autoSave:writeLocalDraft] Local draft write FAILED:', {
+      error: result.error,
+    });
+  }
+  return result;
 }
 
 /** Remove a previously cached draft (called after a successful cloud save). */
 export function clearLocalDraft(): void {
   if (typeof localStorage === 'undefined') return;
   try {
+    const existed = localStorage.getItem(DRAFT_STORAGE_KEY) !== null;
     localStorage.removeItem(DRAFT_STORAGE_KEY);
+    if (existed) {
+      console.info('[autoSave:clearLocalDraft] Cleared stale local draft cache (localStorage["' + DRAFT_STORAGE_KEY + '"]) after cloud success.');
+    }
   } catch (err) {
     console.warn('[Nexora Sync] Failed to clear the local draft cache:', describeError(err));
   }
@@ -613,12 +637,24 @@ export async function saveViaWebsiteApi(
     options.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch.bind(globalThis) : undefined);
   const path = options.path ?? '/api/website/save';
 
+  console.info('[autoSave:saveViaWebsiteApi] Dispatching server API fallback request...', {
+    path,
+    ownerId: payload.ownerId,
+    subdomain: payload.profile?.subdomain,
+    businessName: payload.profile?.businessName,
+    servicesCount: Array.isArray(payload.services) ? payload.services.length : 0,
+    stylistsCount: Array.isArray(payload.stylists) ? payload.stylists.length : 0,
+    hasAuthToken: !!options.accessToken,
+    tokenPrefix: options.accessToken ? options.accessToken.slice(0, 12) + '…' : 'none',
+  });
+
   if (!fetchImpl) {
     const message = `${path} cannot be called: fetch() is unavailable in this environment.`;
-    console.error('[Nexora Sync Error]:', message);
+    console.error('[autoSave:saveViaWebsiteApi] FAILED — fetch unavailable:', message);
     return { ok: false, error: message };
   }
 
+  const startTime = Date.now();
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -641,6 +677,7 @@ export async function saveViaWebsiteApi(
       }),
     });
 
+    const elapsedMs = Date.now() - startTime;
     let body: any = null;
     try {
       const rawText = await res.text();
@@ -657,8 +694,13 @@ export async function saveViaWebsiteApi(
 
     if (res.ok && (body?.success === true || res.status === 204 || (!body && res.status >= 200 && res.status < 300))) {
       console.info(
-        `[Nexora Sync] Server-side save succeeded via POST ${path} (HTTP ${res.status}) — ` +
-          'the service-role upsert persisted the site state.'
+        `[autoSave:saveViaWebsiteApi] SUCCESS via POST ${path} (HTTP ${res.status}, ${elapsedMs}ms) — ` +
+          'service-role upsert persisted site state.',
+        {
+          status: res.status,
+          elapsedMs,
+          body,
+        }
       );
       return { ok: true, status: res.status, timestamp: typeof body?.timestamp === 'number' ? body.timestamp : Date.now() };
     }
@@ -666,17 +708,24 @@ export async function saveViaWebsiteApi(
     const serverMessage =
       (body && typeof body.error === 'string' && body.error) ||
       (body ? `unexpected JSON body: ${JSON.stringify(body).slice(0, 200)}` : 'no JSON body');
-    const message = `POST ${path} failed → HTTP ${res.status} ${res.statusText} | ${serverMessage}`;
-    console.error('[Nexora Sync Error]:', message, {
+    const message = `POST ${path} failed → HTTP ${res.status} ${res.statusText} (${elapsedMs}ms) | ${serverMessage}`;
+    console.error('[autoSave:saveViaWebsiteApi] FAILED response:', {
+      message,
       status: res.status,
       statusText: res.statusText,
-      table: 'profiles + services + stylists + loyalty_config + loyalty_rewards (server-side upsert)',
+      elapsedMs,
       body: body ?? null,
+      table: 'profiles + services + stylists + loyalty_config + loyalty_rewards (server-side upsert)',
     });
     return { ok: false, status: res.status, error: serverMessage };
   } catch (err) {
-    const message = `POST ${path} network failure: ${describeError(err)}`;
-    console.error('[Nexora Sync Error]:', message, { table: 'n/a (request never reached the server)' });
+    const elapsedMs = Date.now() - startTime;
+    const message = `POST ${path} network failure after ${elapsedMs}ms: ${describeError(err)}`;
+    console.error('[autoSave:saveViaWebsiteApi] NETWORK EXCEPTION:', {
+      message,
+      elapsedMs,
+      error: err,
+    });
     return { ok: false, error: describeError(err) };
   }
 }
@@ -800,6 +849,17 @@ export async function runSalonSavePipeline(
     ((p: SalonSyncPayload) => saveViaWebsiteApi(p, { accessToken: apiAccessToken }));
   const writeDraft = options.writeDraft ?? writeLocalDraft;
 
+  console.info('[autoSave:runSalonSavePipeline] INITIATED save pipeline:', {
+    ownerId: payload.ownerId,
+    subdomain: payload.profile?.subdomain,
+    businessName: payload.profile?.businessName,
+    isMockMode: options.isMockMode,
+    authenticated: options.authenticated,
+    workspaceReady: options.workspaceReady,
+    hasAccessToken: !!apiAccessToken,
+    deleteRemoved: options.deleteRemoved,
+  });
+
   const draftState = {
     ownerId: payload.ownerId,
     profile: payload.profile,
@@ -809,15 +869,27 @@ export async function runSalonSavePipeline(
   };
 
   const storeLocalDraft = (): { draftWritten: boolean; error?: string } => {
+    console.info('[autoSave:runSalonSavePipeline] Executing local draft fallback store...');
     const result = writeDraft(draftState);
-    if (result.ok) return { draftWritten: true };
+    if (result.ok) {
+      console.info('[autoSave:runSalonSavePipeline] Local draft successfully written.');
+      return { draftWritten: true };
+    }
     const error = result.error || 'unknown localStorage error';
-    console.error('[Nexora Sync Error]:', `local draft write failed (key: ${DRAFT_STORAGE_KEY}): ${error}`);
+    console.error('[autoSave:runSalonSavePipeline] Local draft write failed:', {
+      key: DRAFT_STORAGE_KEY,
+      error,
+    });
     return { draftWritten: false, error };
   };
 
   // ---- 0) Unauthenticated / mock session → clean local draft, no error ----
   if (options.isMockMode || !options.authenticated || options.workspaceReady === false) {
+    console.info('[autoSave:runSalonSavePipeline] Pipeline Step 0 (Mock or Unauthenticated Mode):', {
+      isMockMode: options.isMockMode,
+      authenticated: options.authenticated,
+      workspaceReady: options.workspaceReady,
+    });
     const { draftWritten, error } = storeLocalDraft();
     if (!draftWritten) {
       return {
@@ -851,9 +923,13 @@ export async function runSalonSavePipeline(
   const refreshOnce = async (): Promise<string | null> => {
     if (!options.refreshSession) return null;
     try {
+      console.info('[autoSave:runSalonSavePipeline] Refreshing caller session token...');
       const refreshed = await options.refreshSession();
       const token = refreshed && typeof refreshed === 'object' ? refreshed.accessToken : undefined;
-      if (typeof token === 'string' && token) return token;
+      if (typeof token === 'string' && token) {
+        console.info('[autoSave:runSalonSavePipeline] Session token refreshed successfully.');
+        return token;
+      }
       console.warn(
         '[Nexora Sync] Session refresh did not return an access token — continuing with the current one.'
       );
@@ -865,16 +941,23 @@ export async function runSalonSavePipeline(
   };
 
   // ---- 1) Direct Supabase client sync ------------------------------------
+  console.info('[autoSave:runSalonSavePipeline] Step 1: Executing direct Supabase client sync (RPC / tables)...');
   let cloud: SalonSyncResult;
   try {
     cloud = await sync(payload, { deleteRemoved: options.deleteRemoved });
+    console.info('[autoSave:runSalonSavePipeline] Step 1 direct sync completed:', {
+      ok: cloud.ok,
+      blockedByAuth: cloud.blockedByAuth,
+      errorsCount: cloud.errors?.length || 0,
+      errors: cloud.errors,
+    });
   } catch (err) {
     // syncSalonToSupabase never throws — but a caller-injected sync could.
     // Never let a broken sync crash the whole save: degrade to local draft.
     const detail = describeError(err);
     console.error(
-      '[Nexora Sync Error]:',
-      `direct Supabase sync threw (tables: profiles, services, stylists, loyalty_config, loyalty_rewards): ${detail}`
+      '[autoSave:runSalonSavePipeline] Step 1 direct sync threw exception:',
+      detail
     );
     cloud = { ok: false, errors: [`direct supabase sync threw: ${detail}`], blockedByAuth: false };
   }
@@ -891,13 +974,19 @@ export async function runSalonSavePipeline(
     options.refreshSession &&
     cloud.errors.some((e) => isSessionExpiryFailure(e))
   ) {
+    console.info('[autoSave:runSalonSavePipeline] Step 1b: Session expiry detected in direct sync errors, attempting refresh + retry...');
     const token = await refreshOnce();
     if (token) {
       sessionRefreshed = true;
       apiAccessToken = token;
-      console.info('[Nexora Sync] Direct sync was rejected as unauthenticated — refreshed the session and retrying it once.');
+      console.info('[autoSave:runSalonSavePipeline] Retrying direct sync with refreshed token...');
       try {
         const retried = await sync(payload, { deleteRemoved: options.deleteRemoved });
+        console.info('[autoSave:runSalonSavePipeline] Retried direct sync outcome:', {
+          ok: retried.ok,
+          blockedByAuth: retried.blockedByAuth,
+          errors: retried.errors,
+        });
         cloud = retried.ok
           ? retried
           : {
@@ -907,13 +996,14 @@ export async function runSalonSavePipeline(
             };
       } catch (err) {
         const detail = describeError(err);
-        console.error('[Nexora Sync Error]:', `direct Supabase sync retry threw: ${detail}`);
+        console.error('[autoSave:runSalonSavePipeline] Retried direct sync threw:', detail);
         cloud = { ok: false, errors: [...cloud.errors, detail], blockedByAuth: cloud.blockedByAuth };
       }
     }
   }
 
   if (cloud.ok) {
+    console.info('[autoSave:runSalonSavePipeline] Step 1 SUCCESS: Direct cloud sync succeeded. Clearing local draft cache.');
     clearLocalDraft(); // the cloud now holds the state — drop any stale draft
     return {
       ok: true,
@@ -934,8 +1024,11 @@ export async function runSalonSavePipeline(
 
   if (!onlyDataShapeFailures) {
     console.warn(
-      '[Nexora Sync] Direct client sync failed (network/auth/RLS/schema) — ' +
-        'falling back to POST /api/website/save (Supabase service role).'
+      '[autoSave:runSalonSavePipeline] Step 2: Direct client sync failed — invoking server-side fallback POST /api/website/save...',
+      {
+        cloudErrors: cloud.errors,
+        blockedByAuth: cloud.blockedByAuth,
+      }
     );
     // An auth-blocked direct sync usually means the access token went stale.
     // The fallback verifies the caller's token against Supabase Auth before it
@@ -943,15 +1036,23 @@ export async function runSalonSavePipeline(
     // recoverable session be reported as a permission problem. Failures are
     // non-fatal — the original token is simply kept.
     if (cloud.blockedByAuth && !sessionRefreshed) {
+      console.info('[autoSave:runSalonSavePipeline] Refreshing session before calling API fallback...');
       const token = await refreshOnce();
       if (token) {
         apiAccessToken = token;
         sessionRefreshed = true;
-        console.info('[Nexora Sync] Refreshed the Supabase session before the service-role fallback save.');
+        console.info('[autoSave:runSalonSavePipeline] Refreshed session token attached for API fallback.');
       }
     }
     const api = await saveViaApi(payload);
+    console.info('[autoSave:runSalonSavePipeline] Step 2 API fallback result:', {
+      ok: api.ok,
+      status: api.status,
+      error: api.error || null,
+      timestamp: api.timestamp || null,
+    });
     if (api.ok) {
+      console.info('[autoSave:runSalonSavePipeline] Step 2 SUCCESS: Server API fallback succeeded. Clearing local draft cache.');
       clearLocalDraft();
       return {
         ok: true,
@@ -965,12 +1066,15 @@ export async function runSalonSavePipeline(
     apiFailure = `POST /api/website/save failed (HTTP ${api.status ?? 'no response'}) | ${api.error ?? 'unknown error'}`;
   } else {
     console.warn(
-      '[Nexora Sync] Direct client sync failed with deterministic data errors — ' +
-        'skipping the API fallback (it would fail identically) and caching locally.'
+      '[autoSave:runSalonSavePipeline] Direct client sync failed with deterministic data errors — skipping API fallback and caching locally.',
+      {
+        cloudErrors: cloud.errors,
+      }
     );
   }
 
   // ---- 3) Last resort: cache the pending draft (progress never lost) -----
+  console.warn('[autoSave:runSalonSavePipeline] Step 3: All cloud paths failed — caching pending draft to local storage...');
   const { draftWritten, error } = storeLocalDraft();
   console.error('[Nexora Sync Error]:', {
     stage: 'all cloud save paths failed — changes cached as a local draft',
@@ -978,6 +1082,7 @@ export async function runSalonSavePipeline(
     tables: 'profiles, services, stylists, loyalty_config, loyalty_rewards',
     authBlocked: cloud.blockedByAuth ?? false,
     cloudErrors: cloud.errors,
+    apiFailure,
     localError: error ?? null,
   });
   return {
