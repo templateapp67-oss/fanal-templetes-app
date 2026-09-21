@@ -50,10 +50,10 @@ test('PHASE 7 - Salon state is scoped by userId and salonId and never writes to 
 
   const stateA = {
     profile: profileA,
-    services: [{ id: 'srv-1', name: 'Master Cut', price: 500, durationMinutes: 30, category: 'Hair', icon: 'scissors', popular: true, showDuration: true }],
+    services: [{ id: 'srv-1', name: 'Master Cut', price: 500, durationMinutes: 30, category: 'Hair', icon: 'scissors', popular: true, showDuration: true, description: 'Master Cut Service' }],
     stylists: [{ id: 'stf-1', name: 'Sarah', role: 'Stylist', avatarUrl: '', bio: '', phone: '', specialties: [], assignedServices: [], rating: 5, commissionRate: 20, status: 'Available' as const, accessRole: 'Service Provider (Assigned)' as const, hidePhone: false, schedule: [] }],
-    loyaltyConfig: { enabled: true, pointsPerRupee: 1, minRedeemPoints: 100, rupeePerPoint: 0.1, expiryMonths: 12 },
-    selectedTemplateId: 1 as const,
+    loyaltyConfig: { programEnabled: true, pointsPerVisit: 10, pointsPerHundredSpent: 10, tierThresholds: { bronze: 0, silver: 100, gold: 500, platinum: 1000 }, tierMultipliers: { bronze: 1, silver: 1.2, gold: 1.5, platinum: 2 }, rewards: [] },
+    selectedTemplateId: 'hair_salon' as const,
   };
 
   // Save for User A
@@ -102,8 +102,8 @@ test('PHASE 7 - On logout, account switch, or new signup, clearAllLocalUserState
     profile: profileA,
     services: [],
     stylists: [],
-    loyaltyConfig: { enabled: false, pointsPerRupee: 1, minRedeemPoints: 100, rupeePerPoint: 0.1, expiryMonths: 12 },
-    selectedTemplateId: 1,
+    loyaltyConfig: { programEnabled: false, pointsPerVisit: 10, pointsPerHundredSpent: 10, tierThresholds: { bronze: 0, silver: 100, gold: 500, platinum: 1000 }, tierMultipliers: { bronze: 1, silver: 1.2, gold: 1.5, platinum: 2 }, rewards: [] },
+    selectedTemplateId: 'hair_salon' as const,
   }, userAId);
 
   setStoredAuthenticatedProfile({
