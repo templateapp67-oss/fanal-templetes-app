@@ -54,6 +54,99 @@ export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'saved_local'
 export const LOCAL_DRAFT_STATUS_LABEL = 'SUCCESS (Local Draft)';
 
 // ----------------------------------------------------------------------------
+// PHASE 10: canonical [SAVE] lifecycle diagnostics + [SAVE ERROR] reporting
+// ----------------------------------------------------------------------------
+//
+// Every stage of the save pipeline emits the exact mandated breadcrumbs:
+//   [SAVE] start / authenticated user resolved / tenant resolved /
+//   payload validated / client state updated / local cache write /
+//   cloud sync started / cloud sync completed /
+//   API fallback started / API fallback result / complete
+// Failures emit ONE structured shape:
+//   [SAVE ERROR] { stage, httpStatus, supabaseCode, message, resource }
+// These run alongside (never instead of) the verbose [Nexora Save Pipeline]
+// narrative logs. Step breadcrumbs are development-gated; [SAVE ERROR] is
+// unconditional — both pass through redaction, and tokens/passwords/secret
+// keys are NEVER printed.
+
+/** True only in development bundles — [SAVE] step chatter is dev diagnostics. */
+export function isSaveDiagnosticsDev(): boolean {
+  try {
+    if ((import.meta as any)?.env?.DEV === true) return true;
+    if ((import.meta as any)?.env?.PROD === true) return false;
+  } catch {
+    /* import.meta may not exist under plain Node — fall through */
+  }
+  const env = typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
+  return env ? env !== 'production' : true;
+}
+
+/** Keys whose values must never reach a log line. */
+const SENSITIVE_LOG_KEY_PATTERN =
+  /(token|jwt|password|passwd|secret|api_?key|anon_?key|service_?role|authorization|auth_header|cookie|credential|bearer)/i;
+
+/** JWT-ish / API-key-ish values are masked even when the key looks innocent. */
+const SENSITIVE_LOG_VALUE_PATTERN =
+  /^(eyJ[\w-]*\.[\w-]*\.[\w-]*|sk-[A-Za-z0-9_-]{16,}|sbp_[A-Za-z0-9_-]+|[A-Fa-f0-9]{32,})$/;
+
+export function redactSaveLogMeta(value: unknown, depth = 0): unknown {
+  if (value == null || depth > 6) return value;
+  if (typeof value === 'string') {
+    if (SENSITIVE_LOG_VALUE_PATTERN.test(value)) return '[redacted]';
+    return value.length > 300 ? `${value.slice(0, 300)}…(truncated)` : value;
+  }
+  if (Array.isArray(value)) return value.map((v) => redactSaveLogMeta(v, depth + 1));
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = SENSITIVE_LOG_KEY_PATTERN.test(k) ? '[redacted]' : redactSaveLogMeta(v, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Canonical lifecycle breadcrumb. Dev-gated: production stays quiet. */
+export function saveStep(event: string, meta?: Record<string, unknown>): void {
+  if (!isSaveDiagnosticsDev()) return;
+  if (meta) console.info(`[SAVE] ${event}`, redactSaveLogMeta(meta));
+  else console.info(`[SAVE] ${event}`);
+}
+
+export interface SaveErrorReport {
+  /** Pipeline stage that produced the failure. */
+  stage: 'start' | 'auth' | 'tenant' | 'validate' | 'client-state' | 'cache' | 'cloud-sync' | 'api-fallback' | 'complete';
+  httpStatus?: number | null;
+  supabaseCode?: string | null;
+  message: string;
+  /** Table, RPC or endpoint the failure belongs to. */
+  resource?: string | null;
+}
+
+/** Pull a Postgres/PostgREST code out of a free-form error message. */
+export function extractSupabaseCode(message: string | null | undefined): string | null {
+  if (!message) return null;
+  const m = /\b(PGRST\d{3}|42\d{3}|2[0-8]\d{3}|42501)\b/.exec(message);
+  if (m) return m[1];
+  if (/row.?(level)? security|permission denied/i.test(message)) return '42501';
+  return null;
+}
+
+/**
+ * THE error surface. Always logged (safe by construction: never contains
+ * tokens or payload bodies), in exactly the mandated shape.
+ */
+export function logSaveError(report: SaveErrorReport): void {
+  console.error('[SAVE ERROR]', {
+    stage: report.stage,
+    httpStatus: report.httpStatus ?? null,
+    supabaseCode: report.supabaseCode ?? extractSupabaseCode(report.message),
+    message: String(redactSaveLogMeta(report.message)),
+    resource: report.resource ?? null,
+  });
+}
+
+// ----------------------------------------------------------------------------
 // Deterministic UUID mapping
 // ----------------------------------------------------------------------------
 
@@ -610,7 +703,10 @@ export function hasLocalDraft(ownerId?: string | null): boolean {
     if (localStorage.getItem(key) !== null) return true;
     if (!ownerId && localStorage.getItem(DRAFT_STORAGE_KEY) !== null) return true;
     return false;
-  } catch {
+  } catch (err) {
+    // Probe failed (storage disabled / security error). Reported — not hidden —
+    // and answered negatively so the caller falls back to a fresh state.
+    console.warn('[autoSave:hasLocalDraft] Could not inspect local draft storage:', describeError(err));
     return false;
   }
 }
@@ -639,7 +735,13 @@ export function loadLocalDraft(ownerId?: string | null): LocalDraftEnvelope | nu
       return envelope;
     }
     return null;
-  } catch {
+  } catch (err) {
+    // Not hidden: a corrupt/unreadable draft is reported, then treated as
+    // absent so recovery falls through to a fresh state instead of crashing.
+    console.warn('[autoSave:loadLocalDraft] Local draft could not be read/parsed (treating as no draft):', {
+      error: describeError(err),
+      key: getScopedDraftStorageKey(ownerId),
+    });
     return null;
   }
 }
@@ -930,6 +1032,7 @@ export async function runSalonSavePipeline(
       key: getScopedDraftStorageKey(payload.ownerId),
       error,
     });
+    logSaveError({ stage: 'cache', message: error, resource: getScopedDraftStorageKey(payload.ownerId) });
     return { draftWritten: false, error };
   };
 
@@ -992,6 +1095,7 @@ export async function runSalonSavePipeline(
 
   // ---- 1) Direct Supabase client sync ------------------------------------
   console.info('[autoSave:runSalonSavePipeline] Step 1: Executing direct Supabase client sync (RPC / tables)...');
+  saveStep('cloud sync started', { mode: 'direct-rpc', resource: 'rpc:save_owner_editor_state' });
   let cloud: SalonSyncResult;
   try {
     cloud = await sync(payload, { deleteRemoved: options.deleteRemoved });
@@ -1054,6 +1158,7 @@ export async function runSalonSavePipeline(
 
   if (cloud.ok) {
     console.info('[autoSave:runSalonSavePipeline] Step 1 SUCCESS: Direct cloud sync succeeded. Clearing local draft cache.');
+    saveStep('cloud sync completed', { via: 'direct-supabase', retriedAfterRefresh: sessionRefreshed });
     clearLocalDraft(payload.ownerId); // the cloud now holds the state — drop any stale draft
     return {
       ok: true,
@@ -1063,6 +1168,12 @@ export async function runSalonSavePipeline(
       summary: 'Saved to the cloud.',
     };
   }
+  // Definite direct-sync failure — structured, before any fallback attempt.
+  logSaveError({
+    stage: 'cloud-sync',
+    message: cloud.errors.join(' · ') || 'direct Supabase sync failed',
+    resource: 'rpc:save_owner_editor_state',
+  });
 
   // ---- 2) Fallback: server-side save via the service-role API ------------
   const onlyDataShapeFailures =
@@ -1080,6 +1191,7 @@ export async function runSalonSavePipeline(
         blockedByAuth: cloud.blockedByAuth,
       }
     );
+    saveStep('API fallback started', { url: '/api/website/save' });
     // An auth-blocked direct sync usually means the access token went stale.
     // The fallback verifies the caller's token against Supabase Auth before it
     // writes, so send it a FRESH token: refresh once here instead of letting a
@@ -1115,6 +1227,15 @@ export async function runSalonSavePipeline(
       error: api.error || null,
       timestamp: api.timestamp || null,
     });
+    saveStep('API fallback result', { outcome: api.ok ? 'ok' : 'failed', httpStatus: api.status ?? null });
+    if (!api.ok) {
+      logSaveError({
+        stage: 'api-fallback',
+        httpStatus: api.status ?? null,
+        message: api.error ?? 'unknown API fallback error',
+        resource: '/api/website/save',
+      });
+    }
     if (api.ok) {
       console.info('[autoSave:runSalonSavePipeline] Step 2 SUCCESS: Server API fallback succeeded. Clearing local draft cache.');
       clearLocalDraft(payload.ownerId);

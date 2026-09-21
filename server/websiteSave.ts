@@ -233,6 +233,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
       }
 
+      let fallbackWarnings: string[] | null = null;
       if (result.error) {
         // Fall back to service role direct admin persistence to guarantee save succeeds without data loss
         console.info('[Website save] Direct workspace RPC unprovisioned, executing service role admin persistence for owner:', ownerId);
@@ -259,9 +260,17 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
             retryable: true,
           });
         }
+        fallbackWarnings = fallbackRes.partial ?? null;
       }
       if (responseAlreadyEnded(res)) return;
-      return res.json({ success: true, timestamp: Date.now(), mode: 'live' });
+      // `partial` surfaces degraded-but-not-lost saves instead of pretending
+      // every secondary table also persisted.
+      return res.json({
+        success: true,
+        timestamp: Date.now(),
+        mode: 'live',
+        ...(fallbackWarnings ? { partial: true, warnings: fallbackWarnings } : {}),
+      });
     } catch (err: any) {
       // Unreachable in normal operation (every DB call above is wrapped),
       // but the endpoint must always answer JSON, never an HTML 500 page.
@@ -274,7 +283,31 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
   };
 }
 
-/** Fallback persistence using the service-role client for resilient multi-schema compatibility. */
+/**
+ * Fallback persistence using the service-role client for resilient
+ * multi-schema compatibility.
+ *
+ * HISTORY: this used to wrap every write in a try/catch that only
+ * console.warn'ed, ignored the `{ error }` object supabase-js returns for
+ * PostgREST failures, and returned `{ success: true }` unconditionally — so
+ * POST /api/website/save could answer "success" with NOTHING persisted. That
+ * is precisely the "SAVE FAILED reported as saved" bug, server-side.
+ *
+ * Now: every sub-write checks its result; every failure is logged as a
+ * structured [SAVE ERROR]; success is true ONLY when the canonical workspace
+ * store (owner_editor_state — the table hydration reads back) actually
+ * persisted. Secondary stores that fail are reported as `partial` so the
+ * client (and an operator grep'ing logs) can tell a degraded save from a
+ * clean one.
+ */
+interface AdminFallbackStep {
+  step: string;
+  resource: string;
+  ok: boolean;
+  error?: string;
+  supabaseCode?: string | null;
+}
+
 async function persistWithAdminFallback(
   admin: any,
   ownerId: string,
@@ -284,7 +317,46 @@ async function persistWithAdminFallback(
   stylists: Stylist[],
   loyaltyConfig: LoyaltyConfig | null,
   extraState: Record<string, any>
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; partial?: string[] }> {
+  const steps: AdminFallbackStep[] = [];
+
+  const extractError = (input: any): { message?: string; code?: string | null } => {
+    const e = input?.error ?? input;
+    if (!e) return {};
+    return {
+      message: typeof e?.message === 'string' ? e.message : String(e),
+      code: typeof e?.code === 'string' ? e.code : null,
+    };
+  };
+
+  const recordStep = (step: string, resource: string, failed?: { message?: string; code?: string | null }) => {
+    steps.push({
+      step, resource,
+      ok: !failed?.message,
+      ...(failed?.message ? { error: failed.message } : {}),
+      ...(failed?.code ? { supabaseCode: failed.code } : {}),
+    });
+    if (failed?.message) {
+      // Never hidden — Phase 10 mandated shape:
+      console.error('[SAVE ERROR]', {
+        stage: 'cloud-sync',
+        httpStatus: null,
+        supabaseCode: failed.code ?? null,
+        message: `[Website save] admin fallback "${step}" failed: ${failed.message}`.slice(0, 400),
+        resource,
+      });
+    }
+  };
+
+  const runStep = async (step: string, resource: string, op: () => Promise<any>): Promise<void> => {
+    try {
+      const res = await op();
+      recordStep(step, resource, extractError(res));
+    } catch (e: any) {
+      recordStep(step, resource, extractError(e));
+    }
+  };
+
   try {
     const fullEditorState = {
       ...(profile ? { profile } : {}),
@@ -294,119 +366,142 @@ async function persistWithAdminFallback(
       ...(loyaltyConfig ? { loyaltyConfig } : {}),
     };
 
-    // 1. Ensure owner_editor_state is updated
-    try {
-      await admin.from('owner_editor_state').upsert({
+    // 1. CANONICAL store: owner_editor_state — the row hydration reads back.
+    await runStep('owner_editor_state upsert', 'owner_editor_state', () =>
+      admin.from('owner_editor_state').upsert({
         owner_id: ownerId,
         state: fullEditorState,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'owner_id' });
-    } catch (e) {
-      console.warn('[Website save] admin owner_editor_state upsert warning:', e);
+      }, { onConflict: 'owner_id' })
+    );
+
+    const canonical = steps.find((s) => s.step === 'owner_editor_state upsert');
+    if (!canonical?.ok) {
+      syncError('POST /api/website/save admin fallback CANONICAL write failed — refusing to report success for a save that did nothing.', {
+        error: canonical?.error,
+        code: canonical?.supabaseCode,
+      });
+      return {
+        success: false,
+        error: `workspace state store rejected the write (${canonical?.supabaseCode ?? 'unknown'}): ${canonical?.error ?? 'unknown error'}`,
+      };
     }
 
     // 2. Ensure organization, organization_members, and salons are linked in normalized schema
     try {
-      // Find active organization membership for ownerId
-      const { data: members } = await admin
+      const { data: members, error: memberErr } = await admin
         .from('organization_members')
         .select('organization_id, role, status')
         .eq('user_id', ownerId)
         .eq('status', 'active');
+      recordStep('organization membership lookup', 'organization_members', extractError(memberErr));
 
       let orgId: string | null = null;
-      if (members && members.length > 0) {
+      if (!memberErr && members && members.length > 0) {
         orgId = members[0].organization_id;
-      } else {
-        // Create an organization and link the owner
+      } else if (!memberErr) {
         orgId = randomUUID();
-        await admin.from('organizations').insert({
+        const { error: orgErr } = await admin.from('organizations').insert({
           id: orgId,
           name: profile?.businessName || 'My Salon',
         });
-        await admin.from('organization_members').insert({
-          id: randomUUID(),
-          organization_id: orgId,
-          user_id: ownerId,
-          role: 'owner',
-          status: 'active',
-        });
+        recordStep('organization insert', 'organizations', extractError(orgErr));
+        if (!orgErr) {
+          const { error: linkErr } = await admin.from('organization_members').insert({
+            id: randomUUID(),
+            organization_id: orgId,
+            user_id: ownerId,
+            role: 'owner',
+            status: 'active',
+          });
+          recordStep('organization member link', 'organization_members', extractError(linkErr));
+          if (linkErr) orgId = null;
+        } else {
+          orgId = null;
+        }
       }
 
       if (orgId) {
-        // Check for existing salon for this organization
-        const { data: existingSalons } = await admin
+        const { data: existingSalons, error: salonReadErr } = await admin
           .from('salons')
           .select('id, slug, name, data')
           .eq('organization_id', orgId);
+        recordStep('salon lookup', 'salons', extractError(salonReadErr));
 
-        if (existingSalons && existingSalons.length > 0) {
-          // Update the first matching salon (or matching subdomain)
+        if (!salonReadErr && existingSalons && existingSalons.length > 0) {
           const targetSalon = existingSalons.find((s: any) => s.slug === subdomain) || existingSalons[0];
-          await admin.from('salons').update({
-            name: profile?.businessName || targetSalon.name || 'My Salon',
-            slug: subdomain,
-            description: profile?.about ?? undefined,
-            data: { ...(targetSalon.data || {}), editor_profile: profile },
-            updated_at: new Date().toISOString(),
-          }).eq('id', targetSalon.id);
-        } else {
-          // Insert a new salon row
-          await admin.from('salons').insert({
-            id: randomUUID(),
-            organization_id: orgId,
-            name: profile?.businessName || 'My Salon',
-            slug: subdomain,
-            description: profile?.about || '',
-            data: { editor_profile: profile },
-          });
+          await runStep('salon update', 'salons', () =>
+            admin.from('salons').update({
+              name: profile?.businessName || targetSalon.name || 'My Salon',
+              slug: subdomain,
+              description: profile?.about ?? undefined,
+              data: { ...(targetSalon.data || {}), editor_profile: profile },
+              updated_at: new Date().toISOString(),
+            }).eq('id', targetSalon.id)
+          );
+        } else if (!salonReadErr) {
+          await runStep('salon insert', 'salons', () =>
+            admin.from('salons').insert({
+              id: randomUUID(),
+              organization_id: orgId,
+              name: profile?.businessName || 'My Salon',
+              slug: subdomain,
+              description: profile?.about || '',
+              data: { editor_profile: profile },
+            })
+          );
         }
       }
-    } catch (e) {
-      console.warn('[Website save] admin normalized schema provision warning:', e);
+    } catch (e: any) {
+      recordStep('normalized schema provision', 'organizations/organization_members/salons', extractError(e));
     }
 
     // 3. Persist legacy/direct tables (profiles, services, stylists, loyalty_config)
     if (profile) {
-      try {
-        const profileRow = toProfileRow(profile, ownerId);
-        await admin.from('profiles').upsert(profileRow, { onConflict: 'id' });
-      } catch (e) {
-        console.warn('[Website save] admin profiles upsert warning:', e);
-      }
+      await runStep('profile upsert', 'profiles', () =>
+        admin.from('profiles').upsert(toProfileRow(profile, ownerId), { onConflict: 'id' })
+      );
     }
 
     if (Array.isArray(services) && services.length > 0) {
-      try {
-        const serviceRows = services.map((s, idx) => toServiceDbRow(s, ownerId, idx));
-        await admin.from('services').upsert(serviceRows, { onConflict: 'id' });
-        const keepIds = serviceRows.map(r => r.id);
-        await deleteRowsNotIn(admin, 'services', ownerId, keepIds);
-      } catch (e) {
-        console.warn('[Website save] admin services upsert warning:', e);
-      }
+      const serviceRows = services.map((s, idx) => toServiceDbRow(s, ownerId, idx));
+      await runStep('services upsert', 'services', () =>
+        admin.from('services').upsert(serviceRows, { onConflict: 'id' })
+      );
+      await runStep('services cleanup', 'services', () =>
+        deleteRowsNotIn(admin, 'services', ownerId, serviceRows.map((r) => r.id))
+      );
     }
 
     if (Array.isArray(stylists) && stylists.length > 0) {
-      try {
-        const stylistRows = stylists.map((st, idx) => toStylistDbRow(st, ownerId, idx));
-        await admin.from('stylists').upsert(stylistRows, { onConflict: 'id' });
-        const keepIds = stylistRows.map(r => r.id);
-        await deleteRowsNotIn(admin, 'stylists', ownerId, keepIds);
-      } catch (e) {
-        console.warn('[Website save] admin stylists upsert warning:', e);
-      }
+      const stylistRows = stylists.map((st, idx) => toStylistDbRow(st, ownerId, idx));
+      await runStep('stylists upsert', 'stylists', () =>
+        admin.from('stylists').upsert(stylistRows, { onConflict: 'id' })
+      );
+      await runStep('stylists cleanup', 'stylists', () =>
+        deleteRowsNotIn(admin, 'stylists', ownerId, stylistRows.map((r) => r.id))
+      );
     }
 
     if (loyaltyConfig) {
-      try {
-        await admin.from('loyalty_config').upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: 'owner_id' });
-      } catch (e) {
-        console.warn('[Website save] admin loyalty_config upsert warning:', e);
-      }
+      await runStep('loyalty config upsert', 'loyalty_config', () =>
+        admin.from('loyalty_config').upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: 'owner_id' })
+      );
     }
 
-    return { success: true };
+    const partial = steps
+      .filter((s) => !s.ok && s.step !== 'owner_editor_state upsert')
+      .map((s) => `${s.resource} (${s.step}): ${s.error}${s.supabaseCode ? ` [${s.supabaseCode}]` : ''}`);
+
+    if (partial.length) {
+      console.warn('[Website save] admin fallback persisted the canonical workspace state with PARTIAL secondary failures:', partial);
+    }
+    console.info('[Website save] admin fallback completed:', {
+      canonical: 'owner_editor_state ok',
+      stepCount: steps.length,
+      failedSteps: partial.length,
+    });
+    return partial.length ? { success: true, partial } : { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
   }
@@ -425,17 +520,31 @@ export function handleGetSalonState(deps: WebsiteSaveDeps) {
       let data: any = null;
       try {
         data = await readDatabase(() => databaseForToken(token).rpc('get_owner_editor_state'), res.locals?.requestDeadlineAt);
-      } catch (err) {
-        // RPC failed or table not found
+      } catch (err: any) {
+        // Not hidden: the table-read fallback below still applies, but the
+        // reason the RPC path failed stays diagnosable in the logs.
+        console.warn('[Website save] get_owner_editor_state RPC failed — falling back to owner_editor_state table read:', {
+          code: err?.code ?? null,
+          message: String(err?.message ?? err).slice(0, 200),
+        });
       }
       if (!data && user?.id) {
         try {
           const stateRes = await admin.from('owner_editor_state').select('state').eq('owner_id', user.id).maybeSingle();
+          if (stateRes.error) {
+            console.warn('[Website save] owner_editor_state table read failed (recovering as needs_onboarding):', {
+              code: stateRes.error.code ?? null,
+              message: String(stateRes.error.message ?? '').slice(0, 200),
+            });
+          }
           if (stateRes.data?.state) {
             data = stateRes.data.state;
           }
-        } catch (err) {
-          // ignore
+        } catch (err: any) {
+          console.warn('[Website save] owner_editor_state table read threw (recovering as needs_onboarding):', {
+            code: err?.code ?? null,
+            message: String(err?.message ?? err).slice(0, 200),
+          });
         }
       }
       if (!responseAlreadyEnded(res)) {

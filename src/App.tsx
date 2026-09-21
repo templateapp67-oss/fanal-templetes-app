@@ -52,6 +52,8 @@ import {
   withRetry,
   runSalonSavePipeline,
   SESSION_EXPIRED_SAVE_MESSAGE,
+  saveStep,
+  logSaveError,
 } from './lib/autoSave';
 import { ensureFreshSession, refreshSessionForSave, logAuthEnvironmentDiagnostics } from './lib/authSession';
 import { applyWorkingHoursFromRow } from './lib/salonSync';
@@ -1337,6 +1339,7 @@ export default function App() {
   const persistSalonState = useCallback(
     async (options?: { source?: 'auto' | 'manual'; message?: string; explicitProfile?: SalonProfile }): Promise<boolean> => {
       const source = options?.source ?? 'manual';
+      saveStep('start', { source, hasUser: !!salonStateRef.current?.user, mock: isMockSupabase });
       if (options?.explicitProfile) {
         salonStateRef.current = {
           ...salonStateRef.current,
@@ -1346,13 +1349,18 @@ export default function App() {
       if (salonStateRef.current.user && !isMockSupabase && !hydratedForUserRef.current) {
         const loaded = await startHydration(salonStateRef.current.user.id);
         if (!loaded || !hydratedForUserRef.current) {
+          logSaveError({ stage: 'tenant', message: 'Cloud workspace hydration failed — save paused to protect existing profile data.', resource: 'hydration' });
           setSaveStatus('error');
           if (source === 'manual') showToast('Saved data could not be loaded. Save paused to protect your existing profile. Please retry.', 'error');
           return false;
         }
       }
-      if (!isMockSupabase && authStatusRef.current !== 'ready') return false;
+      if (!isMockSupabase && authStatusRef.current !== 'ready') {
+        saveStep('authenticated user resolved', { resolved: false, authStatus: authStatusRef.current });
+        return false;
+      }
       const state = salonStateRef.current;
+      saveStep('authenticated user resolved', { userId: state.user?.id ?? null, mock: isMockSupabase });
 
       // Coalesce auto-saves: if one is already running, remember to run again
       // afterwards so the newest state always lands.
@@ -1364,9 +1372,11 @@ export default function App() {
       const snapshot = snapshotOf(state);
       if (source === 'auto' && snapshot === lastPersistedSnapshotRef.current) {
         // Nothing actually changed — don't hammer localStorage/Supabase.
+        saveStep('client state updated', { outcome: 'unchanged — nothing to persist' });
         setSaveStatus((prev) => (prev === 'pending' ? 'idle' : prev));
         return true;
       }
+      saveStep('client state updated', { snapshotBytes: snapshot.length });
 
       saveInFlightRef.current = true;
       if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
@@ -1396,11 +1406,14 @@ export default function App() {
         if (!local.ok) {
           failures.push(`local storage: ${local.error}`);
           console.error('[Nexora Save Pipeline] Stage 1 (Local Storage Write) FAILED:', local.error);
+          logSaveError({ stage: 'cache', message: local.error ?? 'localStorage write failed', resource: 'localStorage' });
         } else if (local.degraded) {
           // Saved, but inline images had to be dropped to fit the quota.
           console.warn('[Nexora Save Pipeline] Stage 1 (Local Storage Write) DEGRADED (quota exceeded — saved without inline images):', local.error);
+          saveStep('local cache write', { outcome: 'degraded', note: local.error ?? 'quota exceeded' });
         } else {
           console.info('[Nexora Save Pipeline] Stage 1 (Local Storage Write) SUCCESS: Local state persisted cleanly.');
+          saveStep('local cache write', { outcome: 'ok' });
         }
 
         // -- 2) Cloud persistence — full fallback pipeline ------------------
@@ -1459,6 +1472,7 @@ export default function App() {
               console.error(
                 '[Nexora Save Pipeline] Stage 2 WARNING: No active Supabase session — saving as a local draft (SUCCESS (Local Draft)) instead of failing. Sign in again to resume cloud sync (local edits are already saved on this device).'
               );
+              logSaveError({ stage: 'auth', message: 'No active Supabase session — cloud write skipped; local draft only. Sign in to resume cloud sync.', resource: 'auth.getSession/refresh' });
               // Only the auth listener changes login state; a data read cannot log the user out.
             } else if (sessionUser.id !== liveOwnerId) {
               // A save started before an account switch. Keep its original
@@ -1477,6 +1491,7 @@ export default function App() {
             sessionOk = false;
             liveAccessToken = undefined;
             console.warn('[Nexora Save Pipeline] Stage 2: Session verification failed; preserving a local draft:', err);
+            logSaveError({ stage: 'auth', message: `Session verification failed (${describeError(err)}) — local draft only.`, resource: 'auth.ensureFreshSession' });
           }
 
           // 2b) Hydration self-heal. Destructive cleanup (deleting rows removed
@@ -1508,6 +1523,18 @@ export default function App() {
         //     freshly refreshed token when the direct sync was rejected as
         //     unauthenticated (the token may have expired between the
         //     pre-flight and the write).
+        saveStep('tenant resolved', { ownerId: liveOwnerId || null, sessionOk, workspaceReady: canCleanUpCloudRows, mock: isMockSupabase });
+        {
+          // Warn-only validation: the RPC and the server route are the
+          // authoritative validators (they reject malformed state with 4xx /
+          // typed errors). Here we only diagnose what a cloud publish needs.
+          const payloadProblems: string[] = [];
+          if (!state.profile || typeof state.profile !== 'object') payloadProblems.push('profile missing');
+          if (sessionOk && !state.profile?.subdomain) payloadProblems.push('subdomain missing — cloud publish will be rejected by the server');
+          if (!Array.isArray(state.services)) payloadProblems.push('services not an array');
+          if (!Array.isArray(state.stylists)) payloadProblems.push('stylists not an array');
+          saveStep('payload validated', { bytes: snapshot.length, valid: payloadProblems.length === 0, problems: payloadProblems });
+        }
         console.info('[Nexora Save Pipeline] Stage 3 & 4: Executing cloud persistence pipeline (direct RPC sync with API fallback)...', {
           authenticated: sessionOk && !!liveOwnerId,
           isMockMode: isMockSupabase,
@@ -1605,6 +1632,7 @@ export default function App() {
             sessionGone,
             sessionOk,
           });
+          logSaveError({ stage: 'complete', message: `No persistence target succeeded: ${detail}`, resource: 'pipeline' });
           setSaveStatus('error');
           // A dead session is not a database-permission problem: the save
           // engine already refreshed + retried once, so tell the owner
@@ -1635,6 +1663,7 @@ export default function App() {
         });
 
         if (publishedToCloud) {
+          saveStep('complete', { via: cloud.target === 'cloud' ? 'supabase' : 'api', authoritative: true });
           setSaveStatus('saved');
           setSaveNeedsSignIn(false); // a cloud write proves the session works again
           // Auto-saves update quietly via the status pill; only explicit
@@ -1649,6 +1678,7 @@ export default function App() {
           // Background auto-saves stay SILENT (status pill only) — this is
           // what suppresses the duplicate error popups while the owner is
           // still typing; an explicit save gets one informative toast.
+          saveStep('complete', { via: 'local-draft', authoritative: false });
           setSaveStatus('saved_local');
           if (source === 'manual') {
             showToast(
@@ -1671,6 +1701,7 @@ export default function App() {
           stage: 'save engine — unexpected exception',
           message: detail,
         });
+        logSaveError({ stage: 'complete', message: `Unexpected exception: ${detail}`, resource: 'persistSalonState' });
         setSaveStatus('error');
         showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
         lastErrorToastRef.current = detail;
