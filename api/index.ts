@@ -47,6 +47,7 @@ import { lookupSalon } from "../server/siteLookup.js";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
+  handleCreateRazorpayTestOrder,
   handleVerifyRazorpayPayment,
   handleMockRazorpayPayment,
   describeRazorpayGateway,
@@ -518,6 +519,7 @@ app.post(
 // answers 404 in every other mode.
 // ============================================================================
 app.get("/api/payments/razorpay/config", asyncRoute(handleRazorpayConfig));
+app.post("/api/payments/razorpay/test-order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleCreateRazorpayTestOrder));
 app.post("/api/payments/razorpay/order", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(customerPaymentOrderHandler(db, bookingHandlerIsMock)));
 app.post("/api/payments/razorpay/verify", asyncRoute(handleVerifyRazorpayPayment));
 app.post("/api/payments/razorpay/mock-pay", asyncRoute(handleMockRazorpayPayment));

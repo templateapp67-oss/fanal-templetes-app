@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { test } from 'node:test';
 import {
   readRazorpayCredentials,
+  readRazorpayCredentialVariableNames,
   getRazorpayConfigIssues,
   isRazorpayConfigured,
   createRazorpayClient,
@@ -10,6 +11,7 @@ import {
   toPaise,
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
+  handleCreateRazorpayTestOrder,
   handleVerifyRazorpayPayment,
   handleMockRazorpayPayment,
   resolveRazorpayGatewayMode,
@@ -19,12 +21,14 @@ import {
   signMockPayment,
   isMockOrderId,
   MOCK_KEY_ID,
+  TEST_ORDER_PROBE_CONFIRMATION,
   _resetPaymentOrderCache,
+  _resetRazorpayTestOrderProbe,
 } from '../server/razorpay';
 import { computeAdvanceDeposit } from '../src/lib/advanceDeposit';
 
-const KEY_ID = 'rzp_test_TIzKly1Z2NMnum';
-const KEY_SECRET = 'test_secret_value_123';
+const KEY_ID = 'rzp_test_unitTestKey1234';
+const KEY_SECRET = 'unit_test_secret_not_a_real_credential';
 
 /** Environment with NO credentials, mock mode on auto, non-production. */
 const NO_KEYS_DEV = {
@@ -98,17 +102,31 @@ async function withEnvAsync<T>(vars: Record<string, string | undefined>, fn: () 
 
 test('readRazorpayCredentials strips quotes and whitespace copied from .env', () => {
   const creds = readRazorpayCredentials({
-    RAZORPAY_KEY_ID: ' "rzp_test_TIzKly1Z2NMnum" ',
-    RAZORPAY_KEY_SECRET: "'9SehLfvRW6eVtHXtFXzL2Ovm'",
+    RAZORPAY_KEY_ID: ` "${KEY_ID}" `,
+    RAZORPAY_KEY_SECRET: ` '${KEY_SECRET}' `,
   });
-  assert.equal(creds.keyId, 'rzp_test_TIzKly1Z2NMnum');
-  assert.equal(creds.keySecret, '9SehLfvRW6eVtHXtFXzL2Ovm');
+  assert.equal(creds.keyId, KEY_ID);
+  assert.equal(creds.keySecret, KEY_SECRET);
 });
 
 test('readRazorpayCredentials accepts the VITE_/alias variable names', () => {
   const creds = readRazorpayCredentials({ VITE_RAZORPAY_KEY_ID: KEY_ID, RAZORPAY_SECRET: KEY_SECRET });
   assert.equal(creds.keyId, KEY_ID);
   assert.equal(creds.keySecret, KEY_SECRET);
+});
+
+test('credential-source evidence follows client precedence and reports names, never values', () => {
+  const env = {
+    RAZORPAY_KEY_ID: '   ',
+    VITE_RAZORPAY_KEY_ID: KEY_ID,
+    RAZORPAY_KEY_SECRET: KEY_SECRET,
+    RAZORPAY_SECRET: 'lower_priority_fake_secret',
+  };
+  assert.deepEqual(readRazorpayCredentials(env), { keyId: KEY_ID, keySecret: KEY_SECRET });
+  const names = readRazorpayCredentialVariableNames(env);
+  assert.deepEqual(names, { keyId: 'VITE_RAZORPAY_KEY_ID', keySecret: 'RAZORPAY_KEY_SECRET' });
+  assert.ok(!JSON.stringify(names).includes(KEY_ID));
+  assert.ok(!JSON.stringify(names).includes(KEY_SECRET));
 });
 
 test('missing / placeholder credentials are reported, never treated as configured', () => {
@@ -178,7 +196,7 @@ test('describeRazorpayGateway warns loudly when the mock gateway runs in product
 
   const real = describeRazorpayGateway(REAL_KEYS);
   assert.equal(real.mode, 'test');
-  assert.match(real.summary, /Gateway ready \(TEST key rzp_test_TIz/);
+  assert.match(real.summary, /Gateway ready \(TEST key rzp_test_/);
   assert.ok(!real.summary.includes(KEY_SECRET));
 });
 
@@ -437,6 +455,199 @@ test('order endpoint sends the real Razorpay API the 25 % advance in integer pai
       assert.equal(res.body.mock, false);
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test('TEST order probe requires the exact body and refuses live/mock/disabled credentials', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
+    _resetRazorpayTestOrderProbe();
+    const missing = makeRes();
+    await handleCreateRazorpayTestOrder({ body: {} }, missing);
+    assert.equal(missing.statusCode, 400);
+    assert.equal(missing.body.code, 'test_order_confirmation_required');
+
+    const extra = makeRes();
+    await handleCreateRazorpayTestOrder(
+      { body: { confirm: TEST_ORDER_PROBE_CONFIRMATION, amount: 1 } },
+      extra
+    );
+    assert.equal(extra.statusCode, 400);
+  });
+
+  const live = makeRes();
+  await withEnvAsync({ ...REAL_KEYS, RAZORPAY_KEY_ID: 'rzp_live_unitTestKey1234' }, async () => {
+    _resetRazorpayTestOrderProbe();
+    await handleCreateRazorpayTestOrder({ body: { confirm: TEST_ORDER_PROBE_CONFIRMATION } }, live);
+  });
+  assert.equal(live.statusCode, 409);
+  assert.equal(live.body.code, 'test_order_probe_unavailable');
+  assert.equal(live.body.mode, 'live');
+
+  const mock = makeRes();
+  await withEnvAsync(NO_KEYS_DEV, async () => {
+    _resetRazorpayTestOrderProbe();
+    await handleCreateRazorpayTestOrder({ body: { confirm: TEST_ORDER_PROBE_CONFIRMATION } }, mock);
+  });
+  assert.equal(mock.statusCode, 409);
+  assert.equal(mock.body.mode, 'mock');
+
+  const disabled = makeRes();
+  await withEnvAsync(NO_KEYS_PROD, async () => {
+    _resetRazorpayTestOrderProbe();
+    await handleCreateRazorpayTestOrder({ body: { confirm: TEST_ORDER_PROBE_CONFIRMATION } }, disabled);
+  });
+  assert.equal(disabled.statusCode, 409);
+  assert.equal(disabled.body.mode, 'disabled');
+});
+
+test('TEST order probe sends one fixed ₹1/INR v1 payload, preserves provider HTTP status, and throttles', async () => {
+  await withEnvAsync({ ...REAL_KEYS, VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_SHA: '1234567890abcdef' }, async () => {
+    _resetRazorpayTestOrderProbe();
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    let sentBody: any = null;
+    globalThis.fetch = (async (url: any, init?: any) => {
+      calls += 1;
+      assert.equal(String(url), 'https://api.razorpay.com/v1/orders');
+      assert.equal(init?.method, 'POST');
+      sentBody = JSON.parse(String(init?.body || '{}'));
+      return new Response(
+        JSON.stringify({
+          id: 'order_probe_1',
+          entity: 'order',
+          amount: 100,
+          amount_paid: 0,
+          amount_due: 100,
+          currency: 'INR',
+          receipt: sentBody.receipt,
+          status: 'created',
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } }
+      );
+    }) as typeof fetch;
+    try {
+      const input = { confirm: TEST_ORDER_PROBE_CONFIRMATION };
+      const first = makeRes();
+      await handleCreateRazorpayTestOrder({ body: input }, first);
+      assert.equal(first.statusCode, 200, JSON.stringify(first.body));
+      assert.equal(first.body.success, true);
+      assert.equal(first.body.provider.httpStatus, 201);
+      assert.equal(first.body.provider.version, 'v1');
+      assert.deepEqual(first.body.request, {
+        method: 'POST',
+        endpoint: 'https://api.razorpay.com/v1/orders',
+        amount: 100,
+        currency: 'INR',
+        paymentCapture: 1,
+      });
+      assert.equal(first.body.order.amount, 100);
+      assert.equal(first.body.order.currency, 'INR');
+      assert.equal(first.body.runtime.credentialVariables.keyId, 'RAZORPAY_KEY_ID');
+      assert.equal(first.body.runtime.credentialVariables.keySecret, 'RAZORPAY_KEY_SECRET');
+      assert.equal(first.body.runtime.credentialRead, 'process.env at request time');
+      assert.equal(first.body.runtime.vercelEnvironment, 'production');
+      assert.equal(first.body.runtime.commitSha, '1234567890ab');
+      assert.match(first.body.runtime.observedAt, /^\d{4}-\d{2}-\d{2}T/);
+      assert.equal(first.body.runtime.apiVersion, 'v1');
+      assert.equal(sentBody.amount, 100, '₹1 must be sent as exactly 100 paise');
+      assert.equal(sentBody.currency, 'INR');
+      assert.equal(sentBody.payment_capture, 1, 'probe must exercise the customer-order payload builder');
+      assert.equal(sentBody.notes.purpose, 'razorpay_test_order_probe');
+      assert.equal(sentBody.notes.booking_policy, 'not_a_booking');
+      assert.ok(!JSON.stringify(first.body).includes(KEY_SECRET));
+
+      const second = makeRes();
+      await handleCreateRazorpayTestOrder({ body: input }, second);
+      assert.equal(second.statusCode, 429);
+      assert.equal(second.body.code, 'test_order_probe_throttled');
+      assert.ok(second.body.retryAfterSeconds >= 1);
+      assert.equal(calls, 1, 'the cooldown must prevent another provider request');
+    } finally {
+      globalThis.fetch = originalFetch;
+      _resetRazorpayTestOrderProbe();
+    }
+  });
+});
+
+test('TEST order probe allow-lists sanitized provider fields without metadata, raw bodies, or credentials', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
+    _resetRazorpayTestOrderProbe();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'BAD_REQUEST_ERROR',
+            description: `Authentication failed for ${KEY_ID} using ${KEY_SECRET}; access_token=also_fake`,
+            source: 'business',
+            step: 'payment_initiation',
+            reason: 'authentication_failed',
+            field: null,
+            metadata: { credential_hint: KEY_SECRET, request_kind: 'order' },
+            internal_debug: KEY_SECRET,
+          },
+          raw_debug: KEY_SECRET,
+        }),
+        { status: 401, headers: { 'content-type': 'application/json' } }
+      )) as typeof fetch;
+    try {
+      const res = makeRes();
+      await handleCreateRazorpayTestOrder(
+        { body: { confirm: TEST_ORDER_PROBE_CONFIRMATION } },
+        res
+      );
+      assert.equal(res.statusCode, 502);
+      assert.equal(res.body.code, 'razorpay_order_failed');
+      assert.equal(res.body.provider.httpStatus, 401);
+      assert.deepEqual(Object.keys(res.body.provider.error).sort(), [
+        'code',
+        'description',
+        'field',
+        'reason',
+        'source',
+        'step',
+      ]);
+      assert.equal(res.body.provider.error.code, 'BAD_REQUEST_ERROR');
+      assert.equal(res.body.provider.error.reason, 'authentication_failed');
+      assert.equal(res.body.provider.error.source, 'business');
+      assert.equal(res.body.provider.error.step, 'payment_initiation');
+      assert.match(res.body.provider.error.description, /Authentication failed/);
+      assert.match(res.body.provider.error.description, /\[REDACTED\]/);
+      assert.ok(!JSON.stringify(res.body).includes(KEY_SECRET));
+      assert.ok(!JSON.stringify(res.body).includes(KEY_ID));
+      assert.ok(!('metadata' in res.body.provider.error));
+      assert.ok(!('internal_debug' in res.body.provider.error));
+      assert.ok(!('raw_debug' in res.body));
+    } finally {
+      globalThis.fetch = originalFetch;
+      _resetRazorpayTestOrderProbe();
+    }
+  });
+});
+
+test('TEST order probe never reflects a non-JSON provider body', async () => {
+  await withEnvAsync(REAL_KEYS, async () => {
+    _resetRazorpayTestOrderProbe();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response('<html>proxy failure with private diagnostic text</html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      })) as typeof fetch;
+    try {
+      const res = makeRes();
+      await handleCreateRazorpayTestOrder(
+        { body: { confirm: TEST_ORDER_PROBE_CONFIRMATION } },
+        res
+      );
+      assert.equal(res.statusCode, 502);
+      assert.equal(res.body.provider.httpStatus, 502);
+      assert.equal(res.body.provider.error.description, 'Unknown Razorpay error');
+      assert.ok(!JSON.stringify(res.body).includes('private diagnostic text'));
+    } finally {
+      globalThis.fetch = originalFetch;
+      _resetRazorpayTestOrderProbe();
     }
   });
 });

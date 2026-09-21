@@ -50,9 +50,9 @@ customer lost the salon, slot, stylist, services and deposit they had chosen.
 Add these to `.env` (already git-ignored; `.env.example` documents them):
 
 ```dotenv
-RAZORPAY_KEY_ID="rzp_test_TIzKly1Z2NMnum"
-RAZORPAY_KEY_SECRET="9SehLfvRW6eVtHXtFXzL2Ovm"
-RAZORPAY_WEBHOOK_SECRET="C9EWXhp3cHnow4oUGIzeCTIXzbmswV3Y"
+RAZORPAY_KEY_ID="rzp_test_your_key_id"
+RAZORPAY_KEY_SECRET="" # set only in your local/hosting secret store
+RAZORPAY_WEBHOOK_SECRET="" # set only in your local/hosting secret store
 ```
 
 * `RAZORPAY_KEY_ID` is **public** — it is served to the browser so Checkout can
@@ -118,12 +118,13 @@ files are ignored):
 |---|---|---|---|
 | 1 | real environment variables (Vercel / Cloud Run / shell) | – | production |
 | 2 | `.env` | no (git-ignored) | your machine's real secrets |
-| 3 | `.env.development` | **yes** | shared Razorpay **TEST** keys, so previews/CI always work |
+| 3 | `.env.development` | no (`.env*` is git-ignored) | optional local TEST credentials |
 
-`.env.development` is committed on purpose and holds test-mode keys only
-(test mode cannot move real money). Anything you set in `.env` or in the
-hosting dashboard automatically overrides it — never put `rzp_live_*` keys or
-the Supabase service-role key there.
+No credential file is committed. Vercel Preview and Production must each have
+the canonical server variables in the applicable environment scope. Values set
+by Vercel are present in `process.env` before the serverless handler loads and
+override local dotenv files. Never put a key secret, webhook secret, live key,
+or Supabase service-role key in source control.
 
 ### Verify the setup
 
@@ -136,12 +137,31 @@ creates a real ₹1 test order to prove Razorpay accepts them:
 
 ```
   loaded from      : .env
-  RAZORPAY_KEY_ID  : rzp_test_TIzKly1Z2NMnum
-  RAZORPAY_KEY_SECRET: 9SehLf**************2Ovm
+  RAZORPAY_KEY_ID  : rzp_test_[redacted]
+  RAZORPAY_KEY_SECRET: (present; redacted)
   mode             : TEST
 ✔ Order created: order_Rk2… (INR 1.00, status created)
 ✔ Payments are ACTIVE — the checkout button will open Razorpay.
 ```
+
+For a **deployed runtime**, do not post `{ amount: 1 }` to the customer order
+route: that route correctly requires a signed-in customer and a live slot, so an
+unauthenticated smoke test stops at `401 auth_required` before Razorpay is
+called. Use the isolated TEST-only probe instead:
+
+```bash
+curl -sS -X POST "$APP_URL/api/payments/razorpay/test-order" \
+  -H 'content-type: application/json' \
+  --data '{"confirm":"create_test_order_1_inr"}'
+```
+
+The probe accepts that exact body only and is disabled unless the runtime is
+using `rzp_test_*` credentials. It always sends exactly `100` paise, `INR`, and
+`payment_capture: 1` through the same REST v1 order client as checkout; it never
+opens Checkout or creates/updates a booking. Its response reports the selected
+environment-variable **names**, deployment/commit evidence, exact provider HTTP
+status, and only Razorpay's sanitized documented error fields. A process-level
+15-second cooldown prevents repeated provider requests.
 
 For **live** Supabase deployments also set, server-side:
 
@@ -158,7 +178,8 @@ DEFAULT_OWNER_ID=<auth user uuid>   # fallback owner for authenticated bookings
 | Method | Route | Purpose |
 |--------|-------|---------|
 | `GET`  | `/api/payments/razorpay/config` | `{ configured, mode, mock, keyId, depositPercent, notice? \| issues? }` — public key only, never the secret. |
-| `POST` | `/api/payments/razorpay/order`  | Body `{ totalAmount (₹), depositPercent? = 25, amount? (₹ shown to the customer), currency?, receipt?, notes? }` → server computes the advance in **integer paise** and creates the order. Legacy `{ amount }` still accepted. Returns `{ order: { id, amount, currency, receipt, status }, deposit: { rupees, paise, percent }, mode, mock, keyId }`. |
+| `POST` | `/api/payments/razorpay/test-order` | **TEST keys only.** Explicit fixed ₹1 credential probe; no checkout, booking or settlement. Returns provider HTTP status and a sanitized Razorpay error object on failure. |
+| `POST` | `/api/payments/razorpay/order`  | Authenticated customer route. Body `{ totalAmount (₹), depositPercent? = 25, amount? (₹ shown to the customer), currency?, receipt?, notes?, salon/slot/service fields }` → validates the live booking intent, computes the advance in **integer paise**, and creates the order. Returns `{ order: { id, amount, currency, receipt, status }, deposit: { rupees, paise, percent }, mode, mock, keyId }`. |
 | `POST` | `/api/payments/razorpay/mock-pay` | **Mock mode only.** Body `{ order_id, outcome? }` → signed payment triple (or `402 payment_failed`). |
 | `POST` | `/api/payments/razorpay/verify` | Body `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }` → HMAC-SHA256 check → `{ verified, mode, mock }`. |
 | `POST` | `/api/payments/razorpay/webhook` | Server-to-server callback from Razorpay (captured / failed / refunded). |
@@ -177,7 +198,7 @@ Status codes are now precise — a 500 means "genuinely unexpected", nothing els
 | `404 mock_gateway_disabled` | `/mock-pay` called while a real gateway is active. |
 | `503 razorpay_unreachable` | The gateway could not be reached from the server — same fallback. |
 | `400` (webhook) | The `X-Razorpay-Signature` did not match — the callback is ignored. |
-| `502 razorpay_order_failed` | Razorpay refused the order (message forwarded). |
+| `502 razorpay_order_failed` | Razorpay refused the order. Customer checkout gets safe generic copy; the TEST-only probe includes `provider.httpStatus` and sanitized documented Razorpay error fields. |
 
 ---
 
@@ -249,12 +270,9 @@ lose network, or when Razorpay captures/refunds later — no browser involved.
 1. Razorpay Dashboard → **Settings → Webhooks → Add New Webhook**.
 2. **Webhook URL:** the URL above.
 3. **Secret:** a value *you* choose. It must be identical to
-   `RAZORPAY_WEBHOOK_SECRET` in the app's environment. The value currently
-   configured in `.env` / `.env.development` is:
-
-   ```
-   C9EWXhp3cHnow4oUGIzeCTIXzbmswV3Y
-   ```
+   `RAZORPAY_WEBHOOK_SECRET` in the app environment. Never copy the value into
+   source control, logs, screenshots or documentation; compare it only in the
+   Razorpay and Vercel dashboards.
 
 4. **Active events:** `payment.captured`, `payment.failed`, `order.paid`,
    `refund.processed` (`payment.authorized` and `refund.created` are also
