@@ -452,9 +452,25 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   // /partner/dashboard); the legacy namespace keeps its original screen.
   if (isLoginPath) {
     if (isPartnerNamespace) {
-      return <PartnerPortalLogin user={user} navigate={navigate} onBack={onBack} accentHex={accentHex} />;
+      return (
+        <PartnerPortalLogin
+          user={user}
+          navigate={navigate}
+          onBack={onBack}
+          accentHex={accentHex}
+          onLogout={onLogout}
+        />
+      );
     }
-    return <GrowthPartnerLogin user={user} navigate={navigate} onBack={onBack} accentHex={accentHex} />;
+    return (
+      <GrowthPartnerLogin
+        user={user}
+        navigate={navigate}
+        onBack={onBack}
+        accentHex={accentHex}
+        onLogout={onLogout}
+      />
+    );
   }
 
   if (gate !== 'ready') return <PartnerRouteGuard

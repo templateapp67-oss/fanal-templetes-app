@@ -46,10 +46,22 @@ const isPlaceholder = (value: string): boolean =>
 // expression at build time, whereas the dynamic lookup inside getEnvVar cannot
 // be inlined into the browser bundle.
 let viteLocalSupabaseFlag: string | undefined;
+let staticViteSupabaseUrl: string | undefined;
+let staticViteSupabaseAnonKey: string | undefined;
 try {
   viteLocalSupabaseFlag = import.meta.env.VITE_LOCAL_SUPABASE;
 } catch {
   viteLocalSupabaseFlag = undefined;
+}
+try {
+  staticViteSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+} catch {
+  staticViteSupabaseUrl = undefined;
+}
+try {
+  staticViteSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+} catch {
+  staticViteSupabaseAnonKey = undefined;
 }
 
 const LOCAL_SUPABASE_GATEWAY =
@@ -62,11 +74,12 @@ const localGatewayOrigin = (): string =>
     : `http://127.0.0.1:${(typeof process !== 'undefined' && process.env.PORT) || 3000}`;
 
 export const SUPABASE_URL: string =
-  clean(getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL')) ||
+  clean(staticViteSupabaseUrl || getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL')) ||
   (LOCAL_SUPABASE_GATEWAY ? localGatewayOrigin() : '');
 // Accept the common aliases a deployment may have used for the public key.
 export const SUPABASE_ANON_KEY: string = clean(
-  getEnvVar('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY') ||
+  staticViteSupabaseAnonKey ||
+    getEnvVar('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY') ||
     getEnvVar('SUPABASE_KEY', 'VITE_SUPABASE_KEY') ||
     getEnvVar('SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_PUBLISHABLE_KEY')
 );
