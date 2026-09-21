@@ -69,14 +69,30 @@ begin;
 
 -- ---------------------------------------------------------------------------
 -- 0) Privileges that are schema-level, not table-level.
+--    Ensures the authenticated role has access to public schema tables,
+--    sequences and functions. TRUNCATE is explicitly revoked because it
+--    bypasses Row Level Security entirely.
 -- ---------------------------------------------------------------------------
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     grant usage on schema public to authenticated;
+    grant all on all tables in schema public to authenticated;
+    grant all on all sequences in schema public to authenticated;
+    grant all on all routines in schema public to authenticated;
+    alter default privileges in schema public grant all on tables to authenticated;
+    alter default privileges in schema public grant all on sequences to authenticated;
+    alter default privileges in schema public grant all on routines to authenticated;
+
+    -- TRUNCATE is revoked because it bypasses RLS completely
+    revoke truncate on all tables in schema public from authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'anon') then
     grant usage on schema public to anon;
+    grant select on all tables in schema public to anon;
+    grant select on all sequences in schema public to anon;
+    alter default privileges in schema public grant select on tables to anon;
+    alter default privileges in schema public grant select on sequences to anon;
   end if;
 end $$;
 
@@ -266,6 +282,91 @@ begin
   if present is not null then
     execute format('grant update (%s) on table public.salons to authenticated', present);
   end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 3d) Related tenant tables: services, stylists, loyalty_config, loyalty_rewards,
+--     appointments, bookings, clients, etc.
+--     Ensures RLS is enabled, owner-scoped policies (FOR SELECT, FOR INSERT,
+--     FOR UPDATE, FOR DELETE, and FOR ALL) exist, and DML grants are defined.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  tbl text;
+  owner_col text;
+  qualified text;
+  tenant_tables text[] := array[
+    'services', 'stylists', 'loyalty_config', 'loyalty_rewards',
+    'appointments', 'bookings', 'clients', 'in_app_notifications',
+    'social_videos', 'loyalty_point_transactions', 'loyalty_redeemed_rewards'
+  ];
+begin
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    return;
+  end if;
+
+  foreach tbl in array tenant_tables
+  loop
+    qualified := format('public.%I', tbl);
+    if to_regclass(qualified) is null then
+      continue;
+    end if;
+
+    -- Detect owner column: owner_id, user_id, or id
+    select case
+             when exists (select 1 from information_schema.columns
+                          where table_schema = 'public' and table_name = tbl
+                            and column_name = 'owner_id') then 'owner_id'
+             when exists (select 1 from information_schema.columns
+                          where table_schema = 'public' and table_name = tbl
+                            and column_name = 'user_id') then 'user_id'
+             when exists (select 1 from information_schema.columns
+                          where table_schema = 'public' and table_name = tbl
+                            and column_name = 'id') then 'id'
+             else null
+           end
+      into owner_col;
+
+    -- Enable RLS
+    execute format('alter table %s enable row level security', qualified);
+
+    -- If an owner column exists, recreate owner-scoped policies
+    if owner_col is not null then
+      execute format('drop policy if exists %I on %s', tbl || '_select_owner', qualified);
+      execute format('create policy %I on %s for select using (auth.uid() = %I)',
+                     tbl || '_select_owner', qualified, owner_col);
+
+      execute format('drop policy if exists %I on %s', tbl || '_insert_owner', qualified);
+      execute format('create policy %I on %s for insert with check (auth.uid() = %I)',
+                     tbl || '_insert_owner', qualified, owner_col);
+
+      execute format('drop policy if exists %I on %s', tbl || '_update_owner', qualified);
+      execute format('create policy %I on %s for update using (auth.uid() = %I) with check (auth.uid() = %I)',
+                     tbl || '_update_owner', qualified, owner_col, owner_col);
+
+      execute format('drop policy if exists %I on %s', tbl || '_delete_owner', qualified);
+      execute format('create policy %I on %s for delete using (auth.uid() = %I)',
+                     tbl || '_delete_owner', qualified, owner_col);
+
+      -- Combined owner policy for authenticated users
+      execute format('drop policy if exists %I on %s', 'Users can insert/update their own ' || tbl, qualified);
+      execute format('create policy %I on %s for all to authenticated using (auth.uid() = %I) with check (auth.uid() = %I)',
+                     'Users can insert/update their own ' || tbl, qualified, owner_col, owner_col);
+    end if;
+
+    -- Explicit grants on the table for authenticated
+    execute format('grant select, insert, update, delete on table %s to authenticated', qualified);
+    execute format('grant all on table %s to authenticated', qualified);
+    execute format('revoke truncate, references, trigger on table %s from authenticated', qualified);
+    if current_setting('server_version_num')::int >= 170000 then
+      execute format('revoke maintain on table %s from authenticated', qualified);
+    end if;
+
+    -- Anon select grant if role exists
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      execute format('grant select on table %s to anon', qualified);
+    end if;
+  end loop;
 end $$;
 
 -- ---------------------------------------------------------------------------

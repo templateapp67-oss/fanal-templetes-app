@@ -416,8 +416,13 @@ export function isSessionExpiryFailure(detail: string): boolean {
     d.includes('missing access token') ||
     d.includes('auth session missing') ||
     d.includes('session missing') ||
+    d.includes('please sign in again') ||
+    d.includes('sign in required') ||
+    d.includes('sign in again') ||
+    d.includes('pgrst301') ||
     d.includes('failed to fetch from auth') || // auth server unreachable during refresh
-    /\b401\b/.test(d)
+    /\b401\b/.test(d) ||
+    d.includes('unauthorized')
   );
 }
 
@@ -950,7 +955,21 @@ export async function runSalonSavePipeline(
         console.info('[Nexora Sync] Refreshed the Supabase session before the service-role fallback save.');
       }
     }
-    const api = await saveViaApi(payload);
+    let api = await saveViaApi(payload);
+    if (
+      !api.ok &&
+      !sessionRefreshed &&
+      options.refreshSession &&
+      (api.status === 401 || isSessionExpiryFailure(api.error || ''))
+    ) {
+      const token = await refreshOnce();
+      if (token) {
+        apiAccessToken = token;
+        sessionRefreshed = true;
+        console.info('[Nexora Sync] Fallback API rejected as unauthenticated — retrying with refreshed token.');
+        api = await saveViaApi(payload);
+      }
+    }
     if (api.ok) {
       clearLocalDraft();
       return {
