@@ -257,7 +257,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 type="text"
                 value={formData.ownerName}
                 onChange={(e) => handleChange('ownerName', e.target.value)}
-                placeholder="e.g. Uma"
+                placeholder="e.g. Full Name"
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all ${
                   errors.ownerName ? 'border-rose-300 ring-2 ring-rose-100' : 'border-gray-200'
                 }`}

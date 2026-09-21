@@ -141,149 +141,6 @@ if (!isMockSupabase && !admin) {
   }
 }
 
-// Define default Arts By Uma salon profile
-const artsByUmaSalon = {
-  profile: {
-    ownerId: null,
-    businessType: 'hair_salon',
-    businessName: 'Arts By Uma',
-    ownerName: 'Uma',
-    ownerRole: 'Founder & Master Stylist',
-    phone: '+91 98450 77654',
-    whatsapp: '+91 98450 77654',
-    email: 'hello@artsbyuma.com',
-    tagline: 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
-    about:
-      'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary. We craft personalized looks that elevate your confidence and natural beauty.',
-    ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
-    coverImageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
-    themePreset: 'slate_silver',
-    currency: '₹',
-    subdomain: 'arts-by-uma',
-    address: '100 Feet Road, 12th Main, Indiranagar',
-    city: 'Bengaluru',
-    postalCode: '560038',
-    state: 'Karnataka',
-    instagramHandle: 'arts_by_uma',
-    requireDeposit: true,
-    depositPercentage: 20,
-    themeAccentKey: 'slate',
-    whiteLabelEnabled: true,
-  } as SalonProfile,
-  services: [
-    { id: 'hs-1', name: 'Master Stylist Precision Cut & Blowdry', category: 'Hair Artistry', description: 'Sculpted haircut tailored to face geometry, invigorating scalp wash, and professional salon blowout.', icon: 'scissors', price: 750, durationMinutes: 45, popular: true, showDuration: true },
-    { id: 'hs-2', name: 'Classic Layered Cut & Argan Wash', category: 'Hair Artistry', description: 'Texturizing layers, split-end removal, and deep cleanse with organic Moroccan argan oil shampoo.', icon: 'scissors', price: 450, durationMinutes: 35, popular: false, showDuration: true },
-    { id: 'hs-3', name: 'Signature Caramel Balayage & Olaplex Glaze', category: 'Color Alchemy', description: 'Custom hand-painted multidimensional caramel, copper, or hazelnut highlights with bonded Olaplex protection.', icon: 'sparkles', price: 5200, durationMinutes: 150, popular: true, showDuration: true },
-    { id: 'hs-4', name: 'Full Set Gel-X Sculpted Extensions & Nail Art', category: 'Nail Couture', description: 'Damage-free soft gel tips custom fitted to your natural nail bed with custom handpainted art and glossy UV seal.', icon: 'sparkles', price: 2400, durationMinutes: 90, popular: true, showDuration: true },
-    { id: 'hs-5', name: 'Formaldehyde-Free Keratin Smoothing', category: 'Treatments', description: 'Infuses active keratin proteins, eliminating 95% frizz with mirror-like shine for up to 14 weeks.', icon: 'sparkles', price: 4200, durationMinutes: 120, popular: true, showDuration: true },
-    { id: 'hs-6', name: 'Hair Botox Deep Fiber Reconstruction', category: 'Treatments', description: 'Intense peptide filler mask for chemically damaged or heat-stressed hair fibers.', icon: 'sparkles', price: 3600, durationMinutes: 90, popular: false, showDuration: true },
-    { id: 'hs-7', name: 'Red Carpet HD Glass Skin & Party Makeover', category: 'Editorial Glam', description: 'Flawless camera-ready HD base, soft contour, winged eyeliner, and magnetic flutter lashes.', icon: 'sparkles', price: 4500, durationMinutes: 75, popular: true, showDuration: true },
-    { id: 'hs-8', name: 'Russian Dry Cuticle Precision Manicure', category: 'Nail Couture', description: 'E-file precision diamond bit cuticle cleanup, keratin basecoat, and high-shine gel polish.', icon: 'sparkles', price: 1100, durationMinutes: 60, popular: false, showDuration: true },
-    { id: 'hs-9', name: 'Express Glow Organic Cleanup & De-Tan', category: 'Skin & Spa', description: 'Gentle fruit peel scrub, pore steam, blackhead removal, and saffron brightening mask.', icon: 'sparkles', price: 850, durationMinutes: 40, popular: false, showDuration: true },
-  ] as SalonService[],
-  stylists: [
-    { id: 'hs-st-uma', name: 'Uma', role: 'Founder & Master Stylist', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80', bio: 'Founder with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.', phone: '+91 98450 77654', specialties: ['Structural Cuts', 'Balayage Color', 'Keratin Smoothing', 'Gel-X Extensions'], assignedServices: ['hs-1', 'hs-3', 'hs-4', 'hs-5', 'hs-7'], rating: 4.98, commissionRate: 35, status: 'Available', accessRole: 'Manager (Full Access)', hidePhone: false, schedule: [] },
-    { id: 'hs-st-1', name: 'Ananya Sharma', role: 'Senior Precision Stylist', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80', bio: 'Senior colorist and stylist with extensive background in balayage, ombre, and volume blowouts.', phone: '+91 98450 12890', specialties: ['Precision Fringes', 'Balayage & Color', 'Volume Blowouts'], assignedServices: ['hs-1', 'hs-2', 'hs-3', 'hs-5'], rating: 4.95, commissionRate: 30, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
-    { id: 'hs-st-2', name: 'Rohan Kapoor', role: 'Stylist & Hair Craftsman', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80', bio: 'Men and women haircut specialist with expertise in dry cutting, skin fades, and textured styling.', phone: '+91 98450 33412', specialties: ['Dry Cutting', 'Men & Women Styling', 'Fade Geometry'], assignedServices: ['hs-1', 'hs-2', 'hs-6'], rating: 4.92, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
-    { id: 'hs-st-3', name: 'Kavita Deshmukh', role: 'Hair Texture & Scalp Specialist', avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80', bio: 'Trichology-trained scalp and hair botox specialist focusing on restorative therapies.', phone: '+91 98450 99881', specialties: ['Hair Botox', 'Scalp Analysis', 'Thermal Tongs'], assignedServices: ['hs-5', 'hs-6', 'hs-9'], rating: 4.89, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
-  ] as Stylist[],
-};
-
-mockSalons['arts-by-uma'] = artsByUmaSalon;
-mockSalons['artsbyuma'] = artsByUmaSalon;
-mockSalons['mirakistudio'] = {
-  ...artsByUmaSalon,
-  profile: {
-    ...artsByUmaSalon.profile,
-    businessName: 'Miraki Hair Cut & Styling Studio',
-    subdomain: 'mirakistudio',
-  },
-};
-
-// Subdomains that legitimately fall back to the bundled demo catalogue when no
-// matching row exists in the database (and in mock mode). Exact keys only —
-// previously `sub.includes('uma')` also hijacked unrelated subdomains such as
-// "aroma", "perfume" or "zuma" and served them Uma's salon.
-const DEMO_SUBDOMAINS = new Set(['arts-by-uma', 'artsbyuma']);
-
-function mapProfileRow(row: any): SalonProfile {
-  const workingHours = row.working_hours || {};
-  return {
-    workingHoursMonFri: workingHours.monFri || '',
-    workingHoursSat: workingHours.saturday || '',
-    workingHoursSun: workingHours.sunday || '',
-    homeService: row.home_service || undefined,
-    ownerId: row.id,
-    businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
-    businessName: row.salon_name || 'Arts By Uma',
-    ownerName: row.full_name || 'Uma',
-    ownerRole: row.owner_role || 'Founder & Master Stylist',
-    phone: row.phone_number || '+91 98450 77654',
-    whatsapp: row.whatsapp || row.phone_number || '+91 98450 77654',
-    email: row.email || 'hello@artsbyuma.com',
-    tagline: row.tagline || 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
-    about: row.about || 'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies.',
-    ownerPhotoUrl: row.owner_photo_url || '',
-    coverImageUrl: row.cover_image_url || '',
-    logoUrl: row.logo_url || undefined,
-    themePreset: (row.theme_preset as SalonProfile['themePreset']) || 'slate_silver',
-    currency: row.currency || '₹',
-    subdomain: row.subdomain || 'arts-by-uma',
-    customDomain: row.custom_domain || undefined,
-    address: row.full_address || '100 Feet Road, 12th Main, Indiranagar',
-    city: row.city || 'Bengaluru',
-    postalCode: row.postal_code || '560038',
-    state: row.state || 'Karnataka',
-    latitude: row.latitude ?? undefined,
-    longitude: row.longitude ?? undefined,
-    instagramHandle: row.instagram_handle || 'arts_by_uma',
-    facebookPage: row.facebook_page || undefined,
-    youtubeChannel: row.youtube_channel || undefined,
-    tiktokProfile: row.tiktok_profile || undefined,
-    googleBusinessUrl: row.google_business_url || undefined,
-    requireDeposit: row.require_deposit ?? false,
-    depositPercentage: row.deposit_percentage ?? 20,
-    themeAccentKey: row.theme_accent_key || 'slate',
-    customAccentColor: row.custom_accent_color || undefined,
-    landmark: row.landmark || undefined,
-    foundingYear: row.founding_year || undefined,
-    whiteLabelEnabled: row.white_label_enabled ?? true,
-  };
-}
-
-function mapServiceRow(row: any): SalonService {
-  return {
-    id: row.id,
-    name: row.name,
-    category: row.category || 'General',
-    description: row.description || '',
-    icon: row.icon || 'sparkles',
-    price: Number(row.price ?? 0),
-    durationMinutes: row.duration_minutes ?? 45,
-    popular: row.popular ?? false,
-    showDuration: row.show_duration ?? true,
-  };
-}
-
-function mapStylistRow(row: any): Stylist {
-  return {
-    id: row.id,
-    name: row.name,
-    role: row.role || 'Service Provider',
-    avatarUrl: row.avatar_url || '',
-    bio: row.bio || '',
-    phone: row.phone || '',
-    specialties: row.specialties || [],
-    assignedServices: row.assigned_services || [],
-    rating: Number(row.rating ?? 5),
-    commissionRate: Number(row.commission_rate ?? 0),
-    status: row.status || 'Available',
-    accessRole: row.access_role || 'Service Provider (Assigned)',
-    hidePhone: row.hide_phone ?? false,
-    schedule: row.schedule || [],
-  };
-}
-
 async function resolveSalonFromHost(req: any, deadlineAt?: number) {
   const host = req.headers.host || req.get('host') || '';
   const tenant = resolveTenantFromHost(host);
@@ -548,7 +405,7 @@ app.post("/api/generate-bio", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncR
     if (!apiKey) {
       return res.json({
         tagline: `Elevating ${businessType?.replace('_', ' ') || 'salon'} with bespoke luxury & precision care.`,
-        bio: `Welcome to ${businessName || 'Arts By Uma'}, founded by ${ownerName || 'Uma'}. We are a modern sanctuary dedicated to ${specialties || 'exceptional salon services'}. Blending a ${vibe || 'luxury'} aesthetic with high-performance organic products, our mission is to make every client feel renewed and confident.`
+        bio: `Welcome to ${businessName || 'our studio'}, founded by ${ownerName || 'our founder'}. We are a modern sanctuary dedicated to ${specialties || 'exceptional salon services'}. Blending a ${vibe || 'luxury'} aesthetic with high-performance organic products, our mission is to make every client feel renewed and confident.`
       });
     }
 
@@ -654,8 +511,8 @@ app.post("/api/generate-promo-copy", withRequestTimeout(API_REQUEST_TIMEOUT_MS),
 
     if (!apiKey) {
       return res.json({
-        whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${serviceName || 'Signature Service'}* at *${businessName || 'Arts By Uma'}* in ${city || 'Indiranagar, Bengaluru'}.\n\n🎉 *Special Offer*: ${offer || `${discountPercent || 20}% OFF this week!`}\n💰 *Price*: ₹${price ? Number(price).toLocaleString('en-IN') : 'Special Rate'}\n\n📍 Visit us at: ${city || 'Indiranagar, Bengaluru'}\n📲 Reserve your slot now before slots fill up!`,
-        instagramCaption: `✨ Glow up season is here! ✨\n\nExperience pure relaxation with our signature *${serviceName || 'Service'}* at ${businessName || 'Arts By Uma'}.\n\n💎 *Special Deal*: ${offer || `Enjoy ${discountPercent || 20}% OFF for a limited time!`}\n⭐ Price: ₹${price ? Number(price).toLocaleString('en-IN') : 'Special Rate'}\n\n📍 ${city || 'Bengaluru'} | ⏰ Limited slots available\n\n👇 Tap the link in bio to book your appointment!\n\n#ArtsByUma #SalonOffers #Beauty #SelfCare #GlowUp #HairAndSkin #BridalBeauty #SalonDeals`,
+        whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${serviceName || 'Signature Service'}* at *${businessName || 'our salon'}* in ${city || 'our location'}.\n\n🎉 *Special Offer*: ${offer || `${discountPercent || 20}% OFF this week!`}\n💰 *Price*: ₹${price ? Number(price).toLocaleString('en-IN') : 'Special Rate'}\n\n📍 Visit us at: ${city || 'our location'}\n📲 Reserve your slot now before slots fill up!`,
+        instagramCaption: `✨ Glow up season is here! ✨\n\nExperience pure relaxation with our signature *${serviceName || 'Service'}* at ${businessName || 'our salon'}.\n\n💎 *Special Deal*: ${offer || `Enjoy ${discountPercent || 20}% OFF for a limited time!`}\n⭐ Price: ₹${price ? Number(price).toLocaleString('en-IN') : 'Special Rate'}\n\n📍 ${city || 'our location'} | ⏰ Limited slots available\n\n👇 Tap the link in bio to book your appointment!\n\n#SalonOffers #Beauty #SelfCare #GlowUp #HairAndSkin #BridalBeauty #SalonDeals`,
         headline: `Transform Your Look with ${serviceName || 'Signature Style'}`,
         badgeText: offer ? offer.toUpperCase() : `SPECIAL ${discountPercent || 20}% OFF`
       });
@@ -684,8 +541,8 @@ Return strictly JSON with keys: whatsapp, instagramCaption, headline, badgeText.
     throw new Error("Empty copy response");
   } catch (err) {
     return res.json({
-      whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${req.body.serviceName || 'our signature treatment'}* at *${req.body.businessName || 'Arts By Uma'}*.\n\n🎉 *Special Deal*: ${req.body.offer || 'Exclusive Discount This Week'}\n💰 *Price*: ₹${req.body.price || 'Special Rate'}\n\n📲 Book your appointment now!`,
-      instagramCaption: `✨ Elevate your everyday glow! ✨\n\nBook your *${req.body.serviceName || 'treatment'}* today at ${req.body.businessName || 'Arts By Uma'}.\n\n👇 Tap link in bio to book your appointment!`,
+      whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${req.body.serviceName || 'our signature treatment'}* at *${req.body.businessName || 'our salon'}*.\n\n🎉 *Special Deal*: ${req.body.offer || 'Exclusive Discount This Week'}\n💰 *Price*: ₹${req.body.price || 'Special Rate'}\n\n📲 Book your appointment now!`,
+      instagramCaption: `✨ Elevate your everyday glow! ✨\n\nBook your *${req.body.serviceName || 'treatment'}* today at ${req.body.businessName || 'our salon'}.\n\n👇 Tap link in bio to book your appointment!`,
       headline: `Special Offer: ${req.body.serviceName || 'Signature Service'}`,
       badgeText: req.body.offer ? req.body.offer.toUpperCase() : 'LIMITED SPECIAL'
     });

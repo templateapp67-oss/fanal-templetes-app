@@ -256,7 +256,7 @@ function generateHeuristicReengagement(
       lastVisitDate: '2026-07-15',
       daysInactive: 55,
       lastServiceName: 'Formaldehyde-Free Keratin Smoothing',
-      favoriteStylist: 'Uma',
+      favoriteStylist: 'Senior Stylist',
       loyaltyTier: 'gold' as const,
       totalSpent: 14800,
     },
@@ -375,7 +375,7 @@ function generateHeuristicReengagement(
     campaignTheme: 'Autumn Radiance VIP Comeback Campaign',
     topInsights: [
       'Balayage & Color clients average 75+ days without toner refresh, representing ₹38,000+ in overdue maintenance bookings.',
-      'High-tier VIPs respond 3.4x better to personalized stylist callbacks (e.g. "Uma is available this Thursday") compared to generic percentage vouchers.',
+      'High-tier VIPs respond 3.4x better to personalized stylist callbacks (e.g. "Your favorite stylist is available this Thursday") compared to generic percentage vouchers.',
       'Offering a complimentary Scalp Ritual or ₹400 voucher recovers 42% of lapsed single-visit clients within 7 days.',
     ],
     recommendations,

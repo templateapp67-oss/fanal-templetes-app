@@ -192,19 +192,22 @@ export function mergeTemplatePreservingUserData(
   const resolvedOwnerName =
     keepIfCustomized(prev.ownerName, prevTmpl?.ownerName) ||
     authOwnerName ||
-    (prev.ownerName && prev.ownerName !== prevTmpl?.ownerName ? prev.ownerName : tmpl.ownerName);
+    prev.ownerName?.trim() ||
+    '';
 
   // Address:
   const resolvedAddress =
     keepIfCustomized(prev.address, prevTmpl?.defaultAddress) ||
     authAddress ||
+    prev.address?.trim() ||
     tmpl.defaultAddress;
 
   // WhatsApp:
   const resolvedWhatsapp =
     keepIfCustomized(prev.whatsapp, prevTmpl?.whatsapp) ||
     authPhone ||
-    tmpl.whatsapp;
+    prev.whatsapp?.trim() ||
+    '';
 
   const nextProfile: SalonProfile = {
     ...prev,
@@ -216,28 +219,30 @@ export function mergeTemplatePreservingUserData(
     businessName: resolvedBusinessName,
     ownerName: resolvedOwnerName,
     ownerRole:
-      keepIfCustomized(prev.ownerRole, prevTmpl?.ownerRole) || tmpl.ownerRole,
+      keepIfCustomized(prev.ownerRole, prevTmpl?.ownerRole) || prev.ownerRole?.trim() || tmpl.ownerRole,
     phone: resolvedPhone,
     whatsapp: resolvedWhatsapp,
     tagline:
-      keepIfCustomized(prev.tagline, prevTmpl?.tagline) || tmpl.tagline,
-    about: keepIfCustomized(prev.about, prevTmpl?.about) || tmpl.about,
+      keepIfCustomized(prev.tagline, prevTmpl?.tagline) || prev.tagline?.trim() || tmpl.tagline,
+    about: keepIfCustomized(prev.about, prevTmpl?.about) || prev.about?.trim() || tmpl.about,
     address: resolvedAddress,
     city: resolvedCity,
     postalCode:
       keepIfCustomized(prev.postalCode, prevTmpl?.defaultPostalCode) ||
       auth?.postalCode ||
+      prev.postalCode?.trim() ||
       tmpl.defaultPostalCode,
     instagramHandle:
       keepIfCustomized(prev.instagramHandle, prevTmpl?.instagramHandle) ||
+      prev.instagramHandle?.trim() ||
       tmpl.instagramHandle,
-    ownerPhotoUrl: wasCustomized(prev.ownerPhotoUrl, prevTmpl?.ownerPhotoUrl)
+    ownerPhotoUrl: prev.ownerPhotoUrl?.trim()
       ? prev.ownerPhotoUrl
-      : tmpl.ownerPhotoUrl,
+      : (tmpl.ownerPhotoUrl || ''),
     coverImageUrl:
       prev.coverImageUrl?.startsWith('data:') || prev.coverImageUrl === prevTmpl?.coverImageUrl
         ? prev.coverImageUrl
-        : tmpl.coverImageUrl,
+        : (tmpl.coverImageUrl || prev.coverImageUrl || ''),
     subdomain: slugifySalonName(resolvedBusinessName),
   };
 
