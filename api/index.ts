@@ -140,30 +140,30 @@ if (!isMockSupabase && !admin) {
   }
 }
 
-// Define default Arts By Uma salon profile
-const artsByUmaSalon = {
+// Define default demo salon profile
+const defaultDemoSalon = {
   profile: {
     ownerId: null,
     businessType: 'hair_salon',
-    businessName: 'Arts By Uma',
-    ownerName: 'Uma',
+    businessName: 'Luxe Hair & Styling Studio',
+    ownerName: 'Aria Sen',
     ownerRole: 'Founder & Master Stylist',
     phone: '+91 98450 77654',
     whatsapp: '+91 98450 77654',
-    email: 'hello@artsbyuma.com',
-    tagline: 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
+    email: 'hello@luxestudio.in',
+    tagline: 'Precision Cuts, Creative Hair Artistry & Luxury Salon Lounge',
     about:
-      'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary. We craft personalized looks that elevate your confidence and natural beauty.',
+      'Welcome to Luxe Hair & Styling Studio. Bringing together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary. We craft personalized looks that elevate your confidence and natural beauty.',
     ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
     coverImageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
     themePreset: 'slate_silver',
     currency: '₹',
-    subdomain: 'arts-by-uma',
+    subdomain: 'luxe-hair-studio',
     address: '100 Feet Road, 12th Main, Indiranagar',
     city: 'Bengaluru',
     postalCode: '560038',
     state: 'Karnataka',
-    instagramHandle: 'arts_by_uma',
+    instagramHandle: 'luxehair_studio',
     requireDeposit: true,
     depositPercentage: 20,
     themeAccentKey: 'slate',
@@ -181,29 +181,27 @@ const artsByUmaSalon = {
     { id: 'hs-9', name: 'Express Glow Organic Cleanup & De-Tan', category: 'Skin & Spa', description: 'Gentle fruit peel scrub, pore steam, blackhead removal, and saffron brightening mask.', icon: 'sparkles', price: 850, durationMinutes: 40, popular: false, showDuration: true },
   ] as SalonService[],
   stylists: [
-    { id: 'hs-st-uma', name: 'Uma', role: 'Founder & Master Stylist', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80', bio: 'Founder with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.', phone: '+91 98450 77654', specialties: ['Structural Cuts', 'Balayage Color', 'Keratin Smoothing', 'Gel-X Extensions'], assignedServices: ['hs-1', 'hs-3', 'hs-4', 'hs-5', 'hs-7'], rating: 4.98, commissionRate: 35, status: 'Available', accessRole: 'Manager (Full Access)', hidePhone: false, schedule: [] },
+    { id: 'hs-st-101', name: 'Aria Sen', role: 'Founder & Master Stylist', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80', bio: 'Founder with 12+ years of experience. Specializes in precision structural cuts, dimensional color, and bespoke nail couture.', phone: '+91 98450 77654', specialties: ['Structural Cuts', 'Balayage Color', 'Keratin Smoothing', 'Gel-X Extensions'], assignedServices: ['hs-1', 'hs-3', 'hs-4', 'hs-5', 'hs-7'], rating: 4.98, commissionRate: 35, status: 'Available', accessRole: 'Manager (Full Access)', hidePhone: false, schedule: [] },
     { id: 'hs-st-1', name: 'Ananya Sharma', role: 'Senior Precision Stylist', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80', bio: 'Senior colorist and stylist with extensive background in balayage, ombre, and volume blowouts.', phone: '+91 98450 12890', specialties: ['Precision Fringes', 'Balayage & Color', 'Volume Blowouts'], assignedServices: ['hs-1', 'hs-2', 'hs-3', 'hs-5'], rating: 4.95, commissionRate: 30, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
     { id: 'hs-st-2', name: 'Rohan Kapoor', role: 'Stylist & Hair Craftsman', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80', bio: 'Men and women haircut specialist with expertise in dry cutting, skin fades, and textured styling.', phone: '+91 98450 33412', specialties: ['Dry Cutting', 'Men & Women Styling', 'Fade Geometry'], assignedServices: ['hs-1', 'hs-2', 'hs-6'], rating: 4.92, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
     { id: 'hs-st-3', name: 'Kavita Deshmukh', role: 'Hair Texture & Scalp Specialist', avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80', bio: 'Trichology-trained scalp and hair botox specialist focusing on restorative therapies.', phone: '+91 98450 99881', specialties: ['Hair Botox', 'Scalp Analysis', 'Thermal Tongs'], assignedServices: ['hs-5', 'hs-6', 'hs-9'], rating: 4.89, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
   ] as Stylist[],
 };
 
-mockSalons['arts-by-uma'] = artsByUmaSalon;
-mockSalons['artsbyuma'] = artsByUmaSalon;
+mockSalons['luxe-hair-studio'] = defaultDemoSalon;
+mockSalons['luxestudio'] = defaultDemoSalon;
 mockSalons['mirakistudio'] = {
-  ...artsByUmaSalon,
+  ...defaultDemoSalon,
   profile: {
-    ...artsByUmaSalon.profile,
+    ...defaultDemoSalon.profile,
     businessName: 'Miraki Hair Cut & Styling Studio',
     subdomain: 'mirakistudio',
   },
 };
 
 // Subdomains that legitimately fall back to the bundled demo catalogue when no
-// matching row exists in the database (and in mock mode). Exact keys only —
-// previously `sub.includes('uma')` also hijacked unrelated subdomains such as
-// "aroma", "perfume" or "zuma" and served them Uma's salon.
-const DEMO_SUBDOMAINS = new Set(['arts-by-uma', 'artsbyuma']);
+// matching row exists in the database (and in mock mode). Exact keys only.
+const DEMO_SUBDOMAINS = new Set(['luxe-hair-studio', 'luxestudio', 'mirakistudio']);
 
 function mapProfileRow(row: any): SalonProfile {
   const workingHours = row.working_hours || {};
@@ -214,28 +212,28 @@ function mapProfileRow(row: any): SalonProfile {
     homeService: row.home_service || undefined,
     ownerId: row.id,
     businessType: (row.business_type as SalonProfile['businessType']) || 'hair_salon',
-    businessName: row.salon_name || 'Arts By Uma',
-    ownerName: row.full_name || 'Uma',
-    ownerRole: row.owner_role || 'Founder & Master Stylist',
-    phone: row.phone_number || '+91 98450 77654',
-    whatsapp: row.whatsapp || row.phone_number || '+91 98450 77654',
-    email: row.email || 'hello@artsbyuma.com',
-    tagline: row.tagline || 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
-    about: row.about || 'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies.',
+    businessName: row.salon_name || 'My Salon',
+    ownerName: row.full_name || 'Owner',
+    ownerRole: row.owner_role || 'Founder',
+    phone: row.phone_number || '',
+    whatsapp: row.whatsapp || row.phone_number || '',
+    email: row.email || '',
+    tagline: row.tagline || '',
+    about: row.about || '',
     ownerPhotoUrl: row.owner_photo_url || '',
     coverImageUrl: row.cover_image_url || '',
     logoUrl: row.logo_url || undefined,
     themePreset: (row.theme_preset as SalonProfile['themePreset']) || 'slate_silver',
     currency: row.currency || '₹',
-    subdomain: row.subdomain || 'arts-by-uma',
+    subdomain: row.subdomain || '',
     customDomain: row.custom_domain || undefined,
-    address: row.full_address || '100 Feet Road, 12th Main, Indiranagar',
-    city: row.city || 'Bengaluru',
-    postalCode: row.postal_code || '560038',
-    state: row.state || 'Karnataka',
+    address: row.full_address || '',
+    city: row.city || '',
+    postalCode: row.postal_code || '',
+    state: row.state || '',
     latitude: row.latitude ?? undefined,
     longitude: row.longitude ?? undefined,
-    instagramHandle: row.instagram_handle || 'arts_by_uma',
+    instagramHandle: row.instagram_handle || '',
     facebookPage: row.facebook_page || undefined,
     youtubeChannel: row.youtube_channel || undefined,
     tiktokProfile: row.tiktok_profile || undefined,

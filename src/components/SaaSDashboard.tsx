@@ -186,7 +186,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     const liveLink = siteUrl || getSiteUrl(profile);
     setTimeout(() => {
       setMarketingSms(
-        `Namaste [Client Name]! We miss your glow at ${profile?.businessName || 'Arts By Uma'}. Book your favorite service this week and receive an exclusive complimentary treatment. Claim your slot: ${liveLink}`
+        `Namaste [Client Name]! We miss your glow at ${profile?.businessName || 'our salon'}. Book your favorite service this week and receive an exclusive complimentary treatment. Claim your slot: ${liveLink}`
       );
       setMarketingLoading(false);
     }, 1000);

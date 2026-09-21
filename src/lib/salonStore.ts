@@ -70,7 +70,7 @@ export function getSiteUrl(profile: SalonProfile, publishedOrigin?: string): str
   return `https://${sub}.nexora.in`;
 }
 
-/** Get the official subdomain format URL (e.g. https://arts-by-uma.nexora.in). */
+/** Get the official subdomain format URL (e.g. https://mysalon.nexora.in). */
 export function getSubdomainUrl(profile: SalonProfile): string {
   if (profile.customDomain) {
     return `https://${profile.customDomain}`;

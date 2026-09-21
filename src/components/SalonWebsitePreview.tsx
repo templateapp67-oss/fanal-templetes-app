@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getSiteUrl } from '../lib/salonStore';
 import { 
   CheckCircle2, 
   Sparkles, 
@@ -847,7 +848,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   LIVE
                 </span>
                 <span className="font-bold truncate max-w-[260px]">
-                  {siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : `arts-by-uma`)}
+                  {siteUrl || (activeProfile.customDomain ? activeProfile.customDomain : getSiteUrl(activeProfile).replace(/^https?:\/\//, ''))}
                 </span>
               </div>
 
@@ -855,7 +856,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const u = siteUrl || (activeProfile.customDomain ? `https://${activeProfile.customDomain}` : (typeof window !== 'undefined' ? `${window.location.origin}/?site=${activeProfile.subdomain || 'arts-by-uma'}` : `https://${activeProfile.subdomain}.nexora.in`));
+                  const u = siteUrl || getSiteUrl(activeProfile);
                   navigator.clipboard?.writeText(u);
                   setCopiedSubdomain(true);
                   showNotification('Live website link copied to clipboard!');
@@ -870,7 +871,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
               {/* Open Site */}
               <a
-                href={siteUrl || (activeProfile.customDomain ? `https://${activeProfile.customDomain}` : (typeof window !== 'undefined' ? `${window.location.origin}/?site=${activeProfile.subdomain || 'arts-by-uma'}` : `https://${activeProfile.subdomain}.nexora.in`))}
+                href={siteUrl || getSiteUrl(activeProfile)}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-colors shrink-0"

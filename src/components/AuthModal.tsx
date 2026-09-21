@@ -85,18 +85,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           id: 'mock-user-123',
           email: email,
           user_metadata: {
-            full_name: fullName || (isCustomer ? 'Mock Customer' : 'Mock Owner'),
-            ...(isCustomer ? {} : { salon_name: salonName || 'Arts By Uma' }),
-            ...(isCustomer ? {} : { phone_number: phoneNumber || '+91 98450 77654' }),
-            ...(isCustomer ? {} : { city: city || 'Bengaluru, Karnataka' }),
+            full_name: fullName || (isCustomer ? 'Customer' : 'Salon Owner'),
+            ...(isCustomer ? {} : { salon_name: salonName || 'My Salon Studio' }),
+            ...(isCustomer ? {} : { phone_number: phoneNumber || '' }),
+            ...(isCustomer ? {} : { city: city || '' }),
           }
         };
         if (!isCustomer) {
           setStoredAuthenticatedProfile({
-            salonName: salonName || 'Arts By Uma',
-            phone: phoneNumber || '+91 98450 77654',
-            city: city || 'Bengaluru, Karnataka',
-            ownerName: fullName || 'Uma',
+            salonName: salonName || 'My Salon Studio',
+            phone: phoneNumber || '',
+            city: city || '',
+            ownerName: fullName || 'Salon Owner',
             email: email,
           });
         }

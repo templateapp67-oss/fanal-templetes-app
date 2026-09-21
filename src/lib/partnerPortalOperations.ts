@@ -684,12 +684,36 @@ export function getPartnerMarketingAssets(category?: string | null): Promise<Par
   });
 }
 
-export function getPartnerMarketingAssetCategories(): Promise<PartnerMarketingCategory[]> {
-  return callPartnerOperation({
-    path: '/api/partner/marketing-assets/categories',
-    rpc: 'get_partner_marketing_asset_categories',
-    normalize: normalizeMarketingCategories,
-  });
+export async function getPartnerMarketingAssetCategories(): Promise<PartnerMarketingCategory[]> {
+  try {
+    return await callPartnerOperation({
+      path: '/api/partner/marketing-assets/categories',
+      rpc: 'get_partner_marketing_asset_categories',
+      normalize: normalizeMarketingCategories,
+    });
+  } catch (error: any) {
+    if (
+      error?.code === 'schema_not_applied' ||
+      /PGRST202|does not exist|could not find the function/i.test(String(error?.message || ''))
+    ) {
+      try {
+        const assets = await getPartnerMarketingAssets();
+        const counts: Record<string, number> = {};
+        for (const asset of assets) {
+          if (asset.category) {
+            counts[asset.category] = (counts[asset.category] || 0) + 1;
+          }
+        }
+        return Object.keys(counts).sort().map((category) => ({
+          category,
+          asset_count: counts[category],
+        }));
+      } catch {
+        // Fallback failed, continue to rethrow error
+      }
+    }
+    throw error;
+  }
 }
 
 /**

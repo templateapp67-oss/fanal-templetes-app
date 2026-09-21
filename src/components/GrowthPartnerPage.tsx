@@ -1,6 +1,7 @@
 import { PartnerRouteGuard, usePartnerRouteGuard } from './PartnerRouteGuard';
 export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
+import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl } from '../lib/growthPartnerProfile';
 import { PartnerAccountSettingsPage } from './PartnerAccountSettingsPage';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
 import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, PartnerMarketingMaterialsPage, PartnerNotificationsPage, PartnerSupportPage, PartnerWithdrawalsPage } from './partner';
@@ -144,6 +145,7 @@ export function GrowthPartnerSectionTabs({
 export const GrowthPartnerShell: React.FC<{
   section: GrowthPartnerSection;
   displayName: string;
+  avatarUrl?: string;
   navigate?: (to: string) => void;
   onBack?: () => void;
   onLogout?: () => void;
@@ -153,7 +155,7 @@ export const GrowthPartnerShell: React.FC<{
   /** Label of the back link (the /partner/* portal says "Back to app"). */
   backLabel?: string;
   children?: React.ReactNode;
-}> = ({ section, displayName, navigate, onBack, onLogout, accentHex = '#C20E5A', pathFor, backLabel = 'Back to dashboard', children }) => (
+}> = ({ section, displayName, avatarUrl, navigate, onBack, onLogout, accentHex = '#C20E5A', pathFor, backLabel = 'Back to dashboard', children }) => (
   <main className="min-w-0 max-w-6xl mx-auto px-4 py-8">
     <header className="mb-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -167,9 +169,16 @@ export const GrowthPartnerShell: React.FC<{
             {backLabel}
           </button>
           <h1 className="mt-2 text-2xl font-bold text-slate-900">Growth Partner</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Signed in as <span className="font-semibold text-slate-900">{displayName}</span>
-          </p>
+          <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt="Profile"
+                className="h-5 w-5 shrink-0 rounded-full object-cover border border-slate-200"
+              />
+            ) : null}
+            <span>Signed in as <span className="font-semibold text-slate-900">{displayName}</span></span>
+          </div>
         </div>
         {onLogout && (
           <button
@@ -292,6 +301,46 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         setPartner(row);
         setApplicationStatus(application?.status ?? null);
         setLoadError(null);
+
+        // Fetch partner profile so header avatar and display name are populated
+        // immediately without requiring the user to navigate to /partner/profile first.
+        if (row && !isMockSupabase) {
+          try {
+            const profileData = await fetchGrowthPartnerProfile();
+            if (!cancelled && profileData) {
+              if (profileData.partner_id === userId || !profileData.partner_id) {
+                if (profileData.full_name) {
+                  setSavedProfileName({ owner: userId, name: profileData.full_name });
+                }
+                if (profileData.photo_path) {
+                  const avatar = growthPartnerPhotoUrl(profileData.photo_path);
+                  if (avatar) setSavedProfileAvatar(avatar);
+                }
+              }
+            }
+          } catch {
+            // If the RPC is unavailable, fall back to checking public.profiles table
+            try {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('full_name, partner_avatar_path, avatar_url, photo_url')
+                .eq('id', userId)
+                .maybeSingle();
+              if (!cancelled && prof) {
+                if (prof.full_name) {
+                  setSavedProfileName({ owner: userId, name: prof.full_name });
+                }
+                const rawPath = prof.partner_avatar_path || prof.avatar_url || prof.photo_url;
+                if (rawPath) {
+                  const avatar = growthPartnerPhotoUrl(rawPath);
+                  if (avatar) setSavedProfileAvatar(avatar);
+                }
+              }
+            } catch {
+              // Ignore fallback errors
+            }
+          }
+        }
       } catch (err) {
         if (cancelled) return;
         setPartner(null);
@@ -469,6 +518,14 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const displayName =
     (savedProfileName?.owner === userId && savedProfileName.name) ||
     (typeof metadataName === 'string' && metadataName.trim()) || email.split('@')[0] || 'Growth Partner';
+
+  const metadataAvatar =
+    (typeof user?.user_metadata?.avatar_url === 'string' && user.user_metadata.avatar_url) ||
+    (typeof user?.user_metadata?.photo_url === 'string' && user.user_metadata.photo_url) ||
+    (typeof user?.user_metadata?.picture === 'string' && user.user_metadata.picture) ||
+    (typeof user?.user_metadata?.profile_photo === 'string' && user.user_metadata.profile_photo) ||
+    '';
+  const effectiveAvatar = savedProfileAvatar || (metadataAvatar ? growthPartnerPhotoUrl(metadataAvatar) : '');
   const retrySection = () => setReloadKey((key) => key + 1);
 
   const renderSection = () => {
@@ -588,11 +645,25 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'support':
         return <PartnerSupportPage accentHex={accentHex} />;
       case 'profile':
-        return <div key={userId}><GrowthPartnerProfilePage navigate={navigate} onProfileChange={saved => {
-          if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
-          if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
-          if (saved.partner_id === userId && !saved.photo_path) setSavedProfileAvatar('');
-        }} /></div>;
+        return (
+          <div key={userId}>
+            <GrowthPartnerProfilePage
+              navigate={navigate}
+              onProfileChange={(saved) => {
+                if (saved.partner_id === userId) {
+                  if (saved.full_name) {
+                    setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
+                  }
+                  if (saved.photo_path) {
+                    setSavedProfileAvatar(growthPartnerPhotoUrl(saved.photo_path));
+                  } else {
+                    setSavedProfileAvatar('');
+                  }
+                }
+              }}
+            />
+          </div>
+        );
       // The real Account Settings page: change email, password + 2FA,
       // sessions + security log, deactivation request.
       case 'account-settings':
@@ -624,7 +695,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         // auth id (the growth_partners row is keyed by it) — a display value
         // from the session, never an input to any backend read.
         partnerId={userId ?? undefined}
-        avatarUrl={savedProfileAvatar}
+        avatarUrl={effectiveAvatar}
         notifications={dashboard.data ? dashboard.data.recent_activity : []}
         notificationsLoading={dashboard.loading && !dashboard.data}
         navigate={navigate ?? (() => {})}
@@ -640,6 +711,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     <GrowthPartnerShell
       section={section}
       displayName={displayName}
+      avatarUrl={effectiveAvatar}
       navigate={navigate}
       onBack={onBack}
       onLogout={onLogout}

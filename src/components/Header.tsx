@@ -170,7 +170,13 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-10 h-10 rounded-full overflow-hidden border border-pink-200"
                 aria-label="User Profile Settings" title="User Profile Settings"
               >
-                {profile.ownerPhotoUrl ? <img src={profile.ownerPhotoUrl} alt="Your profile" className="w-full h-full object-cover" /> : <span>Profile</span>}
+                {(profile.ownerPhotoUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.photo_url || user?.user_metadata?.picture || user?.user_metadata?.profile_photo) ? (
+                  <img
+                    src={profile.ownerPhotoUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.photo_url || user?.user_metadata?.picture || user?.user_metadata?.profile_photo}
+                    alt="Your profile"
+                    className="w-full h-full object-cover"
+                  />
+                ) : <span>Profile</span>}
               </button>
               <button
                 onClick={handleLogout}

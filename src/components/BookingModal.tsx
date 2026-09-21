@@ -161,6 +161,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   // Step 1: Branch, Service & Specialist
   const [selectedBranch, setSelectedBranch] = useState<string>('main');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   // MULTI-SERVICE selection: customers can tick several treatments (e.g.
   // haircut + balayage + nails) and every later step — totals, draft, payment
   // and confirmation — works from the whole array. Order = click order; the
@@ -305,12 +306,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const target = initialService || (services && services[0]) || null;
     setSelectedServices(target ? [target] : []);
     setSelectedUpgrades([]);
+    setSelectedCategory('All');
   }, [isOpen, targetServiceId]);
 
   // Catalog loaded after the modal opened (first load): seed the default pick.
   useEffect(() => {
     if (!isOpen || selectedServices.length > 0 || services.length === 0) return;
     setSelectedServices([services[0]]);
+    setSelectedUpgrades([]);
   }, [isOpen, services, selectedServices.length]);
 
   // Offer to resume a draft whose payment was interrupted (same salon only,
@@ -477,27 +480,30 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const homeServiceCharge = bookingType === 'home' ? (profile.homeService?.baseCharge || 0) : 0;
   // Combined totals over EVERY chosen service (+ optional add-ons + home visit
   // fee). These drive the live summary bar, the deposit maths, the payment
-  // step and the confirmation — always the sum of what the customer picked.
-  const servicesTotalPrice = selectedServices.reduce((sum, service) => sum + service.price, 0);
-  const servicesTotalMinutes = selectedServices.reduce((sum, service) => sum + (service.durationMinutes || 0), 0);
-  const upgradesPrice = selectedUpgrades.reduce((sum, upgrade) => sum + upgrade.price, 0);
-  const upgradesTotalMinutes = selectedUpgrades.reduce((sum, upgrade) => sum + (upgrade.durationMinutes || 0), 0);
+  // step and the confirmation — always strictly derived from what the customer picked.
+  const servicesTotalPrice = selectedServices.reduce((sum, service) => sum + (Number(service.price) || 0), 0);
+  const servicesTotalMinutes = selectedServices.reduce((sum, service) => sum + (Number(service.durationMinutes) || 0), 0);
+  const upgradesPrice = selectedUpgrades.reduce((sum, upgrade) => sum + (Number(upgrade.price) || 0), 0);
+  const upgradesTotalMinutes = selectedUpgrades.reduce((sum, upgrade) => sum + (Number(upgrade.durationMinutes) || 0), 0);
   const totalAmount = servicesTotalPrice + upgradesPrice + homeServiceCharge;
   const totalDurationMinutes = servicesTotalMinutes + upgradesTotalMinutes;
   const depositPercent = DEFAULT_DEPOSIT_PERCENT;
-  // First-picked treatment — drives the single-service columns the database
-  // still stores and the add-on suggestions shown on step 2.
+  // First-picked treatment — drives single-service legacy columns if needed
   const primarySelectedService: SalonService | null = selectedServices[0] || null;
-  // Optional-upgrades list: same-category menu items that are not already
-  // chosen anywhere (services or add-ons), so nothing is offered twice.
+  // Optional-upgrades list: recommended menu items for active service categories
+  // that are not already chosen anywhere (services or add-ons), so nothing is offered twice.
+  const activeCategories = new Set(selectedServices.map((s) => s.category).filter(Boolean));
   const chosenServiceIds = new Set([...selectedServices, ...selectedUpgrades].map((s) => s.id));
-  const addonCandidates = (
-    primarySelectedService
-      ? services.filter((s) => s.category === primarySelectedService.category && !chosenServiceIds.has(s.id))
-      : []
-  ).slice(0, 4);
+  const addonCandidates = selectedServices.length > 0
+    ? services.filter((s) => activeCategories.has(s.category) && !chosenServiceIds.has(s.id)).slice(0, 6)
+    : [];
   const advanceTokenAmount = computeAdvanceDeposit(totalAmount, depositPercent).rupees;
   const remainingAmount = totalAmount - (paymentMethod === 'pay_advance_token' ? advanceTokenAmount : 0);
+
+  const serviceCategories = ['All', ...Array.from(new Set((services || []).map((s) => s.category).filter(Boolean)))];
+  const filteredServices = selectedCategory === 'All'
+    ? (services || [])
+    : (services || []).filter((s) => s.category === selectedCategory);
 
   // ==========================================================================
   // CONFIRMATION PAGE DATA
@@ -608,16 +614,37 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       .filter(Boolean)
       .join(' + ');
 
+  /** Clear all active service and upgrade selections. */
+  const handleClearAllServices = () => {
+    setSelectedServices([]);
+    setSelectedUpgrades([]);
+  };
+
   /** Toggle one treatment in/out of the multi-service selection. */
   const toggleServiceSelection = (srv: SalonService) => {
     const alreadyChosen = selectedServices.some((s) => s.id === srv.id);
     if (alreadyChosen) {
-      setSelectedServices((prev) => prev.filter((s) => s.id !== srv.id));
+      const nextServices = selectedServices.filter((s) => s.id !== srv.id);
+      setSelectedServices(nextServices);
+      if (nextServices.length === 0) {
+        setSelectedUpgrades([]);
+      } else {
+        // Automatically prune any add-ons whose category no longer matches remaining services
+        const remainingCategories = new Set(nextServices.map((s) => s.category).filter(Boolean));
+        setSelectedUpgrades((prev) =>
+          prev.filter(
+            (u) => remainingCategories.has(u.category) && !nextServices.some((ns) => ns.id === u.id)
+          )
+        );
+      }
     } else {
-      setSelectedServices((prev) => [...prev, srv]);
-      // A treatment can only live in one basket: if it was ticked earlier as
-      // an add-on (step 2), promote it to a fully selected service.
-      setSelectedUpgrades((prev) => (prev.some((u) => u.id === srv.id) ? prev.filter((u) => u.id !== srv.id) : prev));
+      const nextServices = [...selectedServices, srv];
+      setSelectedServices(nextServices);
+      // A treatment can only live in one basket: promote it out of upgrades
+      const activeCats = new Set(nextServices.map((s) => s.category).filter(Boolean));
+      setSelectedUpgrades((prev) =>
+        prev.filter((u) => u.id !== srv.id && activeCats.has(u.category))
+      );
     }
   };
 
@@ -1130,6 +1157,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Reset modal state to start fresh
   const handleReset = () => {
     setCurrentStep('service');
+    const resetInitial = initialService || (services && services[0]) || null;
+    setSelectedServices(resetInitial ? [resetInitial] : []);
+    setSelectedUpgrades([]);
+    setSelectedCategory('All');
+    setBookingTime('');
+    setSlotStaffId('');
     setOtpDigits(['', '', '', '']);
     setOtpError('');
     setIsWhatsappVerified(false);
@@ -1311,30 +1344,72 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   explicit Add to Booking / Remove toggle, and the summary bar
                   at the bottom of the modal updates price + duration live. */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold font-mono-caps text-slate-700">
                     2. Select Treatment / Service
                   </label>
-                  <span
-                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                      selectedServices.length > 0
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-500 border-slate-200'
-                    }`}
-                  >
-                    {selectedServices.length} Selected
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {selectedServices.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllServices}
+                        className="text-[10px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-0.5 cursor-pointer underline"
+                        title="Clear all selected services and add-ons"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" /> Clear All
+                      </button>
+                    )}
+                    <span
+                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                        selectedServices.length > 0
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      {selectedServices.length} Selected
+                    </span>
+                  </div>
                 </div>
+
+                {/* Category Filter Pills */}
+                {serviceCategories.length > 2 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1 scrollbar-none">
+                    {serviceCategories.map((cat) => {
+                      const isActive = selectedCategory === cat;
+                      const count = cat === 'All'
+                        ? (services || []).length
+                        : (services || []).filter((s) => s.category === cat).length;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setSelectedCategory(cat)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                            isActive
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                          }`}
+                        >
+                          <span>{cat}</span>
+                          <span className={`text-[9px] px-1 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-500 mb-2">
                   Combine treatments in one visit (e.g. haircut + balayage + nails) — tap a card or use its button. Price &amp; duration update instantly.
                 </p>
-                {services.length === 0 ? (
+                {filteredServices.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
-                    The service menu is still loading — please try again in a moment.
+                    No services found in this category.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1" role="group" aria-label="Available services">
-                    {(services || []).map((srv) => {
+                    {filteredServices.map((srv) => {
                       const isSelected = selectedServices.some((s) => s.id === srv.id);
                       return (
                         <div
@@ -1520,12 +1595,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               exit={{ opacity: 0, x: -10 }}
               className="flex flex-col gap-4"
             >
-              <h4 className="font-bold text-sm text-slate-900">Make your service even better!</h4>
-              <p className="text-[11px] text-slate-500">
-                {selectedUpgrades.length > 0
-                  ? `${selectedUpgrades.length} add-on${selectedUpgrades.length > 1 ? 's' : ''} added · same-category extras for ${primarySelectedService?.name || 'your visit'}`
-                  : `Popular add-ons for ${primarySelectedService?.name || 'your visit'}`}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">Make your service even better!</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {selectedUpgrades.length > 0
+                      ? `${selectedUpgrades.length} add-on${selectedUpgrades.length > 1 ? 's' : ''} added · recommended extras for your visit`
+                      : `Popular add-ons for ${primarySelectedService?.name || 'your visit'}`}
+                  </p>
+                </div>
+                {selectedUpgrades.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUpgrades([])}
+                    className="text-[10px] text-rose-600 hover:text-rose-700 font-bold cursor-pointer underline shrink-0 mt-0.5"
+                    title="Remove all optional add-ons"
+                  >
+                    Clear Add-ons
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
                 {addonCandidates.length === 0 ? (

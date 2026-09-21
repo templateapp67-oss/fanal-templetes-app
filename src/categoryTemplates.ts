@@ -5,10 +5,10 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
   // 1. Hair Cut & Styling Studio
   hair_salon: {
     id: 'hair_salon',
-    title: 'Arts By Uma',
+    title: 'Luxe Hair & Styling Studio',
     shortName: 'Hair & Styling Studio',
     tagline: 'Precision Cuts, Creative Hair Artistry & Luxury Nail Lounge',
-    about: 'Welcome to Arts By Uma. Founded by Uma, our boutique studio brings together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary.',
+    about: 'Welcome to our studio. Bringing together master precision haircuts, bespoke balayage, sculpted gel nail art, and restorative hair spa therapies in a luxury sanctuary.',
     icon: 'content_cut',
     layoutStyle: 'modern_minimalist',
     paletteLabel: 'Slate & Silver Theme',
@@ -19,11 +19,11 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     defaultPostalCode: '560038',
     phone: '+91 98450 77654',
     whatsapp: '+91 98450 77654',
-    ownerName: 'Uma',
+    ownerName: 'Master Stylist',
     ownerRole: 'Founder & Master Stylist',
     ownerPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80',
     coverImageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
-    instagramHandle: '@arts_by_uma',
+    instagramHandle: '@luxehair_studio',
     themeStyle: {
       heroBackground: 'bg-[#0f172a]',
       heroTextColor: 'text-slate-100',

@@ -616,7 +616,7 @@ export default function App() {
           setSiteTenant({
             isTenant: true,
             found: true,
-            subdomain: profile.subdomain || 'arts-by-uma',
+            subdomain: profile.subdomain || 'salon-studio',
             customDomain: null,
             profile: profile,
             services: services,
@@ -633,7 +633,7 @@ export default function App() {
           setSiteTenant({
             isTenant: true,
             found: true,
-            subdomain: requestedSite || profile.subdomain || 'arts-by-uma',
+            subdomain: requestedSite || profile.subdomain || 'salon-studio',
             customDomain: null,
             profile: profile,
             services: services,
@@ -777,8 +777,11 @@ export default function App() {
 
   // Auto-Fetch Profile Sync
   useEffect(() => {
-    const fetchProfile = async () => {
-      if (!user || isMockSupabase) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchProfile = async (retryCount = 0) => {
+      if (!user || isMockSupabase || cancelled) return;
 
       const meta = user.user_metadata || {};
 
@@ -789,21 +792,33 @@ export default function App() {
         // fallback below never ran and the console logged a scary error on
         // every load for new accounts.
         const { data: editorState, error: editorError } = await supabase.rpc('get_owner_editor_state');
-        if (editorError) throw editorError;
-        if (editorState?.profile) return;
+        if (cancelled) return;
+        if (!editorError && editorState?.profile) return;
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .maybeSingle();
 
+        if (cancelled) return;
+
         if (error) {
           // Permission/RLS/grants problem — NOT a missing record. The user
           // must fix the schema before saving can ever work.
-          console.error(
+          console.warn(
             '[Profile] Could not read the owner profile row (auth/RLS/grants issue — apply supabase/migrations):',
             error
           );
+          if (!hasUnsavedEdits()) {
+            setProfile((prev) => ({
+              ...prev,
+              businessName: meta.salon_name || prev.businessName,
+              ownerName: meta.full_name || prev.ownerName,
+              phone: meta.phone_number || prev.phone,
+              email: user.email || prev.email,
+              city: meta.city || prev.city,
+            }));
+          }
           return;
         }
 
@@ -887,12 +902,47 @@ export default function App() {
             data
           )
         );
-      } catch (err) {
-        console.error('Error fetching profile:', err);
+      } catch (err: any) {
+        if (cancelled) return;
+        const isNetworkErr =
+          err?.name === 'TypeError' ||
+          /failed to fetch|network|timeout|connection/i.test(err?.message || '');
+
+        if (isNetworkErr) {
+          console.warn('[Profile] Transient network error while fetching profile, falling back to metadata:', err?.message || err);
+          if (!hasUnsavedEdits()) {
+            setProfile((prev) => ({
+              ...prev,
+              businessName: meta.salon_name || prev.businessName,
+              ownerName: meta.full_name || prev.ownerName,
+              phone: meta.phone_number || prev.phone,
+              email: user.email || prev.email,
+              city: meta.city || prev.city,
+            }));
+          }
+          if (retryCount < 3) {
+            retryTimer = setTimeout(() => {
+              void fetchProfile(retryCount + 1);
+            }, 3000 * Math.pow(2, retryCount));
+          }
+        } else {
+          console.error('Error fetching profile:', err);
+        }
       }
     };
 
-    fetchProfile();
+    void fetchProfile();
+
+    const handleOnline = () => {
+      void fetchProfile();
+    };
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [user]);
 
   // Hydrate services / staff / loyalty from Supabase once the owner logs in.
@@ -1790,7 +1840,7 @@ export default function App() {
           onComplete={handleWizardComplete}
           selectedTemplateId={selectedTemplateId}
           onSelectTemplate={handleSelectTemplate}
-          siteUrl={getSiteUrl(profile, 'https://fanal-templetes-app.vercel.app')}
+          siteUrl={getSiteUrl(profile)}
           onSave={handleSaveNow}
           onBackToDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}

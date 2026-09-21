@@ -84,7 +84,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
                   <div className="w-3 h-3 rounded-full bg-emerald-400" />
                 </div>
                 <div className="text-[11px] font-mono text-slate-500 font-semibold flex items-center gap-1">
-                  <span>arts-by-uma.nexora.in</span>
+                  <span>luxe-studio.nexora.in</span>
                 </div>
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
                   ₹ Live
@@ -95,7 +95,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
                 <div className="w-full h-44 rounded-xl relative overflow-hidden bg-slate-900">
                   <img 
                     src={CATEGORY_TEMPLATES.hair_salon.coverImageUrl}
-                    alt="Arts By Uma Salon Preview"
+                    alt="Luxe Salon Preview"
                     className="w-full h-full object-cover opacity-95 filter brightness-105 contrast-105 group-hover:scale-105 transition-all duration-500"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
@@ -103,7 +103,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
                     <span className="text-[10px] font-mono font-bold uppercase bg-white/20 px-2 py-0.5 rounded">
                       Hair & Nail Artistry Studio
                     </span>
-                    <h3 className="font-bold text-base mt-1">Arts By Uma</h3>
+                    <h3 className="font-bold text-base mt-1">Luxe Salon Studio</h3>
                     <p className="text-[11px] text-slate-200">100 Feet Rd, Indiranagar, Bengaluru</p>
                   </div>
                 </div>
