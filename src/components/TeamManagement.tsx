@@ -20,18 +20,27 @@ import {
   EyeOff,
   Percent,
   Layers,
-  Lock
+  Lock,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AddStaffModal } from './AddStaffModal';
 import { StylistAvatarUpload } from './StylistAvatarUpload';
 import { GuestModeBanner } from './GuestModeBanner';
+import type { SalonPersistResult, SalonEditorStatePatch } from '../lib/autoSave';
 
 interface TeamManagementProps {
   stylists: Stylist[];
   setStylists: React.Dispatch<React.SetStateAction<Stylist[]>>;
   primaryAccentColor: string;
   services?: SalonService[];
+  /**
+   * PHASE 11: the real save pipeline. "Onboarded" / "updated" / "removed"
+   * claims are only made after it resolves `published`/`localDraft`; on
+   * failure the local state is retained and a retry is offered (the exact
+   * server error stays in the console).
+   */
+  onPersistChange?: (message: string, overrides?: SalonEditorStatePatch) => Promise<SalonPersistResult>;
   onNavigateToPreview?: () => void;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
@@ -92,6 +101,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   setStylists,
   primaryAccentColor,
   services = [],
+  onPersistChange,
   onNavigateToPreview,
   isAuthenticated = true,
   onRequireAuth
@@ -122,6 +132,11 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   });
 
   const [notification, setNotification] = useState<string | null>(null);
+  // PHASE 11: real-save state — "Saving…" while the pipeline runs, and a
+  // retained-change + retry banner when it fails. Success is claimed only by
+  // the save engine, after the cloud actually accepts the state.
+  const [savingStylist, setSavingStylist] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -192,17 +207,43 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
     }));
   };
 
-  const handleSaveNewStaffMember = (newStaff: Stylist) => {
+  // PHASE 11: onboarding a specialist claims success only AFTER the real save
+  // pipeline confirms it. The local state is updated immediately (the edit is
+  // never lost); on failure the Add Staff modal stays open with a retry and
+  // the exact server error stays in the console ([SAVE ERROR]). The success
+  // toast is emitted by the save engine, not here.
+  const handleSaveNewStaffMember = async (newStaff: Stylist) => {
     if (!isAuthenticated) {
       onRequireAuth?.('login');
       return;
     }
-    setStylists((prev) => [...prev, newStaff]);
-    setIsAddModalOpen(false);
-    showNotification(`Specialist "${newStaff.name}" (${newStaff.role}) successfully onboarded!`);
+    const nextStylists = [...stylists, newStaff];
+    setStylists(nextStylists);
+    const message = `Specialist "${newStaff.name}" (${newStaff.role}) successfully onboarded!`;
+    if (!onPersistChange) {
+      setIsAddModalOpen(false);
+      return;
+    }
+    setSavingStylist(true);
+    setSaveError('');
+    try {
+      const result = await onPersistChange(message, { stylists: nextStylists });
+      if (result.published || result.localDraft) {
+        setIsAddModalOpen(false);
+      } else {
+        setSaveError(
+          `Saving the new specialist failed — the change is kept on this device. Submit the form again to retry (exact error in the browser console).`
+        );
+      }
+    } catch (err) {
+      console.error('[TeamManagement] Unexpected error during onboarding save:', err);
+      setSaveError('Save failed — the change is kept on this device. Please retry (exact error in the browser console).');
+    } finally {
+      setSavingStylist(false);
+    }
   };
 
-  const handleSaveEditStylist = (e: React.FormEvent) => {
+  const handleSaveEditStylist = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
       onRequireAuth?.('login');
@@ -219,20 +260,70 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
       specialties: formData.specialties.length > 0 ? formData.specialties : ['Hair Cutting']
     };
 
-    setStylists((prev) => prev.map((s) => (s.id === editingStylist.id ? updated : s)));
-    setEditingStylist(null);
-    showNotification(`Stylist profile for "${updated.name}" updated!`);
+    const nextStylists = stylists.map((s) => (s.id === editingStylist.id ? updated : s));
+    // Local state updates immediately (the edit is retained)…
+    setStylists(nextStylists);
+    const message = `Stylist profile for "${updated.name}" updated!`;
+    // …but "updated" is only claimed after the real save pipeline confirms it.
+    if (!onPersistChange) {
+      setEditingStylist(null);
+      return;
+    }
+    setSavingStylist(true);
+    setSaveError('');
+    try {
+      const result = await onPersistChange(message, { stylists: nextStylists });
+      if (result.published || result.localDraft) {
+        setEditingStylist(null);
+      } else {
+        setSaveError(
+          `Saving the stylist update failed — the changes are kept on this device. Submit the form again to retry (exact error in the browser console).`
+        );
+      }
+    } catch (err) {
+      console.error('[TeamManagement] Unexpected error during stylist save:', err);
+      setSaveError('Save failed — the changes are kept on this device. Please retry (exact error in the browser console).');
+    } finally {
+      setSavingStylist(false);
+    }
   };
 
-  const handleDeleteStylist = (id: string) => {
+  const handleDeleteStylist = async (id: string) => {
     if (!isAuthenticated) {
       onRequireAuth?.('login');
       return;
     }
     const st = stylists.find((s) => s.id === id);
-    setStylists((prev) => prev.filter((s) => s.id !== id));
+    // Remove locally first — the unsaved UI state is retained if the cloud
+    // write fails, and the retry re-sends the same snapshot.
+    const nextStylists = stylists.filter((s) => s.id !== id);
+    setStylists(nextStylists);
     setDeletingStylistId(null);
-    showNotification(`Stylist "${st?.name || 'Member'}" removed from team.`);
+    if (!onPersistChange) return; // defensive: auto-save reports, we claim nothing
+    const result = await onPersistChange(`Stylist "${st?.name || 'Member'}" removed from team.`, { stylists: nextStylists });
+    if (result.published || result.localDraft) {
+      setSaveError('');
+    } else {
+      setSaveError(
+        `Saving the removal of "${st?.name || 'the specialist'}" failed — the change is kept on this device. Retry when the connection is back (exact error in the browser console).`
+      );
+    }
+  };
+
+  // PHASE 11: actionable retry after a failed save — re-runs the real
+  // pipeline with the current (retained) state.
+  const retryPersist = async () => {
+    if (!onPersistChange) return;
+    setSaveError('');
+    setSavingStylist(true);
+    try {
+      const result = await onPersistChange('Retrying save of team changes.', { stylists });
+      if (!(result.published || result.localDraft)) {
+        setSaveError('Save failed again — the changes are still kept on this device (exact error in the browser console).');
+      }
+    } finally {
+      setSavingStylist(false);
+    }
   };
 
   // Collect all unique specialties across all existing stylists
@@ -271,6 +362,29 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* PHASE 11: failed-save banner — the change is retained in state and a
+          real retry is offered; the engine already showed the summarized
+          server error in a toast and logged it as [SAVE ERROR]. */}
+      {saveError && (
+        <div
+          role="alert"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700"
+        >
+          <span className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-500" />
+            <span>{saveError}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void retryPersist()}
+            disabled={savingStylist}
+            className="self-start sm:self-auto rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer disabled:opacity-60"
+          >
+            {savingStylist ? 'Saving…' : 'Retry save'}
+          </button>
+        </div>
+      )}
 
       {/* Header section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
@@ -769,11 +883,12 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 text-xs font-bold rounded-xl text-white shadow-sm flex items-center gap-1.5 cursor-pointer hover:opacity-95"
+                  disabled={savingStylist}
+                  className="px-5 py-2.5 text-xs font-bold rounded-xl text-white shadow-sm flex items-center gap-1.5 cursor-pointer hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ backgroundColor: primaryAccentColor }}
                 >
-                  <Check className="w-4 h-4" />
-                  <span>Save Stylist Changes</span>
+                  {savingStylist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>{savingStylist ? 'Saving…' : 'Save Stylist Changes'}</span>
                 </button>
               </div>
             </form>

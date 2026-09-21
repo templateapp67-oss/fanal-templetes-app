@@ -18,6 +18,7 @@ import {
 import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
 import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
 import { getSiteUrl } from '../lib/salonStore';
+import type { SalonPersistResult, SalonEditorStatePatch } from '../lib/autoSave';
 
 interface LoyaltyManagementProps {
   clients: ClientRecord[];
@@ -27,6 +28,13 @@ interface LoyaltyManagementProps {
   primaryAccentColor?: string;
   profile: SalonProfile;
   appointments?: Appointment[];
+  /**
+   * PHASE 11: the real save pipeline. The "saved successfully" claim for
+   * reward/configuration changes is only made after it resolves
+   * `published`/`localDraft`; on failure the local state is retained and a
+   * retry is offered (the exact server error stays in the console).
+   */
+  onPersistChange?: (message: string, overrides?: SalonEditorStatePatch) => Promise<SalonPersistResult>;
   onNavigateToPreview?: () => void;
 }
 
@@ -38,6 +46,7 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
   primaryAccentColor = '#0f172a',
   profile,
   appointments = [],
+  onPersistChange,
   onNavigateToPreview,
 }) => {
   // Navigation & Tabs within Loyalty
@@ -78,6 +87,14 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // PHASE 11: real-save state. Buttons show "Saving…" while the pipeline runs;
+  // on failure the local state is RETAINED (never rolled back) and a section
+  // banner offers an actionable retry. "Saved successfully" is only claimed by
+  // the save engine, after the cloud (or service-role API) accepts the state.
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [savingReward, setSavingReward] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   // KPIs Calculations
   const totalPointsInCirculation = clients.reduce((sum, c) => sum + (c.points || 0), 0);
   const totalLifetimePoints = clients.reduce((sum, c) => sum + (c.lifetimePoints || 0), 0);
@@ -101,19 +118,27 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
     return matchesQuery && matchesTier;
   });
 
-  // Save / Add Reward Threshold
-  const handleSaveReward = (e: React.FormEvent) => {
+  // Save / Add Reward Threshold.
+  // PHASE 11: the config update is applied to local state immediately (the
+  // edit is never lost), but "saved" is only claimed after the REAL save
+  // pipeline confirms it. On failure the modal stays open (state retained)
+  // with a retry — resubmitting re-runs the pipeline; the exact server error
+  // stays in the console ([SAVE ERROR]). The ✓ toast below is emitted by the
+  // save engine itself, with `message`, only after the cloud accepts it.
+  const handleSaveReward = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRewardTitle.trim()) {
       showToast('Please enter a valid reward title');
       return;
     }
 
+    let nextConfig: LoyaltyConfig;
+    let message: string;
     if (editingReward) {
       // Edit
-      setLoyaltyConfig((prev) => ({
-        ...prev,
-        rewards: prev.rewards.map((r) =>
+      nextConfig = {
+        ...loyaltyConfig,
+        rewards: loyaltyConfig.rewards.map((r) =>
           r.id === editingReward.id
             ? {
                 ...r,
@@ -127,8 +152,8 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
               }
             : r
         ),
-      }));
-      showToast(`✓ Updated reward threshold "${newRewardTitle}"`);
+      };
+      message = `✓ Updated reward threshold "${newRewardTitle}"`;
     } else {
       // Create new
       const newReward: RewardThreshold = {
@@ -143,21 +168,49 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
         couponCodePrefix: (newRewardPrefix || 'GLOW').toUpperCase(),
       };
 
-      setLoyaltyConfig((prev) => ({
-        ...prev,
-        rewards: [...prev.rewards, newReward],
-      }));
-      showToast(`✓ Added new reward threshold: "${newRewardTitle}" (${newRewardPoints} pts)`);
+      nextConfig = {
+        ...loyaltyConfig,
+        rewards: [...loyaltyConfig.rewards, newReward],
+      };
+      message = `✓ Added new reward threshold: "${newRewardTitle}" (${newRewardPoints} pts)`;
     }
 
-    // Reset & Close
-    setIsAddRewardModalOpen(false);
-    setEditingReward(null);
-    setNewRewardTitle('');
-    setNewRewardPoints(300);
-    setNewRewardValue(15);
-    setNewRewardDesc('');
-    setNewRewardPrefix('REWARD');
+    setLoyaltyConfig(nextConfig);
+
+    const resetAndClose = () => {
+      setIsAddRewardModalOpen(false);
+      setEditingReward(null);
+      setNewRewardTitle('');
+      setNewRewardPoints(300);
+      setNewRewardValue(15);
+      setNewRewardDesc('');
+      setNewRewardPrefix('REWARD');
+    };
+
+    if (!onPersistChange) {
+      // No pipeline wired (defensive): state is updated and auto-save picks
+      // it up — but we must not claim a save that was never requested.
+      resetAndClose();
+      return;
+    }
+
+    setSavingReward(true);
+    setSaveError(null);
+    try {
+      const result = await onPersistChange(message, { loyaltyConfig: nextConfig });
+      if (result.published || result.localDraft) {
+        resetAndClose();
+      } else {
+        setSaveError(
+          `Saving the reward change failed — the change is kept on this device. Submit the form again to retry (exact error in the browser console).`
+        );
+      }
+    } catch (err) {
+      console.error('[LoyaltyManagement] Unexpected error during reward save:', err);
+      setSaveError('Save failed — the change is kept on this device. Please retry (exact error in the browser console).');
+    } finally {
+      setSavingReward(false);
+    }
   };
 
   const handleOpenEditReward = (reward: RewardThreshold) => {
@@ -172,12 +225,62 @@ export const LoyaltyManagement: React.FC<LoyaltyManagementProps> = ({
     setIsAddRewardModalOpen(true);
   };
 
-  const handleDeleteReward = (id: string, title: string) => {
-    setLoyaltyConfig((prev) => ({
-      ...prev,
-      rewards: prev.rewards.filter((r) => r.id !== id),
-    }));
-    showToast(`Removed reward threshold "${title}"`);
+  const handleDeleteReward = async (id: string, title: string) => {
+    // Remove locally first — the unsaved UI state is retained if the cloud
+    // write fails, and the retry re-sends the same snapshot.
+    const nextConfig: LoyaltyConfig = {
+      ...loyaltyConfig,
+      rewards: loyaltyConfig.rewards.filter((r) => r.id !== id),
+    };
+    setLoyaltyConfig(nextConfig);
+    if (!onPersistChange) return; // defensive: auto-save reports, we claim nothing
+    const result = await onPersistChange(`Removed reward threshold "${title}"`, { loyaltyConfig: nextConfig });
+    if (result.published || result.localDraft) {
+      setSaveError(null);
+    } else {
+      setSaveError(
+        `Saving the removal of "${title}" failed — the change is kept on this device. Retry when the connection is back (exact error in the browser console).`
+      );
+    }
+  };
+
+  // PHASE 11: the "Save Configuration Changes" button — a REAL save, not the
+  // old toast-without-persistence. The engine emits the success message only
+  // after the cloud accepts the state; on failure the banner offers a retry
+  // and the configuration is retained in local state.
+  const handleSaveConfig = async () => {
+    if (!onPersistChange) return; // defensive: auto-save reports, we claim nothing
+    setSavingConfig(true);
+    setSaveError(null);
+    try {
+      const result = await onPersistChange('✓ Loyalty rules and tier parameters saved successfully.', { loyaltyConfig });
+      if (!(result.published || result.localDraft)) {
+        setSaveError(
+          'Save failed — the configuration is kept on this device. Retry when the connection is back (exact error in the browser console).'
+        );
+      }
+    } catch (err) {
+      console.error('[LoyaltyManagement] Unexpected error during config save:', err);
+      setSaveError('Save failed — the configuration is kept on this device. Please retry (exact error in the browser console).');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  // PHASE 11: actionable retry after a failed save — re-runs the real
+  // pipeline with the current (retained) loyalty configuration.
+  const retryPersist = async () => {
+    if (!onPersistChange) return;
+    setSaveError(null);
+    setSavingConfig(true);
+    try {
+      const result = await onPersistChange('Retrying save of loyalty configuration.', { loyaltyConfig });
+      if (!(result.published || result.localDraft)) {
+        setSaveError('Save failed again — the changes are still kept on this device (exact error in the browser console).');
+      }
+    } finally {
+      setSavingConfig(false);
+    }
   };
 
   const handleToggleRewardActive = (id: string) => {
@@ -379,6 +482,29 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
           </div>
           <button onClick={() => setToastMessage(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer">
             ✕
+          </button>
+        </div>
+      )}
+
+      {/* PHASE 11: failed-save banner — the change is retained in state and a
+          real retry is offered; the engine already showed the summarized
+          server error in a toast and logged it as [SAVE ERROR]. */}
+      {saveError && (
+        <div
+          role="alert"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700"
+        >
+          <span className="flex items-start gap-2">
+            <span className="material-symbols-outlined text-rose-600 text-lg leading-none">error</span>
+            <span>{saveError}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void retryPersist()}
+            disabled={savingConfig || savingReward}
+            className="self-start sm:self-auto rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer disabled:opacity-60"
+          >
+            {savingConfig ? 'Saving…' : 'Retry save'}
           </button>
         </div>
       )}
@@ -1007,12 +1133,19 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
           </div>
 
           <div className="flex justify-end">
+            {/* PHASE 11: this used to fire a fake "saved successfully" toast
+                with NO persistence call. It now runs the real save pipeline;
+                the "saved successfully" claim is emitted by the engine only
+                after the cloud accepts the state, and a failure keeps the
+                config (local state) with an actionable retry. */}
             <button
-              onClick={() => showToast('✓ Loyalty rules and tier parameters saved successfully!')}
-              className="text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs cursor-pointer hover:opacity-90"
+              type="button"
+              onClick={() => void handleSaveConfig()}
+              disabled={savingConfig || savingReward}
+              className="text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs cursor-pointer hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
               style={{ backgroundColor: primaryAccentColor }}
             >
-              Save Configuration Changes
+              {savingConfig ? 'Saving…' : 'Save Configuration Changes'}
             </button>
           </div>
         </div>
@@ -1132,6 +1265,14 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
                 />
               </div>
 
+              {/* PHASE 11: a failed cloud save keeps the form open (the change
+                  is retained) — resubmitting re-runs the real save pipeline. */}
+              {saveError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2" role="alert">
+                  <span className="material-symbols-outlined text-rose-600 text-lg leading-none">error</span>
+                  <span>{saveError} You can submit this form again to retry.</span>
+                </div>
+              )}
               <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
                 <button
                   type="button"
@@ -1142,10 +1283,11 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer"
+                  disabled={savingReward}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ backgroundColor: primaryAccentColor }}
                 >
-                  {editingReward ? 'Save Changes' : 'Create Threshold'}
+                  {savingReward ? 'Saving…' : editingReward ? 'Save Changes' : 'Create Threshold'}
                 </button>
               </div>
             </form>

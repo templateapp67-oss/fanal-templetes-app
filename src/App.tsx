@@ -55,6 +55,7 @@ import {
   saveStep,
   logSaveError,
 } from './lib/autoSave';
+import type { SalonPersistResult, SalonEditorStatePatch } from './lib/autoSave';
 import { ensureFreshSession, refreshSessionForSave, logAuthEnvironmentDiagnostics } from './lib/authSession';
 import { applyWorkingHoursFromRow } from './lib/salonSync';
 import { saveOwnerEditorState } from './lib/ownerEditorState';
@@ -1336,14 +1337,25 @@ export default function App() {
     );
   }, []);
 
+  // PHASE 11: the save engine reports a REAL persistence outcome, never a
+  // local-state acknowledgement. Callers (editor save bar, management
+  // components, profile modals) may only present "Saved" after this resolves
+  // with `published` — or, for the honest device-only variant, `localDraft`.
   const persistSalonState = useCallback(
-    async (options?: { source?: 'auto' | 'manual'; message?: string; explicitProfile?: SalonProfile }): Promise<boolean> => {
+    async (options?: {
+      source?: 'auto' | 'manual';
+      message?: string;
+      /** Just-changed state slice — applied to the live snapshot before the
+       *  save runs so a save started in the same event tick as the state
+       *  change never persists the stale pre-change state. */
+      explicitState?: SalonEditorStatePatch;
+    }): Promise<SalonPersistResult> => {
       const source = options?.source ?? 'manual';
       saveStep('start', { source, hasUser: !!salonStateRef.current?.user, mock: isMockSupabase });
-      if (options?.explicitProfile) {
+      if (options?.explicitState) {
         salonStateRef.current = {
           ...salonStateRef.current,
-          profile: options.explicitProfile,
+          ...options.explicitState,
         };
       }
       if (salonStateRef.current.user && !isMockSupabase && !hydratedForUserRef.current) {
@@ -1352,29 +1364,33 @@ export default function App() {
           logSaveError({ stage: 'tenant', message: 'Cloud workspace hydration failed — save paused to protect existing profile data.', resource: 'hydration' });
           setSaveStatus('error');
           if (source === 'manual') showToast('Saved data could not be loaded. Save paused to protect your existing profile. Please retry.', 'error');
-          return false;
+          return { published: false, localDraft: false, failed: true };
         }
       }
       if (!isMockSupabase && authStatusRef.current !== 'ready') {
         saveStep('authenticated user resolved', { resolved: false, authStatus: authStatusRef.current });
-        return false;
+        // Skipped (not failed): auth is still resolving — retryable, but the
+        // state was NOT persisted, so no "Saved" may be presented.
+        return { published: false, localDraft: false, failed: false };
       }
       const state = salonStateRef.current;
       saveStep('authenticated user resolved', { userId: state.user?.id ?? null, mock: isMockSupabase });
 
       // Coalesce auto-saves: if one is already running, remember to run again
-      // afterwards so the newest state always lands.
+      // afterwards so the newest state always lands. (Nothing was persisted by
+      // THIS call — the coalesced follow-up is what saves.)
       if (saveInFlightRef.current && source === 'auto') {
         resaveAfterFlightRef.current = true;
-        return false;
+        return { published: false, localDraft: false, failed: false };
       }
 
       const snapshot = snapshotOf(state);
       if (source === 'auto' && snapshot === lastPersistedSnapshotRef.current) {
-        // Nothing actually changed — don't hammer localStorage/Supabase.
+        // Nothing actually changed — the previous save already persisted this
+        // exact snapshot, so "published" is truthful here.
         saveStep('client state updated', { outcome: 'unchanged — nothing to persist' });
         setSaveStatus((prev) => (prev === 'pending' ? 'idle' : prev));
-        return true;
+        return { published: true, localDraft: false, failed: false };
       }
       saveStep('client state updated', { snapshotBytes: snapshot.length });
 
@@ -1616,7 +1632,7 @@ export default function App() {
             showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
           }
           lastErrorToastRef.current = detail;
-          return false;
+          return { published: false, localDraft: false, failed: true };
         }
 
         if (!cloud.ok || (sessionOk && cloud.target === 'local_draft')) {
@@ -1647,7 +1663,7 @@ export default function App() {
             );
           }
           lastErrorToastRef.current = detail;
-          return false;
+          return { published: false, localDraft: false, failed: true };
         }
 
         lastPersistedSnapshotRef.current = snapshot;
@@ -1690,10 +1706,12 @@ export default function App() {
           }
         }
         scheduleStatusReset();
-        // Manual saves report "published" only when the cloud actually took
-        // the state (the success modal promises a live link); auto-saves
-        // always succeed because the progress is persisted somewhere.
-        return publishedToCloud || source === 'auto';
+        // PHASE 11: "published" is true ONLY when the cloud (RPC or
+        // service-role API) actually took the state — a successful local
+        // draft is its own honest outcome, never "published".
+        return publishedToCloud
+          ? { published: true, localDraft: false, failed: false }
+          : { published: false, localDraft: true, failed: false };
       } catch (err) {
         // Unexpected (programming) errors — surface with full detail.
         const detail = describeError(err);
@@ -1705,7 +1723,7 @@ export default function App() {
         setSaveStatus('error');
         showToast(`Save failed: ${summarizeSaveError(detail)}`, 'error');
         lastErrorToastRef.current = detail;
-        return false;
+        return { published: false, localDraft: false, failed: true };
       } finally {
         saveInFlightRef.current = false;
         if (resaveAfterFlightRef.current) {
@@ -1780,12 +1798,36 @@ export default function App() {
       window.clearTimeout(debounceTimerRef.current);
       hasPendingSaveRef.current = false;
     }
+    // The editor's "Website saved successfully!" dialog may only open when
+    // the cloud (or service-role API) actually took the state — never for a
+    // local draft.
     return persistSalonState({
       source: 'manual',
       message: 'Website details updated successfully!',
-      explicitProfile: profile,
-    });
+      explicitState: { profile },
+    }).then((result) => result.published);
   }, [persistSalonState, profile]);
+
+  // PHASE 11 — manual-save entry point for the management components
+  // (Services, Team, Loyalty, profile modals).
+  //
+  // A successful setX() React state update is NOT a successful save: the
+  // caller learns the outcome only AFTER the real pipeline finishes, using
+  // the same vocabulary as the editor status pill:
+  //   published  — the cloud accepted the state; the success toast for
+  //                `message` has fired ("Saved"),
+  //   localDraft — cloud unreachable / not signed in; the device draft holds
+  //                the state; the honest "saved on this device" toast fired,
+  //   failed     — nothing was persisted; the "Save failed" toast fired and
+  //                the exact server error was logged as [SAVE ERROR].
+  // `overrides` carries the just-changed slice (same event tick as the state
+  // update, before the snapshot ref re-renders) so the save can never persist
+  // a stale snapshot.
+  const persistChange = useCallback(
+    (message: string, overrides?: SalonEditorStatePatch): Promise<SalonPersistResult> =>
+      persistSalonState({ source: 'manual', message, explicitState: overrides }),
+    [persistSalonState]
+  );
 
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
@@ -2088,7 +2130,14 @@ export default function App() {
         onBuildWebsiteClick={handleBuildWebsiteClick}
         user={user}
         setUser={setUser}
-        onProfileSaved={(patch) => { setProfile(prev => ({ ...prev, ...patch })); showToast('Profile saved successfully. Contact & Location updated.'); }}
+        onProfileSaved={(patch) => {
+          // PHASE 11: no immediate "saved" toast. The patch is published
+          // through the real save pipeline and the toast reports the actual
+          // outcome (cloud save / local draft / Save failed + retry).
+          const merged: SalonProfile = { ...profile, ...patch };
+          setProfile(merged);
+          void persistChange('Profile saved successfully. Contact & Location updated.', { profile: merged });
+        }}
         profile={profile}
         openAuth={(mode) => {
           setAuthMode(mode);
@@ -2167,6 +2216,7 @@ export default function App() {
           setClients={setClients}
           loyaltyConfig={loyaltyConfig}
           setLoyaltyConfig={setLoyaltyConfig}
+          onPersistChange={persistChange}
           onNavigateToPreview={() => setCurrentView('preview')}
           onNavigateToEditor={() => {
             setWizardStartingStep(1);
@@ -2271,12 +2321,11 @@ export default function App() {
         showToast={showToast}
         onSave={async (updated) => {
           setProfile(updated);
-          salonStateRef.current = { ...salonStateRef.current, profile: updated };
-          void persistSalonState({
-            source: 'manual',
-            message: 'User profile settings saved successfully!',
-            explicitProfile: updated,
-          });
+          // PHASE 11: the "saved successfully" toast is emitted by the save
+          // engine ONLY after the cloud (or service-role API) accepted the
+          // state; a failed publish shows "Save failed" with the summarized
+          // server error instead, and the exact error in the console.
+          void persistChange('User profile settings saved successfully!', { profile: updated });
         }}
       />
 

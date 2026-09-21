@@ -257,7 +257,10 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
     setVideoUrlInput('');
     setVideoTitleInput('');
     setIsAddModalOpen(false);
-    setAddSuccessMessage('New social video added successfully to your website feed!');
+    // PHASE 11: the video is added to the (local) profile and auto-saved —
+    // the save engine reports whether the cloud took it, so we do not claim
+    // a successful website publish here.
+    setAddSuccessMessage('New social video added to your website feed — auto-saving…');
     setTimeout(() => setAddSuccessMessage(null), 4000);
   };
 
