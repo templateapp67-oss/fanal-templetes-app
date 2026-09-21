@@ -30,6 +30,7 @@ import {
   mergeTemplateServices,
   mergeTemplateStylists,
   getSiteUrl,
+  slugifySalonName,
   ONBOARDING_COMPLETED_KEY,
   getStoredAuthenticatedProfile,
   setStoredAuthenticatedProfile,

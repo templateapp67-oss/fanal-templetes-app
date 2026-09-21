@@ -250,37 +250,34 @@ must be right for `profiles`, `owner_editor_state`, and related tables (`service
 `stylists`, `loyalty_config`, `loyalty_rewards`):
 
 1. **Grants** — `authenticated` needs `select, insert, update, delete` across all
-   public tables in the schema. Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`
+   public tables in the schema. Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`,
+   `supabase/migrations/20261011_comprehensive_tenant_rls_audit.sql`, and
+   `supabase/migrations/20261012_production_schema_reconciliation.sql`
    (either via `supabase db push` or by pasting into Supabase Dashboard → SQL Editor).
-   It executes:
+   They execute:
    - `GRANT USAGE ON SCHEMA public TO authenticated;`
-   - `GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;`
-   - `GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;`
-   - `GRANT ALL ON ALL ROUTINES IN SCHEMA public TO authenticated;`
-   - `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO authenticated;`
-   - and immediately revokes the privileges that are **not** row-scoped:
+   - `GRANT SELECT, INSERT, UPDATE, DELETE ON <tables> TO authenticated;`
+   - `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;`
+   - and immediately revoke privileges that are **not** row-scoped:
      `TRUNCATE` bypasses RLS completely (it would let any signed-in user wipe every
      salon's data in one statement), and `REFERENCES` / `TRIGGER` / `MAINTAIN` are never
      used by the save path. Net effect = full row-scoped DML privileges for the owner.
-2. **Policies** — RLS enabled with owner-scoped policies (`FOR SELECT`, `FOR INSERT`,
-   `FOR UPDATE`, `FOR DELETE`), including the combined
-   `"Users can insert/update their own <table_name>"` policy
-   (`FOR ALL TO authenticated USING (auth.uid() = <owner column>) WITH CHECK (…)`)
-   for:
-   - `profiles` (this repo) / `salon_profiles` / `website_profiles`
+2. **Policies** — RLS enabled with tenant-scoped policies (`FOR SELECT`, `FOR INSERT`,
+   `FOR UPDATE`, `FOR DELETE`), including:
+   - `profiles` / `salon_profiles` / `website_profiles`
+   - `salons`, `organizations`, `organization_members`, `salon_hours`, `salon_customers`
    - `owner_editor_state`
-   - `services`
-   - `stylists`
-   - `loyalty_config`
-   - `loyalty_rewards`
-   - `appointments`, `bookings`, `clients`, etc.
+   - `services`, `stylists`, `staff`, `staff_services`, `staff_schedules`
+   - `bookings`, `booking_items`, `reviews`
+   - `loyalty_config`, `loyalty_rewards`
+   - `in_app_notifications` / `notifications`
 
-### 9b. Applying the migration in Supabase SQL Editor
+### 9b. Applying the migrations in Supabase SQL Editor
 
-To apply all required permissions and RLS policies at once:
+To apply all required permissions, schema reconciliation, and RLS policies at once:
 
 1. Open your **Supabase Project Dashboard** → **SQL Editor** → **New Query**.
-2. Open `supabase/migrations/20261010_salon_profile_rls_and_grants.sql` from this repository, copy the entire SQL script, and paste it into the editor.
+2. Run `supabase/migrations/20261010_salon_profile_rls_and_grants.sql`, `supabase/migrations/20261011_comprehensive_tenant_rls_audit.sql`, and `supabase/migrations/20261012_production_schema_reconciliation.sql` from this repository.
 3. Click **Run** (or press `Ctrl+Enter` / `Cmd+Enter`).
 4. Verify execution in the Results panel: PostgREST schema cache reloads automatically via `NOTIFY pgrst, 'reload schema'`.
 
@@ -295,7 +292,7 @@ select c.relname as table_name,
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public'
-  and c.relname in ('profiles', 'owner_editor_state', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
+  and c.relname in ('profiles', 'owner_editor_state', 'services', 'stylists', 'staff', 'bookings', 'booking_items', 'loyalty_config', 'loyalty_rewards')
 order by c.relname;
 -- Expected: rls_enabled = true for all, policy_count >= 1 for each table.
 
@@ -306,7 +303,7 @@ select table_name,
 from information_schema.role_table_grants
 where table_schema = 'public'
   and grantee = 'authenticated'
-  and table_name in ('profiles', 'owner_editor_state', 'services', 'stylists', 'loyalty_config', 'loyalty_rewards')
+  and table_name in ('profiles', 'owner_editor_state', 'services', 'stylists', 'staff', 'bookings', 'booking_items', 'loyalty_config', 'loyalty_rewards')
 group by table_name, grantee
 order by table_name;
 -- Expected: SELECT, INSERT, UPDATE, DELETE present on all tables.
