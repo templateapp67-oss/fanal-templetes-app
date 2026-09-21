@@ -563,16 +563,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     : [];
   const activeUpgrades = activeAddons;
 
-  // Combined totals over EVERY chosen service (+ optional add-ons + home visit
-  // fee). Strictly derived calculation from current active selections only:
-  // services.reduce(...) + addons.reduce(...)
+  // Strictly derived calculation from current active selections only:
+  // const totalDuration = selectedServices.reduce(...) + selectedAddons.reduce(...)
   const totalDuration =
     selectedServices.reduce((sum, service) => sum + (Number(service.durationMinutes) || 0), 0) +
-    activeAddons.reduce((sum, addon) => sum + (Number(addon.durationMinutes) || 0), 0);
+    selectedAddons.reduce((sum, addon) => sum + (Number(addon.durationMinutes) || 0), 0);
 
   const totalPrice =
     selectedServices.reduce((sum, service) => sum + (Number(service.price) || 0), 0) +
-    activeAddons.reduce((sum, addon) => sum + (Number(addon.price) || 0), 0) +
+    selectedAddons.reduce((sum, addon) => sum + (Number(addon.price) || 0), 0) +
     homeServiceCharge;
 
   const totalAmount = totalPrice;
@@ -2511,12 +2510,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               >
                 {selectedServices.length} Service{selectedServices.length !== 1 ? 's' : ''} Selected
               </span>
-              {activeUpgrades.length > 0 && (
+              {selectedAddons.length > 0 && (
                 <span
                   data-testid="summary-upgrades-count"
                   className="px-2 py-1 rounded-lg text-[10px] font-extrabold font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0"
                 >
-                  +{activeUpgrades.length} Add-on{activeUpgrades.length !== 1 ? 's' : ''}
+                  +{selectedAddons.length} Add-on{selectedAddons.length !== 1 ? 's' : ''}
                 </span>
               )}
               <span className="hidden md:inline text-[10px] text-slate-500 font-mono truncate min-w-0 max-w-[240px]">
