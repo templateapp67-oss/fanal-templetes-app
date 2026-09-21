@@ -68,31 +68,21 @@
 begin;
 
 -- ---------------------------------------------------------------------------
--- 0) Privileges that are schema-level, not table-level.
---    Ensures the authenticated role has access to public schema tables,
---    sequences and functions. TRUNCATE is explicitly revoked because it
---    bypasses Row Level Security entirely.
+-- 0) Schema usage & Least-Privilege sequence permissions.
+--    Ensures the authenticated role has USAGE on schema public and USAGE, SELECT
+--    on sequences (required for identity/serial columns during inserts).
+--    Broad grants (GRANT ALL ON ALL TABLES) are deliberately avoided in favor
+--    of explicit least-privilege table grants below.
 -- ---------------------------------------------------------------------------
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     grant usage on schema public to authenticated;
-    grant all on all tables in schema public to authenticated;
-    grant all on all sequences in schema public to authenticated;
-    grant all on all routines in schema public to authenticated;
-    alter default privileges in schema public grant all on tables to authenticated;
-    alter default privileges in schema public grant all on sequences to authenticated;
-    alter default privileges in schema public grant all on routines to authenticated;
-
-    -- TRUNCATE is revoked because it bypasses RLS completely
-    revoke truncate on all tables in schema public from authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    alter default privileges in schema public grant usage, select on sequences to authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'anon') then
     grant usage on schema public to anon;
-    grant select on all tables in schema public to anon;
-    grant select on all sequences in schema public to anon;
-    alter default privileges in schema public grant select on tables to anon;
-    alter default privileges in schema public grant select on sequences to anon;
   end if;
 end $$;
 
@@ -290,7 +280,7 @@ end $$;
 --       throwing "Your account profile could not be updated".
 -- ---------------------------------------------------------------------------
 create or replace function public.sync_owner_contact(p_profile jsonb)
-returns void language plpgsql security invoker set search_path = public as $$
+returns void language plpgsql security invoker set search_path = pg_catalog, public, pg_temp as $$
 declare
   actor uuid := auth.uid();
   changed integer;
@@ -438,16 +428,15 @@ begin
                      'Users can insert/update their own ' || tbl, qualified, owner_col, owner_col);
     end if;
 
-    -- Explicit grants on the table for authenticated
+    -- Explicit least-privilege grants on the table for authenticated
     execute format('grant select, insert, update, delete on table %s to authenticated', qualified);
-    execute format('grant all on table %s to authenticated', qualified);
     execute format('revoke truncate, references, trigger on table %s from authenticated', qualified);
     if current_setting('server_version_num')::int >= 170000 then
       execute format('revoke maintain on table %s from authenticated', qualified);
     end if;
 
-    -- Anon select grant if role exists
-    if exists (select 1 from pg_roles where rolname = 'anon') then
+    -- Anon select grant only on public catalog tables (services, stylists)
+    if tbl in ('services', 'stylists') and exists (select 1 from pg_roles where rolname = 'anon') then
       execute format('grant select on table %s to anon', qualified);
     end if;
   end loop;
