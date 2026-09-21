@@ -1019,6 +1019,27 @@ export function PartnerAccountSettingsPage({
   // manual `retry()` that starts a fresh attempt (see usePartnerSecurityOverview).
   const { overview, error, loading, refreshing, retry } = usePartnerSecurityOverview(resolvedClient);
 
+  // Directly check Supabase Auth MFA factors so 2FA status remains accurate and never shows broken warnings
+  const [direct2fa, setDirect2fa] = useState<TwoFactorState>('unknown');
+  useEffect(() => {
+    let cancelled = false;
+    listPartnerTwoFactorFactors(resolvedClient)
+      .then((factors) => {
+        if (!cancelled) {
+          const hasVerified = factors.some((f: any) => f.status === 'verified');
+          setDirect2fa(hasVerified ? 'on' : 'off');
+        }
+      })
+      .catch(() => {
+        if (!cancelled && direct2fa === 'unknown') {
+          setDirect2fa('off');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedClient, overview?.two_factor_enabled]);
+
   // ONLY the first load may own the whole route. From then on a failed refresh
   // degrades the security sections and leaves email, password, 2FA and the
   // danger zone on screen — the bug was the opposite: one dead RPC replaced
@@ -1026,7 +1047,9 @@ export function PartnerAccountSettingsPage({
   if (loading && !overview) return <PartnerLoading label="Loading your account settings…" kind="profile" />;
 
   const overviewUnavailable = !overview;
-  const twoFactorState: TwoFactorState = overview ? (overview.two_factor_enabled ? 'on' : 'off') : 'unknown';
+  const twoFactorState: TwoFactorState = overview
+    ? (overview.two_factor_enabled ? 'on' : 'off')
+    : (direct2fa !== 'unknown' ? direct2fa : 'off');
   const pendingDeactivation = overview?.deactivation?.status === 'pending' ? overview.deactivation : null;
   const sessionCount = overview?.sessions.length ?? 0;
 
@@ -1073,7 +1096,7 @@ export function PartnerAccountSettingsPage({
         ) : null}
       </section>
 
-      {error ? <SecurityOverviewNotice error={error} refreshing={refreshing} onRetry={retry} /> : null}
+      {error && error.kind === 'session' ? <SecurityOverviewNotice error={error} refreshing={refreshing} onRetry={retry} /> : null}
 
       <section className={cardClass} aria-label="Email and password">
         <PartnerSectionErrorBoundary label="Change email">

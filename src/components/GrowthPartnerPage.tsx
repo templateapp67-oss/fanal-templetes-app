@@ -8,6 +8,7 @@ import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } fr
 import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, LogOut } from 'lucide-react';
+import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl } from '../lib/growthPartnerProfile';
 import {
   fetchMyGrowthPartnerRow,
   fetchMyGrowthPartnerApplication,
@@ -244,6 +245,30 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Synchronize partner profile avatar and name immediately on mount so the shell header matches the Profile page
+  useEffect(() => {
+    if (!userId || isMockSupabase) {
+      setSavedProfileAvatar('');
+      return;
+    }
+    let cancelled = false;
+    fetchGrowthPartnerProfile(supabase as any)
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.photo_path) {
+          const url = growthPartnerPhotoUrl(data.photo_path, supabase as any);
+          if (url) setSavedProfileAvatar(url);
+        }
+        if (data?.full_name) {
+          setSavedProfileName({ owner: data.partner_id, name: data.full_name });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   // Section data (each fetched once per visit from its backend RPC).
   const [dashboardState, setDashboard] = useState<SectionState<PartnerDashboardData>>(initialSectionState);

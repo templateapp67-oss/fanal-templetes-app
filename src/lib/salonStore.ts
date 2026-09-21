@@ -96,10 +96,11 @@ export interface AuthenticatedProfileState {
 
 const AUTH_PROFILE_STORAGE_KEY = 'nexora_auth_profile_state';
 
-export function getStoredAuthenticatedProfile(): AuthenticatedProfileState | null {
+export function getStoredAuthenticatedProfile(userId?: string | null): AuthenticatedProfileState | null {
   try {
     if (typeof window === 'undefined') return null;
-    const raw = localStorage.getItem(AUTH_PROFILE_STORAGE_KEY);
+    const key = userId ? `${AUTH_PROFILE_STORAGE_KEY}_${userId}` : AUTH_PROFILE_STORAGE_KEY;
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
@@ -107,16 +108,21 @@ export function getStoredAuthenticatedProfile(): AuthenticatedProfileState | nul
   }
 }
 
-export function setStoredAuthenticatedProfile(profile: Partial<AuthenticatedProfileState> | null) {
+export function setStoredAuthenticatedProfile(profile: Partial<AuthenticatedProfileState> | null, userId?: string | null) {
   try {
     if (typeof window === 'undefined') return;
+    const key = userId ? `${AUTH_PROFILE_STORAGE_KEY}_${userId}` : AUTH_PROFILE_STORAGE_KEY;
     if (!profile) {
-      localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+      localStorage.removeItem(key);
+      if (!userId) localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
       return;
     }
-    const current = getStoredAuthenticatedProfile() || {};
+    const current = getStoredAuthenticatedProfile(userId) || {};
     const merged = { ...current, ...profile };
-    localStorage.setItem(AUTH_PROFILE_STORAGE_KEY, JSON.stringify(merged));
+    localStorage.setItem(key, JSON.stringify(merged));
+    if (userId) {
+      localStorage.setItem(AUTH_PROFILE_STORAGE_KEY, JSON.stringify(merged));
+    }
   } catch {
     // ignore quota/storage issues
   }
@@ -291,14 +297,32 @@ export function mergeTemplateStylists(
 // ============================================================================
 // localStorage helpers
 // ============================================================================
-export function loadSalonState(): SalonState | null {
+export function clearAllLocalUserState(): void {
   try {
-    const raw = localStorage.getItem(SALON_STATE_STORAGE_KEY);
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(SALON_STATE_STORAGE_KEY);
+    localStorage.removeItem('nexora_draft_salon_data');
+    localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+    localStorage.removeItem('nexora_authenticated_profile');
+    localStorage.removeItem('pinky_nails_salon_profile_v1');
+    localStorage.removeItem(ONBOARDING_COMPLETED_KEY);
+    localStorage.removeItem('nexora_auth_user_v1');
+  } catch {}
+}
+
+export function loadSalonState(userId?: string | null): SalonState | null {
+  try {
+    const key = userId ? `${SALON_STATE_STORAGE_KEY}_${userId}` : SALON_STATE_STORAGE_KEY;
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
         const profile = parsed.profile && typeof parsed.profile === 'object' && parsed.profile.businessName ? parsed.profile : null;
         if (profile) {
+          // Cross-tenant guard: if userId is requested and profile belongs to another owner, never leak!
+          if (userId && profile.ownerId && profile.ownerId !== userId) {
+            return null;
+          }
           return {
             profile,
             services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : null,
@@ -311,7 +335,11 @@ export function loadSalonState(): SalonState | null {
     }
   } catch {}
 
-  // Fallback 1: nexora_draft_salon_data
+  // If a specific userId was requested and no user-scoped state exists,
+  // do NOT fall back to generic/stale localStorage from previous users!
+  if (userId) return null;
+
+  // Fallback 1: nexora_draft_salon_data (anonymous/visitor only)
   try {
     const rawDraft = localStorage.getItem('nexora_draft_salon_data');
     if (rawDraft) {
@@ -329,7 +357,7 @@ export function loadSalonState(): SalonState | null {
     }
   } catch {}
 
-  // Fallback 2: nexora_authenticated_profile
+  // Fallback 2: nexora_authenticated_profile (anonymous/visitor only)
   try {
     const rawAuth = localStorage.getItem('nexora_authenticated_profile');
     if (rawAuth) {
@@ -349,11 +377,15 @@ export function loadSalonState(): SalonState | null {
   return null;
 }
 
-export function saveSalonState(state: SalonState): LocalStorageWriteResult {
+export function saveSalonState(state: SalonState, userId?: string | null): LocalStorageWriteResult {
   // Quota-aware write: uploaded images are stored as data URLs and can exceed
   // the ~5MB localStorage budget. safeWriteLocalStorage never throws — it
   // retries once without inline images and reports the exact error instead of
   // failing the whole save flow with a generic "Save failed".
+  const targetUser = userId || state.profile?.ownerId;
+  if (targetUser) {
+    safeWriteLocalStorage(`${SALON_STATE_STORAGE_KEY}_${targetUser}`, JSON.stringify(state));
+  }
   return safeWriteLocalStorage(SALON_STATE_STORAGE_KEY, JSON.stringify(state));
 }
 

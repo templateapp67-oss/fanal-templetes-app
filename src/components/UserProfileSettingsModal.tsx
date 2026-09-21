@@ -8,6 +8,7 @@ interface UserProfileSettingsModalProps {
   profile: SalonProfile;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   showToast: (msg: string, type?: 'success' | 'error') => void;
+  onSave?: (updatedProfile: SalonProfile) => Promise<void> | void;
 }
 
 export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> = ({
@@ -16,15 +17,16 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   profile,
   setProfile,
   showToast,
+  onSave,
 }) => {
   const [formData, setFormData] = useState({
-    ownerName: profile.ownerName || 'Uma',
-    ownerPhotoUrl: profile.ownerPhotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-    whatsapp: profile.whatsapp || '+91 98765 43210',
-    dob: profile.dob || '1992-06-15',
-    postalCode: profile.postalCode || '400050',
-    city: profile.city || 'Mumbai',
-    areaLocality: profile.areaLocality || 'Bandra West',
+    ownerName: profile.ownerName || '',
+    ownerPhotoUrl: profile.ownerPhotoUrl || '',
+    whatsapp: profile.whatsapp || '',
+    dob: profile.dob || '',
+    postalCode: profile.postalCode || '',
+    city: profile.city || '',
+    areaLocality: profile.areaLocality || '',
   });
 
   const [whatsappNotificationsEnabled, setWhatsappNotificationsEnabled] = useState(
@@ -34,6 +36,23 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Re-sync form state from profile whenever the modal opens or the active profile updates
+  React.useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        ownerName: profile.ownerName || '',
+        ownerPhotoUrl: profile.ownerPhotoUrl || '',
+        whatsapp: profile.whatsapp || '',
+        dob: profile.dob || '',
+        postalCode: profile.postalCode || '',
+        city: profile.city || '',
+        areaLocality: profile.areaLocality || '',
+      });
+      setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
+      setErrors({});
+    }
+  }, [isOpen, profile]);
 
   if (!isOpen) return null;
 
@@ -144,8 +163,8 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       return;
     }
 
-    setProfile((prev) => ({
-      ...prev,
+    const updatedProfile: SalonProfile = {
+      ...profile,
       ownerName: formData.ownerName,
       ownerPhotoUrl: formData.ownerPhotoUrl,
       whatsapp: formData.whatsapp,
@@ -154,9 +173,14 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       city: formData.city,
       areaLocality: formData.areaLocality,
       whatsappNotificationsEnabled,
-    }));
+    };
 
-    showToast('User profile settings saved successfully!');
+    setProfile(updatedProfile);
+    if (onSave) {
+      void onSave(updatedProfile);
+    } else {
+      showToast('User profile settings saved successfully!');
+    }
     onClose();
   };
 

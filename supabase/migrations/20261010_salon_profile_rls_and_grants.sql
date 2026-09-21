@@ -285,6 +285,90 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- 3c.1) Ensure sync_owner_contact() upserts profiles safely for new users.
+--       If the user does not have a profile row yet, it inserts one rather than
+--       throwing "Your account profile could not be updated".
+-- ---------------------------------------------------------------------------
+create or replace function public.sync_owner_contact(p_profile jsonb)
+returns void language plpgsql security invoker set search_path = public as $$
+declare
+  actor uuid := auth.uid();
+  changed integer;
+  patch jsonb;
+begin
+  if actor is null then raise exception 'Please sign in again'; end if;
+  if jsonb_typeof(p_profile) <> 'object' or p_profile is null then raise exception 'Invalid profile'; end if;
+  if octet_length(p_profile::text) > 4000000 then raise exception 'Profile is too large; use image uploads'; end if;
+
+  update public.profiles set
+    full_name = case when p_profile ? 'ownerName' then p_profile->>'ownerName' else full_name end,
+    phone = case when p_profile ? 'phone' then p_profile->>'phone' else phone end,
+    mobile = case when p_profile ? 'phone' then p_profile->>'phone' else mobile end,
+    whatsapp = case when p_profile ? 'whatsapp' then p_profile->>'whatsapp' else whatsapp end,
+    pincode = case when p_profile ? 'postalCode' then p_profile->>'postalCode' else pincode end,
+    city = case when p_profile ? 'city' then p_profile->>'city' else city end,
+    preferred_city = case when p_profile ? 'city' then p_profile->>'city' else preferred_city end,
+    area = case when p_profile ? 'areaLocality' then p_profile->>'areaLocality' else area end,
+    preferred_area = case when p_profile ? 'areaLocality' then p_profile->>'areaLocality' else preferred_area end,
+    avatar_url = case when p_profile ? 'ownerPhotoUrl' then p_profile->>'ownerPhotoUrl' else avatar_url end,
+    photo_url = case when p_profile ? 'ownerPhotoUrl' then p_profile->>'ownerPhotoUrl' else photo_url end
+  where id = actor;
+
+  get diagnostics changed = row_count;
+  if changed <> 1 then
+    insert into public.profiles (
+      id, full_name, phone, mobile, whatsapp, pincode, city, preferred_city, area, preferred_area, avatar_url, photo_url
+    ) values (
+      actor,
+      p_profile->>'ownerName',
+      p_profile->>'phone',
+      p_profile->>'phone',
+      p_profile->>'whatsapp',
+      p_profile->>'postalCode',
+      p_profile->>'city',
+      p_profile->>'city',
+      p_profile->>'areaLocality',
+      p_profile->>'areaLocality',
+      p_profile->>'ownerPhotoUrl',
+      p_profile->>'ownerPhotoUrl'
+    ) on conflict (id) do update set
+      full_name = coalesce(excluded.full_name, profiles.full_name),
+      phone = coalesce(excluded.phone, profiles.phone),
+      whatsapp = coalesce(excluded.whatsapp, profiles.whatsapp),
+      pincode = coalesce(excluded.pincode, profiles.pincode),
+      city = coalesce(excluded.city, profiles.city),
+      area = coalesce(excluded.area, profiles.area),
+      avatar_url = coalesce(excluded.avatar_url, profiles.avatar_url),
+      photo_url = coalesce(excluded.photo_url, profiles.photo_url);
+  end if;
+
+  patch := p_profile - array['dateOfBirth','dob','notifications','whatsappNotifications'];
+  if to_regclass('public.owner_editor_state') is not null then
+    insert into public.owner_editor_state(owner_id, state) values(actor, jsonb_build_object('profile', patch))
+    on conflict(owner_id) do update set state = jsonb_set(owner_editor_state.state, '{profile}', coalesce(owner_editor_state.state->'profile', '{}'::jsonb) || patch), updated_at = now();
+  end if;
+
+  if to_regclass('public.salons') is not null then
+    update public.salons set
+      phone = case when patch ? 'phone' then patch->>'phone' else phone end,
+      mobile = case when patch ? 'phone' then patch->>'phone' else mobile end,
+      whatsapp = case when patch ? 'whatsapp' then patch->>'whatsapp' else whatsapp end,
+      email = case when patch ? 'email' then patch->>'email' else email end,
+      address = case when patch ? 'address' then patch->>'address' else address end,
+      city = case when patch ? 'city' then patch->>'city' else city end,
+      area = case when patch ? 'areaLocality' then patch->>'areaLocality' else area end,
+      state = case when patch ? 'state' then patch->>'state' else state end,
+      pincode = case when patch ? 'postalCode' then patch->>'postalCode' else pincode end,
+      landmark = case when patch ? 'landmark' then patch->>'landmark' else landmark end,
+      latitude = case when patch ? 'latitude' then (patch->>'latitude')::numeric else latitude end,
+      longitude = case when patch ? 'longitude' then (patch->>'longitude')::numeric else longitude end,
+      data = coalesce(data, '{}'::jsonb) || jsonb_build_object('owner_photo_url', coalesce(patch->>'ownerPhotoUrl', data->>'owner_photo_url'), 'owner_name', coalesce(patch->>'ownerName', data->>'owner_name'))
+    where owner_id = actor and (slug = patch->>'subdomain' or (select count(*) from public.salons where owner_id = actor) = 1);
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 3d) Related tenant tables: services, stylists, loyalty_config, loyalty_rewards,
 --     appointments, bookings, clients, etc.
 --     Ensures RLS is enabled, owner-scoped policies (FOR SELECT, FOR INSERT,

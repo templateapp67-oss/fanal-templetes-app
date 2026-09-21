@@ -24,6 +24,7 @@ import { UserProfileSettingsModal } from './components/UserProfileSettingsModal'
 import {
   loadSalonState,
   saveSalonState,
+  clearAllLocalUserState,
   mergeTemplatePreservingUserData,
   mergeTemplateServices,
   mergeTemplateStylists,
@@ -701,6 +702,18 @@ export default function App() {
           setSaveNeedsSignIn(false);
         } else if (event === 'SIGNED_OUT') {
           setSaveNeedsSignIn(false);
+          clearAllLocalUserState();
+          setProfile(INITIAL_SALON_PROFILE);
+          setServices(INITIAL_SERVICES);
+          setStylists(INITIAL_STYLISTS);
+          setAppointments([]);
+          setClients([]);
+          setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+          setSelectedTemplateId(INITIAL_SALON_PROFILE.businessType);
+          previousTemplateIdRef.current = INITIAL_SALON_PROFILE.businessType;
+          hydratedForUserRef.current = false;
+          hydrationUserRef.current = null;
+          lastPersistedSnapshotRef.current = '';
         }
       }
     );
@@ -818,7 +831,7 @@ export default function App() {
           subdomain: data?.subdomain,
         };
         if (authState.salonName || authState.phone || authState.city) {
-          setStoredAuthenticatedProfile(authState);
+          setStoredAuthenticatedProfile(authState, user.id);
         }
 
         if (!data) {
@@ -835,14 +848,21 @@ export default function App() {
           console.warn(
             '[Profile] No profile row exists yet for this user — using sign-up metadata until the first save creates it.'
           );
-          setProfile((prev) => ({
-            ...prev,
-            businessName: meta.salon_name || prev.businessName,
-            ownerName: meta.full_name || prev.ownerName,
-            phone: meta.phone_number || prev.phone,
-            email: user.email || prev.email,
-            city: meta.city || prev.city,
-          }));
+          setProfile((prev) => {
+            const isDifferentUser = prev.ownerId && prev.ownerId !== user.id;
+            const base = isDifferentUser ? INITIAL_SALON_PROFILE : prev;
+            const businessName = meta.salon_name || base.businessName;
+            return {
+              ...base,
+              ownerId: user.id,
+              businessName,
+              ownerName: meta.full_name || base.ownerName,
+              phone: meta.phone_number || base.phone,
+              email: user.email || base.email,
+              city: meta.city || base.city,
+              subdomain: slugifySalonName(businessName),
+            };
+          });
           return;
         }
 
@@ -857,36 +877,40 @@ export default function App() {
           return;
         }
 
-        setProfile((prev) =>
-          applyWorkingHoursFromRow(
+        setProfile((prev) => {
+          const isDifferentUser = prev.ownerId && prev.ownerId !== user.id;
+          const base = isDifferentUser ? INITIAL_SALON_PROFILE : prev;
+          const resolvedBusinessName = data.salon_name || meta.salon_name || base.businessName;
+          return applyWorkingHoursFromRow(
             {
-              ...prev,
-              businessName: data.salon_name || meta.salon_name || prev.businessName,
-              ownerName: data.full_name || meta.full_name || prev.ownerName,
-              ownerRole: data.owner_role || prev.ownerRole,
-              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || prev.phone,
-              whatsapp: data.whatsapp || prev.whatsapp,
-              email: data.email || user.email || prev.email,
-              ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || prev.ownerPhotoUrl,
-              coverImageUrl: data.cover_image_url || prev.coverImageUrl,
-              tagline: data.tagline || prev.tagline,
-              about: data.about || prev.about,
-              address: data.full_address || prev.address,
-              city: data.city || data.preferred_city || meta.city || prev.city,
-              areaLocality: data.area ?? data.preferred_area ?? prev.areaLocality,
-              postalCode: data.postal_code || data.pincode || prev.postalCode,
-              landmark: data.landmark || prev.landmark,
-              subdomain: data.subdomain || prev.subdomain,
-              instagramHandle: data.instagram_handle || prev.instagramHandle,
-              homeService: data.home_service ?? prev.homeService,
-              offers: data.offers ?? prev.offers,
-              themePreset: data.theme_preset || prev.themePreset,
-              themeAccentKey: data.theme_accent_key || prev.themeAccentKey,
-              customAccentColor: data.custom_accent_color || prev.customAccentColor,
+              ...base,
+              ownerId: user.id,
+              businessName: resolvedBusinessName,
+              ownerName: data.full_name || meta.full_name || base.ownerName,
+              ownerRole: data.owner_role || base.ownerRole,
+              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || base.phone,
+              whatsapp: data.whatsapp || base.whatsapp,
+              email: data.email || user.email || base.email,
+              ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || (isDifferentUser ? '' : base.ownerPhotoUrl),
+              coverImageUrl: data.cover_image_url || (isDifferentUser ? '' : base.coverImageUrl),
+              tagline: data.tagline || (isDifferentUser ? '' : base.tagline),
+              about: data.about || (isDifferentUser ? '' : base.about),
+              address: data.full_address || (isDifferentUser ? '' : base.address),
+              city: data.city || data.preferred_city || meta.city || base.city,
+              areaLocality: data.area ?? data.preferred_area ?? (isDifferentUser ? '' : base.areaLocality),
+              postalCode: data.postal_code || data.pincode || (isDifferentUser ? '' : base.postalCode),
+              landmark: data.landmark || (isDifferentUser ? '' : base.landmark),
+              subdomain: data.subdomain || slugifySalonName(resolvedBusinessName),
+              instagramHandle: data.instagram_handle || (isDifferentUser ? '' : base.instagramHandle),
+              homeService: data.home_service ?? base.homeService,
+              offers: data.offers ?? base.offers,
+              themePreset: data.theme_preset || base.themePreset,
+              themeAccentKey: data.theme_accent_key || base.themeAccentKey,
+              customAccentColor: data.custom_accent_color || base.customAccentColor,
             },
             data
-          )
-        );
+          );
+        });
       } catch (err) {
         console.error('Error fetching profile:', err);
       }
@@ -1937,6 +1961,13 @@ export default function App() {
         profile={profile}
         setProfile={setProfile}
         showToast={showToast}
+        onSave={async (updated) => {
+          setProfile(updated);
+          void persistSalonState({
+            source: 'manual',
+            message: 'User profile settings saved successfully!',
+          });
+        }}
       />
 
       {/* Global save toast */}
