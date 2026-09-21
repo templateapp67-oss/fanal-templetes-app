@@ -43,7 +43,14 @@ import {
 } from "../server/dbGuard.js";
 import { installProcessGuards } from "../server/processGuards.js";
 import { asyncRoute, normalizeApiRequestUrl } from "../server/expressSafety.js";
-import { safeDatabaseError, sendSafeError } from "../server/safeError.js";
+import {
+  safeDatabaseError,
+  sendSafeError,
+  ApiValidationError,
+  ApiServerError,
+  ApiUnavailableError,
+  ApiInvalidStateError,
+} from "../server/safeError.js";
 import { lookupSalon } from "../server/siteLookup.js";
 import {
   handleRazorpayConfig,
@@ -399,190 +406,147 @@ app.post(
 );
 
 app.post("/api/generate-bio", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
-  try {
-    const { businessName, businessType, ownerName, vibe, specialties } = req.body;
+    // Phase 12 hardened: validated input + proper error codes.
+    const { businessName, businessType, ownerName, vibe, specialties, targetCustomers = 'Luxury', storyTone = 'Professional' } = req.body || {};
+    if (typeof businessName !== 'string' || businessName.trim().length < 2) {
+      throw new ApiValidationError('businessName is required (min 2 characters).', { field: 'businessName' });
+    }
+    if (typeof businessType !== 'string' || businessType.trim().length < 2) {
+      throw new ApiValidationError('businessType is required.', { field: 'businessType' });
+    }
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.json({
-        tagline: `Elevating ${businessType?.replace('_', ' ') || 'salon'} with bespoke luxury & precision care.`,
-        bio: `Welcome to ${businessName || 'our studio'}, founded by ${ownerName || 'our founder'}. We are a modern sanctuary dedicated to ${specialties || 'exceptional salon services'}. Blending a ${vibe || 'luxury'} aesthetic with high-performance organic products, our mission is to make every client feel renewed and confident.`
-      });
+      throw new ApiUnavailableError('AI generation is not configured on this server. Set GEMINI_API_KEY.', 'ai_unavailable');
     }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const prompt = `Write a high-converting tagline (max 10 words) and a compelling salon story/about bio (2-3 sentences) for a beauty business with details:
-Salon: ${businessName}
+    let parsed: any;
+    try {
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const prompt = `Write a high-converting tagline (max 10 words) and a compelling salon story/about bio of 100-150 words for a beauty business with the following details:
+Salon Name: ${businessName}
 Category: ${businessType}
-Founder: ${ownerName}
-Vibe: ${vibe}
-Specialties: ${specialties}
+Founder: ${ownerName || ''}
+Atmosphere/Vibe: ${vibe || ''}
+Target customers: ${targetCustomers}
+Story tone: ${storyTone}
+Specialties: ${specialties || ''}
 
-Return strictly valid JSON: {"tagline": "...", "bio": "..."}`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
-
-    const text = response.text;
-    if (text) {
-      return res.json(JSON.parse(text));
-    }
-    throw new Error('Empty AI response');
-  } catch (err) {
-    return res.json({
-      tagline: `Redefining beauty & relaxation in a luxury space.`,
-      bio: `Welcome to ${req.body.businessName || 'our studio'}. Our passionate team offers bespoke salon treatments designed to accentuate your unique natural style.`
-    });
-  }
-}));
-
-app.post("/api/generate-promo-image", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
-  try {
-    const { prompt, serviceName, category, style, aspectRatio = "1:1" } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    const detailedPrompt = prompt || `A professional, ultra-high quality, editorial advertising photo for a luxury salon promoting "${serviceName}" in the "${category || 'Beauty & Wellness'}" category. Aesthetic: ${style || 'Luxury Chic & Modern Elegance'}, warm studio lighting, pristine clean background, 8k resolution commercial photoshoot.`;
-
-    if (!apiKey) {
-      return res.json({
-        success: false,
-        fallbackNotice: "No GEMINI_API_KEY configured. Using high-resolution curated asset.",
-        imageUrl: null,
-        promptUsed: detailedPrompt
+Return strictly valid JSON in this format:
+{"taglines": ["...","...","...","...","..."], "tagline": "...", "bio": "..."}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' },
       });
+      if (!response.text) throw new ApiServerError('AI provider returned an empty response.');
+      parsed = JSON.parse(response.text);
+    } catch (err) {
+      if (err instanceof Error && typeof (err as any).status === 'number' && (err as any).status >= 400 && (err as any).status < 600) throw err;
+      throw new ApiServerError('Failed to generate bio with AI. Please try again.', err);
     }
-
-    const ai = new GoogleGenAI({ apiKey });
+    return res.status(200).json(parsed);
+  }));
+app.post("/api/generate-promo-image", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    // Phase 12 hardened: no 200-with-error, validates aspectRatio.
+    const { prompt, serviceName, category, style, aspectRatio = "1:1" } = req.body || {};
+    const apiKey = process.env.GEMINI_API_KEY;
+    const detailedPrompt = prompt || `A professional, ultra-high quality, editorial advertising photo for a luxury salon promoting "${serviceName}" in the "${category || 'Beauty & Wellness'}" category. Aesthetic: ${style || 'Luxury Chic & Modern Elegance'}, warm studio lighting, pristine clean background, 8k resolution commercial photoshoot.`;
+    if (!apiKey) {
+      throw new ApiUnavailableError('Image generation is not configured on this server. Set GEMINI_API_KEY.', 'ai_unavailable');
+    }
     const validAspectRatios = ["1:1", "3:4", "4:3", "9:16", "16:9"];
-    const chosenAspect = validAspectRatios.includes(aspectRatio) ? aspectRatio : "1:1";
-
-    const response = await ai.models.generateContent({
-      model: 'imagen-3.0-generate-001',
-      contents: {
-        parts: [{ text: detailedPrompt }],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: chosenAspect,
-        },
-      },
-    });
-
+    if (!validAspectRatios.includes(aspectRatio)) {
+      throw new ApiValidationError('aspectRatio must be one of ' + validAspectRatios.join(', '), { field: 'aspectRatio' });
+    }
     let generatedImageUrl: string | null = null;
-    if (response.candidates && response.candidates[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData && part.inlineData.data) {
-          generatedImageUrl = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
-          break;
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'imagen-3.0-generate-001',
+        contents: { parts: [{ text: detailedPrompt }] },
+        config: { imageConfig: { aspectRatio } },
+      });
+      if (response.candidates && response.candidates[0]?.content?.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData && part.inlineData.data) {
+            generatedImageUrl = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+            break;
+          }
         }
       }
+    } catch (err) {
+      if (err instanceof Error && typeof (err as any).status === 'number' && (err as any).status >= 400 && (err as any).status < 600) throw err;
+      throw new ApiServerError('Failed to generate promotional image. Please try again.', err);
     }
-
     if (generatedImageUrl) {
-      return res.json({
-        success: true,
-        imageUrl: generatedImageUrl,
-        promptUsed: detailedPrompt,
-      });
-    } else {
-      return res.json({
-        success: false,
-        imageUrl: null,
-        promptUsed: detailedPrompt,
-        notice: "Image generation model returned without an inline image part; using curated backup."
-      });
+      return res.status(200).json({ success: true, imageUrl: generatedImageUrl, promptUsed: detailedPrompt });
     }
-  } catch (err: any) {
-    console.warn("Gemini Image generation error:", err?.message || err);
-    return res.json({
-      success: false,
-      imageUrl: null,
-      error: "Failed to generate promotional image with AI. Please try again.",
-    });
-  }
-}));
-
+    throw new ApiInvalidStateError('Image generation did not produce an image. Please try again.');
+  }));
 app.post("/api/generate-promo-copy", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
-  try {
-    const { businessName, serviceName, price, offer, city, discountPercent } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.json({
-        whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${serviceName || 'Signature Service'}* at *${businessName || 'our salon'}* in ${city || 'our location'}.\n\n🎉 *Special Offer*: ${offer || `${discountPercent || 20}% OFF this week!`}\n💰 *Price*: ₹${price ? Number(price).toLocaleString('en-IN') : 'Special Rate'}\n\n📍 Visit us at: ${city || 'our location'}\n📲 Reserve your slot now before slots fill up!`,
-        instagramCaption: `✨ Glow up season is here! ✨\n\nExperience pure relaxation with our signature *${serviceName || 'Service'}* at ${businessName || 'our salon'}.\n\n💎 *Special Deal*: ${offer || `Enjoy ${discountPercent || 20}% OFF for a limited time!`}\n⭐ Price: ₹${price ? Number(price).toLocaleString('en-IN') : 'Special Rate'}\n\n📍 ${city || 'our location'} | ⏰ Limited slots available\n\n👇 Tap the link in bio to book your appointment!\n\n#SalonOffers #Beauty #SelfCare #GlowUp #HairAndSkin #BridalBeauty #SalonDeals`,
-        headline: `Transform Your Look with ${serviceName || 'Signature Style'}`,
-        badgeText: offer ? offer.toUpperCase() : `SPECIAL ${discountPercent || 20}% OFF`
-      });
+    // Phase 12 hardened: validated input, no 200-with-fallback.
+    const { businessName, serviceName, price, offer, city, discountPercent } = req.body || {};
+    if (typeof businessName !== 'string' || businessName.trim().length < 2) {
+      throw new ApiValidationError('businessName is required.', { field: 'businessName' });
     }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const prompt = `You are an elite beauty salon copywriter. Create promotional copy for:
+    if (typeof serviceName !== 'string' || serviceName.trim().length < 2) {
+      throw new ApiValidationError('serviceName is required.', { field: 'serviceName' });
+    }
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new ApiUnavailableError('AI copy generation is not configured on this server. Set GEMINI_API_KEY.', 'ai_unavailable');
+    }
+    let parsed: any;
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are an elite beauty salon copywriter. Create promotional copy for:
 Salon: ${businessName}
 Service: ${serviceName}
-Price: ₹${price}
+Price: ₹${price ?? 'TBD'}
 Offer: ${offer || `${discountPercent || 20}% OFF`}
 City: ${city || 'India'}
 
 Return strictly JSON with keys: whatsapp, instagramCaption, headline, badgeText.`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
-
-    const text = response.text;
-    if (text) {
-      return res.json(JSON.parse(text));
-    }
-    throw new Error("Empty copy response");
-  } catch (err) {
-    return res.json({
-      whatsapp: `✨ *EXCLUSIVE SALON OFFER* ✨\n\nHey beautiful! Treat yourself to *${req.body.serviceName || 'our signature treatment'}* at *${req.body.businessName || 'our salon'}*.\n\n🎉 *Special Deal*: ${req.body.offer || 'Exclusive Discount This Week'}\n💰 *Price*: ₹${req.body.price || 'Special Rate'}\n\n📲 Book your appointment now!`,
-      instagramCaption: `✨ Elevate your everyday glow! ✨\n\nBook your *${req.body.serviceName || 'treatment'}* today at ${req.body.businessName || 'our salon'}.\n\n👇 Tap link in bio to book your appointment!`,
-      headline: `Special Offer: ${req.body.serviceName || 'Signature Service'}`,
-      badgeText: req.body.offer ? req.body.offer.toUpperCase() : 'LIMITED SPECIAL'
-    });
-  }
-}));
-
-app.post("/api/youtube/fetch-videos", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
-  try {
-    const { channelUrl, maxResults = 10 } = req.body;
-    const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
-
-    if (!apiKey || apiKey === 'YOUR_YOUTUBE_DATA_API_KEY') {
-      return res.json({
-        success: false,
-        notice: 'YouTube Data API key is not configured. Please set YOUTUBE_API_KEY.',
-        videos: []
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' },
       });
+      if (!response.text) throw new ApiServerError('AI provider returned an empty response.');
+      parsed = JSON.parse(response.text);
+    } catch (err) {
+      if (err instanceof Error && typeof (err as any).status === 'number' && (err as any).status >= 400 && (err as any).status < 600) throw err;
+      throw new ApiServerError('Failed to generate promotional copy. Please try again.', err);
     }
-
-    // Extract channel handle or ID from URL
+    return res.status(200).json(parsed);
+  }));
+app.post("/api/youtube/fetch-videos", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    // Phase 12 hardened: 400 for bad input, 503 when API key missing, 500 on fetch/parse errors.
+    const { channelUrl, maxResults = 10 } = req.body || {};
+    if (typeof maxResults !== 'number' || maxResults < 1 || maxResults > 50) {
+      throw new ApiValidationError('maxResults must be an integer between 1 and 50.', { field: 'maxResults' });
+    }
+    const apiKey = process.env.YOUTUBE_API_KEY || process.env.YOUTUBE_DATA_API_KEY || '';
+    if (!apiKey || apiKey === 'YOUR_YOUTUBE_DATA_API_KEY') {
+      throw new ApiUnavailableError('YouTube Data API key is not configured. Set YOUTUBE_API_KEY.', 'youtube_unavailable');
+    }
     let query = '';
-    if (channelUrl) {
+    if (channelUrl && typeof channelUrl === 'string') {
       const matchHandle = channelUrl.match(/youtube\.com\/@([\w_-]+)/);
       const matchChannelId = channelUrl.match(/youtube\.com\/channel\/([\w_-]+)/);
-      if (matchHandle) {
-        query = matchHandle[1];
-      } else if (matchChannelId) {
-        query = matchChannelId[1];
-      } else if (channelUrl.includes('@')) {
-        query = channelUrl.split('@').pop()?.split('/')[0] || '';
-      }
+      if (matchHandle) query = matchHandle[1];
+      else if (matchChannelId) query = matchChannelId[1];
+      else if (channelUrl.includes('@')) query = channelUrl.split('@').pop()?.split('/')[0] || '';
     }
-
-    // Try to search by handle via YouTube Data API
+    if (!query) {
+      throw new ApiValidationError('Could not extract a channel handle or id from channelUrl.', { field: 'channelUrl' });
+    }
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&channelType=any&q=${encodeURIComponent(query)}&maxResults=${maxResults}&key=${apiKey}`;
     let videos: any[] = [];
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&channelType=any&q=${encodeURIComponent(query || 'salon')}&maxResults=${maxResults}&key=${apiKey}`;
-    
     try {
       const response = await fetch(searchUrl);
+      if (!response.ok) throw new ApiServerError(`YouTube API responded with HTTP ${response.status}.`);
       const data = await response.json();
+      if (data.error) throw new ApiServerError(`YouTube API error: ${data.error?.message || 'unknown'}`);
       if (data.items && data.items.length > 0) {
         videos = data.items.map((item: any) => ({
           youtubeUrl: `https://www.youtube.com/watch?v=${item.id.videoId}`,
@@ -594,20 +558,19 @@ app.post("/api/youtube/fetch-videos", withRequestTimeout(API_REQUEST_TIMEOUT_MS)
           categoryTag: 'SHORT',
           isOwnerVideo: false,
           views: 'Auto-fetched via YouTube Data API',
-          transformationTag: 'Auto-Fetched Reel'
+          transformationTag: 'Auto-Fetched Reel',
         }));
       }
-    } catch (err: any) {
-      console.warn('YouTube API fetch error:', err?.message || err);
+    } catch (err) {
+      if (err instanceof Error && typeof (err as any).status === 'number' && (err as any).status >= 400 && (err as any).status < 600) throw err;
+      throw new ApiServerError('Failed to fetch videos from YouTube. Please try again.', err);
     }
-
-    return res.json({ success: true, videos, notice: videos.length ? `Fetched ${videos.length} videos from YouTube.` : 'No videos found for this channel.' });
-  } catch (err: any) {
-    console.warn('YouTube fetch endpoint error:', err?.message || err);
-    return res.json({ success: false, notice: 'Failed to fetch videos from YouTube.', videos: [] });
-  }
-}));
-
+    return res.status(200).json({
+      success: true,
+      videos,
+      notice: videos.length ? `Fetched ${videos.length} videos from YouTube.` : 'No videos found for this channel.',
+    });
+  }));
 app.post("/api/fetch-youtube-meta", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(handleFetchYouTubeMetadata));
 
 // ============================================================================

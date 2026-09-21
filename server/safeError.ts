@@ -17,6 +17,86 @@ export interface SafeErrorInfo {
 }
 
 /**
+ * Semantic error constructors — every one of these throws an Error whose
+ * `status` and `code` classifySafeError() will translate into the correct HTTP
+ * response. They replace the old "catch { res.json({success:false}) }" pattern
+ * that accidentally returned HTTP 200 for failed mutations.
+ *
+ *   400 validation          -> ApiValidationError     (bad input / shape)
+ *   401 unauthenticated     -> ApiUnauthenticatedError (missing/invalid session)
+ *   403 unauthorized        -> ApiForbiddenError      (authenticated but no permission)
+ *   404 not found           -> ApiNotFoundError
+ *   409 conflict            -> ApiConflictError       (duplicate slug/email/already done)
+ *   422 invalid state       -> ApiInvalidStateError   (valid payload, wrong resource state)
+ *   500 unexpected          -> ApiServerError         (caught bugs / unknown)
+ *   503 unavailable         -> ApiUnavailableError    (DB/downstream unavailable, retryable)
+ */
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  retryable: boolean;
+  details?: Record<string, unknown> | null;
+  constructor(status: number, message: string, code = 'request_error', retryable = false, details?: Record<string, unknown> | null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.retryable = retryable;
+    this.details = details ?? null;
+  }
+}
+
+export class ApiValidationError extends ApiError {
+  constructor(message = 'Invalid request.', details?: Record<string, unknown> | null) {
+    super(400, message, 'validation_error', false, details);
+    this.name = 'ApiValidationError';
+  }
+}
+export class ApiUnauthenticatedError extends ApiError {
+  constructor(message = 'Authentication required.') {
+    super(401, message, 'auth_required', false);
+    this.name = 'ApiUnauthenticatedError';
+  }
+}
+export class ApiForbiddenError extends ApiError {
+  constructor(message = 'You do not have permission to perform this action.') {
+    super(403, message, 'forbidden', false);
+    this.name = 'ApiForbiddenError';
+  }
+}
+export class ApiNotFoundError extends ApiError {
+  constructor(message = 'Resource not found.') {
+    super(404, message, 'not_found', false);
+    this.name = 'ApiNotFoundError';
+  }
+}
+export class ApiConflictError extends ApiError {
+  constructor(message = 'Request conflicts with existing resource state.', code = 'conflict') {
+    super(409, message, code, false);
+    this.name = 'ApiConflictError';
+  }
+}
+export class ApiInvalidStateError extends ApiError {
+  constructor(message = 'Resource is not in a state that allows this operation.', details?: Record<string, unknown> | null) {
+    super(422, message, 'invalid_state', false, details);
+    this.name = 'ApiInvalidStateError';
+  }
+}
+export class ApiUnavailableError extends ApiError {
+  constructor(message = 'The service is temporarily unavailable. Please try again shortly.', code = 'service_unavailable') {
+    super(503, message, code, true);
+    this.name = 'ApiUnavailableError';
+  }
+}
+export class ApiServerError extends ApiError {
+  constructor(message = 'An unexpected server error occurred.', cause?: unknown) {
+    super(500, message, 'unexpected_error', false);
+    this.name = 'ApiServerError';
+    if (cause) this.cause = cause as Error;
+  }
+}
+
+/**
  * Detect when a Supabase / PostgREST query failed because the target table
  * does not exist in the database or schema cache.
  */
@@ -72,6 +152,15 @@ function numericStatus(error: any): number | null {
 
 /** Convert an unexpected exception into a small, stable, non-sensitive answer. */
 export function classifySafeError(error: any, context = 'request'): SafeErrorInfo {
+  // Our own typed API errors are authoritative — honor their status/code/message.
+  if (error instanceof ApiError) {
+    return {
+      status: error.status,
+      code: error.code,
+      message: error.message,
+      retryable: !!error.retryable,
+    };
+  }
   const code = errorCode(error);
   const lowerCode = code.toLowerCase();
   const status = numericStatus(error);
@@ -83,13 +172,21 @@ export function classifySafeError(error: any, context = 'request'): SafeErrorInf
     isTransientDbError(error) ||
     /\b(fetch failed|network|timed? ?out|econn|enotfound|unavailable|bad gateway)\b/i.test(message);
 
-  if (lowerCode === 'auth_required' || status === 401 || status === 403) {
-    return {
-      status: 401,
-      code: 'auth_required',
-      message: 'Please sign in again before continuing.',
-      retryable: false,
-    };
+  // 401 / 403 both signal auth problems; use 403 explicitly when thrown.
+  if (lowerCode === 'auth_required' || status === 401) {
+    return { status: 401, code: 'auth_required', message: 'Please sign in again before continuing.', retryable: false };
+  }
+  if (status === 403) {
+    return { status: 403, code: 'forbidden', message: 'You do not have permission to perform this action.', retryable: false };
+  }
+  if (status === 404 || lowerCode === 'not_found') {
+    return { status: 404, code: 'not_found', message: 'The requested resource was not found.', retryable: false };
+  }
+  if (status === 409 || lowerCode === 'conflict' || lowerCode === 'already_exists') {
+    return { status: 409, code: lowerCode === 'unexpected_error' ? 'conflict' : code, message: 'This request conflicts with the current state of the resource.', retryable: false };
+  }
+  if (status === 422 || lowerCode === 'invalid_state' || lowerCode === 'unprocessable') {
+    return { status: 422, code: lowerCode === 'unexpected_error' ? 'invalid_state' : code, message: 'The request could not be completed in the current resource state.', retryable: false };
   }
 
   if (lowerCode === 'supabase_not_configured') {
@@ -114,11 +211,12 @@ export function classifySafeError(error: any, context = 'request'): SafeErrorInf
   }
 
   // Preserve explicitly classified client statuses, but use a generic message
-  // because an exception's own text is not a safe API contract.
+  // because an exception's own text is not a safe API contract — EXCEPT for
+  // our typed ApiError which was already handled above.
   if (status && status >= 400 && status < 500) {
     return {
       status,
-      code: code === 'unexpected_error' ? 'request_error' : code,
+      code: code === 'unexpected_error' ? `http_${status}` : code,
       message: 'The request could not be processed.',
       retryable: false,
     };
@@ -132,7 +230,10 @@ export function classifySafeError(error: any, context = 'request'): SafeErrorInf
   };
 }
 
-/** Send a JSON error unless another middleware already ended the response. */
+/** Send a JSON error unless another middleware already ended the response.
+ *  If the error is an ApiError, its `details` field is forwarded as well so
+ *  validation errors can carry a per-field map for the UI.
+ */
 export function sendSafeError(
   res: any,
   error: any,
@@ -147,6 +248,10 @@ export function sendSafeError(
     error: options.fallbackMessage || info.message,
   };
   if (info.retryable) body.retryable = true;
+  // Forward ApiError.details (field-level validation errors, etc.) when present.
+  if (error instanceof ApiError && error.details && Object.keys(error.details).length) {
+    body.details = error.details;
+  }
   res.status(info.status).json(body);
 }
 
