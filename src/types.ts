@@ -274,6 +274,8 @@ export interface SalonService {
   icon: string;
   popular?: boolean;
   showDuration?: boolean; // Defaults to true if undefined. When false, duration is hidden on public website menu.
+  parentServiceId?: string; // Optional reference to parent service when treated as add-on/upgrade
+  serviceId?: string; // Optional reference alias for explicit linking
 }
 
 export type StaffAccessRole = 'Service Provider (Assigned)' | 'Manager (Full Access)' | 'Receptionist (Frontdesk)';
