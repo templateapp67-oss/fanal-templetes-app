@@ -24,6 +24,7 @@ import { PromotionalBannerConfigSection } from './PromotionalBannerConfigSection
 import { BackupManagerModal } from './BackupManagerModal';
 import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
 import { TikTokIcon } from './TikTokIcon';
+import type { SalonPersistResult, SalonEditorStatePatch } from '../lib/autoSave';
 
 interface SaaSDashboardProps {
   ownerId?: string;
@@ -39,6 +40,13 @@ interface SaaSDashboardProps {
   setClients?: React.Dispatch<React.SetStateAction<ClientRecord[]>>;
   loyaltyConfig?: LoyaltyConfig;
   setLoyaltyConfig?: React.Dispatch<React.SetStateAction<LoyaltyConfig>>;
+  /**
+   * PHASE 11: the real save pipeline (App.persistSalonState). Management
+   * components must present "Saved" only after this resolves with
+   * `published`/`localDraft` — a successful setX() state update alone is not
+   * a save. Absent, edits still auto-save; they are just not hand-claimed.
+   */
+  onPersistChange?: (message: string, overrides?: SalonEditorStatePatch) => Promise<SalonPersistResult>;
   onNavigateToPreview?: () => void;
   onNavigateToEditor?: () => void;
   siteUrl?: string;
@@ -64,6 +72,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   setClients = (_clients: React.SetStateAction<ClientRecord[]>) => {},
   loyaltyConfig: externalLoyaltyConfig,
   setLoyaltyConfig: externalSetLoyaltyConfig,
+  onPersistChange,
   onNavigateToPreview,
   onNavigateToEditor,
   siteUrl,
@@ -117,7 +126,9 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         ...prev,
         logoUrl: result.dataUrl,
       }));
-      setAppearanceSuccess(`Logo optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & saved!`);
+      // PHASE 11: the image is applied to the profile (and auto-saved); the
+      // save engine — not this toast — reports whether the cloud took it.
+      setAppearanceSuccess(`Logo optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & applied to your profile — auto-saving…`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
     }
   };
@@ -140,7 +151,9 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         ...prev,
         coverImageUrl: result.dataUrl,
       }));
-      setAppearanceSuccess(`Hero cover optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & saved!`);
+      // PHASE 11: applied to the profile + auto-saved; the save engine — not
+      // this toast — reports whether the cloud took it.
+      setAppearanceSuccess(`Hero cover optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & applied to your profile — auto-saving…`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
     }
   };
@@ -1164,6 +1177,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             setServices={setServices}
             primaryAccentColor={currentPrimaryColor}
             profile={profile}
+            onPersistChange={onPersistChange}
             onNavigateToPreview={onNavigateToPreview}
             isAuthenticated={isAuthenticated}
             onRequireAuth={onRequireAuth}
@@ -1177,6 +1191,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             setStylists={setStylists}
             primaryAccentColor={currentPrimaryColor}
             services={services}
+            onPersistChange={onPersistChange}
             onNavigateToPreview={onNavigateToPreview}
             isAuthenticated={isAuthenticated}
             onRequireAuth={onRequireAuth}
@@ -1355,6 +1370,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             primaryAccentColor={currentPrimaryColor}
             profile={profile}
             appointments={appointments}
+            onPersistChange={onPersistChange}
             onNavigateToPreview={onNavigateToPreview}
           />
         )}

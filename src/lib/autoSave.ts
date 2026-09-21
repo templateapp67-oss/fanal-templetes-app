@@ -21,6 +21,13 @@
 // ============================================================================
 
 import type { SalonSyncPayload, SalonSyncResult } from './salonSync.js';
+import type {
+  BusinessTypeId,
+  LoyaltyConfig,
+  SalonProfile,
+  SalonService,
+  Stylist,
+} from '../types.js';
 
 /** Auto-save debounce delay. Kept inside the 1000–1500ms sweet spot so fast
  *  typing does not spam the API while edits still persist quickly. */
@@ -597,6 +604,55 @@ export function getSaveUiState(
     ? `All changes saved · ${savedAtLabel}`
     : 'All changes saved';
   return { busy, failed, label, savedAtLabel };
+}
+
+// ----------------------------------------------------------------------------
+// PHASE 11: real persistence outcomes shared by App.tsx and the management UI
+// ----------------------------------------------------------------------------
+//
+// A successful React state update — or a successful localStorage write — is
+// NOT a successful save. Only the pipeline's terminal state may be presented
+// as "Saved". Components therefore wait for a SalonPersistResult and render:
+//   Saving…  while the result is pending (button/busy state),
+//   Saved    only when `published` (cloud accepted the state) or `localDraft`
+//             (honest "saved on this device" variant — never "Saved" to cloud),
+//   Save failed + retry  when `failed`.
+
+/**
+ * Outcome of one completed persistence attempt. For a finished save exactly
+ * one flag is true. The early "skipped" paths (a coalesced auto-save that will
+ * re-run, or auth not yet ready) leave all three false — callers treat that
+ * as "not saved yet, retryable", never as success.
+ */
+export interface SalonPersistResult {
+  /** Cloud accepted the state (direct Supabase RPC or the service-role API). */
+  published: boolean;
+  /** Cloud unreachable / not signed in; the device draft cache holds the state. */
+  localDraft: boolean;
+  /** Nothing was persisted (or the save was aborted) — the real error was
+   *  logged as a structured [SAVE ERROR] (browser console) and summarized in
+   *  the "Save failed" toast. */
+  failed: boolean;
+}
+
+/** True when the real save completed in a way that may be reported as saved. */
+export function isSavePersisted(result: SalonPersistResult | null | undefined): boolean {
+  return !!result && (result.published || result.localDraft);
+}
+
+/**
+ * The slices of editor state the save engine persists. Components pass the
+ * slice they just changed in the same event tick as the state update — the
+ * App-level snapshot ref is only refreshed on the next render, so without the
+ * explicit slice a manual save started in that window would persist the stale
+ * pre-change state.
+ */
+export interface SalonEditorStatePatch {
+  profile?: SalonProfile;
+  services?: SalonService[];
+  stylists?: Stylist[];
+  loyaltyConfig?: LoyaltyConfig;
+  selectedTemplateId?: BusinessTypeId;
 }
 
 // ----------------------------------------------------------------------------

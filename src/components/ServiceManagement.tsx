@@ -9,11 +9,12 @@ import {
   Check, 
   X, 
   Search, 
-  Eye, 
-  EyeOff, 
-  Tag, 
-  CheckCircle2, 
+  Eye,
+  EyeOff,
+  Tag,
+  CheckCircle2,
   AlertCircle,
+  Loader2,
   TrendingUp,
   Layers,
   HelpCircle,
@@ -38,6 +39,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GuestModeBanner } from './GuestModeBanner';
+import type { SalonPersistResult, SalonEditorStatePatch } from '../lib/autoSave';
 
 export const ICON_LIBRARY = [
   { name: 'Scissors', component: Scissors, label: 'Haircut & Trim' },
@@ -70,6 +72,12 @@ interface ServiceManagementProps {
   setServices: React.Dispatch<React.SetStateAction<SalonService[]>>;
   primaryAccentColor: string;
   profile?: SalonProfile;
+  /**
+   * PHASE 11: the real save pipeline. A "Saved" claim is only made after it
+   * resolves `published`/`localDraft`; on failure the local state is retained
+   * and a retry is offered (the exact server error stays in the console).
+   */
+  onPersistChange?: (message: string, overrides?: SalonEditorStatePatch) => Promise<SalonPersistResult>;
   onNavigateToPreview?: () => void;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
@@ -93,6 +101,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   setServices,
   primaryAccentColor,
   profile,
+  onPersistChange,
   onNavigateToPreview,
   isAuthenticated = true,
   onRequireAuth,
@@ -115,6 +124,12 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   const [formIcon, setFormIcon] = useState<string>('Scissors');
   const [formError, setFormError] = useState<string>('');
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+  // PHASE 11: real-save state. The submit button shows "Saving…" while the
+  // pipeline runs; on failure the change is retained (local state) and the
+  // banner below offers an actionable retry. No success claim is made until
+  // the cloud (or service-role API) actually accepts the state.
+  const [formSaving, setFormSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // Extract all distinct categories
   const allCategories = ['All', ...Array.from(new Set(services.map((s) => s.category || 'General')))];
@@ -177,7 +192,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setIsGeneratingDescription(false);
   };
 
-  const handleSaveService = (e: React.FormEvent) => {
+  const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
       onRequireAuth?.('login');
@@ -200,26 +215,26 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       ? (formCustomCategory.trim() || 'General')
       : formCategory;
 
+    let nextServices: SalonService[];
+    let message: string;
     if (editingServiceId) {
       // Edit existing
-      setServices((prev) =>
-        prev.map((s) =>
-          s.id === editingServiceId
-            ? {
-                ...s,
-                name: formName.trim(),
-                category: finalCategory,
-                durationMinutes: Number(formDuration),
-                price: Number(formPrice),
-                description: formDescription.trim(),
-                popular: formPopular,
-                showDuration: formShowDuration,
-                icon: formIcon,
-              }
-            : s
-        )
+      nextServices = services.map((s) =>
+        s.id === editingServiceId
+          ? {
+              ...s,
+              name: formName.trim(),
+              category: finalCategory,
+              durationMinutes: Number(formDuration),
+              price: Number(formPrice),
+              description: formDescription.trim(),
+              popular: formPopular,
+              showDuration: formShowDuration,
+              icon: formIcon,
+            }
+          : s
       );
-      showToast(`Updated "${formName.trim()}" successfully.`);
+      message = `Updated "${formName.trim()}" successfully.`;
     } else {
       // Add new
       const newService: SalonService = {
@@ -233,21 +248,80 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         popular: formPopular,
         showDuration: formShowDuration,
       };
-      setServices((prev) => [newService, ...prev]);
-      showToast(`Added new service "${formName.trim()}" to menu.`);
+      nextServices = [newService, ...services];
+      message = `Added new service "${newService.name}" to menu.`;
     }
 
-    setIsModalOpen(false);
+    // The local (React state) update is applied immediately so the UI never
+    // loses the edit…
+    setServices(nextServices);
+
+    // …but "saved" is only claimed after the REAL persistence pipeline
+    // confirms it (Phase 11). A successful state update is not a successful
+    // cloud save: on failure the modal stays open with a retry, the change is
+    // retained in state, and the exact server error stays in the console
+    // ([SAVE ERROR]). The success toast below is emitted by the save engine
+    // itself, with `message`, only after the cloud accepts the state.
+    if (!onPersistChange) {
+      // No pipeline wired (defensive): state is updated and auto-save picks
+      // it up — but we must not claim a save that was never requested.
+      setIsModalOpen(false);
+      return;
+    }
+    setFormSaving(true);
+    setSaveError('');
+    try {
+      const result = await onPersistChange(message, { services: nextServices });
+      if (result.published || result.localDraft) {
+        setIsModalOpen(false);
+      } else {
+        setSaveError(
+          'Save failed — the service change is kept on this device. Retry the save when the connection is back (exact error in the browser console).'
+        );
+      }
+    } catch (err) {
+      console.error('[ServiceManagement] Unexpected error during service save:', err);
+      setSaveError('Save failed — the service change is kept on this device. Please retry (exact error in the browser console).');
+    } finally {
+      setFormSaving(false);
+    }
   };
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (!isAuthenticated) {
       onRequireAuth?.('login');
       return;
     }
-    if (window.confirm(`Are you sure you want to remove "${name}" from your service catalog?`)) {
-      setServices((prev) => prev.filter((s) => s.id !== id));
-      showToast(`Deleted service "${name}".`);
+    if (!window.confirm(`Are you sure you want to remove "${name}" from your service catalog?`)) return;
+    // Remove locally first (the unsaved UI state is retained if the cloud
+    // write fails — the retry re-sends the same snapshot)…
+    const nextServices = services.filter((s) => s.id !== id);
+    setServices(nextServices);
+    if (!onPersistChange) return; // defensive: auto-save reports, we claim nothing
+    const result = await onPersistChange(`Deleted service "${name}".`, { services: nextServices });
+    if (result.published || result.localDraft) {
+      setSaveError('');
+    } else {
+      setSaveError(
+        `Saving the deletion of "${name}" failed — the change is kept on this device. Retry when the connection is back (exact error in the browser console).`
+      );
+    }
+  };
+
+  // PHASE 11: actionable retry after a failed save — re-runs the real
+  // pipeline with the current (retained) state; the success/error toast is
+  // emitted by the engine, never by this component.
+  const retryPersist = async () => {
+    if (!onPersistChange) return;
+    setSaveError('');
+    setFormSaving(true);
+    try {
+      const result = await onPersistChange('Retrying save of service changes.', { services });
+      if (!(result.published || result.localDraft)) {
+        setSaveError('Save failed again — the changes are still kept on this device (exact error in the browser console).');
+      }
+    } finally {
+      setFormSaving(false);
     }
   };
 
@@ -321,6 +395,29 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* PHASE 11: failed-save banner — the change is retained in state and a
+          real retry is offered; the engine already showed the summarized
+          server error in a toast and logged it as [SAVE ERROR]. */}
+      {saveError && (
+        <div
+          role="alert"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700"
+        >
+          <span className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-500" />
+            <span>{saveError}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void retryPersist()}
+            disabled={formSaving}
+            className="self-start sm:self-auto rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer disabled:opacity-60"
+          >
+            {formSaving ? 'Saving…' : 'Retry save'}
+          </button>
+        </div>
+      )}
 
       {/* HEADER SECTION & SUMMARY CARDS */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
@@ -659,6 +756,15 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                     <span>{formError}</span>
                   </div>
                 )}
+                {/* PHASE 11: a failed cloud save keeps the form open (the edit
+                    is retained) with an actionable retry — resubmitting the
+                    form re-runs the real save pipeline. */}
+                {saveError && !formError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2" role="alert">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <span>{saveError} You can submit this form again to retry.</span>
+                  </div>
+                )}
 
                 {/* Service Name */}
                 <div>
@@ -883,11 +989,12 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer shadow-xs hover:opacity-95"
+                    disabled={formSaving}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer shadow-xs hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
                     style={{ backgroundColor: primaryAccentColor }}
                   >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{editingServiceId ? 'Save Changes' : 'Create Service'}</span>
+                    {formSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>{formSaving ? 'Saving…' : editingServiceId ? 'Save Changes' : 'Create Service'}</span>
                   </button>
                 </div>
               </form>

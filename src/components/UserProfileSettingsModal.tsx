@@ -171,9 +171,14 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
     setProfile(updatedProfile);
     if (onSave) {
+      // The save engine reports the REAL outcome: "saved successfully" only
+      // after the cloud accepts the state, "saved on this device" for a local
+      // draft, or "Save failed" with a retry — never a local-state claim.
       void onSave(updatedProfile);
     } else {
-      showToast('User profile settings saved successfully!');
+      // PHASE 11: no onSave wired — only the local state changed. Do not claim
+      // a save: the auto-save engine reports the actual outcome.
+      showToast('Profile updated — changes will be published automatically…');
     }
     onClose();
   };
