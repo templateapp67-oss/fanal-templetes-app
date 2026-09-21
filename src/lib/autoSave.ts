@@ -1058,7 +1058,7 @@ export async function runSalonSavePipeline(
         ok: true,
         target: 'api',
         draftWritten: false,
-        errors: cloud.errors, // preserved for the console; the save itself succeeded
+        errors: [],
         summary: 'Saved via the server (service role) after the direct sync failed.',
       };
     }

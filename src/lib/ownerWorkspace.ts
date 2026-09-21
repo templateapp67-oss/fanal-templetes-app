@@ -38,6 +38,10 @@ export interface OwnerSalonOption {
 }
 
 export interface OwnerWorkspace {
+  /** Workspace status, e.g. 'active' or 'needs_onboarding' */
+  status: string;
+  /** Resolved primary salon object or null if needs onboarding */
+  salon: OwnerSalonOption | null;
   /** True only when this call actually created workspace rows. */
   provisioned: boolean;
   reason: OwnerWorkspaceReason | string;
@@ -65,6 +69,8 @@ export interface OwnerWorkspace {
 
 /** Result used when the RPC itself is unavailable — never a thrown error. */
 export const UNRESOLVED_OWNER_WORKSPACE: OwnerWorkspace = {
+  status: 'needs_onboarding',
+  salon: null,
   provisioned: false,
   reason: 'unavailable',
   organizationId: null,
@@ -108,13 +114,25 @@ export async function resolveOwnerWorkspace(
     // An older database without the ambiguity fields still answers correctly:
     // fall back to what the scalar fields already prove.
     const salonCount = typeof data.salon_count === 'number' ? data.salon_count : salons.length;
+    const salonId = text(data.salon_id);
+    const slug = text(data.slug);
+    const name = text(data.name);
+    const status = text(data.status) ?? (salonId ? 'active' : 'needs_onboarding');
+    const salonObj = data.salon && typeof data.salon === 'object' ? {
+      salonId: text(data.salon.id) ?? salonId,
+      slug: text(data.salon.slug) ?? slug,
+      name: text(data.salon.name) ?? name,
+    } : (salonId ? { salonId, slug, name } : null);
+
     return {
+      status,
+      salon: salonObj,
       provisioned: data.provisioned === true,
       reason: text(data.reason) ?? 'failed',
       organizationId: text(data.organization_id),
-      salonId: text(data.salon_id),
-      slug: text(data.slug),
-      name: text(data.name),
+      salonId,
+      slug,
+      name,
       salonCount,
       // Informational. The backend resolves multiple salons with its canonical
       // rule, so callers must not treat this as an error state.

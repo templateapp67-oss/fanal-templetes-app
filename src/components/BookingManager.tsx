@@ -148,6 +148,30 @@ export const BookingManager = ({
     return () => subscription.unsubscribe();
   }, [fetchBookings]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const channel = supabase
+      .channel('booking-manager-realtime-appointments')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'appointments',
+        },
+        () => {
+          if (mountedRef.current && !sessionBlockedRef.current) {
+            void fetchBookings();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchBookings, isAuthenticated]);
+
   /** Salon check-in — by pass code or by booking row (see server/bookingCheckin.ts). */
   const handleCheckIn = async (target: { code?: string; bookingId?: string }) => {
     const busyKey = target.bookingId || 'code';

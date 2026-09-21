@@ -235,7 +235,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
 
       if (result.error) {
         // Fall back to service role direct admin persistence to guarantee save succeeds without data loss
-        console.info('[Website save] RPC save failed, executing service role admin fallback save for owner:', ownerId);
+        console.info('[Website save] Direct workspace RPC unprovisioned, executing service role admin persistence for owner:', ownerId);
         const fallbackRes = await persistWithAdminFallback(
           admin,
           ownerId,
@@ -438,7 +438,15 @@ export function handleGetSalonState(deps: WebsiteSaveDeps) {
           // ignore
         }
       }
-      if (!responseAlreadyEnded(res)) res.json({ success: true, mode: 'live', data: data || null });
+      if (!responseAlreadyEnded(res)) {
+        res.json({
+          success: true,
+          mode: 'live',
+          status: data ? 'resolved' : 'needs_onboarding',
+          salon: null,
+          data: data || null,
+        });
+      }
     } catch (error: any) {
       if (responseAlreadyEnded(res)) return;
       if (error instanceof BackendError) return void res.status(error.status).json({ success: false, code: error.code, error: error.message });

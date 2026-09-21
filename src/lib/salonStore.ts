@@ -289,16 +289,84 @@ export function mergeTemplateStylists(
 }
 
 // ============================================================================
-// localStorage helpers
+// localStorage helpers & tenant isolation
 // ============================================================================
-export function loadSalonState(): SalonState | null {
+
+/** Helper to generate a clean, blank onboarding profile for a new user without inheriting old data. */
+export function getBlankOnboardingProfile(user?: any): SalonProfile {
+  const meta = user?.user_metadata || {};
+  const businessName = (meta.salon_name || meta.business_name || '').trim();
+  const ownerName = (meta.full_name || meta.owner_name || '').trim();
+  const phone = (meta.phone_number || meta.phone || '').trim();
+  const email = (user?.email || meta.email || '').trim();
+  const city = (meta.city || '').trim();
+
+  return {
+    businessType: 'hair_salon',
+    businessName: businessName,
+    ownerName: ownerName,
+    ownerRole: 'Salon Owner',
+    phone: phone,
+    whatsapp: phone ? (phone.startsWith('+') ? phone : `+91${phone}`) : '',
+    email: email,
+    tagline: '',
+    about: '',
+    ownerPhotoUrl: '',
+    coverImageUrl: '',
+    themePreset: 'slate_silver',
+    themeAccentKey: 'slate',
+    currency: '₹',
+    subdomain: businessName ? slugifySalonName(businessName) : '',
+    address: '',
+    city: city,
+    areaLocality: '',
+    postalCode: '',
+    instagramHandle: '',
+    facebookPage: '',
+    tiktokHandle: '',
+    tiktokProfile: '',
+    requireDeposit: false,
+    depositPercentage: 20,
+    whiteLabelEnabled: true,
+    ownerId: user?.id,
+    promotionalBanner: { enabled: false, text: '' },
+    offers: [],
+  };
+}
+
+/** Clear all local salon state caches to prevent data leaking across users. */
+export function clearStoredSalonState(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(SALON_STATE_STORAGE_KEY);
+    localStorage.removeItem('nexora_draft_salon_data');
+    localStorage.removeItem('nexora_authenticated_profile');
+    localStorage.removeItem(LEGACY_PROFILE_KEY);
+    localStorage.removeItem('nexora_auth_user_v1');
+    localStorage.removeItem(AUTH_PROFILE_STORAGE_KEY);
+  } catch {}
+}
+
+export function loadSalonState(forUserId?: string): SalonState | null {
+  if (typeof window === 'undefined') return null;
+
+  const validateProfile = (profile: any): boolean => {
+    if (!profile || typeof profile !== 'object' || !profile.businessName) return false;
+    if (forUserId) {
+      if (!profile.ownerId || profile.ownerId !== forUserId) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   try {
     const raw = localStorage.getItem(SALON_STATE_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        const profile = parsed.profile && typeof parsed.profile === 'object' && parsed.profile.businessName ? parsed.profile : null;
-        if (profile) {
+        const profile = parsed.profile;
+        if (validateProfile(profile)) {
           return {
             profile,
             services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : null,
@@ -317,14 +385,16 @@ export function loadSalonState(): SalonState | null {
     if (rawDraft) {
       const parsedDraft = JSON.parse(rawDraft);
       const draft = parsedDraft?.draft || parsedDraft;
-      if (draft && typeof draft === 'object' && draft.profile && draft.profile.businessName) {
-        return {
-          profile: draft.profile,
-          services: Array.isArray(draft.services) && draft.services.length > 0 ? draft.services : null,
-          stylists: Array.isArray(draft.stylists) && draft.stylists.length > 0 ? draft.stylists : null,
-          loyaltyConfig: draft.loyaltyConfig && typeof draft.loyaltyConfig === 'object' ? draft.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
-          selectedTemplateId: draft.selectedTemplateId || draft.profile?.businessType || 1,
-        };
+      if (draft && typeof draft === 'object' && draft.profile) {
+        if (validateProfile(draft.profile)) {
+          return {
+            profile: draft.profile,
+            services: Array.isArray(draft.services) && draft.services.length > 0 ? draft.services : null,
+            stylists: Array.isArray(draft.stylists) && draft.stylists.length > 0 ? draft.stylists : null,
+            loyaltyConfig: draft.loyaltyConfig && typeof draft.loyaltyConfig === 'object' ? draft.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
+            selectedTemplateId: draft.selectedTemplateId || draft.profile?.businessType || 1,
+          };
+        }
       }
     }
   } catch {}
@@ -334,17 +404,24 @@ export function loadSalonState(): SalonState | null {
     const rawAuth = localStorage.getItem('nexora_authenticated_profile');
     if (rawAuth) {
       const parsedAuth = JSON.parse(rawAuth);
-      if (parsedAuth && typeof parsedAuth === 'object' && parsedAuth.businessName) {
-        return {
-          profile: parsedAuth,
-          services: null,
-          stylists: null,
-          loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
-          selectedTemplateId: parsedAuth.businessType || 1,
-        };
+      if (parsedAuth && typeof parsedAuth === 'object') {
+        if (validateProfile(parsedAuth)) {
+          return {
+            profile: parsedAuth,
+            services: null,
+            stylists: null,
+            loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+            selectedTemplateId: parsedAuth.businessType || 1,
+          };
+        }
       }
     }
   } catch {}
+
+  // If forUserId was provided and no valid profile belonged to this user, clear stale cache
+  if (forUserId) {
+    clearStoredSalonState();
+  }
 
   return null;
 }

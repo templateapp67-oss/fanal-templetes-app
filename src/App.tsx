@@ -10,7 +10,7 @@ import {
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
-import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS, createBlankSalonProfile } from './mockData';
+import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
 import { ACCENT_PALETTES, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
 import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
@@ -24,6 +24,8 @@ import { UserProfileSettingsModal } from './components/UserProfileSettingsModal'
 import {
   loadSalonState,
   saveSalonState,
+  getBlankOnboardingProfile,
+  clearStoredSalonState,
   mergeTemplatePreservingUserData,
   mergeTemplateServices,
   mergeTemplateStylists,
@@ -32,7 +34,6 @@ import {
   getStoredAuthenticatedProfile,
   setStoredAuthenticatedProfile,
   AuthenticatedProfileState,
-  clearAllSalonLocalData,
 } from './lib/salonStore';
 import {
   AUTOSAVE_DEBOUNCE_MS,
@@ -49,7 +50,7 @@ import {
   runSalonSavePipeline,
   SESSION_EXPIRED_SAVE_MESSAGE,
 } from './lib/autoSave';
-import { ensureFreshSession, refreshSessionForSave } from './lib/authSession';
+import { ensureFreshSession, refreshSessionForSave, logAuthEnvironmentDiagnostics } from './lib/authSession';
 import { applyWorkingHoursFromRow } from './lib/salonSync';
 import { saveOwnerEditorState } from './lib/ownerEditorState';
 import {
@@ -74,6 +75,7 @@ import {
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
 import { OnboardingApp } from './onboarding/OnboardingApp';
+import { ErrorBoundary } from './main';
 import { TemplateHandoffPage } from './components/TemplateHandoffPage';
 import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
@@ -673,6 +675,11 @@ export default function App() {
     previousTemplateIdRef.current = selectedTemplateId;
   }, [selectedTemplateId]);
 
+  // Run environment and client connection diagnostics on app initialization
+  useEffect(() => {
+    void logAuthEnvironmentDiagnostics(supabase, { label: 'Initial App Boot' });
+  }, []);
+
   // Keep the RESTORED session usable while the tab is alive. supabase-js
   // refreshes on an interval, but browsers throttle timers in background tabs,
   // so a laptop that wakes up (or a tab that is focused again) can hold a token
@@ -702,7 +709,6 @@ export default function App() {
           setSaveNeedsSignIn(false);
         } else if (event === 'SIGNED_OUT') {
           setSaveNeedsSignIn(false);
-          clearAllSalonLocalData();
         }
       }
     );
@@ -774,7 +780,25 @@ export default function App() {
 
   useEffect(() => {
     if (isMockSupabase) return;
-    setProfile((prev) => ({ ...prev, ownerId: user?.id ?? undefined }));
+    if (user?.id) {
+      const userSaved = loadSalonState(user.id);
+      if (userSaved) {
+        setProfile(userSaved.profile);
+        setServices(userSaved.services || []);
+        setStylists(userSaved.stylists || []);
+        if (userSaved.loyaltyConfig) setLoyaltyConfig(userSaved.loyaltyConfig);
+        if (userSaved.selectedTemplateId) setSelectedTemplateId(userSaved.selectedTemplateId as BusinessTypeId);
+      } else {
+        clearStoredSalonState();
+        setProfile(getBlankOnboardingProfile(user));
+        setServices([]);
+        setStylists([]);
+        setAppointments([]);
+        setClients([]);
+      }
+    } else {
+      clearStoredSalonState();
+    }
   }, [user?.id, isMockSupabase]);
 
   // Auto-Fetch Profile Sync
@@ -788,11 +812,6 @@ export default function App() {
       const meta = user.user_metadata || {};
 
       try {
-        // maybeSingle (not single): a brand-new owner may legitimately have no
-        // profile row yet (e.g. the signup trigger ran before the migration
-        // existed). `.single()` used to throw PGRST116 here, so the meta-data
-        // fallback below never ran and the console logged a scary error on
-        // every load for new accounts.
         const { data: editorState, error: editorError } = await supabase.rpc('get_owner_editor_state');
         if (cancelled) return;
         if (!editorError && editorState?.profile) return;
@@ -805,13 +824,21 @@ export default function App() {
         if (cancelled) return;
 
         if (error) {
-          // Permission/RLS/grants problem — NOT a missing record. The user
-          // must fix the schema before saving can ever work.
           console.warn(
             '[Profile] Could not read the owner profile row (auth/RLS/grants issue — apply supabase/migrations):',
             error
           );
-          if (!hasUnsavedEdits()) { setProfile(createBlankSalonProfile({ ...meta, email: user.email })); }
+          if (!hasUnsavedEdits()) {
+            const blank = getBlankOnboardingProfile(user);
+            setProfile({
+              ...blank,
+              businessName: meta.salon_name || blank.businessName,
+              ownerName: meta.full_name || blank.ownerName,
+              phone: meta.phone_number || blank.phone,
+              email: user.email || blank.email,
+              city: meta.city || blank.city,
+            });
+          }
           return;
         }
 
@@ -843,7 +870,15 @@ export default function App() {
           console.warn(
             '[Profile] No profile row exists yet for this user — using sign-up metadata until the first save creates it.'
           );
-          setProfile(createBlankSalonProfile({ ...meta, email: user.email }));
+          const blank = getBlankOnboardingProfile(user);
+          setProfile({
+            ...blank,
+            businessName: meta.salon_name || blank.businessName,
+            ownerName: meta.full_name || blank.ownerName,
+            phone: meta.phone_number || blank.phone,
+            email: user.email || blank.email,
+            city: meta.city || blank.city,
+          });
           return;
         }
 
@@ -896,7 +931,16 @@ export default function App() {
 
         if (isNetworkErr) {
           console.warn('[Profile] Transient network error while fetching profile, falling back to metadata:', err?.message || err);
-          if (!hasUnsavedEdits()) { setProfile(createBlankSalonProfile({ ...meta, email: user.email })); }
+          if (!hasUnsavedEdits()) {
+            setProfile((prev) => ({
+              ...prev,
+              businessName: meta.salon_name || prev.businessName,
+              ownerName: meta.full_name || prev.ownerName,
+              phone: meta.phone_number || prev.phone,
+              email: user.email || prev.email,
+              city: meta.city || prev.city,
+            }));
+          }
           if (retryCount < 3) {
             retryTimer = setTimeout(() => {
               void fetchProfile(retryCount + 1);
@@ -1734,7 +1778,11 @@ export default function App() {
   // public-site or customer UI mounts underneath it.
   // -------------------------------------------------------------------------
   if (isOnboardingApp) {
-    return <OnboardingApp path={path} navigate={navigate} />;
+    return (
+      <ErrorBoundary>
+        <OnboardingApp path={path} navigate={navigate} />
+      </ErrorBoundary>
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -1747,13 +1795,15 @@ export default function App() {
   // -------------------------------------------------------------------------
   if (isCustomerApp) {
     return (
-      <CustomerApp
-        path={path}
-        navigate={navigate}
-        accentHex={ACCENT_PALETTES[(siteTenant?.profile || profile)?.themeAccentKey as AccentPaletteKey]?.primaryHex}
-        tenantSubdomain={siteTenant?.isTenant && siteTenant.found ? siteTenant.subdomain || '' : ''}
-        tenantName={siteTenant?.isTenant && siteTenant.found ? siteTenant.profile?.businessName || '' : ''}
-      />
+      <ErrorBoundary>
+        <CustomerApp
+          path={path}
+          navigate={navigate}
+          accentHex={ACCENT_PALETTES[(siteTenant?.profile || profile)?.themeAccentKey as AccentPaletteKey]?.primaryHex}
+          tenantSubdomain={siteTenant?.isTenant && siteTenant.found ? siteTenant.subdomain || '' : ''}
+          tenantName={siteTenant?.isTenant && siteTenant.found ? siteTenant.profile?.businessName || '' : ''}
+        />
+      </ErrorBoundary>
     );
   }
 

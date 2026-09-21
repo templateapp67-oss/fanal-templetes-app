@@ -143,7 +143,7 @@ export async function readOwnerEntryFacts(
     // The RPC's own verdict. `ambiguous` is deliberately ignored: since
     // migration 20261006 it is informational (several salons exist) while
     // `resolved` already names the salon the backend chose for this caller.
-    facts.workspaceResolved = data.resolved === true;
+    facts.workspaceResolved = data.resolved === true && data.status !== 'needs_onboarding' && Boolean(data.salon || data.salon_id);
   }
 
   if (!statusResult.error && statusResult.data && typeof statusResult.data === 'object') {

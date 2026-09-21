@@ -31,7 +31,7 @@ export function databaseForToken(token: string) {
 }
 export async function ownerSalonIds(db: any, actor: string, deadlineAt?: number): Promise<string[]> {
   const members = await readDatabase(() => db.from('organization_members').select('organization_id')
-    .eq('user_id', actor).eq('status', 'active').eq('role', 'owner'), deadlineAt);
+    .eq('user_id', actor).eq('status', 'active').in('role', ['owner', 'manager']), deadlineAt);
   if (!members?.length) return [];
   const salons = await readDatabase(() => db.from('salons').select('id').in('organization_id', members.map((m: any) => m.organization_id)), deadlineAt);
   return (salons || []).map((s: any) => s.id);
