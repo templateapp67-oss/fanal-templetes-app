@@ -88,7 +88,33 @@ export interface SiteLookupDeps {
  * table) to the app's SalonProfile shape.
  */
 export function mapProfileRow(row: any): SalonProfile {
-  if (!row) return artsByUmaSalon.profile;
+  if (!row) {
+    return {
+      businessType: 'hair_salon',
+      businessName: '',
+      ownerName: '',
+      ownerRole: '',
+      phone: '',
+      whatsapp: '',
+      email: '',
+      tagline: '',
+      about: '',
+      ownerPhotoUrl: '',
+      coverImageUrl: '',
+      themePreset: 'slate_silver',
+      currency: '₹',
+      subdomain: '',
+      address: '',
+      city: '',
+      postalCode: '',
+      state: '',
+      instagramHandle: '',
+      requireDeposit: false,
+      depositPercentage: 20,
+      themeAccentKey: 'slate',
+      whiteLabelEnabled: true,
+    };
+  }
 
   const config = row.data?.editor_profile && typeof row.data.editor_profile === 'object' ? row.data.editor_profile : {};
   const data = { ...(row.data || {}), ...Object.fromEntries(Object.entries(config).map(([key,value]) => [key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase()),value])) };

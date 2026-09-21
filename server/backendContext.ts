@@ -30,9 +30,106 @@ export function databaseForToken(token: string) {
   });
 }
 export async function ownerSalonIds(db: any, actor: string, deadlineAt?: number): Promise<string[]> {
-  const members = await readDatabase(() => db.from('organization_members').select('organization_id')
-    .eq('user_id', actor).eq('status', 'active').in('role', ['owner', 'manager', 'receptionist']), deadlineAt);
+  if (!actor) return [];
+  // Owner salon resolution must originate from:
+  // auth.uid() -> organization_members.user_id (role = 'owner', status = 'active')
+  // -> organization_members.organization_id -> salons.organization_id.
+  // job_salon_members must NOT be used for salon owner authorization if it represents staff membership.
+  const members = await readDatabase(
+    () => db.from('organization_members')
+      .select('organization_id')
+      .eq('user_id', actor)
+      .eq('status', 'active')
+      .eq('role', 'owner'),
+    deadlineAt
+  );
   if (!members?.length) return [];
-  const salons = await readDatabase(() => db.from('salons').select('id').in('organization_id', members.map((m: any) => m.organization_id)), deadlineAt);
+  const orgIds = members.map((m: any) => m.organization_id).filter(Boolean);
+  if (!orgIds.length) return [];
+  const salons = await readDatabase(
+    () => db.from('salons')
+      .select('id')
+      .in('organization_id', orgIds)
+      .is('deleted_at', null),
+    deadlineAt
+  ).catch(() => {
+    return readDatabase(
+      () => db.from('salons').select('id').in('organization_id', orgIds),
+      deadlineAt
+    );
+  });
   return (salons || []).map((s: any) => s.id);
+}
+
+export interface OwnerSalonResolution {
+  status: 'active' | 'needs_onboarding';
+  salon: any | null;
+}
+
+/**
+ * Canonical owner salon resolution:
+ * auth.uid()
+ *     ↓
+ * organization_members.user_id
+ *     ↓
+ * role = 'owner', status = 'active'
+ *     ↓
+ * organization_members.organization_id
+ *     ↓
+ * salons.organization_id
+ *
+ * When authenticated user exists BUT no valid owner organization/salon exists,
+ * returns { status: "needs_onboarding", salon: null }.
+ * NO fallback to existing/demo salon is allowed.
+ */
+export async function resolveOwnerSalonResolution(
+  db: any,
+  actor: string,
+  deadlineAt?: number
+): Promise<OwnerSalonResolution> {
+  if (!actor) {
+    return { status: 'needs_onboarding', salon: null };
+  }
+
+  const ids = await ownerSalonIds(db, actor, deadlineAt);
+  if (!ids || ids.length === 0) {
+    return { status: 'needs_onboarding', salon: null };
+  }
+
+  const salons = await readDatabase(
+    () => db.from('salons').select('*').in('id', ids),
+    deadlineAt
+  );
+
+  if (!salons || salons.length === 0) {
+    return { status: 'needs_onboarding', salon: null };
+  }
+
+  return {
+    status: 'active',
+    salon: salons[0],
+  };
+}
+
+export function createOwnerSalonHandler(db: any) {
+  return async (req: any, res: any) => {
+    try {
+      const identity = await verifyBackendUser(db, req);
+      const resolution = await resolveOwnerSalonResolution(
+        db,
+        identity.user.id,
+        res.locals?.requestDeadlineAt
+      );
+      return res.json(resolution);
+    } catch (error: any) {
+      if (error instanceof BackendError && error.status === 401) {
+        return res.status(401).json({ status: 'needs_onboarding', salon: null, error: error.message });
+      }
+      return res.status(error?.status || 500).json({
+        status: 'needs_onboarding',
+        salon: null,
+        error: error?.message || 'Resolution failed',
+      });
+    }
+  };
 }

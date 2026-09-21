@@ -7,6 +7,7 @@ import {
   readOwnerEntryFacts,
   type OwnerEntryStage,
 } from './lib/ownerEntryRoute';
+import { resolveOwnerSalon, createBlankSalonProfile } from './lib/ownerSalonResolution';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
@@ -788,6 +789,44 @@ export default function App() {
     setProfile((prev) => ({ ...prev, ownerId: user?.id ?? undefined }));
   }, [user?.id, isMockSupabase]);
 
+  // PHASE 2 — Multi-tenant Isolation & Ownership Resolution:
+  // When an authenticated user exists, resolve their salon using:
+  // auth.uid() -> organization_members.user_id (role = 'owner', status = 'active')
+  // -> organization_members.organization_id -> salons.organization_id.
+  // If resolution returns status: "needs_onboarding":
+  // Render onboarding, use blank/default form values, do NOT load another salon,
+  // do NOT show previous avatar, do NOT load old website state, services, or bookings.
+  const resolvedOwnerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isMockSupabase || !user?.id) return;
+    if (resolvedOwnerRef.current === user.id) return;
+    resolvedOwnerRef.current = user.id;
+
+    let cancelled = false;
+    void resolveOwnerSalon(supabase, user.id).then((res) => {
+      if (cancelled) return;
+      if (res.status === 'needs_onboarding') {
+        console.info('[Tenant Isolation] User has no active owner salon (needs_onboarding) — applying clean slate.');
+        const blank = createBlankSalonProfile(user);
+        setProfile(blank);
+        setServices([]);
+        setStylists([]);
+        setAppointments([]);
+        setClients([]);
+        setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+        setSiteTenant({ isTenant: false, found: false });
+        if (normalizePath(path) === '/') {
+          setCurrentView('wizard');
+          setWizardStartingStep(1);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, path, setCurrentView]);
+
   // Auto-Fetch Profile Sync
   useEffect(() => {
     const fetchProfile = async () => {
@@ -848,21 +887,12 @@ export default function App() {
           console.warn(
             '[Profile] No profile row exists yet for this user — using sign-up metadata until the first save creates it.'
           );
-          setProfile((prev) => {
-            const isDifferentUser = prev.ownerId && prev.ownerId !== user.id;
-            const base = isDifferentUser ? INITIAL_SALON_PROFILE : prev;
-            const businessName = meta.salon_name || base.businessName;
-            return {
-              ...base,
-              ownerId: user.id,
-              businessName,
-              ownerName: meta.full_name || base.ownerName,
-              phone: meta.phone_number || base.phone,
-              email: user.email || base.email,
-              city: meta.city || base.city,
-              subdomain: slugifySalonName(businessName),
-            };
-          });
+          const blank = createBlankSalonProfile(user);
+          setProfile(blank);
+          setServices([]);
+          setStylists([]);
+          setAppointments([]);
+          setClients([]);
           return;
         }
 
@@ -879,31 +909,31 @@ export default function App() {
 
         setProfile((prev) => {
           const isDifferentUser = prev.ownerId && prev.ownerId !== user.id;
-          const base = isDifferentUser ? INITIAL_SALON_PROFILE : prev;
-          const resolvedBusinessName = data.salon_name || meta.salon_name || base.businessName;
+          const base = isDifferentUser ? createBlankSalonProfile(user) : prev;
+          const resolvedBusinessName = data.salon_name || meta.salon_name || base.businessName || '';
           return applyWorkingHoursFromRow(
             {
               ...base,
               ownerId: user.id,
               businessName: resolvedBusinessName,
-              ownerName: data.full_name || meta.full_name || base.ownerName,
-              ownerRole: data.owner_role || base.ownerRole,
-              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || base.phone,
-              whatsapp: data.whatsapp || base.whatsapp,
-              email: data.email || user.email || base.email,
+              ownerName: data.full_name || meta.full_name || base.ownerName || '',
+              ownerRole: data.owner_role || base.ownerRole || '',
+              phone: data.phone_number || data.phone || data.mobile || meta.phone_number || base.phone || '',
+              whatsapp: data.whatsapp || base.whatsapp || '',
+              email: data.email || user.email || base.email || '',
               ownerPhotoUrl: data.owner_photo_url || data.avatar_url || data.photo_url || (isDifferentUser ? '' : base.ownerPhotoUrl),
               coverImageUrl: data.cover_image_url || (isDifferentUser ? '' : base.coverImageUrl),
               tagline: data.tagline || (isDifferentUser ? '' : base.tagline),
               about: data.about || (isDifferentUser ? '' : base.about),
               address: data.full_address || (isDifferentUser ? '' : base.address),
-              city: data.city || data.preferred_city || meta.city || base.city,
+              city: data.city || data.preferred_city || meta.city || base.city || '',
               areaLocality: data.area ?? data.preferred_area ?? (isDifferentUser ? '' : base.areaLocality),
               postalCode: data.postal_code || data.pincode || (isDifferentUser ? '' : base.postalCode),
               landmark: data.landmark || (isDifferentUser ? '' : base.landmark),
               subdomain: data.subdomain || slugifySalonName(resolvedBusinessName),
               instagramHandle: data.instagram_handle || (isDifferentUser ? '' : base.instagramHandle),
               homeService: data.home_service ?? base.homeService,
-              offers: data.offers ?? base.offers,
+              offers: Array.isArray(data.offers) ? data.offers : [],
               themePreset: data.theme_preset || base.themePreset,
               themeAccentKey: data.theme_accent_key || base.themeAccentKey,
               customAccentColor: data.custom_accent_color || base.customAccentColor,
@@ -952,13 +982,13 @@ export default function App() {
         return false;
       }
       const { svc, stf, lc, rw } = snapshot;
-      if (svc.data && svc.data.length) setServices(svc.data.map(fromServiceRow));
-      if (stf.data && stf.data.length) setStylists(stf.data.map(fromStylistRow));
-      if (lc.data) {
+      if (svc && Array.isArray(svc.data)) setServices(svc.data.map(fromServiceRow));
+      if (stf && Array.isArray(stf.data)) setStylists(stf.data.map(fromStylistRow));
+      if (lc && lc.data) {
         setLoyaltyConfig((prev) => ({
           ...fromLoyaltyConfigRow(lc.data),
           rewards:
-            rw.data && rw.data.length
+            rw && Array.isArray(rw.data) && rw.data.length
               ? (rw.data.map(fromRewardRow) as RewardThreshold[])
               : prev.rewards,
         }));
