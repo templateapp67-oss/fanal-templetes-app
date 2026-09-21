@@ -349,12 +349,13 @@ export default function App() {
 
   // Load the persistent salon state from localStorage on initial mount.
   const initialSaved = typeof window !== 'undefined' ? loadSalonState() : null;
+  const defaultInitialProfile = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
   const previousTemplateIdRef = React.useRef<BusinessTypeId>(
-    initialSaved?.selectedTemplateId || INITIAL_SALON_PROFILE.businessType
+    initialSaved?.selectedTemplateId || defaultInitialProfile.businessType
   );
 
   const [profile, setProfile] = useState<SalonProfile>(
-    initialSaved?.profile && typeof initialSaved.profile === 'object' ? initialSaved.profile : INITIAL_SALON_PROFILE
+    initialSaved?.profile && typeof initialSaved.profile === 'object' ? initialSaved.profile : defaultInitialProfile
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -392,10 +393,10 @@ export default function App() {
   }, [user]);
 
   const [services, setServices] = useState<SalonService[]>(
-    initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : INITIAL_SERVICES
+    initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : (isMockSupabase ? INITIAL_SERVICES : [])
   );
   const [stylists, setStylists] = useState<Stylist[]>(
-    initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : INITIAL_STYLISTS
+    initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : (isMockSupabase ? INITIAL_STYLISTS : [])
   );
   const [appointments, setAppointments] = useState<Appointment[]>(isMockSupabase ? INITIAL_APPOINTMENTS : []);
   const [clients, setClients] = useState<ClientRecord[]>(isMockSupabase ? INITIAL_CLIENTS : []);
@@ -696,6 +697,9 @@ export default function App() {
   // A fresh sign-in or a successful token refresh makes the cloud reachable
   // again, so the editor's "sign in again" notice is cleared as soon as the
   // session is usable (and on sign-out, when the editor is not shown at all).
+  const previousUserIdRef = useRef<string | null>(user?.id ?? null);
+  const startHydrationRef = useRef<(userId: string) => Promise<boolean>>(() => Promise.resolve(false));
+
   useEffect(() => {
     if (isMockSupabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -705,14 +709,16 @@ export default function App() {
         } else if (event === 'SIGNED_OUT') {
           setSaveNeedsSignIn(false);
           clearAllLocalUserState();
-          setProfile(INITIAL_SALON_PROFILE);
-          setServices(INITIAL_SERVICES);
-          setStylists(INITIAL_STYLISTS);
+          const clean = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
+          setProfile(clean);
+          setServices(isMockSupabase ? INITIAL_SERVICES : []);
+          setStylists(isMockSupabase ? INITIAL_STYLISTS : []);
           setAppointments([]);
           setClients([]);
           setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
-          setSelectedTemplateId(INITIAL_SALON_PROFILE.businessType);
-          previousTemplateIdRef.current = INITIAL_SALON_PROFILE.businessType;
+          const tId = (clean.businessType || 1) as BusinessTypeId;
+          setSelectedTemplateId(tId);
+          previousTemplateIdRef.current = tId;
           hydratedForUserRef.current = false;
           hydrationUserRef.current = null;
           lastPersistedSnapshotRef.current = '';
@@ -726,6 +732,89 @@ export default function App() {
   useEffect(() => {
     if (isMockSupabase) return;
     const observer = observeAuthSession(supabase.auth, (state) => {
+      const prevId = previousUserIdRef.current;
+      const nextId = state.user?.id ?? null;
+      if (prevId !== nextId) {
+        previousUserIdRef.current = nextId;
+
+        if (debounceTimerRef.current) {
+          window.clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = undefined;
+        }
+        hasPendingSaveRef.current = false;
+        setSaveStatus('idle');
+
+        clearAllLocalUserState();
+        hydratedForUserRef.current = false;
+        hydrationUserRef.current = null;
+        resolvedOwnerRef.current = null;
+        entryRoutedForRef.current = null;
+
+        if (state.user) {
+          const userSaved = loadSalonState(state.user.id);
+          if (userSaved && userSaved.profile) {
+            setProfile(userSaved.profile);
+            setServices(userSaved.services || []);
+            setStylists(userSaved.stylists || []);
+            setAppointments([]);
+            setClients([]);
+            setLoyaltyConfig(userSaved.loyaltyConfig || DEFAULT_LOYALTY_CONFIG);
+            const templateId = (userSaved.selectedTemplateId || userSaved.profile.businessType || 1) as BusinessTypeId;
+            setSelectedTemplateId(templateId);
+            previousTemplateIdRef.current = templateId;
+            salonStateRef.current = {
+              profile: userSaved.profile,
+              services: userSaved.services || [],
+              stylists: userSaved.stylists || [],
+              loyaltyConfig: userSaved.loyaltyConfig || DEFAULT_LOYALTY_CONFIG,
+              selectedTemplateId: templateId,
+              user: state.user,
+            };
+            lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
+          } else {
+            const blank = createBlankSalonProfile(state.user);
+            setProfile(blank);
+            setServices([]);
+            setStylists([]);
+            setAppointments([]);
+            setClients([]);
+            setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+            const templateId = (blank.businessType || 1) as BusinessTypeId;
+            setSelectedTemplateId(templateId);
+            previousTemplateIdRef.current = templateId;
+            salonStateRef.current = {
+              profile: blank,
+              services: [],
+              stylists: [],
+              loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+              selectedTemplateId: templateId,
+              user: state.user,
+            };
+            lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
+          }
+          void startHydrationRef.current(state.user.id);
+        } else {
+          const blank = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
+          setProfile(blank);
+          setServices(isMockSupabase ? INITIAL_SERVICES : []);
+          setStylists(isMockSupabase ? INITIAL_STYLISTS : []);
+          setAppointments([]);
+          setClients([]);
+          setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+          const templateId = (blank.businessType || 1) as BusinessTypeId;
+          setSelectedTemplateId(templateId);
+          previousTemplateIdRef.current = templateId;
+          salonStateRef.current = {
+            profile: blank,
+            services: isMockSupabase ? INITIAL_SERVICES : [],
+            stylists: isMockSupabase ? INITIAL_STYLISTS : [],
+            loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+            selectedTemplateId: templateId,
+            user: null,
+          };
+          lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
+        }
+      }
       setUser(state.user);
       setAuthStatus(state.status);
     });
@@ -1066,6 +1155,21 @@ export default function App() {
                 // them — the exact data loss this is meant to prevent.
                 previousTemplateIdRef.current = next.selectedTemplateId as BusinessTypeId;
               }
+            } else {
+              const ownerRes = await resolveOwnerSalon(supabase, userId);
+              if (ownerRes.status === 'active' && ownerRes.salon) {
+                const s = ownerRes.salon;
+                setProfile((prev) => ({
+                  ...prev,
+                  ownerId: userId,
+                  businessName: s.name || prev.businessName,
+                  subdomain: s.slug || prev.subdomain,
+                  phone: s.phone || prev.phone,
+                  email: s.email || prev.email,
+                  address: s.address || prev.address,
+                  city: s.city || prev.city,
+                }));
+              }
             }
             hydratedForUserRef.current = true;
             hydrationErrorRef.current = null;
@@ -1099,6 +1203,7 @@ export default function App() {
     },
     [applyHydrationSnapshot]
   );
+  startHydrationRef.current = startHydration;
 
   useEffect(() => {
     if (!user || isMockSupabase) {
@@ -1153,8 +1258,14 @@ export default function App() {
   }, []);
 
   const persistSalonState = useCallback(
-    async (options?: { source?: 'auto' | 'manual'; message?: string }): Promise<boolean> => {
+    async (options?: { source?: 'auto' | 'manual'; message?: string; explicitProfile?: SalonProfile }): Promise<boolean> => {
       const source = options?.source ?? 'manual';
+      if (options?.explicitProfile) {
+        salonStateRef.current = {
+          ...salonStateRef.current,
+          profile: options.explicitProfile,
+        };
+      }
       if (salonStateRef.current.user && !isMockSupabase && !hydratedForUserRef.current) {
         const loaded = await startHydration(salonStateRef.current.user.id);
         if (!loaded || !hydratedForUserRef.current) {
@@ -1473,7 +1584,6 @@ export default function App() {
     stylists,
     loyaltyConfig,
     selectedTemplateId,
-    user?.id,
     isMockSupabase,
     isPublicSite,
     isCustomerApp,
@@ -1513,8 +1623,9 @@ export default function App() {
     return persistSalonState({
       source: 'manual',
       message: 'Website details updated successfully!',
+      explicitProfile: profile,
     });
-  }, [persistSalonState]);
+  }, [persistSalonState, profile]);
 
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
@@ -1994,9 +2105,11 @@ export default function App() {
         showToast={showToast}
         onSave={async (updated) => {
           setProfile(updated);
+          salonStateRef.current = { ...salonStateRef.current, profile: updated };
           void persistSalonState({
             source: 'manual',
             message: 'User profile settings saved successfully!',
+            explicitProfile: updated,
           });
         }}
       />

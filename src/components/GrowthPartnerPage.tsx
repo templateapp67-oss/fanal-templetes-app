@@ -631,7 +631,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'profile':
         return <div key={userId}><GrowthPartnerProfilePage navigate={navigate} onProfileChange={saved => {
           if (saved.partner_id === userId) setSavedProfileName({ owner: saved.partner_id, name: saved.full_name });
-          if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(supabase.storage.from('partner-avatars').getPublicUrl(saved.photo_path).data.publicUrl);
+          if (saved.partner_id === userId && saved.photo_path) setSavedProfileAvatar(growthPartnerPhotoUrl(saved.photo_path, supabase as any));
           if (saved.partner_id === userId && !saved.photo_path) setSavedProfileAvatar('');
         }} /></div>;
       // The real Account Settings page: change email, password + 2FA,

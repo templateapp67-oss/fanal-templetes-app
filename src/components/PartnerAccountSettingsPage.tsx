@@ -1047,9 +1047,9 @@ export function PartnerAccountSettingsPage({
   if (loading && !overview) return <PartnerLoading label="Loading your account settings…" kind="profile" />;
 
   const overviewUnavailable = !overview;
-  const twoFactorState: TwoFactorState = overview
-    ? (overview.two_factor_enabled ? 'on' : 'off')
-    : (direct2fa !== 'unknown' ? direct2fa : 'off');
+  const twoFactorState: TwoFactorState = direct2fa === 'on' || overview?.two_factor_enabled
+    ? 'on'
+    : (direct2fa === 'off' || overview ? 'off' : 'unknown');
   const pendingDeactivation = overview?.deactivation?.status === 'pending' ? overview.deactivation : null;
   const sessionCount = overview?.sessions.length ?? 0;
 

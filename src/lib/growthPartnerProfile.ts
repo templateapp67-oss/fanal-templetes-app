@@ -111,8 +111,15 @@ export async function savePartnerAccountSettings(patch: Partial<PartnerAccountSe
   return data as PartnerAccountSettings;
 }
 export function growthPartnerPhotoUrl(path: string | null, client: GrowthPartnerProfileClient = defaultClient): string {
-  if (!path || !/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp)$/.test(path)) return '';
-  return client.storage.from('partner-avatars').getPublicUrl(path).data.publicUrl;
+  if (!path) return '';
+  const trimmed = path.trim();
+  if (/^[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|jpeg)$/i.test(trimmed)) {
+    return client.storage.from('partner-avatars').getPublicUrl(trimmed).data.publicUrl;
+  }
+  if (/^https:\/\/[a-z0-9.-]+\.supabase\.(co|in)\/storage\/v1\/object\/public\/partner-avatars\/[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|jpeg)$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
 }
 
 export async function saveGrowthPartnerProfile(input: {
