@@ -115,8 +115,8 @@ test('salon state storage preserves account isolation and clearAllLocalUserState
     profile: profileA,
     services: [],
     stylists: [],
-    loyaltyConfig: { enabled: false, pointsPerRupee: 1, minRedeemPoints: 100, rupeePerPoint: 0.1, expiryMonths: 12 },
-    selectedTemplateId: 1,
+    loyaltyConfig: { programEnabled: false, pointsPerVisit: 10, pointsPerHundredSpent: 10, tierThresholds: { bronze: 0, silver: 100, gold: 500, platinum: 1000 }, tierMultipliers: { bronze: 1, silver: 1.2, gold: 1.5, platinum: 2 }, rewards: [] },
+    selectedTemplateId: 'hair_salon',
   }, userAId);
 
   // User B requests state - must NOT see User A's data

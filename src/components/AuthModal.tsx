@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, allowMockAuth, isMockSupabase } from '../lib/supabaseClient';
-import { setStoredAuthenticatedProfile } from '../lib/salonStore';
+import { setStoredAuthenticatedProfile, clearAllLocalUserState } from '../lib/salonStore';
 import {
   createSingleFlight,
   MAX_PASSWORD_LENGTH,

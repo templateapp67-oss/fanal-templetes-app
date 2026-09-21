@@ -284,7 +284,7 @@ function fakeClient(overrides: Record<string, any> = {}) {
       calls.push(`rpc:${fn}`);
       if (overrides[fn]) return overrides[fn];
       if (fn === 'get_my_owner_workspace') {
-        return { data: { resolved: true, ambiguous: false, salon_count: 1, salons: [{}] }, error: null };
+        return { data: { resolved: true, ambiguous: false, salon_count: 1, salon_id: 's-1', salon: { id: 's-1' }, salons: [{}] }, error: null };
       }
       if (fn === 'get_my_onboarding_status') return { data: { status: 'linked', linked: true }, error: null };
       if (fn === 'get_owner_editor_state') return { data: null, error: null };

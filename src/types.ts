@@ -214,6 +214,7 @@ export interface SalonOffer {
 }
 
 export interface SalonProfile {
+  id?: string;
   ownerId?: string;
   businessType: BusinessTypeId;
   businessName: string;
