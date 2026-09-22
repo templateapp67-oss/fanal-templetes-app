@@ -22,6 +22,20 @@ import { PRIMARY_REFERRAL_STATUSES, REFERRAL_STATUS_DESCRIPTORS, type ReferralSt
 export { partnerShareOrigin, partnerReferralShareLink } from '../lib/partnerReferralLink';
 
 /**
+ * The referral total has shipped under more than one key across rolling
+ * upgrades (`total_referrals` on the KPI block, `totalReferrals` and
+ * `total_referrals` on the payload root). Take the first alias that is a real
+ * finite number and otherwise render '—' — a value the backend did not send
+ * must never print as the string "undefined" or as NaN.
+ */
+function referralTotal(...candidates: Array<number | null | undefined>): string {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) return String(candidate);
+  }
+  return '—';
+}
+
+/**
  * "My Referral Code" page — the hero surface of the referral funnel: the code
  * at a glance, one-click copy, a ready-to-share onboarding link (it pre-fills
  * the code on the referral screen) and how the funnel works. If the partner's
@@ -214,7 +228,8 @@ export const PartnerReferralStatusSection: React.FC<{
   <div className="space-y-4">
     <section aria-label="Referral status summary" aria-busy={loading}>
       {loading && !dashboard ? <PartnerLoading label="Loading referral totals…" kind="dashboard" /> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <KpiCard label="Total Referrals" value={String(dashboard?.total_referrals ?? dashboard?.totalReferrals ?? dashboard?.kpis?.total_referrals ?? '—')} />
+        {/* A total the backend did not send renders '—', never "undefined"/a fake 0. */}
+        <KpiCard label="Total Referrals" value={referralTotal(dashboard?.total_referrals, dashboard?.totalReferrals, dashboard?.kpis?.total_referrals)} />
         {PRIMARY_REFERRAL_STATUSES.map(status => (
           <div key={status}><KpiCard label={REFERRAL_STATUS_DESCRIPTORS[status].label} value={String(dashboard?.referral_status_counts?.[status] ?? '—')} /></div>
         ))}

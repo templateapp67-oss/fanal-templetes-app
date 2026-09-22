@@ -1,14 +1,26 @@
 import React from 'react';
-import type { PartnerReferralEntry } from '../lib/growthPartner';
+import { normalizePartnerReferralEntry, type PartnerReferralEntry } from '../lib/growthPartner';
 import { formatPartnerDate, referralTitle } from '../lib/partnerPresentation';
 import { ReferralStatusPill } from './ReferralStatusPill';
 
+/**
+ * Rows are server data, so they are normalized before they are iterated: a
+ * section that degrades to `undefined`/`null` renders as an empty table (the
+ * caller's empty state) instead of crashing the page into the root
+ * ErrorBoundary. This is the same guard the sections apply to their lists.
+ *
+ * `normalizePartnerReferralEntry` only accepts an object and copies the fields
+ * the backend actually sent, so a malformed row is dropped individually
+ * instead of blanking the table.
+ */
 function safeReferralRows(rows: PartnerReferralEntry[] | null | undefined): PartnerReferralEntry[] {
-  return Array.isArray(rows) ? rows.filter((row): row is PartnerReferralEntry => !!row && typeof row === 'object') : [];
+  return Array.isArray(rows)
+    ? rows.map((row) => normalizePartnerReferralEntry(row)).filter((row): row is PartnerReferralEntry => row !== null)
+    : [];
 }
 
 function CustomerReferralTable({ rows = [], showStarted }: { rows?: PartnerReferralEntry[] | null; showStarted: boolean }) {
-  const safeRows = safeReferralRows(rows);
+  const list = safeReferralRows(rows);
   return (
     <div className="max-w-full overflow-x-auto -mx-1 px-1">
       <table className="w-full min-w-[560px] text-left text-sm">
@@ -34,18 +46,18 @@ function CustomerReferralTable({ rows = [], showStarted }: { rows?: PartnerRefer
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {safeRows.map((row) => (
-            <tr key={`${row.ref}-${row.linked_at ?? 'na'}`}>
+          {list.map((row, index) => (
+            <tr key={`${row.ref || 'row'}-${row.linked_at ?? 'na'}-${index}`}>
               <td className="py-3 pr-4">
                 <p className="font-bold text-slate-900">{referralTitle(row)}</p>
-                {row.display_name?.trim() && <p className="font-mono text-xs text-slate-500">{row.ref}</p>}
+                {row.display_name?.trim() && row.ref && <p className="font-mono text-xs text-slate-500">{row.ref}</p>}
               </td>
               <td className="py-3 pr-4">
                 <ReferralStatusPill status={row.referral_status ?? row.status} />
               </td>
-              <td className="py-3 pr-4 text-slate-600">{formatPartnerDate(row.linked_at)}</td>
-              {showStarted && <td className="py-3 pr-4 text-slate-600">{formatPartnerDate(row.template_started_at)}</td>}
-              <td className="py-3 text-slate-600">{formatPartnerDate(row.template_completed_at)}</td>
+              <td className="py-3 pr-4 text-slate-600">{formatPartnerDate(row.linked_at ?? null)}</td>
+              {showStarted && <td className="py-3 pr-4 text-slate-600">{formatPartnerDate(row.template_started_at ?? null)}</td>}
+              <td className="py-3 text-slate-600">{formatPartnerDate(row.template_completed_at ?? null)}</td>
             </tr>
           ))}
         </tbody>
@@ -60,8 +72,8 @@ export function ReferralTable({ rows, showStarted, onOpenDetails }: {
   showStarted?: boolean;
   onOpenDetails?: (id: string) => void;
 }) {
-  const safeRows = safeReferralRows(rows);
-  if (showStarted !== undefined) return <CustomerReferralTable rows={safeRows} showStarted={showStarted} />;
+  const list = safeReferralRows(rows);
+  if (showStarted !== undefined) return <CustomerReferralTable rows={list} showStarted={showStarted} />;
   return (
 <div className="max-w-full overflow-x-auto rounded-2xl border border-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500" role="region" aria-label="Referred users table — scroll horizontally on small screens" tabIndex={0}>
             <table className="w-full min-w-[960px] text-left text-sm">
@@ -70,8 +82,8 @@ export function ReferralTable({ rows, showStarted, onOpenDetails }: {
                 <tr>{['User', 'Email / masked contact', 'Joined Date', 'Referral Code', 'Status', 'Conversion Status', 'Last Activity'].map(label => <th key={label} scope="col" className="px-4 py-3 font-bold">{label}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {safeRows.map(row => (
-                  <tr key={row.ref + '-' + row.linked_at} className="align-top hover:bg-slate-50/60">
+                {list.map((row, index) => (
+                  <tr key={`${row.ref || 'row'}-${row.linked_at ?? 'na'}-${index}`} className="align-top hover:bg-slate-50/60">
                     <th scope="row" className="max-w-56 break-words px-4 py-4 font-bold text-slate-900">{row.referral_id ? <button type="button" onClick={() => onOpenDetails?.(row.referral_id!)} className="text-left underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900 focus:outline-2 focus:outline-slate-900" aria-label={`View referral details for ${row.display_name?.trim() || 'referred user'}`}>{row.display_name?.trim() || 'Referred user'}</button> : row.display_name?.trim() || 'Referred user'}</th>
                     <td className="max-w-56 break-words px-4 py-4 text-slate-600">{row.masked_contact || '—'}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{formatPartnerDate(row.joined_at ?? null)}</td>

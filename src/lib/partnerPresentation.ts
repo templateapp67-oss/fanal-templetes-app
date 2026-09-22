@@ -8,8 +8,12 @@ export function formatPartnerDate(value: string | null): string {
 }
 
 export function referralTitle(row: Pick<PartnerReferralEntry, 'ref' | 'display_name'>): string {
-  const name = (row.display_name || '').trim();
-  return name || `Referred user ${row.ref}`;
+  const name = String(row?.display_name ?? '').trim();
+  if (name) return name;
+  // A row whose masked reference did not arrive still has a readable label
+  // ("Referred user") instead of printing "undefined".
+  const ref = String(row?.ref ?? '').trim();
+  return ref ? `Referred user ${ref}` : 'Referred user';
 }
 
 // ---------------------------------------------------------------------------

@@ -7,8 +7,11 @@ import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
   ensureMyGrowthPartner,
+  isMissingPartnerSchemaError,
+  toSafePartnerSectionError,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
   type GrowthPartner,
   type GrowthPartnerApplicationRow,
 } from '../lib/growthPartner';
@@ -461,6 +464,23 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
     const parsed = new Date(submittedAt);
     return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
   })();
+  // Self-enrollment failures are shown, not swallowed: a blind re-check left
+  // the visitor staring at an unchanged screen with no idea why.
+  const [enrollNotice, setEnrollNotice] = useState('');
+  const enrollSelf = async () => {
+    setEnrollNotice('');
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch (error) {
+      setEnrollNotice(
+        isMissingPartnerSchemaError(error)
+          ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
+          : toSafePartnerSectionError(error).message
+      );
+    }
+    onCheckAgain?.();
+  };
   return (
     <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
       <StateCard
@@ -485,19 +505,12 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
         </button>
         <button
           type="button"
-          onClick={async () => {
-            try {
-              const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
-              await approveDemoGrowthPartnerAccount();
-              onCheckAgain?.();
-            } catch {
-              onCheckAgain?.();
-            }
-          }}
+          onClick={() => void enrollSelf()}
           className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
         >
           <span>Instantly Approve & Access Partner Portal</span>
         </button>
+        {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
         <button
           type="button"
           onClick={() => {

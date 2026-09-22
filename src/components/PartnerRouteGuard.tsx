@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
-import { resolveGrowthPartnerGate, toSafePartnerSectionError, type GrowthPartnerGate } from '../lib/growthPartner';
+import { resolveGrowthPartnerGate, toSafePartnerSectionError, isMissingPartnerSchemaError, GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE, type GrowthPartnerGate } from '../lib/growthPartner';
 import { PartnerLoading } from './PartnerLoading';
 import {
   PartnerStatusScreen, GrowthPartnerLoading, GrowthPartnerUnauthorized,
@@ -43,6 +43,24 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
   unauthorizedBody?: string;
   loadingReferralLink?: boolean;
 }) {
+  // Feedback for the self-enrollment shortcut: a failure must be visible. The
+  // previous behaviour swallowed it and re-checked, which looked like a dead
+  // button while the account stayed denied.
+  const [enrollNotice, setEnrollNotice] = useState<string>('');
+  const enrollSelf = async () => {
+    setEnrollNotice('');
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch (error) {
+      setEnrollNotice(
+        isMissingPartnerSchemaError(error)
+          ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
+          : toSafePartnerSectionError(error).message
+      );
+    }
+    onRetry?.();
+  };
   if (gate === 'ready') return <>{children}</>;
   if (gate === 'loading' || gate === 'unauthenticated') return loadingReferralLink
     ? <main className="mx-auto max-w-6xl px-4 py-8"><PartnerLoading kind="link" label="Loading your referral link…" /></main>
@@ -55,17 +73,10 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
       body={gate === 'pending' ? 'Your Growth Partner application is under review.' : 'Your Growth Partner application was not approved.'}>
       <button type="button" onClick={onRetry} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer">Check status</button>
 
-      <button type="button" onClick={async () => {
-        try {
-          const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
-          await approveDemoGrowthPartnerAccount();
-          onRetry?.();
-        } catch {
-          onRetry?.();
-        }
-      }} className="mt-3 min-h-11 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer flex items-center justify-center gap-2">
+      <button type="button" onClick={() => void enrollSelf()} className="mt-3 min-h-11 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer flex items-center justify-center gap-2">
         <span>Instantly Approve & Access Partner Portal</span>
       </button>
+      {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
 
       <button type="button" onClick={() => {
         try {

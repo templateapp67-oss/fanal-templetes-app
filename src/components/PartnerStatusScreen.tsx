@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AlertCircle, Loader2, LogIn, RefreshCw, ShieldAlert } from 'lucide-react';
-import { GROWTH_PARTNER_INACTIVE_BODY, GROWTH_PARTNER_INACTIVE_TITLE } from '../lib/growthPartner';
+import {
+  GROWTH_PARTNER_INACTIVE_BODY,
+  GROWTH_PARTNER_INACTIVE_TITLE,
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
+  isMissingPartnerSchemaError,
+  toSafePartnerSectionError,
+} from '../lib/growthPartner';
 import { supabaseConfig } from '../lib/supabaseClient';
 
 export const GROWTH_PARTNER_SIGNIN_TITLE = 'Sign in to open the Growth Partner area';
@@ -67,7 +73,27 @@ export const GrowthPartnerUnauthorized: React.FC<{
   onBack?: () => void;
   /** Namespace-specific denial copy (the /partner/* portal shows the spec's exact line). */
   body?: string;
-}> = ({ onBack, body }) => (
+}> = ({ onBack, body }) => {
+  // The self-enrollment shortcut reports its own outcome: reloading blindly on
+  // failure hid a missing migration behind an unchanged screen.
+  const [notice, setNotice] = useState('');
+  const enrollSelf = async () => {
+    setNotice('');
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      }
+    } catch (error) {
+      setNotice(
+        isMissingPartnerSchemaError(error)
+          ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
+          : toSafePartnerSectionError(error).message
+      );
+    }
+  };
+  return (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
@@ -76,23 +102,12 @@ export const GrowthPartnerUnauthorized: React.FC<{
     >
       <button
         type="button"
-        onClick={async () => {
-          try {
-            const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
-            await approveDemoGrowthPartnerAccount();
-            if (typeof window !== 'undefined') {
-              window.location.reload();
-            }
-          } catch {
-            if (typeof window !== 'undefined') {
-              window.location.reload();
-            }
-          }
-        }}
+        onClick={() => void enrollSelf()}
         className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
       >
         Instantly Enable & Open Partner Portal
       </button>
+      {notice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{notice}</p> : null}
       <button
         type="button"
         onClick={() => onBack?.()}
@@ -102,7 +117,8 @@ export const GrowthPartnerUnauthorized: React.FC<{
       </button>
     </PartnerStatusScreen>
   </main>
-);
+  );
+};
 
 export const GrowthPartnerInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
   <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">

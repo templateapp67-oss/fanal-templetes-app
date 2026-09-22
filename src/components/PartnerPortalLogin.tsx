@@ -17,6 +17,8 @@ import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
   ensureMyGrowthPartner,
+  isMissingPartnerSchemaError,
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
   type GrowthPartner,
@@ -541,7 +543,13 @@ export const PartnerPortalUnauthorized: React.FC<{
   onBack?: () => void;
   onSwitchAccount?: () => void;
   onApply?: () => void;
-}> = ({ onBack, onSwitchAccount, onApply }) => (
+  /**
+   * Why self-enrollment could not run (missing migration, a refusal, a network
+   * failure). Shown as its own line so the visitor is not told to "try again"
+   * for a problem an operator has to fix.
+   */
+  notice?: string | null;
+}> = ({ onBack, onSwitchAccount, onApply, notice }) => (
   <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
@@ -549,6 +557,7 @@ export const PartnerPortalUnauthorized: React.FC<{
       body={PARTNER_PORTAL_UNAUTHORIZED_BODY}
     >
       <p className="mt-2 text-xs text-slate-500">{PARTNER_PORTAL_UNAUTHORIZED_HINT}</p>
+      {notice ? <p role="status" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{notice}</p> : null}
       <button
         type="button"
         onClick={() => onApply?.()}
@@ -759,6 +768,11 @@ export const PartnerPortalLogin: React.FC<{
   // injected client supplies its own role read; otherwise the default
   // RLS SELECT-own-row query is used (they are the same client in production).
   const readPartnerRow = client?.fetchPartnerRow ?? fetchMyGrowthPartnerRow;
+  // Self-enrollment follows the same source: an injected client may supply its
+  // own hook; otherwise the real session-scoped RPC runs (never when a client
+  // is injected without one, so a test never fires a live call it did not ask
+  // for).
+  const enrollPartnerRow = client?.ensurePartnerRow ?? (client ? null : () => ensureMyGrowthPartner());
   const readApplicationRow = client?.fetchApplicationRow ?? fetchMyGrowthPartnerApplication;
 
   // Session source of truth for this route: seed from the app's restored user
@@ -769,6 +783,10 @@ export const PartnerPortalLogin: React.FC<{
   );
   const [partnerRow, setPartnerRow] = useState<GrowthPartner | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  // Kept separate from `loadError`: a failed self-enrollment is NOT a failed
+  // verification (the row read already answered), so it must not blank the
+  // page with the generic error card.
+  const [enrollmentError, setEnrollmentError] = useState<unknown>(null);
   // The caller's own application, so "under review" and "not approved" are
   // distinct screens from "you never applied". Admin review queue follows.
   const [application, setApplication] = useState<GrowthPartnerApplicationRow | null>(null);
@@ -873,12 +891,23 @@ export const PartnerPortalLogin: React.FC<{
     let cancelled = false;
     setVerifying(true);
     setLoadError(null);
+    setEnrollmentError(null);
     (async () => {
       try {
         let row = await readPartnerRow();
-        if (!row && !client) {
-          await ensureMyGrowthPartner();
-          row = await readPartnerRow();
+        if (!row && enrollPartnerRow) {
+          // Open enrollment is a convenience on top of a successful read: if it
+          // fails (PGRST202 before the migration, a refusal, a dropped socket)
+          // the honest answer is still "no partner row for this account" plus
+          // the reason the shortcut did not run — never a generic verification
+          // error and never a retry loop.
+          try {
+            await enrollPartnerRow();
+            row = await readPartnerRow();
+          } catch (error) {
+            if (cancelled) return;
+            setEnrollmentError(error);
+          }
         }
         if (cancelled) return;
         setPartnerRow(row);
@@ -903,7 +932,7 @@ export const PartnerPortalLogin: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, client]);
+  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, enrollPartnerRow, client]);
 
   const state: PartnerPortalLoginState = resolvePartnerPortalLogin({
     loading: verifying,
@@ -1123,6 +1152,16 @@ export const PartnerPortalLogin: React.FC<{
     ).finally(() => setBusy(false));
   };
 
+  // A project that never had the Growth Partner migrations applied answers
+  // PGRST202 for the gate read: say exactly that (with the setup pointer)
+  // instead of "Please try again", which can never succeed.
+  const schemaMissing = isMissingPartnerSchemaError(loadError) || isMissingPartnerSchemaError(enrollmentError);
+  const enrollmentNotice = enrollmentError
+    ? isMissingPartnerSchemaError(enrollmentError)
+      ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
+      : 'Self-enrollment could not run for this account. Use "Become a Growth Partner" to submit your details.'
+    : null;
+
   // ---------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------
@@ -1246,7 +1285,12 @@ export const PartnerPortalLogin: React.FC<{
             />
           </div>
         ) : null}
-        <PartnerPortalUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} onApply={() => { setMode('apply'); setFormError(''); }} />
+        <PartnerPortalUnauthorized
+          onBack={onBack}
+          onSwitchAccount={() => void clearSession()}
+          onApply={() => { setMode('apply'); setFormError(''); }}
+          notice={enrollmentNotice}
+        />
       </>
     );
   }
@@ -1267,7 +1311,7 @@ export const PartnerPortalLogin: React.FC<{
   return (
     <PartnerPortalFailure
       title={PARTNER_PORTAL_ERROR_TITLE}
-      body={PARTNER_PORTAL_ERROR_BODY}
+      body={schemaMissing ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE : PARTNER_PORTAL_ERROR_BODY}
       actionLabel="Retry"
       onAction={() => setAttempt((value) => value + 1)}
     />

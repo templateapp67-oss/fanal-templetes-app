@@ -28,9 +28,16 @@
 //      verifier never moves money or edits data; a missing function (PGRST202)
 //      means a migration was never applied.
 //   5. fail-closed: an anonymous caller must NOT be able to read
-//      get_my_growth_partner().
+//      get_my_growth_partner(), and ensure_my_growth_partner() must refuse an
+//      anonymous caller (it is SECURITY DEFINER and provisions auth.uid()).
 //   6. queue: pending applications + approved partners, so an admin can see
 //      what needs reviewing (and with which SQL).
+//
+// Degrades instead of crashing: with no service-role key the admin-only checks
+// are reported as skipped and every anon-callable check still runs. A host that
+// cannot be reached at all is reported once, with its own FAIL line, because
+// "the RPC is missing" and "this machine cannot reach Supabase" need different
+// fixes and previously both looked like an opaque crash.
 //
 // Exit code 0 = every check passed, 1 = something is missing (each failure
 // prints the exact next step).
@@ -107,7 +114,44 @@ if (!url || isPlaceholder(url) || !anonKey || isPlaceholder(anonKey)) {
 
 const clientOptions = { auth: { persistSession: false, autoRefreshToken: false } };
 const anon = createClient(url, anonKey, clientOptions);
-const admin = createClient(url, serviceKey, clientOptions);
+// `createClient(url, '')` THROWS `supabaseKey is required.`, which used to kill
+// this script before it printed the checks it *could* run. Without the service
+// role key, admin-only checks report "skipped" instead.
+const admin = serviceKey && !isPlaceholder(serviceKey) ? createClient(url, serviceKey, clientOptions) : null;
+const missingServiceKey = 'skipped — no SUPABASE_SERVICE_ROLE_KEY in this env file (add it to run the admin checks)';
+
+// --- 0. can this machine even reach the project? -----------------------------
+// A blocked network (corporate proxy, offline sandbox, paused project) turns
+// every probe below into a false "missing function" verdict, so it is checked
+// first and reported once.
+let hostReachable = true;
+let hostDetail = '';
+try {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+    signal: controller.signal,
+  });
+  clearTimeout(timer);
+  hostDetail = `HTTP ${response.status} from ${new URL(url).host}`;
+  // 401/404 still prove the host answered; only a transport failure is fatal.
+} catch (error) {
+  hostReachable = false;
+  hostDetail = `${error?.cause?.code || error?.name || 'network error'}: ${error?.message || error}`;
+}
+record(
+  'the Supabase project is reachable from this machine',
+  hostReachable,
+  hostReachable
+    ? hostDetail
+    : `${hostDetail} — nothing below can be verified. Fix the network/proxy first` +
+      ' (this is NOT evidence that a migration is missing).'
+);
+if (!hostReachable) {
+  console.log('\nStopped: cannot reach the project, so no schema check could run.');
+  process.exit(1);
+}
 
 /** Classify a PostgREST error the way the checks need it. */
 function classify(error) {
@@ -135,6 +179,10 @@ for (const table of [
   'partner_marketing_assets',
   'partner_support_tickets',
 ]) {
+  if (!admin) {
+    record(`table public.${table} exists`, true, missingServiceKey);
+    continue;
+  }
   const { error } = await admin.from(table).select('*', { count: 'exact', head: true });
   const kind = error ? classify(error) : null;
   record(
@@ -150,6 +198,9 @@ for (const table of [
 
 // --- 3. schema generation ---------------------------------------------------
 {
+  if (!admin) {
+    record('growth_partners uses the is_active column (this repository’s schema)', true, missingServiceKey);
+  } else {
   const { error } = await admin.from('growth_partners').select('is_active').limit(1);
   const kind = error ? classify(error) : null;
   record(
@@ -159,11 +210,17 @@ for (const table of [
       ? 'this project carries the older status/partner_code generation — apply 20260919_growth_partner_area_contract_alignment.sql, which serves both'
       : 'is_active present — the dashboard RPCs and the area gate agree on one schema'
   );
+  }
 }
 
 // --- 4. the functions the UI calls -----------------------------------------
 const FUNCTION_CHECKS = [
   ['get_my_growth_partner', {}, 'the area gate (fetchMyGrowthPartnerRow)'],
+  // The self-service enrollment RPC behind the "instant access" affordances and
+  // the automatic activation on /partner/login. When it is missing, a signed-in
+  // account cannot provision itself — which is what "Could not verify your
+  // Growth Partner access" looks like from the browser.
+  ['ensure_my_growth_partner', {}, 'direct enrollment (PartnerPortalLogin + deny screens)'],
   ['get_my_partner_dashboard', {}, 'Dashboard section'],
   ['get_my_partner_referrals', { p_status_filter: 'all', p_limit: 1, p_offset: 0 }, 'Referrals + Customers sections'],
   ['get_my_partner_performance', {}, 'Performance section'],
@@ -189,7 +246,21 @@ const FUNCTION_CHECKS = [
   ['submit_my_partner_support_ticket', { p_subject: 'x', p_message: 'y' }, 'Support section — ticket form (refused here: subject too short)'],
 ];
 
+/**
+ * The migration that creates each probed function, so a PGRST202 failure names
+ * the exact file to apply instead of sending the operator on a hunt. Only the
+ * functions whose absence is a known, reported symptom are listed.
+ */
+const MIGRATION_FOR_FUNCTION = {
+  ensure_my_growth_partner: '20260922091000_direct_growth_partner_dashboard_access.sql',
+  submit_growth_partner_application: '20260922085236_enable_growth_partner_open_enrollment.sql',
+};
+
 for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
+  if (!admin) {
+    record(`function public.${fn}() exists — ${usedBy}`, true, missingServiceKey);
+    continue;
+  }
   const { error } = await admin.rpc(fn, payload);
   const kind = error ? classify(error) : null;
   // Anything other than "function not found" means the function exists: a
@@ -199,7 +270,9 @@ for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
     `function public.${fn}() exists — ${usedBy}`,
     kind !== 'missing-function',
     kind === 'missing-function'
-      ? 'PGRST202: not exposed — the migration that creates it was never applied'
+      ? `PGRST202: not exposed — apply supabase/migrations/${
+          MIGRATION_FOR_FUNCTION[fn] ?? '(the migration that creates it)'
+        } (GROWTH_PARTNER_SETUP.md §3 has the full order)`
       : error
         ? `present (${kind}: ${error.message?.slice(0, 90)})`
         : 'present'
@@ -217,6 +290,20 @@ for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
   );
 }
 
+{
+  // SECURITY DEFINER and it provisions rows: an anonymous caller must be
+  // refused, and the function must take no user id (it acts on auth.uid()).
+  const { error } = await anon.rpc('ensure_my_growth_partner');
+  const kind = error ? classify(error) : null;
+  record(
+    'anonymous callers cannot run ensure_my_growth_partner()',
+    !!error && kind !== 'missing-function',
+    error
+      ? `denied as expected (${kind})`
+      : 'NOT DENIED — an anonymous visitor could provision a partner row'
+  );
+}
+
 // --- 6. application queue + approved partners ------------------------------
 {
   const { data: pending, error: pendingError } = await admin
@@ -224,7 +311,9 @@ for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
     .select('id, full_name, kyc_status, status, created_at')
     .in('status', ['pending'])
     .order('created_at', { ascending: true });
-  if (!pendingError) {
+  if (!admin) {
+    record('pending applications read', true, missingServiceKey);
+  } else if (!pendingError) {
     record(
       'pending applications read',
       true,
@@ -239,18 +328,28 @@ for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
     record('pending applications read', false, classify(pendingError));
   }
 
-  const { count, error: partnerError } = await admin
-    .from('growth_partners')
-    .select('user_id', { count: 'exact', head: true });
-  record(
-    'approved partners count',
-    !partnerError,
-    partnerError ? classify(partnerError) : `${count ?? 0} partner row(s) in growth_partners`
-  );
+  if (!admin) {
+    record('approved partners count', true, missingServiceKey);
+  } else {
+    const { count, error: partnerError } = await admin
+      .from('growth_partners')
+      .select('user_id', { count: 'exact', head: true });
+    record(
+      'approved partners count',
+      !partnerError,
+      partnerError ? classify(partnerError) : `${count ?? 0} partner row(s) in growth_partners`
+    );
+  }
 }
 
 // --- optional: provision a partner (documented admin shortcut) -------------
-if (provisionEmail) {
+if (provisionEmail && !admin) {
+  record(
+    `provision ${provisionEmail}`,
+    false,
+    'skipped — --provision-email needs SUPABASE_SERVICE_ROLE_KEY in the env file'
+  );
+} else if (provisionEmail) {
   console.log(`\nProvisioning ${provisionEmail} …`);
   const { data, error } = await admin.rpc('provision_growth_partner_by_email', {
     p_email: provisionEmail,
