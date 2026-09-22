@@ -231,6 +231,17 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
   return (data ?? null) as GrowthPartner | null;
 }
 
+/**
+ * Ensure the authenticated caller has a partner row, then return that row.
+ * The RPC accepts no user id: the database provisions auth.uid() only and
+ * preserves an existing suspended partner instead of reactivating it.
+ */
+export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
+  const { data, error } = await supabase.rpc('ensure_my_growth_partner');
+  if (error) throw rpcError('Growth Partner activation failed', error);
+  return data as GrowthPartner;
+}
+
 // ============================================================================
 // Referral code section (Part 2.3) — display + copy, ownership via RLS.
 //

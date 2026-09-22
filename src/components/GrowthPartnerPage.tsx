@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, LogOut } from 'lucide-react';
 import {
   fetchMyGrowthPartnerRow,
+  ensureMyGrowthPartner,
   fetchMyGrowthPartnerApplication,
   fetchMyPartnerDashboard,
   fetchMyPartnerPerformance,
@@ -318,7 +319,11 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     setLoadError(null);
     (async () => {
       try {
-        const row = await fetchMyGrowthPartnerRow();
+        let row = await fetchMyGrowthPartnerRow();
+        if (!row) {
+          await ensureMyGrowthPartner();
+          row = await fetchMyGrowthPartnerRow();
+        }
         if (cancelled) return;
         const application = row ? null : await fetchMyGrowthPartnerApplication();
         if (cancelled) return;
