@@ -32,7 +32,6 @@ import {
   templateAppBaseUrl,
 } from './lib/handoff';
 import { FormAlert, GatewayShell } from './screens/Shell';
-import { ShopOwnerOnboardingWizard } from './ShopOwnerOnboardingWizard';
 import { SignupScreen } from './screens/SignupScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
@@ -389,7 +388,6 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       />
     );
   }
-  if (resolved === 'shop') return <ShopOwnerOnboardingWizard referralCode={snapshot?.referralCode ?? sharedReferralCode} />;
   return (
     <LoginScreen
       client={sb}
