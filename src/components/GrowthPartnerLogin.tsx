@@ -6,6 +6,7 @@ import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
+  ensureMyGrowthPartner,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
   type GrowthPartner,
@@ -697,7 +698,11 @@ export const GrowthPartnerLogin: React.FC<{
     setLoadError(null);
     (async () => {
       try {
-        const row = await readPartnerRow();
+        let row = await readPartnerRow();
+        if (!row && !client) {
+          await ensureMyGrowthPartner();
+          row = await readPartnerRow();
+        }
         if (cancelled) return;
         setPartnerRow(row);
         setLoadError(null);
