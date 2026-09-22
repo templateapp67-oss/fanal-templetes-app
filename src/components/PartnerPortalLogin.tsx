@@ -30,6 +30,7 @@ import {
   loadGrowthPartnerSession,
   signInGrowthPartner,
   signUpGrowthPartner,
+  submitGrowthPartnerApplication,
   signOutGrowthPartner,
   type GrowthPartnerViewer,
 } from '../lib/growthPartnerLogin';
@@ -538,7 +539,8 @@ export const PartnerPortalMockNotice: React.FC<{ onBack?: () => void; logoSrc?: 
 export const PartnerPortalUnauthorized: React.FC<{
   onBack?: () => void;
   onSwitchAccount?: () => void;
-}> = ({ onBack, onSwitchAccount }) => (
+  onApply?: () => void;
+}> = ({ onBack, onSwitchAccount, onApply }) => (
   <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
@@ -548,8 +550,15 @@ export const PartnerPortalUnauthorized: React.FC<{
       <p className="mt-2 text-xs text-slate-500">{PARTNER_PORTAL_UNAUTHORIZED_HINT}</p>
       <button
         type="button"
-        onClick={() => onSwitchAccount?.()}
+        onClick={() => onApply?.()}
         className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 shadow-sm"
+      >
+        Become a Growth Partner
+      </button>
+      <button
+        type="button"
+        onClick={() => onSwitchAccount?.()}
+        className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-700 transition-opacity hover:opacity-90"
       >
         Sign in with a different account
       </button>
@@ -681,7 +690,44 @@ export const PartnerPortalFailure: React.FC<{
   </main>
 );
 
-type PartnerPortalMode = 'login' | 'signup' | 'forgot' | 'set-password';
+type PartnerPortalMode = 'login' | 'signup' | 'apply' | 'forgot' | 'set-password';
+
+const ExistingUserApplicationForm: React.FC<{
+  busy: boolean;
+  error: string;
+  accentHex: string;
+  onSubmit: (input: { fullName: string; phone: string; kycDocumentType: string; kycDocumentReference: string }) => void;
+  onBack: () => void;
+}> = ({ busy, error, accentHex, onSubmit, onBack }) => {
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [kycDocumentType, setKycDocumentType] = useState('');
+  const [kycDocumentReference, setKycDocumentReference] = useState('');
+  return (
+    <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+      <form className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4" onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit({ fullName, phone, kycDocumentType, kycDocumentReference });
+      }}>
+        <PartnerBrandMark />
+        <h1 className="text-2xl font-bold text-slate-900">Become a Growth Partner</h1>
+        <p className="text-sm text-slate-600">Use your current account to submit a Growth Partner application.</p>
+        <Field id="partner-apply-name" label="Full name" value={fullName} onChange={setFullName} disabled={busy} />
+        <Field id="partner-apply-phone" label="Phone (optional)" value={phone} onChange={setPhone} disabled={busy} />
+        <div>
+          <label htmlFor="partner-apply-kyc-type" className="block text-sm font-bold text-slate-800">KYC document type</label>
+          <select id="partner-apply-kyc-type" value={kycDocumentType} onChange={(event) => setKycDocumentType(event.target.value)} disabled={busy} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+            <option value="">Select document</option><option value="pan">PAN</option><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving licence</option><option value="business_registration">Business registration</option>
+          </select>
+        </div>
+        <Field id="partner-apply-kyc-reference" label="KYC reference number" value={kycDocumentReference} onChange={setKycDocumentReference} disabled={busy} />
+        {error ? <FormAlert tone="error">{error}</FormAlert> : null}
+        <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>Submit application</SubmitButton>
+        <button type="button" onClick={onBack} disabled={busy} className="w-full text-sm font-bold text-slate-500">Back</button>
+      </form>
+    </main>
+  );
+};
 
 function viewerFromSessionUser(user: { id?: unknown; email?: unknown; app_metadata?: unknown } | null | undefined): GrowthPartnerViewer | null {
   if (!user?.id) return null;
@@ -1051,6 +1097,22 @@ export const PartnerPortalLogin: React.FC<{
     ).finally(() => setBusy(false));
   };
 
+  const handleExistingUserApplication = (input: { fullName: string; phone: string; kycDocumentType: string; kycDocumentReference: string }) => {
+    if (!input.fullName.trim() || !input.kycDocumentType || !input.kycDocumentReference.trim()) {
+      setFormError('Enter your name and KYC details to submit the application.');
+      return;
+    }
+    setBusy(true);
+    setFormError('');
+    void submitGrowthPartnerApplication(sb, input).then(
+      () => {
+        setApplication({ id: 'submitted', status: 'pending', kyc_status: 'pending', created_at: new Date().toISOString() });
+        setMode('login');
+      },
+      (error: Error) => setFormError(safePartnerErrorMessage(error, 'Application failed. Please try again.'))
+    ).finally(() => setBusy(false));
+  };
+
   // ---------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------
@@ -1080,6 +1142,10 @@ export const PartnerPortalLogin: React.FC<{
   }
 
   if (state === 'loading' || state === 'granted') return <PartnerPortalVerifying logoSrc={logoSrc} />;
+
+  if (state === 'unauthorized' && mode === 'apply') {
+    return <ExistingUserApplicationForm busy={busy} error={formError} accentHex={accentHex} onSubmit={handleExistingUserApplication} onBack={() => { setMode('login'); setFormError(''); }} />;
+  }
 
   if (state === 'signed-out' && mode === 'signup') {
     return (
@@ -1181,7 +1247,7 @@ export const PartnerPortalLogin: React.FC<{
             />
           </div>
         ) : null}
-        <PartnerPortalUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} />
+        <PartnerPortalUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} onApply={() => { setMode('apply'); setFormError(''); }} />
       </>
     );
   }
