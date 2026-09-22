@@ -31,6 +31,9 @@ import {
   GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE,
   PARTNER_ACTIVITY_LABELS,
   PARTNER_REFERRAL_FILTER_LABELS,
+  normalizePartnerDashboardData,
+  normalizePartnerPerformanceData,
+  normalizePartnerReferralList,
   type PartnerActivityEntry,
   type PartnerDashboardData,
   type PartnerPerformanceData,
@@ -62,9 +65,29 @@ export const GROWTH_PARTNER_NO_PERFORMANCE_TITLE = 'No performance data yet.';
 export const GROWTH_PARTNER_NO_PERFORMANCE_BODY = 'Performance data will appear as referrals progress.';
 
 function formatMonthLabel(month: string): string {
+  if (!month) return '—';
   const parsed = new Date(`${month}-01T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return month;
   return parsed.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+}
+
+/**
+ * A backend count that did not arrive renders as '—' — never as a fabricated
+ * zero, and never as the string "undefined"/"null".
+ */
+function countLabel(value: number | null | undefined): string {
+  return Number.isFinite(value as number) ? String(value) : '—';
+}
+
+/** Percentage label under the same rule (completion rate). */
+function percentLabel(value: number | null | undefined): string {
+  return Number.isFinite(value as number) ? `${value}%` : '—';
+}
+
+/** Finite number or `fallback` — for pager math that must never be NaN. */
+function numOr(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function activityLabel(type: string): string {
@@ -126,20 +149,25 @@ export function Pager({
   offset: number;
   onPage: (nextOffset: number) => void;
 }) {
-  if (total <= 0) return null;
-  const from = Math.min(offset + 1, total);
-  const to = Math.min(offset + limit, total);
-  const hasPrev = offset > 0;
-  const hasNext = offset + limit < total;
+  // Pager math runs on server numbers; a malformed/absent value must not turn
+  // into "Showing NaN–NaN of undefined".
+  const safeTotal = numOr(total, 0);
+  const safeLimit = Math.max(1, numOr(limit, 1));
+  const safeOffset = Math.max(0, numOr(offset, 0));
+  if (safeTotal <= 0) return null;
+  const from = Math.min(safeOffset + 1, safeTotal);
+  const to = Math.min(safeOffset + safeLimit, safeTotal);
+  const hasPrev = safeOffset > 0;
+  const hasNext = safeOffset + safeLimit < safeTotal;
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
       <p className="text-xs font-bold text-slate-500" aria-live="polite">
-        Showing {from}–{to} of {total}
+        Showing {from}–{to} of {safeTotal}
       </p>
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => onPage(Math.max(0, offset - limit))}
+          onClick={() => onPage(Math.max(0, safeOffset - safeLimit))}
           disabled={!hasPrev}
           className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -148,7 +176,7 @@ export function Pager({
         </button>
         <button
           type="button"
-          onClick={() => onPage(offset + limit)}
+          onClick={() => onPage(safeOffset + safeLimit)}
           disabled={!hasNext}
           className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -249,6 +277,12 @@ export function PartnerProfileCard({
   email: string;
   accentHex?: string;
 }) {
+  // The card renders even when the payload omitted the partner block or the
+  // status flag: an unknown status is stated as unknown (and never turns into
+  // a false "Paused" alarm) instead of throwing.
+  const partner = dashboard?.partner ?? { referral_code: '', is_active: null, partner_since: null };
+  const isActive = partner.is_active === true;
+  const isPaused = partner.is_active === false;
   return (
     <section aria-label="Partner profile" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <div className="flex items-center gap-4">
@@ -265,16 +299,16 @@ export function PartnerProfileCard({
           <p className="mt-1 flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                dashboard.partner.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                isActive ? 'bg-emerald-100 text-emerald-800' : isPaused ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
               }`}
             >
-              {dashboard.partner.is_active ? 'Active' : 'Paused'}
+              {isActive ? 'Active' : isPaused ? 'Paused' : 'Status unavailable'}
             </span>
-            <span className="text-xs text-slate-500">Partner since {formatPartnerDate(dashboard.partner.partner_since)}</span>
+            <span className="text-xs text-slate-500">Partner since {formatPartnerDate(partner.partner_since ?? null)}</span>
           </p>
         </div>
       </div>
-      {!dashboard.partner.is_active && (
+      {isPaused && (
         <p className="mt-4 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
           Your code is currently paused: existing referrals stay linked, but new users cannot join with it.
         </p>
@@ -287,8 +321,10 @@ export function PartnerProfileCard({
 // Dashboard
 // ---------------------------------------------------------------------------
 
-function ActivityList({ activity }: { activity: PartnerActivityEntry[] }) {
-  if (activity.length === 0) {
+function ActivityList({ activity }: { activity?: PartnerActivityEntry[] | null }) {
+  // A missing activity list is "no activity", not a render crash.
+  const entries = Array.isArray(activity) ? activity.filter((entry): entry is PartnerActivityEntry => !!entry) : [];
+  if (entries.length === 0) {
     return (
       <div className="text-center px-6 py-10">
         <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -301,28 +337,36 @@ function ActivityList({ activity }: { activity: PartnerActivityEntry[] }) {
   }
   return (
     <ul className="mt-4 divide-y divide-slate-100">
-      {activity.map((entry, index) => (
+      {entries.map((entry, index) => (
         <li key={`${entry.type}-${entry.ref}-${entry.at ?? index}`} className="py-3 flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900">{activityLabel(entry.type)}</p>
             <p className="text-xs text-slate-500 truncate">{referralTitle(entry)}</p>
           </div>
-          <span className="text-xs font-bold text-slate-500">{formatPartnerDate(entry.at)}</span>
+          <span className="text-xs font-bold text-slate-500">{formatPartnerDate(entry.at ?? null)}</span>
         </li>
       ))}
     </ul>
   );
 }
 
+/**
+ * Dashboard section. The payload is normalized on entry, so a partial or empty
+ * answer (rolling schema upgrade, a backend that answered `{}`) renders the
+ * honest '—'/empty states below instead of throwing during render — a throw
+ * here would blank the entire partner area through the root ErrorBoundary.
+ */
 export const GrowthPartnerDashboard: React.FC<{
-  dashboard: PartnerDashboardData;
+  dashboard: PartnerDashboardData | null;
   displayName: string;
   email: string;
   accentHex?: string;
   onRetry?: () => void;
   refreshing?: boolean;
   refreshError?: string | null;
-}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false, refreshError }) => (
+}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false, refreshError }) => {
+  const data = normalizePartnerDashboardData(dashboard);
+  return (
   <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-base font-bold text-slate-900">Dashboard</h2>
@@ -343,27 +387,28 @@ export const GrowthPartnerDashboard: React.FC<{
     {refreshing && <p className="text-xs font-bold text-slate-500">Refreshing…</p>}
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <PartnerProfileCard dashboard={dashboard} displayName={displayName} email={email} accentHex={accentHex} />
-      <ReferralCodeCard code={dashboard.partner.referral_code} />
+      <PartnerProfileCard dashboard={data} displayName={displayName} email={email} accentHex={accentHex} />
+      <ReferralCodeCard code={data.partner.referral_code} />
     </div>
 
     <section aria-label="Referral summary" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-      <KpiCard label="Total Referrals" value={String(dashboard.totalReferrals ?? dashboard.kpis.total_referrals)} />
-      <KpiCard label="Active Referrals" value={String(dashboard.activeReferrals ?? dashboard.referral_status_counts?.active ?? '—')} />
-      <KpiCard label="Pending Referrals" value={String(dashboard.pendingReferrals ?? dashboard.referral_status_counts?.pending ?? '—')} />
-      <KpiCard label="Converted Referrals" value={String(dashboard.convertedReferrals ?? dashboard.referral_status_counts?.converted ?? '—')} />
+      <KpiCard label="Total Referrals" value={countLabel(data.totalReferrals ?? data.kpis.total_referrals)} />
+      <KpiCard label="Active Referrals" value={countLabel(data.activeReferrals ?? data.referral_status_counts?.active)} />
+      <KpiCard label="Pending Referrals" value={countLabel(data.pendingReferrals ?? data.referral_status_counts?.pending)} />
+      <KpiCard label="Converted Referrals" value={countLabel(data.convertedReferrals ?? data.referral_status_counts?.converted)} />
     </section>
 
     <p className="text-xs text-slate-500">Registered accounts only. Inactive, cancelled and rejected referrals remain in the total but are excluded from active, pending and converted counts.</p>
 
-    <PartnerReferralActivity activity={dashboard.referralActivity} />
+    <PartnerReferralActivity activity={data.referralActivity} />
 
     <section aria-label="Recent activity" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-base font-bold text-slate-900">Recent activity</h2>
-      <ActivityList activity={dashboard.recent_activity} />
+      <ActivityList activity={data.recent_activity} />
     </section>
   </div>
-);
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Referrals + Customers (same backend rows, different presentations)
@@ -382,7 +427,8 @@ export interface PartnerListSectionProps {
 /** Accessible count tabs; arrow keys/Home/End move focus and activate a filter. */
 export function ReferralStatusTabs({ value, counts, onChange, panelId }: {
   value: ReferralStatusTab;
-  counts?: ReferralStatusCounts;
+  /** Partial on purpose: an uncounted status renders '—', never a fake 0. */
+  counts?: Partial<ReferralStatusCounts>;
   onChange?: (next: ReferralStatusTab) => void;
   panelId: string;
 }) {
@@ -426,6 +472,9 @@ export const GrowthPartnerReferrals: React.FC<
   const [selectedReferral, setSelectedReferral] = useState<string | null>(null);
   const closeDetails = useCallback(() => setSelectedReferral(null), []);
   const panelId = useId();
+  // Normalized on entry: rows/counters/pager values are always well-formed, so
+  // a partial payload renders the empty state instead of crashing the render.
+  const view = list ? normalizePartnerReferralList(list) : null;
   return (
     <section aria-label="Referred users" aria-busy={loading} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -443,15 +492,15 @@ export const GrowthPartnerReferrals: React.FC<
         </button>
       </div>
       {onApplyFilters && <ReferralSearchControls onApply={onApplyFilters} resetKey={filtersResetKey} />}
-      <ReferralStatusTabs value={statusTab} counts={list?.status_counts} onChange={onStatusTabChange} panelId={panelId} />
+      <ReferralStatusTabs value={statusTab} counts={view?.status_counts} onChange={onStatusTabChange} panelId={panelId} />
       <div role="tabpanel" id={panelId} aria-labelledby={`${panelId}-tab-${statusTab}`} aria-busy={loading} tabIndex={0}>
       {loading ? (
         <SectionLoading label="Loading referred users…" />
       ) : error ? (
         <div role="alert"><SectionError message={error} onRetry={onRetry} /></div>
-      ) : !list ? (
+      ) : !view ? (
         <SectionLoading label="Loading referred users…" />
-      ) : list.total === 0 ? (
+      ) : view.total === 0 ? (
         <ReferralEmptyState
           filtered={filtersActive || statusTab !== 'all'}
           referralCode={referralCode}
@@ -464,8 +513,8 @@ export const GrowthPartnerReferrals: React.FC<
       ) : (
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <p className="mb-4 text-xs text-slate-500">Contact details are masked for privacy. Converted means the user completed their website, not a payment. Last activity shows referral milestones only.</p>
-          <ReferralTable rows={list.rows} onOpenDetails={setSelectedReferral} />
-          <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
+          <ReferralTable rows={view.rows} onOpenDetails={setSelectedReferral} />
+          <Pager total={view.total} limit={view.limit} offset={view.offset} onPage={onPage} />
         </div>
       )}
       </div>
@@ -483,7 +532,9 @@ export const GrowthPartnerCustomers: React.FC<
 > = ({ list, loading, error, filter, onFilterChange, onPage, onRetry, search, onSearchChange, onSearchSubmit }) => {
   if (loading && !list) return <SectionLoading label="Loading your customers…" />;
   if (error && !list) return <SectionError message={error} onRetry={onRetry} />;
-  if (list && list.total === 0 && filter === 'all' && !search.trim()) {
+  // Same normalization as the referrals section (identical backend rows).
+  const view = list ? normalizePartnerReferralList(list) : null;
+  if (view && view.total === 0 && filter === 'all' && !search.trim()) {
     return (
       <SectionEmpty title={GROWTH_PARTNER_NO_REFERRALS_TITLE} body={GROWTH_PARTNER_NO_REFERRALS_BODY} />
     );
@@ -519,17 +570,17 @@ export const GrowthPartnerCustomers: React.FC<
       <section aria-label="Customers" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-base font-bold text-slate-900">Customers</h2>
         {loading && <p className="mt-2 text-xs font-bold text-slate-500">Refreshing…</p>}
-        {list && list.total === 0 ? (
+        {view && view.total === 0 ? (
           <p className="mt-4 text-sm text-slate-600">
             {search.trim() ? 'No customers match your search.' : 'No customers match this filter.'}
           </p>
         ) : (
-          list && (
+          view && (
             <>
               <div className="mt-4">
-                <ReferralTable rows={list.rows} showStarted={false} />
+                <ReferralTable rows={view.rows} showStarted={false} />
               </div>
-              <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
+              <Pager total={view.total} limit={view.limit} offset={view.offset} onPage={onPage} />
             </>
           )
         )}
@@ -542,6 +593,12 @@ export const GrowthPartnerCustomers: React.FC<
 // Performance
 // ---------------------------------------------------------------------------
 
+/**
+ * Performance section. The aggregates and the monthly series are normalized on
+ * entry, so a missing/partial payload renders '—' and an empty history rather
+ * than throwing inside the `.map` (which would take down the whole route via
+ * the root ErrorBoundary).
+ */
 export const GrowthPartnerPerformance: React.FC<{
   performance: PartnerPerformanceData | null;
   loading: boolean;
@@ -550,49 +607,59 @@ export const GrowthPartnerPerformance: React.FC<{
 }> = ({ performance, loading, error, onRetry }) => {
   if (loading && !performance) return <SectionLoading label="Loading your performance…" />;
   if (error && !performance) return <SectionError message={error} onRetry={onRetry} />;
-  if (!performance || performance.total_referrals === 0) {
+  if (!performance) {
+    return (
+      <SectionEmpty title={GROWTH_PARTNER_NO_PERFORMANCE_TITLE} body={GROWTH_PARTNER_NO_PERFORMANCE_BODY} />
+    );
+  }
+  const data = normalizePartnerPerformanceData(performance);
+  if (data.total_referrals === 0) {
     return (
       <SectionEmpty title={GROWTH_PARTNER_NO_PERFORMANCE_TITLE} body={GROWTH_PARTNER_NO_PERFORMANCE_BODY} />
     );
   }
   // Bar widths only visualize backend values (proportional layout, no business math).
-  const maxPoint = Math.max(1, ...performance.monthly.map((point) => Math.max(point.referred, point.completed)));
+  const maxPoint = Math.max(1, ...data.monthly.map((point) => Math.max(point.referred, point.completed)));
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <section aria-label="Performance summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Total Referrals" value={String(performance.total_referrals)} />
-        <KpiCard label="Completed" value={String(performance.completed)} />
-        <KpiCard label="Completion Rate" value={`${performance.completion_rate_pct}%`} />
-        <KpiCard label="Websites Started" value={String(performance.websites_started)} />
+        <KpiCard label="Total Referrals" value={countLabel(data.total_referrals)} />
+        <KpiCard label="Completed" value={countLabel(data.completed)} />
+        <KpiCard label="Completion Rate" value={percentLabel(data.completion_rate_pct)} />
+        <KpiCard label="Websites Started" value={countLabel(data.websites_started)} />
       </section>
       <section aria-label="Monthly performance" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-base font-bold text-slate-900">Last 6 months</h2>
-        <ul className="mt-4 space-y-4">
-          {performance.monthly.map((point) => (
-            <li key={point.month}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm font-bold text-slate-900">{formatMonthLabel(point.month)}</p>
-                <p className="text-xs font-bold text-slate-500">
-                  {point.referred} referred · {point.completed} completed
-                </p>
-              </div>
-              <div className="mt-2 space-y-1.5" aria-hidden="true">
-                <div className="h-2 rounded-full bg-slate-100">
-                  <div
-                    className="h-2 rounded-full bg-slate-900"
-                    style={{ width: `${(point.referred / maxPoint) * 100}%` }}
-                  />
+        {data.monthly.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-600">Monthly history is not available yet.</p>
+        ) : (
+          <ul className="mt-4 space-y-4">
+            {data.monthly.map((point, index) => (
+              <li key={point.month || `month-${index}`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-sm font-bold text-slate-900">{formatMonthLabel(point.month)}</p>
+                  <p className="text-xs font-bold text-slate-500">
+                    {point.referred} referred · {point.completed} completed
+                  </p>
                 </div>
-                <div className="h-2 rounded-full bg-slate-100">
-                  <div
-                    className="h-2 rounded-full bg-emerald-500"
-                    style={{ width: `${(point.completed / maxPoint) * 100}%` }}
-                  />
+                <div className="mt-2 space-y-1.5" aria-hidden="true">
+                  <div className="h-2 rounded-full bg-slate-100">
+                    <div
+                      className="h-2 rounded-full bg-slate-900"
+                      style={{ width: `${(point.referred / maxPoint) * 100}%` }}
+                    />
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-100">
+                    <div
+                      className="h-2 rounded-full bg-emerald-500"
+                      style={{ width: `${(point.completed / maxPoint) * 100}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </motion.div>
   );
@@ -615,11 +682,13 @@ export const GrowthPartnerProfile: React.FC<{
   displayName: string;
   email: string;
   accentHex?: string;
-}> = ({ dashboard, displayName, email, accentHex = '#C20E5A' }) => (
+}> = ({ dashboard, displayName, email, accentHex = '#C20E5A' }) => {
+  const data = normalizePartnerDashboardData(dashboard);
+  return (
   <div className="space-y-4">
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <PartnerProfileCard dashboard={dashboard} displayName={displayName} email={email} accentHex={accentHex} />
-      <ReferralCodeCard code={dashboard.partner.referral_code} />
+      <PartnerProfileCard dashboard={data} displayName={displayName} email={email} accentHex={accentHex} />
+      <ReferralCodeCard code={data.partner.referral_code} />
     </div>
     <section aria-label="Account details" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-base font-bold text-slate-900">Account details</h2>
@@ -634,11 +703,11 @@ export const GrowthPartnerProfile: React.FC<{
         </div>
         <div className="py-3 flex flex-wrap items-center justify-between gap-2">
           <dt className="font-bold text-slate-500">Status</dt>
-          <dd className="font-bold text-slate-900">{dashboard.partner.is_active ? 'Active' : 'Paused'}</dd>
+          <dd className="font-bold text-slate-900">{data.partner.is_active === true ? 'Active' : data.partner.is_active === false ? 'Paused' : '—'}</dd>
         </div>
         <div className="py-3 flex flex-wrap items-center justify-between gap-2">
           <dt className="font-bold text-slate-500">Partner since</dt>
-          <dd className="font-bold text-slate-900">{formatPartnerDate(dashboard.partner.partner_since)}</dd>
+          <dd className="font-bold text-slate-900">{formatPartnerDate(data.partner.partner_since ?? null)}</dd>
         </div>
       </dl>
       <p className="mt-2 text-xs text-slate-500">
@@ -646,4 +715,5 @@ export const GrowthPartnerProfile: React.FC<{
       </p>
     </section>
   </div>
-);
+  );
+};

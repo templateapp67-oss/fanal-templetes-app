@@ -162,9 +162,8 @@ export async function getMyGrowthReferral(): Promise<GrowthReferralRelationship 
 
 /** Read the signed-in user's onboarding progress (defaults when never started). */
 export async function getMyOnboardingStatus(): Promise<GrowthOnboardingStatus> {
-  const { data, error } = await supabase.rpc('get_my_onboarding_status');
-  if (error) throw rpcError('Onboarding status lookup failed', error);
-  return data as GrowthOnboardingStatus;
+  return readPartnerPayload('Onboarding status lookup failed', normalizeGrowthOnboardingStatus,
+    () => supabase.rpc('get_my_onboarding_status'));
 }
 
 /**
@@ -175,11 +174,8 @@ export async function getMyOnboardingStatus(): Promise<GrowthOnboardingStatus> {
 export async function updateMyOnboardingProgress(
   action: OnboardingProgressAction
 ): Promise<GrowthOnboardingStatus> {
-  const { data, error } = await supabase.rpc('update_my_onboarding_progress', {
-    p_action: action,
-  });
-  if (error) throw rpcError('Onboarding update failed', error);
-  return data as GrowthOnboardingStatus;
+  return readPartnerPayload('Onboarding update failed', normalizeGrowthOnboardingStatus,
+    () => supabase.rpc('update_my_onboarding_progress', { p_action: action }));
 }
 
 // ============================================================================
@@ -198,7 +194,13 @@ export async function updateMyOnboardingProgress(
 /** One row of the signed-in user's own KYC application, as RLS lets them see it. */
 export interface GrowthPartnerApplicationRow {
   id: string;
-  status: 'pending' | 'approved' | 'rejected';
+  /**
+   * Backend status. A drifted/unrecognized value is preserved verbatim instead
+   * of being guessed: `resolveGrowthPartnerGate` then simply does not match
+   * `pending`/`rejected`, which fails closed to "unauthorized" exactly as
+   * before.
+   */
+  status: 'pending' | 'approved' | 'rejected' | (string & {});
   kyc_status: string | null;
   created_at: string;
 }
@@ -211,13 +213,15 @@ export interface GrowthPartnerApplicationRow {
  * never a guess about access.
  */
 export async function fetchMyGrowthPartnerApplication(): Promise<GrowthPartnerApplicationRow | null> {
-  const { data, error } = await supabase
-    .from('growth_partner_applications')
-    .select('id, status, kyc_status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(1);
-  if (error) throw rpcError('Partner application lookup failed', error);
-  const rows = (data ?? []) as unknown as GrowthPartnerApplicationRow[];
+  const rows = await readPartnerPayload<GrowthPartnerApplicationRow[]>(
+    'Partner application lookup failed',
+    (raw) => list(raw, normalizeGrowthPartnerApplicationRow),
+    () => supabase
+      .from('growth_partner_applications')
+      .select('id, status, kyc_status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+  );
   return rows[0] ?? null;
 }
 
@@ -226,9 +230,8 @@ export async function fetchMyGrowthPartnerApplication(): Promise<GrowthPartnerAp
  * not a partner. RLS decides — the frontend only renders the outcome.
  */
 export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
-  const { data, error } = await supabase.rpc('get_my_growth_partner');
-  if (error) throw rpcError('Growth Partner lookup failed', error);
-  return (data ?? null) as GrowthPartner | null;
+  return readPartnerPayload('Growth Partner lookup failed', normalizeGrowthPartnerRow,
+    () => supabase.rpc('get_my_growth_partner'));
 }
 
 // ============================================================================
@@ -385,12 +388,16 @@ export interface TemplateCompletionResult extends GrowthOnboardingStatus {
  */
 export async function recordTemplateCompletion(): Promise<TemplateCompletionResult> {
   try {
-    const { data, error } = await supabase.rpc('complete_template_onboarding');
-    if (error) throw rpcError('Template completion update failed', error);
-    return data as TemplateCompletionResult;
+    return await readPartnerPayload('Template completion update failed', normalizeTemplateCompletion,
+      () => supabase.rpc('complete_template_onboarding'));
   } catch (error) {
     throw toCompletionError(error);
   }
+}
+
+/** Completion result: the normalized progress plus the backend's verified flag. */
+export function normalizeTemplateCompletion(raw: unknown): TemplateCompletionResult {
+  return { ...normalizeGrowthOnboardingStatus(raw), completed: record(raw)?.completed === true };
 }
 
 /** True when a completion failure means "website not finished yet". */
@@ -456,8 +463,12 @@ export interface PartnerReferralEntry {
 
 /** Paginated referral list with a server-side total for the pager. */
 export interface PartnerReferralList {
-  /** All matching referrals, independent of selected status and pagination. */
-  status_counts?: ReferralStatusCounts;
+  /**
+   * All matching referrals, independent of selected status and pagination.
+   * Partial on purpose: a status the backend did not count renders as '—'
+   * rather than as an invented zero.
+   */
+  status_counts?: Partial<ReferralStatusCounts>;
   total: number;
   limit: number;
   offset: number;
@@ -482,8 +493,9 @@ export interface PartnerActivityEntry {
 }
 
 export interface PartnerReferralActivity {
-  recentReferrals: { referralId: string; name: string; date: string; status: ReferralStatus }[];
-  last7DaysReferrals: number;
+  recentReferrals: { referralId: string; name: string; date: string; status: ReferralStatus | null }[];
+  /** Null when the backend did not supply the count (rendered as '—'). */
+  last7DaysReferrals: number | null;
   dailyReferrals: { date: string; count: number }[];
   window: { from: string; asOf: string; timeZone: 'UTC' };
 }
@@ -497,8 +509,13 @@ export interface PartnerDashboardData {
   pendingReferrals?: number;
   convertedReferrals?: number;
   referral_status_counts?: Partial<Record<ReferralStatus, number>>;
-  partner: { referral_code: string; is_active: boolean; partner_since: string };
-  kpis: { total_referrals: number; active_onboarding: number | null; completed: number | null };
+  /**
+   * Partner card. A value the backend did not supply stays null/'' so the UI
+   * can say "not available" instead of inventing a code, a status or a date.
+   */
+  partner: { referral_code: string; is_active: boolean | null; partner_since: string | null };
+  /** Counts are null when unknown — the KPI chips render '—', never a fake 0. */
+  kpis: { total_referrals: number | null; active_onboarding: number | null; completed: number | null };
   recent_activity: PartnerActivityEntry[];
 }
 
@@ -510,19 +527,392 @@ export interface PartnerMonthlyPoint {
 }
 
 export interface PartnerPerformanceData {
-  total_referrals: number;
-  completed: number;
-  active_onboarding: number;
-  websites_started: number;
-  completion_rate_pct: number;
+  /** Aggregates are null when the backend omitted them (rendered as '—'). */
+  total_referrals: number | null;
+  completed: number | null;
+  active_onboarding: number | null;
+  websites_started: number | null;
+  completion_rate_pct: number | null;
   monthly: PartnerMonthlyPoint[];
+}
+
+// ============================================================================
+// Defensive normalization — every read returns a COMPLETE, safe shape.
+//
+// These RPC payloads cross a network and a schema that may be one migration
+// behind, so they are treated as untrusted input:
+//   • arrays are always arrays — a missing `rows` / `recent_activity` /
+//     `monthly` can never become an undefined `.map` in React,
+//   • objects are always objects — no `dashboard.partner` property crash,
+//   • a value the backend did not send stays null/'' and renders as '—',
+//     'Unknown' or "not available"; a count is never invented as 0,
+//   • the mapping itself runs inside try/catch, so even a payload that throws
+//     while being read degrades to a safe default instead of unmounting the
+//     page into the root ErrorBoundary ("Something went wrong").
+//
+// This mirrors the normalization layer the partner-operations API already
+// applies (src/lib/partnerPortalOperations.ts).
+// ============================================================================
+
+/** Page size the referral RPCs default to; also the fallback when `limit` is absent. */
+export const PARTNER_REFERRAL_PAGE_SIZE = 20;
+
+/** Statuses the referral funnel can report (mirrors src/lib/referralStatus.ts). */
+const REFERRAL_STATUS_VALUES: readonly ReferralStatus[] = [
+  'clicked',
+  'registered',
+  'pending',
+  'active',
+  'converted',
+  'inactive',
+  'cancelled',
+  'rejected',
+];
+
+/** Onboarding lifecycle values (forward-only, terminal at completed). */
+const ONBOARDING_STATUS_VALUES: readonly GrowthOnboardingStatusValue[] = [
+  'not_started',
+  'linked',
+  'template_started',
+  'template_completed',
+];
+
+/** Plain-object view of untrusted JSON, or null (arrays/scalars are rejected). */
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** String value; a missing value becomes '' (the UI renders '—'/fallback copy). */
+function text(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return value === null || value === undefined || typeof value === 'object' ? '' : String(value);
+}
+
+/** Non-empty string, or null. Values are never coerced into truthy garbage. */
+function nullableText(value: unknown): string | null {
+  const trimmed = text(value).trim();
+  return trimmed ? trimmed : null;
+}
+
+/** Finite number or null — an unknown count stays unknown instead of NaN/0. */
+function nullableNum(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/** Finite number or `fallback` — for values that must be numeric. */
+function num(value: unknown, fallback = 0): number {
+  return nullableNum(value) ?? fallback;
+}
+
+/** Strict tri-state boolean: only a real boolean/1/0 is accepted. */
+function nullableFlag(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (value === 1 || value === '1' || value === 'true') return true;
+  if (value === 0 || value === '0' || value === 'false') return false;
+  return null;
+}
+
+/** Map an array, dropping entries the mapper rejects; a non-array becomes []. */
+function list<T>(value: unknown, map: (row: unknown, index: number) => T | null): T[] {
+  if (!Array.isArray(value)) return [];
+  const rows: T[] = [];
+  value.forEach((row, index) => {
+    try {
+      const mapped = map(row, index);
+      if (mapped !== null) rows.push(mapped);
+    } catch {
+      // One malformed row must never blank the whole list.
+    }
+  });
+  return rows;
+}
+
+/** Run a transformation, falling back to a safe default instead of throwing. */
+function safely<T>(label: string, build: () => T, fallback: T): T {
+  try {
+    return build();
+  } catch (error) {
+    if (typeof console !== 'undefined') {
+      console.warn(`[growth-partner] ${label} could not be normalized; showing safe defaults instead.`, error);
+    }
+    return fallback;
+  }
+}
+
+function referralStatus(value: unknown): ReferralStatus | null {
+  return typeof value === 'string' && (REFERRAL_STATUS_VALUES as readonly string[]).includes(value)
+    ? (value as ReferralStatus)
+    : null;
+}
+
+function onboardingStatus(value: unknown): GrowthOnboardingStatusValue | null {
+  return typeof value === 'string' && (ONBOARDING_STATUS_VALUES as readonly string[]).includes(value)
+    ? (value as GrowthOnboardingStatusValue)
+    : null;
+}
+
+/**
+ * Only tab/status keys the UI knows are kept; unknown keys are dropped, never
+ * echoed. `all` is the tab total rather than a referral status, so it is kept
+ * explicitly — dropping it would render the "All" tab as `All (—)`.
+ */
+function statusCounts(value: unknown): Partial<ReferralStatusCounts> | undefined {
+  const counts = record(value);
+  if (!counts) return undefined;
+  const safe: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(counts)) {
+    const count = nullableNum(raw);
+    if (count === null) continue;
+    if (key === 'all') {
+      safe.all = count;
+      continue;
+    }
+    const status = referralStatus(key);
+    if (status) safe[status] = count;
+  }
+  return safe as Partial<ReferralStatusCounts>;
+}
+
+/** One referral row, or null when the entry is not an object at all. */
+export function normalizePartnerReferralEntry(raw: unknown): PartnerReferralEntry | null {
+  const row = record(raw);
+  if (!row) return null;
+  return safely('referral row', () => ({
+    referral_id: nullableText(row.referral_id) ?? undefined,
+    referral_clicked_at: nullableText(row.referral_clicked_at),
+    referral_status: referralStatus(row.referral_status) ?? undefined,
+    masked_contact: nullableText(row.masked_contact),
+    joined_at: nullableText(row.joined_at),
+    referral_code: nullableText(row.referral_code),
+    conversion_status: row.conversion_status === 'converted' || row.conversion_status === 'not_converted'
+      ? row.conversion_status
+      : null,
+    last_activity_at: nullableText(row.last_activity_at),
+    // `ref` is the row's display identity: '' keeps it renderable (the table
+    // shows "Referred user") instead of printing "undefined".
+    ref: text(row.ref).trim(),
+    display_name: nullableText(row.display_name),
+    status: onboardingStatus(row.status),
+    linked_at: nullableText(row.linked_at),
+    template_started_at: nullableText(row.template_started_at),
+    template_completed_at: nullableText(row.template_completed_at),
+  }), null);
+}
+
+/** A paginated referral list that is always safe to iterate and page through. */
+export function normalizePartnerReferralList(raw: unknown): PartnerReferralList {
+  const payload = record(raw) ?? {};
+  return safely<PartnerReferralList>('referral list', () => {
+    const rows = list(payload.rows, normalizePartnerReferralEntry);
+    return {
+      status_counts: statusCounts(payload.status_counts),
+      // `total` drives the empty state and the pager: it can never be smaller
+      // than the page we actually received.
+      total: Math.max(num(payload.total, rows.length), rows.length),
+      // A zero/NaN page size would make the page-offset math divide by zero.
+      limit: Math.max(1, Math.trunc(nullableNum(payload.limit) ?? PARTNER_REFERRAL_PAGE_SIZE)),
+      offset: Math.max(0, Math.trunc(nullableNum(payload.offset) ?? 0)),
+      rows,
+    };
+  }, { total: 0, limit: PARTNER_REFERRAL_PAGE_SIZE, offset: 0, rows: [] });
+}
+
+/** One recent-activity event; an unrecognized kind renders as "Referral update". */
+export function normalizePartnerActivityEntry(raw: unknown): PartnerActivityEntry | null {
+  const row = record(raw);
+  if (!row) return null;
+  return safely('activity entry', () => ({
+    type: (text(row.type) || 'unknown') as PartnerActivityType,
+    ref: text(row.ref).trim(),
+    display_name: nullableText(row.display_name),
+    at: nullableText(row.at),
+  }), null);
+}
+
+/** Last-7-days/recent-referrals analytics, or undefined when not supplied. */
+export function normalizePartnerReferralActivity(raw: unknown): PartnerReferralActivity | undefined {
+  const activity = record(raw);
+  if (!activity) return undefined;
+  return safely('referral activity', () => {
+    const window = record(activity.window) ?? {};
+    return {
+      recentReferrals: list(activity.recentReferrals, (row) => {
+        const entry = record(row);
+        if (!entry) return null;
+        return {
+          referralId: text(entry.referralId),
+          name: text(entry.name),
+          date: text(entry.date),
+          status: referralStatus(entry.status),
+        };
+      }),
+      last7DaysReferrals: nullableNum(activity.last7DaysReferrals),
+      dailyReferrals: list(activity.dailyReferrals, (row) => {
+        const point = record(row);
+        return point ? { date: text(point.date), count: num(point.count) } : null;
+      }),
+      window: { from: text(window.from), asOf: text(window.asOf), timeZone: 'UTC' },
+    };
+  }, undefined);
+}
+
+/**
+ * The dashboard payload. Never null: an empty/rolled-back answer becomes a
+ * well-formed object whose unknown values render as '—' / "not available" and
+ * whose lists are empty, so the section shows its honest empty state.
+ */
+export function normalizePartnerDashboardData(raw: unknown): PartnerDashboardData {
+  const payload = record(raw) ?? {};
+  return safely<PartnerDashboardData>('partner dashboard', () => {
+    const partner = record(payload.partner) ?? {};
+    const kpis = record(payload.kpis) ?? {};
+    return {
+      referralActivity: normalizePartnerReferralActivity(payload.referralActivity),
+      totalReferrals: nullableNum(payload.totalReferrals) ?? undefined,
+      activeReferrals: nullableNum(payload.activeReferrals) ?? undefined,
+      pendingReferrals: nullableNum(payload.pendingReferrals) ?? undefined,
+      convertedReferrals: nullableNum(payload.convertedReferrals) ?? undefined,
+      referral_status_counts: statusCounts(payload.referral_status_counts),
+      partner: {
+        referral_code: text(partner.referral_code).trim(),
+        is_active: nullableFlag(partner.is_active),
+        partner_since: nullableText(partner.partner_since),
+      },
+      kpis: {
+        total_referrals: nullableNum(kpis.total_referrals),
+        active_onboarding: nullableNum(kpis.active_onboarding),
+        completed: nullableNum(kpis.completed),
+      },
+      recent_activity: list(payload.recent_activity, normalizePartnerActivityEntry),
+    };
+  }, {
+    partner: { referral_code: '', is_active: null, partner_since: null },
+    kpis: { total_referrals: null, active_onboarding: null, completed: null },
+    recent_activity: [],
+  });
+}
+
+/** Performance aggregates with an always-iterable monthly series. */
+export function normalizePartnerPerformanceData(raw: unknown): PartnerPerformanceData {
+  const payload = record(raw) ?? {};
+  return safely('partner performance', () => ({
+    total_referrals: nullableNum(payload.total_referrals),
+    completed: nullableNum(payload.completed),
+    active_onboarding: nullableNum(payload.active_onboarding),
+    websites_started: nullableNum(payload.websites_started),
+    completion_rate_pct: nullableNum(payload.completion_rate_pct),
+    monthly: list(payload.monthly, (row) => {
+      const point = record(row);
+      if (!point) return null;
+      return { month: text(point.month).trim(), referred: num(point.referred), completed: num(point.completed) };
+    }),
+  }), {
+    total_referrals: null,
+    completed: null,
+    active_onboarding: null,
+    websites_started: null,
+    completion_rate_pct: null,
+    monthly: [],
+  });
+}
+
+/** Onboarding progress. `linked` follows the backend value, else the status. */
+export function normalizeGrowthOnboardingStatus(raw: unknown): GrowthOnboardingStatus {
+  const payload = record(raw) ?? {};
+  return safely('onboarding status', () => {
+    const status = onboardingStatus(payload.status)
+      ?? (nullableFlag(payload.linked) === true ? 'linked' : 'not_started');
+    return {
+      status,
+      linked: nullableFlag(payload.linked) ?? status !== 'not_started',
+      growth_partner_id: nullableText(payload.growth_partner_id),
+      referral_code: nullableText(payload.referral_code),
+      linked_at: nullableText(payload.linked_at),
+      template_started_at: nullableText(payload.template_started_at),
+      template_completed_at: nullableText(payload.template_completed_at),
+    };
+  }, {
+    status: 'not_started',
+    linked: false,
+    growth_partner_id: null,
+    referral_code: null,
+    linked_at: null,
+    template_started_at: null,
+    template_completed_at: null,
+  });
+}
+
+/** One KYC application row (status preserved verbatim — never guessed). */
+export function normalizeGrowthPartnerApplicationRow(raw: unknown): GrowthPartnerApplicationRow | null {
+  const row = record(raw);
+  if (!row) return null;
+  return safely('partner application', () => ({
+    id: text(row.id),
+    status: text(row.status) || 'pending',
+    kyc_status: nullableText(row.kyc_status),
+    created_at: text(row.created_at),
+  }), null);
+}
+
+/**
+ * The caller's own Growth Partner row, or null when the caller is not a
+ * partner. `is_active` follows the gate's rule exactly — only an explicit
+ * `false` is "paused", so a payload that omits the flag cannot lock a partner
+ * out of their own area.
+ */
+export function normalizeGrowthPartnerRow(raw: unknown): GrowthPartner | null {
+  const row = record(raw);
+  if (!row) return null;
+  return safely('partner row', () => ({
+    user_id: text(row.user_id),
+    referral_code: text(row.referral_code).trim(),
+    is_active: nullableFlag(row.is_active) !== false,
+    created_at: text(row.created_at),
+    updated_at: text(row.updated_at),
+  }), null);
+}
+
+/**
+ * Run one read and normalize its payload. Transport failures stay classified
+ * (`rpcError` keeps message/code/status) so the page can still tell a session
+ * expiry from a suspension and offer the right recovery — but they can never
+ * arrive as an unhandled throw or as `undefined` data.
+ */
+async function readPartnerPayload<T>(
+  context: string,
+  normalize: (raw: unknown) => T,
+  run: () => PromiseLike<{ data?: unknown; error?: unknown }>
+): Promise<T> {
+  let settled: { data?: unknown; error?: unknown };
+  try {
+    // postgrest-js REJECTS on some failures instead of resolving with
+    // `{ error }`; both shapes land in the same classified error below.
+    settled = await Promise.resolve(run()).then(
+      (result) => result ?? {},
+      (thrown) => ({ error: thrown })
+    );
+  } catch (thrown) {
+    // A transport that throws synchronously is classified the same way.
+    settled = { error: thrown };
+  }
+  if (settled.error) {
+    const failure = settled.error as { message?: string; code?: string; status?: number };
+    throw rpcError(context, failure);
+  }
+  return normalize(settled.data);
 }
 
 /** One-call dashboard read: partner card + server KPIs + recent activity. */
 export async function fetchMyPartnerDashboard(): Promise<PartnerDashboardData> {
-  const { data, error } = await supabase.rpc('get_my_partner_dashboard');
-  if (error) throw rpcError('Partner dashboard lookup failed', error);
-  return data as PartnerDashboardData;
+  return readPartnerPayload('Partner dashboard lookup failed', normalizePartnerDashboardData,
+    () => supabase.rpc('get_my_partner_dashboard'));
 }
 
 /** Own referrals with server-side filter, search and pagination. */
@@ -541,24 +931,44 @@ export async function fetchMyPartnerReferrals(input: {
     p_status_filter: input.status ?? 'all', p_search: input.search ?? null,
     p_limit: input.limit ?? 20, p_offset: input.offset ?? 0,
   };
-  const { data, error } = extended ? await supabase.rpc('get_my_partner_referrals_filtered', {
-    ...args, p_joined_from: input.joinedFrom ?? null, p_joined_before: input.joinedBefore ?? null,
-    p_conversion: input.conversion ?? 'all', p_sort: input.sort ?? 'newest',
-  }) : await supabase.rpc('get_my_partner_referrals', {
-    p_status_filter: input.status ?? 'all',
-    p_search: input.search ?? null,
-    p_limit: input.limit ?? 20,
-    p_offset: input.offset ?? 0,
+  return readPartnerPayload('Partner referral lookup failed', normalizePartnerReferralList, () => (
+    extended
+      ? supabase.rpc('get_my_partner_referrals_filtered', {
+          ...args, p_joined_from: input.joinedFrom ?? null, p_joined_before: input.joinedBefore ?? null,
+          p_conversion: input.conversion ?? 'all', p_sort: input.sort ?? 'newest',
+        })
+      : readPartnerReferralPage({
+          p_status_filter: input.status ?? 'all',
+          p_search: input.search ?? null,
+          p_limit: input.limit ?? 20,
+          p_offset: input.offset ?? 0,
+        })
+  ));
+}
+
+/**
+ * The four sanctioned arguments of the session-scoped referral page read — the
+ * caller's identity is derived by the backend from the JWT, so no partner id,
+ * user id or filter-by-partner ever travels from the browser (audit-pinned).
+ */
+function readPartnerReferralPage(page: {
+  p_status_filter: PartnerReferralFilter;
+  p_search: string | null;
+  p_limit: number;
+  p_offset: number;
+}) {
+  return supabase.rpc('get_my_partner_referrals', {
+    p_status_filter: page.p_status_filter,
+    p_search: page.p_search,
+    p_limit: page.p_limit,
+    p_offset: page.p_offset,
   });
-  if (error) throw rpcError('Partner referral lookup failed', error);
-  return data as PartnerReferralList;
 }
 
 /** Server-side aggregates: totals, completion rate, monthly history. */
 export async function fetchMyPartnerPerformance(): Promise<PartnerPerformanceData> {
-  const { data, error } = await supabase.rpc('get_my_partner_performance');
-  if (error) throw rpcError('Partner performance lookup failed', error);
-  return data as PartnerPerformanceData;
+  return readPartnerPayload('Partner performance lookup failed', normalizePartnerPerformanceData,
+    () => supabase.rpc('get_my_partner_performance'));
 }
 
 /** Generic message for dashboard section failures (never SQL/database text). */
@@ -581,7 +991,11 @@ export function toSafePartnerSectionError(error: unknown): Error {
 
 /** Read-only, own-partner detail lookup. Null also covers another partner's ID. */
 export async function fetchMyPartnerReferralDetail(referralId: string): Promise<PartnerReferralEntry | null> {
-  const { data, error } = await supabase.rpc('get_my_partner_referral_detail', { p_referral_id: referralId });
-  if (error) throw toSafePartnerSectionError(error);
-  return data as PartnerReferralEntry | null;
+  try {
+    return await readPartnerPayload('Referral detail lookup failed', normalizePartnerReferralEntry,
+      () => supabase.rpc('get_my_partner_referral_detail', { p_referral_id: referralId }));
+  } catch (error) {
+    // The drawer shows safe copy, never SQL/database text.
+    throw toSafePartnerSectionError(error);
+  }
 }

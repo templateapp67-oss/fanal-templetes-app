@@ -9,7 +9,6 @@ import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } fr
 import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, LogOut } from 'lucide-react';
-import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl } from '../lib/growthPartnerProfile';
 import {
   fetchMyGrowthPartnerRow,
   fetchMyGrowthPartnerApplication,
