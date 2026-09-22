@@ -46,7 +46,7 @@ const AUTH_SECTIONS: OnboardingSection[] = ['login', 'signup', 'forgot-password'
  *   unauthenticated → auth screens as requested, protected routes bounce to login
  *   authenticated + pending → referral (auth screens also forward to referral,
  *     so a signed-in user is never shown Sign Up again)
- *   authenticated + linked → status (referral never forced again)
+ *   authenticated + linked → status/handoff (referral never forced again)
  *
  * Loop-free by construction: the resolved section is always renderable for
  * the given (session, phase), so syncing the URL to it converges in one step.
@@ -61,9 +61,12 @@ export function resolveOnboardingRoute(input: {
     return (AUTH_SECTIONS as string[]).includes(requested) ? requested : 'login';
   }
   if (!hasLinkedReferral(phase)) return 'referral';
-  // Linked shop owners always continue in the single, guided setup flow.
-  // This replaces the old status/template handoff after signup or login.
-  return 'shop';
+  // The Growth Partner referral journey has exactly one entry into the owner
+  // product: the status screen mints the one-time handoff, and the Template
+  // App exchanges it before entering the workspace.  Do not send referred
+  // owners to the separate shop wizard here: it bypasses the token exchange
+  // and can strand an owner in the Customer App.
+  return 'status';
 }
 
 // ---------------------------------------------------------------------------
