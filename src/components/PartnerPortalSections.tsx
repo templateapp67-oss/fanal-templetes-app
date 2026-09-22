@@ -214,7 +214,7 @@ export const PartnerReferralStatusSection: React.FC<{
   <div className="space-y-4">
     <section aria-label="Referral status summary" aria-busy={loading}>
       {loading && !dashboard ? <PartnerLoading label="Loading referral totals…" kind="dashboard" /> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <KpiCard label="Total Referrals" value={dashboard ? String(dashboard.kpis.total_referrals) : '—'} />
+        <KpiCard label="Total Referrals" value={String(dashboard?.total_referrals ?? dashboard?.totalReferrals ?? dashboard?.kpis?.total_referrals ?? '—')} />
         {PRIMARY_REFERRAL_STATUSES.map(status => (
           <div key={status}><KpiCard label={REFERRAL_STATUS_DESCRIPTORS[status].label} value={String(dashboard?.referral_status_counts?.[status] ?? '—')} /></div>
         ))}

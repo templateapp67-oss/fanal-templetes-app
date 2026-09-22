@@ -287,8 +287,9 @@ export function PartnerProfileCard({
 // Dashboard
 // ---------------------------------------------------------------------------
 
-function ActivityList({ activity }: { activity: PartnerActivityEntry[] }) {
-  if (activity.length === 0) {
+function ActivityList({ activity = [] }: { activity?: PartnerActivityEntry[] }) {
+  const safeActivity = activity || [];
+  if (safeActivity.length === 0) {
     return (
       <div className="text-center px-6 py-10">
         <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -301,7 +302,7 @@ function ActivityList({ activity }: { activity: PartnerActivityEntry[] }) {
   }
   return (
     <ul className="mt-4 divide-y divide-slate-100">
-      {activity.map((entry, index) => (
+      {safeActivity.map((entry, index) => (
         <li key={`${entry.type}-${entry.ref}-${entry.at ?? index}`} className="py-3 flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900">{activityLabel(entry.type)}</p>
@@ -344,23 +345,23 @@ export const GrowthPartnerDashboard: React.FC<{
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <PartnerProfileCard dashboard={dashboard} displayName={displayName} email={email} accentHex={accentHex} />
-      <ReferralCodeCard code={dashboard.partner.referral_code} />
+      <ReferralCodeCard code={dashboard?.partner?.referral_code ?? ''} />
     </div>
 
     <section aria-label="Referral summary" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-      <KpiCard label="Total Referrals" value={String(dashboard.totalReferrals ?? dashboard.kpis.total_referrals)} />
-      <KpiCard label="Active Referrals" value={String(dashboard.activeReferrals ?? dashboard.referral_status_counts?.active ?? '—')} />
-      <KpiCard label="Pending Referrals" value={String(dashboard.pendingReferrals ?? dashboard.referral_status_counts?.pending ?? '—')} />
-      <KpiCard label="Converted Referrals" value={String(dashboard.convertedReferrals ?? dashboard.referral_status_counts?.converted ?? '—')} />
+      <KpiCard label="Total Referrals" value={String(dashboard?.totalReferrals ?? dashboard?.kpis?.total_referrals ?? 0)} />
+      <KpiCard label="Active Referrals" value={String(dashboard?.activeReferrals ?? dashboard?.referral_status_counts?.active ?? '—')} />
+      <KpiCard label="Pending Referrals" value={String(dashboard?.pendingReferrals ?? dashboard?.referral_status_counts?.pending ?? '—')} />
+      <KpiCard label="Converted Referrals" value={String(dashboard?.convertedReferrals ?? dashboard?.referral_status_counts?.converted ?? '—')} />
     </section>
 
     <p className="text-xs text-slate-500">Registered accounts only. Inactive, cancelled and rejected referrals remain in the total but are excluded from active, pending and converted counts.</p>
 
-    <PartnerReferralActivity activity={dashboard.referralActivity} />
+    <PartnerReferralActivity activity={dashboard?.referralActivity ?? dashboard?.recent_activity ?? []} />
 
     <section aria-label="Recent activity" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-base font-bold text-slate-900">Recent activity</h2>
-      <ActivityList activity={dashboard.recent_activity} />
+      <ActivityList activity={dashboard?.recent_activity ?? []} />
     </section>
   </div>
 );
@@ -554,30 +555,34 @@ export const GrowthPartnerPerformance: React.FC<{
 }> = ({ performance, loading, error, onRetry }) => {
   if (loading && !performance) return <SectionLoading label="Loading your performance…" />;
   if (error && !performance) return <SectionError message={error} onRetry={onRetry} />;
-  if (!performance || performance.total_referrals === 0) {
+  
+  const totalRef = performance?.total_referrals ?? 0;
+  const monthlyPoints = performance?.monthly ?? [];
+
+  if (!performance || totalRef === 0 || monthlyPoints.length === 0) {
     return (
       <SectionEmpty title={GROWTH_PARTNER_NO_PERFORMANCE_TITLE} body={GROWTH_PARTNER_NO_PERFORMANCE_BODY} />
     );
   }
   // Bar widths only visualize backend values (proportional layout, no business math).
-  const maxPoint = Math.max(1, ...performance.monthly.map((point) => Math.max(point.referred, point.completed)));
+  const maxPoint = Math.max(1, ...monthlyPoints.map((point) => Math.max(point.referred ?? 0, point.completed ?? 0)));
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <section aria-label="Performance summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Total Referrals" value={String(performance.total_referrals)} />
-        <KpiCard label="Completed" value={String(performance.completed)} />
-        <KpiCard label="Completion Rate" value={`${performance.completion_rate_pct}%`} />
-        <KpiCard label="Websites Started" value={String(performance.websites_started)} />
+        <KpiCard label="Total Referrals" value={String(performance?.total_referrals ?? 0)} />
+        <KpiCard label="Completed" value={String(performance?.completed ?? 0)} />
+        <KpiCard label="Completion Rate" value={`${performance?.completion_rate_pct ?? 0}%`} />
+        <KpiCard label="Websites Started" value={String(performance?.websites_started ?? 0)} />
       </section>
       <section aria-label="Monthly performance" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-base font-bold text-slate-900">Last 6 months</h2>
         <ul className="mt-4 space-y-4">
-          {performance.monthly.map((point) => (
+          {monthlyPoints.map((point) => (
             <li key={point.month}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-bold text-slate-900">{formatMonthLabel(point.month)}</p>
                 <p className="text-xs font-bold text-slate-500">
-                  {point.referred} referred · {point.completed} completed
+                  {point.referred ?? 0} referred · {point.completed ?? 0} completed
                 </p>
               </div>
               <div className="mt-2 space-y-1.5" aria-hidden="true">

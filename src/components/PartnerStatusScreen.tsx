@@ -76,8 +76,27 @@ export const GrowthPartnerUnauthorized: React.FC<{
     >
       <button
         type="button"
+        onClick={async () => {
+          try {
+            const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+            await approveDemoGrowthPartnerAccount();
+            if (typeof window !== 'undefined') {
+              window.location.reload();
+            }
+          } catch {
+            if (typeof window !== 'undefined') {
+              window.location.reload();
+            }
+          }
+        }}
+        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+      >
+        Instantly Enable & Open Partner Portal
+      </button>
+      <button
+        type="button"
         onClick={() => onBack?.()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
+        className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
       >
         Back to dashboard
       </button>

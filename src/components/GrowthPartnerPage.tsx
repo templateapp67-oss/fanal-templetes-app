@@ -3,6 +3,7 @@ export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
 import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl } from '../lib/growthPartnerProfile';
 import { PartnerAccountSettingsPage } from './PartnerAccountSettingsPage';
+import { PartnerAuditDiagnosticPanel } from './PartnerAuditDiagnosticPanel';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
 import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, PartnerMarketingMaterialsPage, PartnerNotificationsPage, PartnerSupportPage, PartnerWithdrawalsPage } from './partner';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
@@ -735,6 +736,12 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
               displayName={displayName}
               navigate={navigate}
             />
+          </div>
+        );
+      case 'diagnostics':
+        return (
+          <div key={userId}>
+            <PartnerAuditDiagnosticPanel user={user} accentHex={accentHex} />
           </div>
         );
       default:

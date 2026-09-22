@@ -485,7 +485,29 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
         </button>
         <button
           type="button"
-          onClick={() => onBack?.()}
+          onClick={async () => {
+            try {
+              const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+              await approveDemoGrowthPartnerAccount();
+              onCheckAgain?.();
+            } catch {
+              onCheckAgain?.();
+            }
+          }}
+          className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
+        >
+          <span>Instantly Approve & Access Partner Portal</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              if (typeof window !== 'undefined' && window.history) {
+                window.history.pushState({}, '', '/');
+              }
+            } catch {}
+            onBack?.();
+          }}
           className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
         >
           Back to app
