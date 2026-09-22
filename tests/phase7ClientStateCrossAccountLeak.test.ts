@@ -19,6 +19,7 @@ import {
 } from '../src/lib/autoSave.js';
 import { createBlankSalonProfile } from '../src/lib/ownerSalonResolution.js';
 import { queryKeys } from '../src/lib/cacheKeys.js';
+import { DEFAULT_LOYALTY_CONFIG } from '../src/loyaltyData.js';
 
 function setupMockLocalStorage() {
   const store = new Map<string, string>();
@@ -50,10 +51,10 @@ test('PHASE 7 - Salon state is scoped by userId and salonId and never writes to 
 
   const stateA = {
     profile: profileA,
-    services: [{ id: 'srv-1', name: 'Master Cut', price: 500, durationMinutes: 30, category: 'Hair', icon: 'scissors', popular: true, showDuration: true }],
+    services: [{ id: 'srv-1', name: 'Master Cut', price: 500, durationMinutes: 30, category: 'Hair', description: '', icon: 'scissors', popular: true, showDuration: true }],
     stylists: [{ id: 'stf-1', name: 'Sarah', role: 'Stylist', avatarUrl: '', bio: '', phone: '', specialties: [], assignedServices: [], rating: 5, commissionRate: 20, status: 'Available' as const, accessRole: 'Service Provider (Assigned)' as const, hidePhone: false, schedule: [] }],
-    loyaltyConfig: { enabled: true, pointsPerRupee: 1, minRedeemPoints: 100, rupeePerPoint: 0.1, expiryMonths: 12 },
-    selectedTemplateId: 1 as const,
+    loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+    selectedTemplateId: 'hair_salon' as const,
   };
 
   // Save for User A
@@ -102,8 +103,8 @@ test('PHASE 7 - On logout, account switch, or new signup, clearAllLocalUserState
     profile: profileA,
     services: [],
     stylists: [],
-    loyaltyConfig: { enabled: false, pointsPerRupee: 1, minRedeemPoints: 100, rupeePerPoint: 0.1, expiryMonths: 12 },
-    selectedTemplateId: 1,
+    loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+    selectedTemplateId: 'hair_salon',
   }, userAId);
 
   setStoredAuthenticatedProfile({

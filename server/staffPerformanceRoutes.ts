@@ -11,8 +11,8 @@
 // ============================================================================
 
 import type { Express, Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
 import { databaseForToken } from './backendContext.js';
+import { getSupabaseAdmin, supabase } from '../src/lib/supabaseClient.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function optionalUuid(value: unknown): string | null {
@@ -21,17 +21,16 @@ function optionalUuid(value: unknown): string | null {
   return UUID_RE.test(text) ? text : null;
 }
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
-
-const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
 async function resolveOwnerId(req: Request): Promise<string | null> {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     try {
-      const { data: { user }, error } = await adminSupabase.auth.getUser(token);
+      // Reuse the process-wide clients. The public client can validate a JWT;
+      // a missing service-role key must not create another placeholder auth
+      // client or crash the route module during preview startup.
+      const authClient = getSupabaseAdmin() ?? supabase;
+      const { data: { user }, error } = await authClient.auth.getUser(token);
       if (user && !error) return user.id;
     } catch {
       // An unverified caller has no owner access.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { growthPartnerPhotoUrl, type GrowthPartnerProfileClient } from '../src/lib/growthPartnerProfile.js';
 import { createBlankSalonProfile } from '../src/lib/ownerSalonResolution.js';
 import { loadSalonState, saveSalonState, clearAllLocalUserState } from '../src/lib/salonStore.js';
+import { DEFAULT_LOYALTY_CONFIG } from '../src/loyaltyData.js';
 
 test('growthPartnerPhotoUrl handles storage paths and full URLs correctly without leaking untrusted domains', () => {
   const fakeClient: GrowthPartnerProfileClient = {
@@ -115,8 +116,8 @@ test('salon state storage preserves account isolation and clearAllLocalUserState
     profile: profileA,
     services: [],
     stylists: [],
-    loyaltyConfig: { enabled: false, pointsPerRupee: 1, minRedeemPoints: 100, rupeePerPoint: 0.1, expiryMonths: 12 },
-    selectedTemplateId: 1,
+    loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+    selectedTemplateId: 'hair_salon',
   }, userAId);
 
   // User B requests state - must NOT see User A's data
