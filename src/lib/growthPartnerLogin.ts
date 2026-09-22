@@ -70,6 +70,21 @@ export async function signUpGrowthPartner(
   return { confirmed: true };
 }
 
+/** Submit an application for an account that is already authenticated. */
+export async function submitGrowthPartnerApplication(
+  client: GrowthPartnerAuthClient,
+  input: { fullName: string; phone?: string; kycDocumentType: string; kycDocumentReference: string }
+): Promise<void> {
+  if (!client.rpc) throw new Error('Applications are unavailable. Please try again later.');
+  const { error } = await client.rpc('submit_growth_partner_application', {
+    p_full_name: input.fullName.trim(),
+    p_phone: input.phone?.trim() || null,
+    p_kyc_document_type: input.kycDocumentType,
+    p_kyc_document_reference: input.kycDocumentReference.trim(),
+  });
+  if (error) throw new Error('Your application could not be submitted. Please try again.');
+}
+
 /** The authenticated viewer identity (id + email), never a role. */
 export interface GrowthPartnerViewer {
   id: string;
