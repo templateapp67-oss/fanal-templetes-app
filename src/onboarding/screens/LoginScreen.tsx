@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { signInWithEmail, type OnboardingSupabaseClient } from '../lib/auth';
 import { createSingleFlight, toSafeAuthError, validateLogin } from '../lib/flow';
+import { ReferralLinkNotice } from './ReferralLinkNotice';
 
 // ============================================================================
 // Login — email + password via Supabase Auth, plus forgot-password and a
@@ -16,7 +17,8 @@ export const LoginScreen: React.FC<{
   onDone?: () => void;
   onGoSignup?: () => void;
   onGoForgot?: () => void;
-}> = ({ client, onDone, onGoSignup, onGoForgot }) => {
+  referralCode?: string;
+}> = ({ client, onDone, onGoSignup, onGoForgot, referralCode = '' }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,6 +41,7 @@ export const LoginScreen: React.FC<{
         </>
       }
     >
+      <ReferralLinkNotice code={referralCode} context="login" />
       <form
         className="space-y-4"
         onSubmit={(event) => {

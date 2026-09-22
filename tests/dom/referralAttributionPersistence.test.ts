@@ -187,7 +187,7 @@ test(
         client: browser as any,
         navigate: (next: string) => {
           window.history.replaceState(null, '', next);
-          setPath(next);
+          setPath(new URL(next, window.location.origin).pathname);
         },
       });
     }
@@ -258,6 +258,10 @@ test(
       await render(React.createElement(VisitorBrowser, { initialPath: '/onboarding/signup' }));
       await wait(() => !!host.querySelector('#onboarding-signup-email'), 'signup screen after the referral code validated');
       assert.equal(captureAttempts(), 1, 'the code was validated and captured once');
+      assert.equal(window.location.pathname, '/onboarding/signup', 'short link canonicalizes to signup');
+      assert.equal(window.location.search, `?ref=${codeA}`, 'validated code remains visible before signup');
+      assert.match(text(), /Growth Partner referral applied/);
+      assert.ok(host.querySelector('[data-onboarding-referral-applied]'), 'signup confirms the applied referral');
       const capabilityCookie = jar.getCookiesSync(`${origin}/onboarding/signup`).find((c) => c.key === 'nexora_referral');
       assert.ok(capabilityCookie?.httpOnly, 'the anonymous capability stays in an HttpOnly cookie');
 

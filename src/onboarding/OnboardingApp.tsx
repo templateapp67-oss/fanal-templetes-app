@@ -6,7 +6,7 @@ import {
   isSessionExpiredError,
   normalizeGrowthReferralCode,
 } from '../lib/growthPartner';
-import { referralCodeFromQuery } from '../lib/referralQuery';
+import { referralCodeFromQuery, withReferralQuery } from '../lib/referralQuery';
 import {
   normalizePath,
   matchOnboardingRoute,
@@ -199,6 +199,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
               setInvalidReferral(true);
               throw new Error('Invalid referral code. Please check and try again.');
             }
+            setSharedReferralCode(code);
           } catch (error) { captureFlight.current = null; throw error; }
         }
         if (cancelled || !mounted.current) return;
@@ -269,9 +270,17 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   // Sync the URL to the resolved route (converges in one step — no loops).
   useEffect(() => {
     if (boot !== 'ready' || existingAccountNotice || passwordRecovery) return;
-    const canonical = onboardingPath(resolved);
-    if (normalizePath(path) !== normalizePath(canonical)) navigate(canonical);
-  }, [boot, resolved, path, navigate, existingAccountNotice, passwordRecovery]);
+    const canonicalPath = onboardingPath(resolved);
+    // Keep the validated code visible while the visitor is signed out. The
+    // httpOnly capability remains authoritative; the query is continuity UX.
+    const canonical = withReferralQuery(canonicalPath, viewer ? '' : sharedReferralCode);
+    const expectedSearch = canonical.includes('?') ? canonical.slice(canonical.indexOf('?')) : '';
+    const currentSearch = typeof window === 'undefined' ? '' : window.location.search;
+    if (
+      normalizePath(path) !== normalizePath(canonicalPath) ||
+      currentSearch !== expectedSearch
+    ) navigate(canonical);
+  }, [boot, resolved, path, navigate, existingAccountNotice, passwordRecovery, viewer, sharedReferralCode]);
 
   const handleAuthDone = useCallback(async () => {
     try {
@@ -356,12 +365,13 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         prepareAttribution={prepareSignupAttribution}
         client={sb}
         onDone={() => void handleAuthDone()}
-        onGoLogin={() => navigate(onboardingPath('login'))}
+        onGoLogin={() => navigate(withReferralQuery(onboardingPath('login'), sharedReferralCode))}
+        referralCode={sharedReferralCode}
       />
     );
   }
   if (resolved === 'forgot-password') {
-    return <ForgotPasswordScreen client={sb} onGoLogin={() => navigate(onboardingPath('login'))} />;
+    return <ForgotPasswordScreen client={sb} onGoLogin={() => navigate(withReferralQuery(onboardingPath('login'), sharedReferralCode))} />;
   }
   if (resolved === 'referral') {
     return (
@@ -394,8 +404,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     <LoginScreen
       client={sb}
       onDone={() => void handleAuthDone()}
-      onGoSignup={() => navigate(onboardingPath('signup'))}
-      onGoForgot={() => navigate(onboardingPath('forgot-password'))}
+      onGoSignup={() => navigate(withReferralQuery(onboardingPath('signup'), sharedReferralCode))}
+      onGoForgot={() => navigate(withReferralQuery(onboardingPath('forgot-password'), sharedReferralCode))}
+      referralCode={sharedReferralCode}
     />
   );
 };

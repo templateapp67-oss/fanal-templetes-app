@@ -175,7 +175,7 @@ test(
         client: ownerClient as any,
         navigate: (next: string) => {
           window.history.replaceState(null, '', next);
-          setPath(next);
+          setPath(new URL(next, window.location.origin).pathname);
         },
       });
     }

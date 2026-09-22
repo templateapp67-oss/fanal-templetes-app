@@ -7,6 +7,7 @@ import {
   type OnboardingSupabaseClient,
 } from '../lib/auth';
 import { createSingleFlight, validateSignup } from '../lib/flow';
+import { ReferralLinkNotice } from './ReferralLinkNotice';
 
 // ============================================================================
 // Sign Up — owner identity (name + phone) + credentials. Supabase Auth creates
@@ -60,7 +61,8 @@ export const SignupScreen: React.FC<{
   prepareAttribution?: () => Promise<string | undefined>;
   onDone?: () => void;
   onGoLogin?: () => void;
-}> = ({ client, onDone, onGoLogin, prepareAttribution }) => {
+  referralCode?: string;
+}> = ({ client, onDone, onGoLogin, prepareAttribution, referralCode = '' }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -135,6 +137,7 @@ export const SignupScreen: React.FC<{
         </>
       }
     >
+      <ReferralLinkNotice code={referralCode} context="signup" />
       <form
         className="space-y-4"
         onSubmit={(event) => {
