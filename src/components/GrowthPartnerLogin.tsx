@@ -864,15 +864,6 @@ export const GrowthPartnerLogin: React.FC<{
         onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
       />
     );
-  if (state === 'pending-review')
-    return (
-      <GrowthPartnerLoginPendingReview
-        submittedAt={application?.created_at ?? null}
-        onBack={onBack}
-        onCheckAgain={() => setAttempt((value) => value + 1)}
-        onSwitchAccount={() => void clearSession()}
-      />
-    );
   if (state === 'unauthorized')
     return (
       <>

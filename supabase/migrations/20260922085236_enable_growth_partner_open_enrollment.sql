@@ -86,5 +86,31 @@ grant execute on function public.submit_growth_partner_application(text, text, t
 comment on function public.submit_growth_partner_application(text, text, text, text) is
 'Open enrollment: validates KYC metadata and provisions only auth.uid() as an active Growth Partner. Other partners remain inaccessible through owner-scoped RLS.';
 
+-- Existing pending applicants must not remain trapped on the retired review
+-- screen. Provision only applicants who had already submitted KYC metadata;
+-- rejected records remain rejected until the user explicitly reapplies.
+do $$
+declare
+  application record;
+begin
+  for application in
+    select user_id
+    from public.growth_partner_applications
+    where status = 'pending'
+      and kyc_status in ('submitted', 'approved')
+      and nullif(btrim(kyc_document_reference), '') is not null
+  loop
+    perform public.provision_growth_partner(application.user_id);
+    update public.growth_partner_applications
+      set status = 'approved',
+          kyc_status = 'approved',
+          review_note = null,
+          reviewed_at = now(),
+          updated_at = now()
+      where user_id = application.user_id;
+  end loop;
+end;
+$$;
+
 notify pgrst, 'reload schema';
 commit;

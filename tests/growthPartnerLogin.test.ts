@@ -165,8 +165,9 @@ test('the login resolver maps (session, backend role) to exactly one state', () 
   assert.equal(login({ userId: '' }), 'signed-out');
   // 4. Normal user (zero partner rows from RLS) → unauthorized.
   assert.equal(login({ partnerRow: null }), 'unauthorized');
-  // A submitted-but-unapproved application is its own state, never a grant.
-  assert.equal(login({ partnerRow: null, applicationStatus: 'pending' }), 'pending-review');
+  // Legacy pending rows fall back to open enrollment while the migration
+  // provisions them; the UI must never restore the manual-review lock screen.
+  assert.equal(login({ partnerRow: null, applicationStatus: 'pending' }), 'unauthorized');
   // A decided application that produced no partner row is still unauthorized.
   assert.equal(login({ partnerRow: null, applicationStatus: 'approved' }), 'unauthorized');
   assert.equal(login({ partnerRow: null, applicationStatus: 'rejected' }), 'unauthorized');
@@ -712,4 +713,3 @@ test('Growth Partner signup form renders inline field errors for failed validati
   assert.match(html, /Select a KYC document type\./);
   assert.match(html, /Enter your KYC reference number\./);
 });
-

@@ -96,15 +96,14 @@ export interface GrowthPartnerViewer {
 
 /**
  * Login-page states. `granted` means "active Growth Partner — proceed to the
- * area"; `pending-review` means the KYC application is with an admin; every
- * other state keeps the visitor out of the partner area.
+ * area"; every other state keeps the visitor out of the partner area or shows
+ * the open-enrollment application flow.
  */
 export type GrowthPartnerLoginState =
   | 'loading'
   | 'mock-mode'
   | 'signed-out'
   | 'unauthorized'
-  | 'pending-review'
   | 'inactive'
   | 'session-expired'
   | 'error'
@@ -218,7 +217,10 @@ export function resolveGrowthPartnerLogin(input: {
   if (input.loading) return 'loading';
   if (!input.userId) return 'signed-out';
   if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
-  if (!input.partnerRow) return input.applicationStatus === 'pending' ? 'pending-review' : 'unauthorized';
+  // Open enrollment retired the manual-review gate. A rolling deployment may
+  // briefly expose an old pending row before the provisioning migration runs;
+  // route that caller to the application CTA instead of trapping them.
+  if (!input.partnerRow) return 'unauthorized';
   if (input.partnerRow.is_active === false) return 'inactive';
   return 'granted';
 }

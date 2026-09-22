@@ -55,6 +55,7 @@ test('open-enrollment migration provisions only the authenticated caller and rem
   assert.match(migration, /status = 'approved'/);
   assert.match(migration, /revoke all on function[\s\S]*from public, anon/);
   assert.match(migration, /grant execute on function[\s\S]*to authenticated/);
+  assert.match(migration, /where status = 'pending'[\s\S]*provision_growth_partner\(application\.user_id\)/);
 });
 
 test('both portal and owner-dashboard partner entry render open enrollment for unauthorized users', () => {

@@ -1223,17 +1223,6 @@ export const PartnerPortalLogin: React.FC<{
     );
   }
 
-  if (state === 'pending-review') {
-    return (
-      <PartnerPortalPendingReview
-        submittedAt={application?.created_at ?? null}
-        onBack={onBack}
-        onCheckAgain={() => setAttempt((value) => value + 1)}
-        onSwitchAccount={() => void clearSession()}
-      />
-    );
-  }
-
   if (state === 'rejected') {
     return <PartnerPortalRejected onBack={onBack} onSwitchAccount={() => void clearSession()} />;
   }
