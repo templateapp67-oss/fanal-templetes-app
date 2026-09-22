@@ -549,7 +549,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   // A signed-in user with no partner row is a prospective partner, not an
   // intruder. Keep protected sections closed, but render the portal's public
   // sign-up/application surface instead of the old hard-denial screen.
-  if (isPartnerNamespace && gate === 'unauthorized') {
+  if (gate === 'unauthorized') {
     return (
       <PartnerPortalLogin
         user={user}

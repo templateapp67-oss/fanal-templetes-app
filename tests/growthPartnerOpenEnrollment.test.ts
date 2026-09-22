@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { PartnerPortalUnauthorized } from '../src/components/PartnerPortalLogin.js';
 import { submitGrowthPartnerApplication, type GrowthPartnerAuthClient } from '../src/lib/growthPartnerLogin.js';
 
@@ -44,4 +45,15 @@ test('an authenticated existing user can submit the secure partner application R
       p_kyc_document_reference: 'ABCDE1234F',
     },
   }]);
+});
+
+test('both portal and owner-dashboard partner entry render open enrollment for unauthorized users', () => {
+  const page = readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /if \(gate === 'unauthorized'\)/);
+  assert.doesNotMatch(page, /isPartnerNamespace && gate === 'unauthorized'/);
+});
+
+test('Vercel routing middleware has the required default export', () => {
+  const middleware = readFileSync(new URL('../middleware.ts', import.meta.url), 'utf8');
+  assert.match(middleware, /export default function middleware/);
 });
