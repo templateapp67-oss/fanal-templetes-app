@@ -426,6 +426,8 @@ export const GrowthPartnerReferrals: React.FC<
   const [selectedReferral, setSelectedReferral] = useState<string | null>(null);
   const closeDetails = useCallback(() => setSelectedReferral(null), []);
   const panelId = useId();
+  const rows = Array.isArray(list?.rows) ? list.rows : [];
+  const total = Number.isFinite(list?.total) ? Math.max(0, Number(list?.total)) : rows.length;
   return (
     <section aria-label="Referred users" aria-busy={loading} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -451,7 +453,7 @@ export const GrowthPartnerReferrals: React.FC<
         <div role="alert"><SectionError message={error} onRetry={onRetry} /></div>
       ) : !list ? (
         <SectionLoading label="Loading referred users…" />
-      ) : list.total === 0 ? (
+      ) : total === 0 || rows.length === 0 ? (
         <ReferralEmptyState
           filtered={filtersActive || statusTab !== 'all'}
           referralCode={referralCode}
@@ -464,8 +466,8 @@ export const GrowthPartnerReferrals: React.FC<
       ) : (
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <p className="mb-4 text-xs text-slate-500">Contact details are masked for privacy. Converted means the user completed their website, not a payment. Last activity shows referral milestones only.</p>
-          <ReferralTable rows={list.rows} onOpenDetails={setSelectedReferral} />
-          <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
+          <ReferralTable rows={rows} onOpenDetails={setSelectedReferral} />
+          <Pager total={total} limit={list.limit} offset={list.offset} onPage={onPage} />
         </div>
       )}
       </div>
@@ -481,9 +483,11 @@ export const GrowthPartnerCustomers: React.FC<
     onSearchSubmit: () => void;
   }
 > = ({ list, loading, error, filter, onFilterChange, onPage, onRetry, search, onSearchChange, onSearchSubmit }) => {
+  const rows = Array.isArray(list?.rows) ? list.rows : [];
+  const total = Number.isFinite(list?.total) ? Math.max(0, Number(list?.total)) : rows.length;
   if (loading && !list) return <SectionLoading label="Loading your customers…" />;
   if (error && !list) return <SectionError message={error} onRetry={onRetry} />;
-  if (list && list.total === 0 && filter === 'all' && !search.trim()) {
+  if (list && (total === 0 || rows.length === 0) && filter === 'all' && !search.trim()) {
     return (
       <SectionEmpty title={GROWTH_PARTNER_NO_REFERRALS_TITLE} body={GROWTH_PARTNER_NO_REFERRALS_BODY} />
     );
@@ -519,7 +523,7 @@ export const GrowthPartnerCustomers: React.FC<
       <section aria-label="Customers" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-base font-bold text-slate-900">Customers</h2>
         {loading && <p className="mt-2 text-xs font-bold text-slate-500">Refreshing…</p>}
-        {list && list.total === 0 ? (
+        {list && (total === 0 || rows.length === 0) ? (
           <p className="mt-4 text-sm text-slate-600">
             {search.trim() ? 'No customers match your search.' : 'No customers match this filter.'}
           </p>
@@ -527,9 +531,9 @@ export const GrowthPartnerCustomers: React.FC<
           list && (
             <>
               <div className="mt-4">
-                <ReferralTable rows={list.rows} showStarted={false} />
+                <ReferralTable rows={rows} showStarted={false} />
               </div>
-              <Pager total={list.total} limit={list.limit} offset={list.offset} onPage={onPage} />
+              <Pager total={total} limit={list.limit} offset={list.offset} onPage={onPage} />
             </>
           )
         )}

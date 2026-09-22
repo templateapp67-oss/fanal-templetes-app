@@ -242,6 +242,17 @@ function createClientSafely(url: string, key: string, options: Record<string, an
   }
 }
 
+type SupabaseSingletons = {
+  publicClient?: SupabaseClient;
+  publicSignature?: string;
+  adminClient?: SupabaseClient;
+  adminSignature?: string;
+};
+
+const singletonKey = Symbol.for('nexora.supabase.clients');
+const singletonHost = globalThis as typeof globalThis & { [singletonKey]?: SupabaseSingletons };
+const singletons = singletonHost[singletonKey] ?? (singletonHost[singletonKey] = {});
+
 // Public (anon) client — used by the browser for auth + owner-scoped queries.
 // RLS policies scoped to auth.uid() protect the data.
 //
@@ -251,17 +262,21 @@ function createClientSafely(url: string, key: string, options: Record<string, an
 // login flow marks the session lifetime and the same storage keeps the session
 // in sessionStorage instead. Node/SSR keep the supabase-js default storage.
 const browserAuthStorage = createRememberAwareAuthStorage();
-export const supabase: SupabaseClient = createClientSafely(
-  isRealSupabase ? SUPABASE_URL : PLACEHOLDER_URL,
-  isRealSupabase ? resolvedDefaultKey : PLACEHOLDER_KEY,
-  {
+const publicUrl = isRealSupabase ? SUPABASE_URL : PLACEHOLDER_URL;
+const publicKey = isRealSupabase ? resolvedDefaultKey : PLACEHOLDER_KEY;
+const publicSignature = `${publicUrl}|${publicKey}`;
+if (!singletons.publicClient || singletons.publicSignature !== publicSignature) {
+  singletons.publicClient = createClientSafely(publicUrl, publicKey, {
     auth: {
+      storageKey: `nexora-${safeHost(publicUrl) ?? 'offline'}-auth`,
       persistSession: true,
       autoRefreshToken: true,
       ...(browserAuthStorage ? { storage: browserAuthStorage } : {}),
     },
-  }
-);
+  });
+  singletons.publicSignature = publicSignature;
+}
+export const supabase: SupabaseClient = singletons.publicClient!;
 
 // Server-side admin (service role) client — bypasses RLS. Only created in the
 // Node server, never in the browser bundle, so the secret never ships to the
@@ -269,10 +284,14 @@ export const supabase: SupabaseClient = createClientSafely(
 export function getSupabaseAdmin(): SupabaseClient | null {
   if (typeof process === 'undefined') return null; // browser
   if (!hasUrl || !hasServiceKey) return null;
+  const signature = `${SUPABASE_URL}|${SUPABASE_SERVICE_ROLE_KEY}`;
+  if (singletons.adminClient && singletons.adminSignature === signature) return singletons.adminClient;
   try {
-    return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
+    singletons.adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { storageKey: 'nexora-server-admin', autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
+    singletons.adminSignature = signature;
+    return singletons.adminClient;
   } catch (err: any) {
     supabaseConfig.clientError = err?.message || String(err);
     console.error('[Supabase] Admin client creation failed:', supabaseConfig.clientError);

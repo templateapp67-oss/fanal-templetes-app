@@ -483,7 +483,7 @@ export function saveSalonState(state: SalonState, userId?: string | null, salonI
   // retries once without inline images and reports the exact error instead of
   // failing the whole save flow with a generic "Save failed".
   const targetUser = userId || state.profile?.ownerId;
-  const targetSalon = salonId || state.profile?.id || 'default';
+  const targetSalon = salonId || 'default';
   const serialized = JSON.stringify(state);
 
   if (targetUser) {

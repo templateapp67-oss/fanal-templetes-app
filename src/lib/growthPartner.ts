@@ -464,6 +464,25 @@ export interface PartnerReferralList {
   rows: PartnerReferralEntry[];
 }
 
+/** Normalize rolling/partial RPC responses before any React component sees them. */
+export function normalizePartnerReferralList(value: unknown): PartnerReferralList {
+  const input = value && typeof value === 'object' ? value as Partial<PartnerReferralList> : {};
+  const rows = Array.isArray(input.rows)
+    ? input.rows.filter((row): row is PartnerReferralEntry => !!row && typeof row === 'object')
+    : [];
+  const finite = (candidate: unknown, fallback: number) => {
+    const parsed = Number(candidate);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+  return {
+    ...(input.status_counts && typeof input.status_counts === 'object' ? { status_counts: input.status_counts } : {}),
+    rows,
+    total: finite(input.total, rows.length),
+    limit: finite(input.limit, 20) >= 1 ? finite(input.limit, 20) : 20,
+    offset: finite(input.offset, 0),
+  };
+}
+
 /** Recent-activity event kinds (backend activity types). */
 export type PartnerActivityType = 'referral_added' | 'website_started' | 'website_completed';
 
@@ -551,7 +570,7 @@ export async function fetchMyPartnerReferrals(input: {
     p_offset: input.offset ?? 0,
   });
   if (error) throw rpcError('Partner referral lookup failed', error);
-  return data as PartnerReferralList;
+  return normalizePartnerReferralList(data);
 }
 
 /** Server-side aggregates: totals, completion rate, monthly history. */
