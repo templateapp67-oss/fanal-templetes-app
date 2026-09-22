@@ -262,6 +262,7 @@ export type PartnerPortalSection =
   | 'referral-status'
   | 'profile'
   | 'account-settings'
+  | 'diagnostics'
   | 'rewards'
   | 'performance'
   | 'commission'
@@ -291,6 +292,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'support',
   'profile',
   'account-settings',
+  'diagnostics',
 ];
 
 /** Sidebar sections (the menu) — a subset of the URL sections. */
@@ -310,6 +312,7 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'support',
   'profile',
   'account-settings',
+  'diagnostics',
 ];
 
 /** Canonical URL for each partner-portal section. */
@@ -320,6 +323,7 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
   'account-settings': `${PARTNER_PORTAL_ROOT}/account-settings`,
+  diagnostics: `${PARTNER_PORTAL_ROOT}/diagnostics`,
   rewards: `${PARTNER_PORTAL_ROOT}/rewards`,
   performance: `${PARTNER_PORTAL_ROOT}/performance`,
   commission: `${PARTNER_PORTAL_ROOT}/commission`,

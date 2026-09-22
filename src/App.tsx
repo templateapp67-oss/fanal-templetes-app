@@ -1,4 +1,6 @@
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
+import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from './lib/diagnostics';
+import { RLSDiagnosticsModal } from './components/RLSDiagnosticsModal';
 import { normalizePath } from './lib/router';
 import { mergeHydratedSalonState } from './lib/hydrationMerge';
 import {
@@ -351,6 +353,7 @@ export default function App() {
   // Auth State Listener
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+  const [isRLSDiagnosticsOpen, setIsRLSDiagnosticsOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
   // Load the persistent salon state from localStorage on initial mount.
@@ -885,28 +888,87 @@ export default function App() {
     };
   }, [user?.id, authStatus, path, setCurrentView]);
 
+  /**
+   * Comprehensive diagnostic suite that runs select, insert, and update checks
+   * against `salons`, `profiles`, and `organization_members` during initialization.
+   */
+  const testOwnerRLSAccess = useCallback(async () => {
+    return await runRLSDiagnosticSuite();
+  }, []);
+
+  /**
+   * RPC wrapper for get_owner_workspace with fallback to get_my_owner_workspace.
+   * Scoped to auth.uid() and verified against organization_members on the backend.
+   */
+  const fetchOwnerWorkspaceRPC = useCallback(async () => {
+    try {
+      let res = await supabase.rpc('get_owner_workspace');
+      if (res.error && (res.error.code === '42883' || res.error.message?.includes('does not exist') || res.error.message?.includes('Could not find the function'))) {
+        res = await supabase.rpc('get_my_owner_workspace');
+      }
+      return res;
+    } catch {
+      return await supabase.rpc('get_my_owner_workspace');
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // AUTHENTICATED SALON WORKSPACE RESOLUTION
+  //
+  // For authenticated users, salon identity and data are strictly queried via
+  // auth.uid() and verified against organization_members via get_owner_workspace.
+  // Reliance on localStorage for logged-in salon identity determination is removed.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (isMockSupabase) return;
+    let cancelled = false;
+
     if (user?.id) {
-      const userSaved = loadSalonState(user.id);
-      if (userSaved) {
-        setProfile(userSaved.profile);
-        setServices(userSaved.services || []);
-        setStylists(userSaved.stylists || []);
-        if (userSaved.loyaltyConfig) setLoyaltyConfig(userSaved.loyaltyConfig);
-        if (userSaved.selectedTemplateId) setSelectedTemplateId(userSaved.selectedTemplateId as BusinessTypeId);
-      } else {
-        clearStoredSalonState();
-        setProfile(getBlankOnboardingProfile(user));
-        setServices([]);
-        setStylists([]);
-        setAppointments([]);
-        setClients([]);
-      }
+      // Clear legacy/cached localStorage state for logged-in users so localStorage
+      // is never the authority for logged-in salon state.
+      clearStoredSalonState(user.id);
+
+      (async () => {
+        try {
+          // Run diagnostic query on auth.uid() RLS table access
+          void testOwnerRLSAccess();
+
+          const workspaceRes = await fetchOwnerWorkspaceRPC();
+          if (cancelled) return;
+
+          const wsData = workspaceRes.data;
+          if (!workspaceRes.error && wsData && typeof wsData === 'object' && wsData.resolved) {
+            const salonInfo = wsData.salon || {};
+            const salonName = salonInfo.name || wsData.name;
+            const salonId = salonInfo.id || wsData.salon_id;
+            const subdomain = salonInfo.slug || wsData.slug;
+
+            if (salonName || subdomain || salonId) {
+              setProfile((prev) => ({
+                ...prev,
+                businessName: salonName || prev.businessName,
+                subdomain: subdomain || prev.subdomain,
+              }));
+            }
+          } else if (!wsData || wsData.status === 'needs_onboarding') {
+            setProfile(getBlankOnboardingProfile(user));
+            setServices([]);
+            setStylists([]);
+            setAppointments([]);
+            setClients([]);
+          }
+        } catch (err) {
+          console.warn('[Workspace] Could not resolve owner workspace via RPC:', err);
+        }
+      })();
     } else {
       clearStoredSalonState();
     }
-  }, [user?.id, isMockSupabase]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, isMockSupabase, fetchOwnerWorkspaceRPC]);
 
   // PHASE 2 — Multi-tenant Isolation & Ownership Resolution:
   // When an authenticated user exists, resolve their salon using:
@@ -1270,7 +1332,11 @@ export default function App() {
               : isSchemaLikeFailure(hydrationErrorRef.current)
               ? 'SCHEMA: tables are missing — apply supabase/migrations to this Supabase project (SUPABASE_SETUP.md).'
               : 'TRANSIENT: network/server — retried automatically; saves continue locally.';
-            console.error(`[AutoSave] Cloud hydration failed (${hint}):`, hydrationErrorRef.current);
+            if (hint.startsWith('TRANSIENT')) {
+              console.warn(`[AutoSave] Cloud hydration postponed (${hint}):`, hydrationErrorRef.current);
+            } else {
+              console.error(`[AutoSave] Cloud hydration failed (${hint}):`, hydrationErrorRef.current);
+            }
           }
           return false;
         }
@@ -2069,7 +2135,14 @@ export default function App() {
         <GrowthPartnerPage
           user={user}
           onRequireAuth={() => navigate(PARTNER_LOGIN_PATH)}
-          onBack={() => navigate('/')}
+          onBack={() => {
+            try {
+              if (typeof window !== 'undefined' && window.history) {
+                window.history.pushState({}, '', '/');
+              }
+            } catch {}
+            navigate('/');
+          }}
           path={path}
           navigate={navigate}
           onLogout={() => {
@@ -2258,7 +2331,14 @@ export default function App() {
         <GrowthPartnerPage
           user={user}
           onRequireAuth={openBookingAuth}
-          onBack={() => setCurrentView('dashboard')}
+          onBack={() => {
+            try {
+              if (typeof window !== 'undefined' && window.history) {
+                window.history.pushState({}, '', '/');
+              }
+            } catch {}
+            setCurrentView('dashboard');
+          }}
           path={path}
           navigate={navigate}
           onLogout={() => {
@@ -2327,6 +2407,11 @@ export default function App() {
           // server error instead, and the exact error in the console.
           void persistChange('User profile settings saved successfully!', { profile: updated });
         }}
+      />
+
+      <RLSDiagnosticsModal
+        isOpen={isRLSDiagnosticsOpen}
+        onClose={() => setIsRLSDiagnosticsOpen(false)}
       />
 
       {/* Global save toast */}

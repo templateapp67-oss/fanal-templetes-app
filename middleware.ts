@@ -8,7 +8,7 @@
  * /partner/forgot-password, /partner/reset-password) are NEVER blocked or
  * redirected with access restriction errors by middleware role checks.
  */
-export function middleware(request: Request): Response | void {
+export default function middleware(request: Request): Response | void {
   const url = new URL(request.url);
   const pathname = url.pathname;
 

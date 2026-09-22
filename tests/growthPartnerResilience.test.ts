@@ -182,7 +182,7 @@ test('the referral, performance, application and partner reads survive empty pay
   const restore = stubTransport(() => ({ body: {} }));
   try {
     const list = await fetchMyPartnerReferrals({});
-    assert.deepEqual(list, { status_counts: undefined, total: 0, limit: PARTNER_REFERRAL_PAGE_SIZE, offset: 0, rows: [] });
+    assert.deepEqual(list, { total: 0, limit: PARTNER_REFERRAL_PAGE_SIZE, offset: 0, rows: [] });
 
     const performance = await fetchMyPartnerPerformance();
     assert.deepEqual(performance.monthly, []);

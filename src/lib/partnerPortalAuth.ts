@@ -85,6 +85,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * plus the auth-event subscription that surfaces PASSWORD_RECOVERY.
  */
 export interface PartnerPortalAuthClient extends GrowthPartnerAuthClient {
+  /**
+   * Optional self-enrollment seam next to the injected `fetchPartnerRow` read.
+   *
+   * When a test client supplies it, the login page's direct-enrollment step
+   * runs through it; when a client is injected WITHOUT it, enrollment is
+   * skipped rather than silently issuing a live RPC the test did not ask for.
+   * With no injected client the real session-scoped RPC
+   * (`ensure_my_growth_partner`) runs.
+   */
+  ensurePartnerRow?: () => Promise<unknown>;
   auth: GrowthPartnerAuthClient['auth'] & {
     resetPasswordForEmail?: (
       email: string,
@@ -174,7 +184,6 @@ export type PartnerPortalLoginState =
   | 'mock-mode'
   | 'signed-out'
   | 'unauthorized'
-  | 'pending-review'
   | 'rejected'
   | 'inactive'
   | 'session-expired'
@@ -209,7 +218,6 @@ export function resolvePartnerPortalLogin(input: {
   if (!input.userId) return 'signed-out';
   if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
   if (!input.partnerRow) {
-    if (input.applicationStatus === 'pending') return 'pending-review';
     if (input.applicationStatus === 'rejected') return 'rejected';
     return 'unauthorized';
   }

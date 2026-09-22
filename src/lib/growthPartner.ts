@@ -234,6 +234,68 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
     () => supabase.rpc('get_my_growth_partner'));
 }
 
+/**
+ * Classify "this project has not had the migration applied" — PostgREST answers
+ * PGRST202 (function/table not in the schema cache) or, on older gateways, an
+ * HTTP 404 with "Could not find the function ... in the schema cache".
+ *
+ * It is worth its own classifier because the fix is an operator action
+ * (apply the migration), not a retry: telling a partner "Please try again"
+ * forever is exactly the dead end this distinguishes.
+ */
+export function isMissingPartnerSchemaError(error: unknown): boolean {
+  if (!error) return false;
+  const anyErr = error as { code?: string; status?: number };
+  if (anyErr.code === 'PGRST202' || anyErr.code === 'PGRST205' || anyErr.code === 'PGRST204') return true;
+  if (anyErr.status === 404) return true;
+  return /could not find the (function|table|.* in the schema cache)|function .* does not exist|schema cache/i.test(
+    String((error as Error)?.message || anyErr || '')
+  );
+}
+
+/** Operator-facing copy when the Growth Partner RPCs are not on this project. */
+export const GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE =
+  'The Growth Partner database setup is missing on this project, so access cannot be verified. ' +
+  'An administrator must apply the Growth Partner migrations (see GROWTH_PARTNER_SETUP.md).';
+
+/**
+ * Ensure the authenticated caller has a partner row, then return that row.
+ * The RPC accepts no user id: the database provisions auth.uid() only and
+ * preserves an existing suspended partner instead of reactivating it.
+ *
+ * A missing enrollment RPC is reported as such (isMissingPartnerSchemaError)
+ * so callers can distinguish "the database says you are not a partner" from
+ * "this project never had the migration applied".
+ */
+export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
+  const { data, error } = await supabase.rpc('ensure_my_growth_partner');
+  if (error) throw rpcError('Growth Partner activation failed', error);
+  return data as GrowthPartner;
+}
+
+/**
+ * Self-service enrollment used by the "Instantly Approve & Access" affordances
+ * on the denial/pending screens.
+ *
+ * It is deliberately the SAME session-scoped RPC the verification path calls:
+ * the backend derives the identity from the JWT (`auth.uid()`), so this can
+ * only ever enroll the caller — it cannot name another user id, cannot be
+ * pointed at a partner id, and never reactivates a suspended row. There is no
+ * service-role key in the browser.
+ *
+ * Throws (never resolves as a silent no-op) when the RPC is missing, so the
+ * UI can say what is actually wrong instead of re-checking forever.
+ */
+export async function approveDemoGrowthPartnerAccount(): Promise<GrowthPartner> {
+  const row = await readPartnerPayload('Growth Partner activation failed', normalizeGrowthPartnerRow, () =>
+    supabase.rpc('ensure_my_growth_partner')
+  );
+  if (!row) {
+    throw new Error('Growth Partner activation returned no partner row. Please try again.');
+  }
+  return row;
+}
+
 // ============================================================================
 // Referral code section (Part 2.3) — display + copy, ownership via RLS.
 //
@@ -711,13 +773,18 @@ export function normalizePartnerReferralList(raw: unknown): PartnerReferralList 
   const payload = record(raw) ?? {};
   return safely<PartnerReferralList>('referral list', () => {
     const rows = list(payload.rows, normalizePartnerReferralEntry);
+    const counts = statusCounts(payload.status_counts);
     return {
-      status_counts: statusCounts(payload.status_counts),
+      ...(counts ? { status_counts: counts } : {}),
       // `total` drives the empty state and the pager: it can never be smaller
       // than the page we actually received.
       total: Math.max(num(payload.total, rows.length), rows.length),
-      // A zero/NaN page size would make the page-offset math divide by zero.
-      limit: Math.max(1, Math.trunc(nullableNum(payload.limit) ?? PARTNER_REFERRAL_PAGE_SIZE)),
+      // A zero/negative/NaN page size is "the backend did not tell us", not a
+      // real window: fall back to the app's page size (a 0 here would make the
+      // page-offset math divide by zero).
+      limit: Math.trunc(nullableNum(payload.limit) ?? PARTNER_REFERRAL_PAGE_SIZE) >= 1
+        ? Math.trunc(nullableNum(payload.limit) ?? PARTNER_REFERRAL_PAGE_SIZE)
+        : PARTNER_REFERRAL_PAGE_SIZE,
       offset: Math.max(0, Math.trunc(nullableNum(payload.offset) ?? 0)),
       rows,
     };

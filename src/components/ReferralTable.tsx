@@ -8,15 +8,19 @@ import { ReferralStatusPill } from './ReferralStatusPill';
  * section that degrades to `undefined`/`null` renders as an empty table (the
  * caller's empty state) instead of crashing the page into the root
  * ErrorBoundary. This is the same guard the sections apply to their lists.
+ *
+ * `normalizePartnerReferralEntry` only accepts an object and copies the fields
+ * the backend actually sent, so a malformed row is dropped individually
+ * instead of blanking the table.
  */
-function safeRows(rows: PartnerReferralEntry[] | null | undefined): PartnerReferralEntry[] {
+function safeReferralRows(rows: PartnerReferralEntry[] | null | undefined): PartnerReferralEntry[] {
   return Array.isArray(rows)
     ? rows.map((row) => normalizePartnerReferralEntry(row)).filter((row): row is PartnerReferralEntry => row !== null)
     : [];
 }
 
-function CustomerReferralTable({ rows, showStarted }: { rows?: PartnerReferralEntry[] | null; showStarted: boolean }) {
-  const list = safeRows(rows);
+function CustomerReferralTable({ rows = [], showStarted }: { rows?: PartnerReferralEntry[] | null; showStarted: boolean }) {
+  const list = safeReferralRows(rows);
   return (
     <div className="max-w-full overflow-x-auto -mx-1 px-1">
       <table className="w-full min-w-[560px] text-left text-sm">
@@ -68,8 +72,8 @@ export function ReferralTable({ rows, showStarted, onOpenDetails }: {
   showStarted?: boolean;
   onOpenDetails?: (id: string) => void;
 }) {
-  if (showStarted !== undefined) return <CustomerReferralTable rows={rows} showStarted={showStarted} />;
-  const list = safeRows(rows);
+  const list = safeReferralRows(rows);
+  if (showStarted !== undefined) return <CustomerReferralTable rows={list} showStarted={showStarted} />;
   return (
 <div className="max-w-full overflow-x-auto rounded-2xl border border-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500" role="region" aria-label="Referred users table — scroll horizontally on small screens" tabIndex={0}>
             <table className="w-full min-w-[960px] text-left text-sm">

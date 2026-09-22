@@ -6,8 +6,12 @@ import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
+  ensureMyGrowthPartner,
+  isMissingPartnerSchemaError,
+  toSafePartnerSectionError,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
   type GrowthPartner,
   type GrowthPartnerApplicationRow,
 } from '../lib/growthPartner';
@@ -56,7 +60,7 @@ export const GROWTH_PARTNER_LOGIN_SESSION_TITLE = 'Your session expired';
 export const GROWTH_PARTNER_LOGIN_SESSION_BODY = 'Please sign in again to continue.';
 export const GROWTH_PARTNER_LOGIN_ERROR_TITLE = 'Could not verify your Growth Partner access';
 export const GROWTH_PARTNER_LOGIN_ERROR_BODY = 'Please try again.';
-export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Application submitted. We will review it and email you after approval.';
+export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Growth Partner access activated. Opening your dashboard…';
 export const GROWTH_PARTNER_LOGIN_PENDING_TITLE = 'Application under review';
 export const GROWTH_PARTNER_LOGIN_PENDING_BODY =
   'Your Growth Partner application is with our team. You will get access here as soon as it is approved.';
@@ -460,6 +464,23 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
     const parsed = new Date(submittedAt);
     return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
   })();
+  // Self-enrollment failures are shown, not swallowed: a blind re-check left
+  // the visitor staring at an unchanged screen with no idea why.
+  const [enrollNotice, setEnrollNotice] = useState('');
+  const enrollSelf = async () => {
+    setEnrollNotice('');
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch (error) {
+      setEnrollNotice(
+        isMissingPartnerSchemaError(error)
+          ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
+          : toSafePartnerSectionError(error).message
+      );
+    }
+    onCheckAgain?.();
+  };
   return (
     <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
       <StateCard
@@ -484,7 +505,22 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
         </button>
         <button
           type="button"
-          onClick={() => onBack?.()}
+          onClick={() => void enrollSelf()}
+          className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
+        >
+          <span>Instantly Approve & Access Partner Portal</span>
+        </button>
+        {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              if (typeof window !== 'undefined' && window.history) {
+                window.history.pushState({}, '', '/');
+              }
+            } catch {}
+            onBack?.();
+          }}
           className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
         >
           Back to app
@@ -697,7 +733,11 @@ export const GrowthPartnerLogin: React.FC<{
     setLoadError(null);
     (async () => {
       try {
-        const row = await readPartnerRow();
+        let row = await readPartnerRow();
+        if (!row && !client) {
+          await ensureMyGrowthPartner();
+          row = await readPartnerRow();
+        }
         if (cancelled) return;
         setPartnerRow(row);
         setLoadError(null);
@@ -830,9 +870,13 @@ export const GrowthPartnerLogin: React.FC<{
     void signUpGrowthPartner(sb, input)
       .then(
         (result) => {
+          if (result.viewer) {
+            setSessionUser(result.viewer);
+            setAttempt((value) => value + 1);
+          }
           setSignupSuccess(
             result.confirmed
-              ? GROWTH_PARTNER_SIGNUP_SUCCESS
+              ? 'Growth Partner access activated. Opening your dashboard…'
               : 'Account created. Verify your email, then return here to sign in and submit your application.'
           );
         },
@@ -858,15 +902,6 @@ export const GrowthPartnerLogin: React.FC<{
         onPasswordChange={setPassword}
         onSubmit={handleSubmit}
         onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
-      />
-    );
-  if (state === 'pending-review')
-    return (
-      <GrowthPartnerLoginPendingReview
-        submittedAt={application?.created_at ?? null}
-        onBack={onBack}
-        onCheckAgain={() => setAttempt((value) => value + 1)}
-        onSwitchAccount={() => void clearSession()}
       />
     );
   if (state === 'unauthorized')

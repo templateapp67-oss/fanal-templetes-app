@@ -16,6 +16,9 @@ import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
+  ensureMyGrowthPartner,
+  isMissingPartnerSchemaError,
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
   type GrowthPartner,
@@ -30,6 +33,7 @@ import {
   loadGrowthPartnerSession,
   signInGrowthPartner,
   signUpGrowthPartner,
+  submitGrowthPartnerApplication,
   signOutGrowthPartner,
   type GrowthPartnerViewer,
 } from '../lib/growthPartnerLogin';
@@ -538,7 +542,14 @@ export const PartnerPortalMockNotice: React.FC<{ onBack?: () => void; logoSrc?: 
 export const PartnerPortalUnauthorized: React.FC<{
   onBack?: () => void;
   onSwitchAccount?: () => void;
-}> = ({ onBack, onSwitchAccount }) => (
+  onApply?: () => void;
+  /**
+   * Why self-enrollment could not run (missing migration, a refusal, a network
+   * failure). Shown as its own line so the visitor is not told to "try again"
+   * for a problem an operator has to fix.
+   */
+  notice?: string | null;
+}> = ({ onBack, onSwitchAccount, onApply, notice }) => (
   <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
@@ -546,10 +557,18 @@ export const PartnerPortalUnauthorized: React.FC<{
       body={PARTNER_PORTAL_UNAUTHORIZED_BODY}
     >
       <p className="mt-2 text-xs text-slate-500">{PARTNER_PORTAL_UNAUTHORIZED_HINT}</p>
+      {notice ? <p role="status" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{notice}</p> : null}
+      <button
+        type="button"
+        onClick={() => onApply?.()}
+        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 shadow-sm"
+      >
+        Become a Growth Partner
+      </button>
       <button
         type="button"
         onClick={() => onSwitchAccount?.()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 shadow-sm"
+        className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-700 transition-opacity hover:opacity-90"
       >
         Sign in with a different account
       </button>
@@ -681,7 +700,44 @@ export const PartnerPortalFailure: React.FC<{
   </main>
 );
 
-type PartnerPortalMode = 'login' | 'signup' | 'forgot' | 'set-password';
+type PartnerPortalMode = 'login' | 'signup' | 'apply' | 'forgot' | 'set-password';
+
+const ExistingUserApplicationForm: React.FC<{
+  busy: boolean;
+  error: string;
+  accentHex: string;
+  onSubmit: (input: { fullName: string; phone: string; kycDocumentType: string; kycDocumentReference: string }) => void;
+  onBack: () => void;
+}> = ({ busy, error, accentHex, onSubmit, onBack }) => {
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [kycDocumentType, setKycDocumentType] = useState('');
+  const [kycDocumentReference, setKycDocumentReference] = useState('');
+  return (
+    <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+      <form className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4" onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit({ fullName, phone, kycDocumentType, kycDocumentReference });
+      }}>
+        <PartnerBrandMark />
+        <h1 className="text-2xl font-bold text-slate-900">Become a Growth Partner</h1>
+        <p className="text-sm text-slate-600">Use your current account to submit a Growth Partner application.</p>
+        <Field id="partner-apply-name" label="Full name" value={fullName} onChange={setFullName} disabled={busy} />
+        <Field id="partner-apply-phone" label="Phone (optional)" value={phone} onChange={setPhone} disabled={busy} />
+        <div>
+          <label htmlFor="partner-apply-kyc-type" className="block text-sm font-bold text-slate-800">KYC document type</label>
+          <select id="partner-apply-kyc-type" value={kycDocumentType} onChange={(event) => setKycDocumentType(event.target.value)} disabled={busy} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+            <option value="">Select document</option><option value="pan">PAN</option><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving licence</option><option value="business_registration">Business registration</option>
+          </select>
+        </div>
+        <Field id="partner-apply-kyc-reference" label="KYC reference number" value={kycDocumentReference} onChange={setKycDocumentReference} disabled={busy} />
+        {error ? <FormAlert tone="error">{error}</FormAlert> : null}
+        <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>Submit application</SubmitButton>
+        <button type="button" onClick={onBack} disabled={busy} className="w-full text-sm font-bold text-slate-500">Back</button>
+      </form>
+    </main>
+  );
+};
 
 function viewerFromSessionUser(user: { id?: unknown; email?: unknown; app_metadata?: unknown } | null | undefined): GrowthPartnerViewer | null {
   if (!user?.id) return null;
@@ -712,6 +768,11 @@ export const PartnerPortalLogin: React.FC<{
   // injected client supplies its own role read; otherwise the default
   // RLS SELECT-own-row query is used (they are the same client in production).
   const readPartnerRow = client?.fetchPartnerRow ?? fetchMyGrowthPartnerRow;
+  // Self-enrollment follows the same source: an injected client may supply its
+  // own hook; otherwise the real session-scoped RPC runs (never when a client
+  // is injected without one, so a test never fires a live call it did not ask
+  // for).
+  const enrollPartnerRow = client?.ensurePartnerRow ?? (client ? null : () => ensureMyGrowthPartner());
   const readApplicationRow = client?.fetchApplicationRow ?? fetchMyGrowthPartnerApplication;
 
   // Session source of truth for this route: seed from the app's restored user
@@ -722,6 +783,10 @@ export const PartnerPortalLogin: React.FC<{
   );
   const [partnerRow, setPartnerRow] = useState<GrowthPartner | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  // Kept separate from `loadError`: a failed self-enrollment is NOT a failed
+  // verification (the row read already answered), so it must not blank the
+  // page with the generic error card.
+  const [enrollmentError, setEnrollmentError] = useState<unknown>(null);
   // The caller's own application, so "under review" and "not approved" are
   // distinct screens from "you never applied". Admin review queue follows.
   const [application, setApplication] = useState<GrowthPartnerApplicationRow | null>(null);
@@ -826,9 +891,24 @@ export const PartnerPortalLogin: React.FC<{
     let cancelled = false;
     setVerifying(true);
     setLoadError(null);
+    setEnrollmentError(null);
     (async () => {
       try {
-        const row = await readPartnerRow();
+        let row = await readPartnerRow();
+        if (!row && enrollPartnerRow) {
+          // Open enrollment is a convenience on top of a successful read: if it
+          // fails (PGRST202 before the migration, a refusal, a dropped socket)
+          // the honest answer is still "no partner row for this account" plus
+          // the reason the shortcut did not run — never a generic verification
+          // error and never a retry loop.
+          try {
+            await enrollPartnerRow();
+            row = await readPartnerRow();
+          } catch (error) {
+            if (cancelled) return;
+            setEnrollmentError(error);
+          }
+        }
         if (cancelled) return;
         setPartnerRow(row);
         setLoadError(null);
@@ -852,7 +932,7 @@ export const PartnerPortalLogin: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, client]);
+  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, enrollPartnerRow, client]);
 
   const state: PartnerPortalLoginState = resolvePartnerPortalLogin({
     loading: verifying,
@@ -1041,15 +1121,46 @@ export const PartnerPortalLogin: React.FC<{
     setSignupSuccess('');
     void signUpGrowthPartner(sb, input).then(
       (result) => {
+        if (result.viewer) {
+          setSessionUser(result.viewer);
+          setAttempt((value) => value + 1);
+        }
         setSignupSuccess(
           result.confirmed
-            ? 'Application submitted. We will review it and email you after approval.'
+            ? 'Growth Partner access activated. Opening your dashboard…'
             : 'Account created. Verify your email, then return here to sign in and submit your application.'
         );
       },
       (error: Error) => setFormError(safePartnerErrorMessage(error, 'Signup failed. Please try again.'))
     ).finally(() => setBusy(false));
   };
+
+  const handleExistingUserApplication = (input: { fullName: string; phone: string; kycDocumentType: string; kycDocumentReference: string }) => {
+    if (!input.fullName.trim() || !input.kycDocumentType || !input.kycDocumentReference.trim()) {
+      setFormError('Enter your name and KYC details to submit the application.');
+      return;
+    }
+    setBusy(true);
+    setFormError('');
+    void submitGrowthPartnerApplication(sb, input).then(
+      () => {
+        setApplication({ id: 'submitted', status: 'approved', kyc_status: 'approved', created_at: new Date().toISOString() });
+        setMode('login');
+        setAttempt((value) => value + 1);
+      },
+      (error: Error) => setFormError(safePartnerErrorMessage(error, 'Application failed. Please try again.'))
+    ).finally(() => setBusy(false));
+  };
+
+  // A project that never had the Growth Partner migrations applied answers
+  // PGRST202 for the gate read: say exactly that (with the setup pointer)
+  // instead of "Please try again", which can never succeed.
+  const schemaMissing = isMissingPartnerSchemaError(loadError) || isMissingPartnerSchemaError(enrollmentError);
+  const enrollmentNotice = enrollmentError
+    ? isMissingPartnerSchemaError(enrollmentError)
+      ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
+      : 'Self-enrollment could not run for this account. Use "Become a Growth Partner" to submit your details.'
+    : null;
 
   // ---------------------------------------------------------------------
   // Render
@@ -1080,6 +1191,10 @@ export const PartnerPortalLogin: React.FC<{
   }
 
   if (state === 'loading' || state === 'granted') return <PartnerPortalVerifying logoSrc={logoSrc} />;
+
+  if (state === 'unauthorized' && mode === 'apply') {
+    return <ExistingUserApplicationForm busy={busy} error={formError} accentHex={accentHex} onSubmit={handleExistingUserApplication} onBack={() => { setMode('login'); setFormError(''); }} />;
+  }
 
   if (state === 'signed-out' && mode === 'signup') {
     return (
@@ -1152,17 +1267,6 @@ export const PartnerPortalLogin: React.FC<{
     );
   }
 
-  if (state === 'pending-review') {
-    return (
-      <PartnerPortalPendingReview
-        submittedAt={application?.created_at ?? null}
-        onBack={onBack}
-        onCheckAgain={() => setAttempt((value) => value + 1)}
-        onSwitchAccount={() => void clearSession()}
-      />
-    );
-  }
-
   if (state === 'rejected') {
     return <PartnerPortalRejected onBack={onBack} onSwitchAccount={() => void clearSession()} />;
   }
@@ -1181,7 +1285,12 @@ export const PartnerPortalLogin: React.FC<{
             />
           </div>
         ) : null}
-        <PartnerPortalUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} />
+        <PartnerPortalUnauthorized
+          onBack={onBack}
+          onSwitchAccount={() => void clearSession()}
+          onApply={() => { setMode('apply'); setFormError(''); }}
+          notice={enrollmentNotice}
+        />
       </>
     );
   }
@@ -1202,7 +1311,7 @@ export const PartnerPortalLogin: React.FC<{
   return (
     <PartnerPortalFailure
       title={PARTNER_PORTAL_ERROR_TITLE}
-      body={PARTNER_PORTAL_ERROR_BODY}
+      body={schemaMissing ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE : PARTNER_PORTAL_ERROR_BODY}
       actionLabel="Retry"
       onAction={() => setAttempt((value) => value + 1)}
     />

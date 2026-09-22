@@ -1,5 +1,6 @@
 import React from 'react';
 import { normalizePartnerReferralActivity, type PartnerReferralActivity as Activity } from '../lib/growthPartner';
+import type { ReferralStatus } from '../lib/referralStatus';
 import { ReferralStatusPill } from './ReferralStatusPill';
 
 // ============================================================================
@@ -11,6 +12,11 @@ import { ReferralStatusPill } from './ReferralStatusPill';
 // instead of throwing while React renders — a thrown render would blank the
 // whole route through the root ErrorBoundary.
 //
+// The dashboard MAY also pass its `recent_activity` event list (an array) when
+// the analytics window is absent, so both shapes are accepted. Event rows are
+// mapped from their own fields (`display_name`/`at`/`type`) — never from a
+// fabricated name or "now" timestamp.
+//
 // Dates are rendered through a UTC-safe formatter that says '—' for a missing
 // or malformed timestamp rather than "Invalid Date".
 // ============================================================================
@@ -21,10 +27,34 @@ function activityDate(value: string): string {
   return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString(undefined, { timeZone: 'UTC' });
 }
 
-export function PartnerReferralActivity({ activity }: { activity?: Activity }) {
-  const normalized = activity ? normalizePartnerReferralActivity(activity) : undefined;
-  const recent = normalized?.recentReferrals ?? [];
-  const last7Days = normalized?.last7DaysReferrals;
+/** A recent-activity event row, as the dashboard's `recent_activity` sends it. */
+type ActivityEventRow = { type?: unknown; display_name?: unknown; at?: unknown };
+
+/** The referral stage an activity event represents (never a fabricated one). */
+const EVENT_STATUS: Record<string, ReferralStatus> = {
+  referral_added: 'pending',
+  website_started: 'active',
+  website_completed: 'converted',
+};
+
+function rowsFromEvents(events: ActivityEventRow[]) {
+  return events.map((event, index) => ({
+    referralId: `event-${index}`,
+    name: typeof event.display_name === 'string' && event.display_name.trim() ? event.display_name : '',
+    date: typeof event.at === 'string' ? event.at : '',
+    status: EVENT_STATUS[String(event.type)] ?? null,
+  }));
+}
+
+export function PartnerReferralActivity({ activity }: { activity?: Activity | ActivityEventRow[] | null }) {
+  // An array is the dashboard's raw event list, not the analytics window.
+  const events = Array.isArray(activity) ? activity.filter((row): row is ActivityEventRow => !!row && typeof row === 'object') : null;
+  const normalized = events ? null : activity ? normalizePartnerReferralActivity(activity) : undefined;
+  const recent = events ? rowsFromEvents(events) : normalized?.recentReferrals ?? [];
+  const last7Days = events ? null : normalized?.last7DaysReferrals;
+  // "Not available" means the payload carried no activity at all: a card that
+  // is genuinely empty (a real 0 / an empty list) says exactly that instead.
+  const available = !!activity;
 
   return <section aria-label="Referral activity" className="min-w-0 space-y-4">
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -35,7 +65,7 @@ export function PartnerReferralActivity({ activity }: { activity?: Activity }) {
     <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="text-base font-bold text-slate-900">Recent Referrals</h2>
       <p className="mt-1 text-xs text-slate-500">Your latest 10 referred accounts, newest first. Date is when the referral was credited.</p>
-      {!activity ? <p role="status" className="mt-5 text-sm text-slate-500">Referral activity is not available yet. Refresh to try again.</p>
+      {!available ? <p role="status" className="mt-5 text-sm text-slate-500">Referral activity is not available yet. Refresh to try again.</p>
         : recent.length === 0 ? <p className="mt-5 text-sm text-slate-500">No referrals yet.</p>
         : <div role="region" aria-label="Recent referrals — scroll horizontally on small screens" tabIndex={0} className="mt-4 max-w-full overflow-x-auto rounded-xl focus-visible:outline-2 focus-visible:outline-slate-500">
           <table className="w-full min-w-[400px] text-left text-sm">

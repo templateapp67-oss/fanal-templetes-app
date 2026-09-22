@@ -92,6 +92,7 @@ export const PARTNER_PORTAL_NAV: PartnerPortalNavItem[] = [
   // Account Settings is a real page (/partner/account-settings) — the profile
   // dropdown opens it and the sidebar carries it in the Account group.
   { section: 'account-settings', label: 'Account Settings', icon: Settings, group: 'account' },
+  { section: 'diagnostics', label: 'Session & Audit Diagnostics', icon: Settings, group: 'account' },
 ];
 
 /** Human title for each portal section (header + drawer use it). */
@@ -102,6 +103,7 @@ export const PARTNER_PORTAL_SECTION_TITLES: Record<PartnerPortalSection, string>
   'referral-status': 'Referral Status',
   profile: 'Profile',
   'account-settings': 'Account Settings',
+  diagnostics: 'Session & Audit Diagnostics',
   rewards: 'Rewards',
   performance: 'Performance',
   commission: 'Extra Onboarding Reward',
@@ -128,6 +130,7 @@ const PARTNER_PORTAL_CONTENT: Record<PartnerPortalSection, GrowthPartnerSection 
   'referral-status': 'customers',
   profile: 'profile',
   'account-settings': 'account-settings',
+  diagnostics: 'diagnostics',
   rewards: 'rewards',
   performance: 'performance',
   commission: 'commission',

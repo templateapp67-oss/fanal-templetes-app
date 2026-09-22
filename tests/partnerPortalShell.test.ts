@@ -75,9 +75,12 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
     'support',
     'profile',
     'account-settings',
+    // Session & Audit Diagnostics moved into the router/shell registry with the
+    // RLS diagnostics panel (PR #82); the pins below follow it.
+    'diagnostics',
   ]);
   assert.deepEqual(PARTNER_PORTAL_SECTIONS.slice(0, 4), [...PARTNER_PORTAL_MENU_SECTIONS].slice(0, 4));
-  // The sidebar shows fifteen live menu sections (Logout is an action).
+  // The sidebar shows sixteen live menu sections (Logout is an action).
   assert.deepEqual([...PARTNER_PORTAL_MENU_SECTIONS], [
     'dashboard',
     'referral-code',
@@ -94,6 +97,7 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
     'support',
     'profile',
     'account-settings',
+    'diagnostics',
   ]);
   // Every promoted module maps to its own content section — not to a shared
   // fallback, which is how a “live” menu item could otherwise render the
@@ -167,7 +171,7 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
       'Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status',
       'Rewards', 'Extra Onboarding Reward', 'Earnings', 'Withdrawals',
       'Partner Levels', 'Leaderboards', 'Marketing Materials', 'Notifications',
-      'Support', 'Profile', 'Account Settings',
+      'Support', 'Profile', 'Account Settings', 'Session & Audit Diagnostics',
     ],
     'the exact sidebar menu labels, in order'
   );

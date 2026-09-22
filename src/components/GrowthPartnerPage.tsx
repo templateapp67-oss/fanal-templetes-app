@@ -3,6 +3,7 @@ export * from './PartnerStatusScreen';
 import { GrowthPartnerProfilePage } from './GrowthPartnerProfilePage';
 import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl } from '../lib/growthPartnerProfile';
 import { PartnerAccountSettingsPage } from './PartnerAccountSettingsPage';
+import { PartnerAuditDiagnosticPanel } from './PartnerAuditDiagnosticPanel';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
 import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, PartnerMarketingMaterialsPage, PartnerNotificationsPage, PartnerSupportPage, PartnerWithdrawalsPage } from './partner';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
@@ -11,6 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, LogOut } from 'lucide-react';
 import {
   fetchMyGrowthPartnerRow,
+  ensureMyGrowthPartner,
   fetchMyGrowthPartnerApplication,
   fetchMyPartnerDashboard,
   fetchMyPartnerPerformance,
@@ -318,7 +320,11 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     setLoadError(null);
     (async () => {
       try {
-        const row = await fetchMyGrowthPartnerRow();
+        let row = await fetchMyGrowthPartnerRow();
+        if (!row) {
+          await ensureMyGrowthPartner();
+          row = await fetchMyGrowthPartnerRow();
+        }
         if (cancelled) return;
         const application = row ? null : await fetchMyGrowthPartnerApplication();
         if (cancelled) return;
@@ -546,6 +552,21 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     );
   }
 
+  // A signed-in user with no partner row is a prospective partner, not an
+  // intruder. Keep protected sections closed, but render the portal's public
+  // sign-up/application surface instead of the old hard-denial screen.
+  if (gate === 'unauthorized') {
+    return (
+      <PartnerPortalLogin
+        user={user}
+        navigate={navigate}
+        onBack={onBack}
+        accentHex={accentHex}
+        onLogout={onLogout}
+      />
+    );
+  }
+
   if (gate !== 'ready') return <PartnerRouteGuard
     gate={gate} loadingReferralLink={contentSection === 'referral-code'}
     onBack={onBack} onRetry={() => setReloadKey(key => key + 1)}
@@ -715,6 +736,12 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
               displayName={displayName}
               navigate={navigate}
             />
+          </div>
+        );
+      case 'diagnostics':
+        return (
+          <div key={userId}>
+            <PartnerAuditDiagnosticPanel user={user} accentHex={accentHex} />
           </div>
         );
       default:

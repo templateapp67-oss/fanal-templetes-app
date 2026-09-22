@@ -400,7 +400,7 @@ export const GrowthPartnerDashboard: React.FC<{
 
     <p className="text-xs text-slate-500">Registered accounts only. Inactive, cancelled and rejected referrals remain in the total but are excluded from active, pending and converted counts.</p>
 
-    <PartnerReferralActivity activity={data.referralActivity} />
+    <PartnerReferralActivity activity={data.referralActivity ?? data.recent_activity} />
 
     <section aria-label="Recent activity" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <h2 className="text-base font-bold text-slate-900">Recent activity</h2>

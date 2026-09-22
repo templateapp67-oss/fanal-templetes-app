@@ -109,6 +109,20 @@ export const LOCAL_GROWTH_CHAIN = [
   // part of this chain (the owner/editor save path reads the normalized
   // production schema).
   '20261006_owner_salon_resolution.sql',
+  // Self-service partner enrollment (20260922091000). Creates
+  // ensure_my_growth_partner(): a signed-in account provisions auth.uid() only
+  // and an existing suspended partner is never reactivated. Without it in this
+  // chain the RPC the login page calls does not exist locally, so the
+  // "Could not verify your Growth Partner access" path could not be exercised
+  // or regression-tested at all.
+  //
+  // Deliberately NOT included: 20260922085236_enable_growth_partner_open_enrollment.sql.
+  // That migration makes submit_growth_partner_application() auto-approve, and
+  // the local feature is the *manual* approval flow that
+  // tests/growthPartnerApproval.test.ts verifies end to end (submit → pending →
+  // admin review). Loading it here would silently rewrite those expectations.
+  // Its SQL is still validated directly by tests/growthPartnerOpenEnrollment.test.ts.
+  '20260922091000_direct_growth_partner_dashboard_access.sql',
 ];
 
 /**

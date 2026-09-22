@@ -393,13 +393,41 @@ async function persistWithAdminFallback(
         .from('organization_members')
         .select('organization_id, role, status')
         .eq('user_id', ownerId)
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .in('role', ['owner', 'manager']);
       recordStep('organization membership lookup', 'organization_members', extractError(memberErr));
 
       let orgId: string | null = null;
       if (!memberErr && members && members.length > 0) {
         orgId = members[0].organization_id;
       } else if (!memberErr) {
+        // Older/direct salon rows may predate organization_members. Preserve
+        // their ownership instead of creating a second salon and then failing
+        // RLS because the normalized relationship is missing.
+        const { data: directSalons, error: directSalonErr } = await admin
+          .from('salons')
+          .select('id, organization_id, slug, name, data')
+          .eq('owner_id', ownerId)
+          .limit(1);
+        if (directSalonErr && !/owner_id.*does not exist/i.test(directSalonErr.message || '')) {
+          recordStep('direct owner salon lookup', 'salons', extractError(directSalonErr));
+        }
+        const directSalon = !directSalonErr && directSalons?.[0] ? directSalons[0] : null;
+        if (directSalon?.organization_id) {
+          orgId = directSalon.organization_id;
+          const { error: linkErr } = await admin.from('organization_members').upsert({
+            id: randomUUID(),
+            organization_id: orgId,
+            user_id: ownerId,
+            role: 'owner',
+            status: 'active',
+          }, { onConflict: 'organization_id,user_id' });
+          recordStep('direct owner membership repair', 'organization_members', extractError(linkErr));
+          if (linkErr) orgId = null;
+        }
+      }
+
+      if (!orgId && !memberErr) {
         orgId = randomUUID();
         const { error: orgErr } = await admin.from('organizations').insert({
           id: orgId,
@@ -444,6 +472,7 @@ async function persistWithAdminFallback(
             admin.from('salons').insert({
               id: randomUUID(),
               organization_id: orgId,
+              owner_id: ownerId,
               name: profile?.businessName || 'My Salon',
               slug: subdomain,
               description: profile?.about || '',

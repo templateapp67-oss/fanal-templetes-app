@@ -8,8 +8,10 @@ deployment must add is three things, in this order:
 1. **A live Supabase connection** (`.env`) — without it the app runs in mock
    mode and the area shows *"Growth Partner area needs a live connection"*.
 2. **The Growth Partner migrations**, applied in the order below.
-3. **One approved partner row** for your account — the area is denied to every
-   signed-in user who is not in `public.growth_partners`.
+3. **A partner row for your account** — the area is denied to every signed-in
+   user who is not in `public.growth_partners`. With migration
+   `20260922091000` a signed-in account provisions itself (see §4b); without it,
+   create the row as in §4a/§4c.
 
 Then verify with one command:
 
@@ -98,7 +100,9 @@ file is idempotent:
 | 9 | `20260920_growth_partner_application_queue.sql` | `list_growth_partner_applications` — the admin review queue (admin-only) |
 | 10 | `20260928_partner_referrals_table.sql`, `20260929_partner_referral_events_rls.sql` | `partner_referrals`, `partner_referral_events` and `growth_partners.id` — **must precede the portal sections below** |
 | 11 | `20260918035349_partner_portal_operations.sql` | the operational model the Earnings/Withdrawals/Marketing/Levels/Leaderboards/Notifications/Support sections read: `partner_earnings`, `partner_payout_requests`, `partner_level_definitions` (+ seeded tiers), `partner_notifications`, `partner_notification_preferences`, `partner_marketing_assets`, `partner_support_tickets`, `partner_support_attachments`, own-row RLS for all of it, the two private buckets, and the `get_my_partner_*` / `request_my_partner_payout` / `record_partner_subscription_commission` / `release_partner_earnings` / `admin_mark_partner_payout_paid` RPCs |
-| 12 | `20260919120000_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
+| 12 | `20260922085236_enable_growth_partner_open_enrollment.sql` | open enrollment: a signed-in account that submits its own validated application is approved immediately (the `/partner/login` "Become a Growth Partner" form) |
+| 13 | `20260922091000_direct_growth_partner_dashboard_access.sql` | **`ensure_my_growth_partner()`** — direct self-enrollment for `auth.uid()`. Required by `/partner/dashboard`: without it every denial screen's "Instantly Approve & Access" action and the login page's automatic activation cannot run (see 7.4) |
+| 14 | `20260919120000_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
 
 The two portal migrations sort earlier than they apply:
 `partner_earnings.partner_id` and the referral joins FK to
@@ -142,7 +146,8 @@ that only appear when the area is used (all reproduced on PGlite and pinned by
 ## 4. Make your account a Growth Partner
 
 The area denies every signed-in user without a `growth_partners` row
-(*"Growth Partners only"*). Two ways in:
+(*"Growth Partners only"*). Three ways in — with the enrollment migrations
+applied, option (c) is the one the product uses:
 
 **a. KYC review (the product flow).** The applicant signs up on
 `/growth-partner/login`, which calls `submit_growth_partner_application`. Then,
@@ -161,7 +166,15 @@ select public.review_growth_partner_application('<application id>', true, 'KYC v
 Approval creates the partner row with a valid unique referral code. Rejecting
 (`false`) leaves the applicant without access and lets them reapply.
 
-**b. Admin shortcut (no application needed).**
+**b. Self-service enrollment (applied by migration 20260922091000).** A
+signed-in account provisions **itself** — the login page does this
+automatically, the denial screens offer it as "Instantly Approve & Access", and
+`select public.ensure_my_growth_partner();` works from any signed-in SQL session
+that carries the user's JWT. It cannot name another account, and it will not
+reactivate a suspended one. With `20260922085236` (open enrollment) the signup
+form approves the applicant immediately.
+
+**c. Admin shortcut (no application needed).**
 
 ```sql
 select public.provision_growth_partner_by_email('you@example.com');
@@ -464,6 +477,52 @@ route: 401 before any parsing, 503 with no project, param binding, status
 mapping, no partner id in any path or body), and the jsdom flows in
 `tests/dom/partnerPortalModulesBrowserFlow.test.ts`.
 
+### 7.4 "Could not verify your Growth Partner access. Please try again."
+
+That card is `/partner/login`'s error state, and it is what the *verification*
+step prints when the backend read throws. Three different causes used to look
+identical; the page now separates them, and each has its own fix:
+
+| What the page shows | Cause | Fix |
+| --- | --- | --- |
+| "…database setup is missing on this project… must apply the Growth Partner migrations" | PostgREST answered `PGRST202` for `get_my_growth_partner` / `ensure_my_growth_partner` — the migration was never applied (or PostgREST's schema cache is stale) | apply the migrations below, then `notify pgrst, 'reload schema';` |
+| "Growth Partners only" **plus** the same "database setup is missing" notice | the verification read worked, but the *self-enrollment* RPC is missing: the account genuinely has no partner row yet and cannot provision itself | apply `20260922091000_direct_growth_partner_dashboard_access.sql` |
+| "Please try again." | a genuinely transient failure (network, 5xx, expired session) | retry; if it persists check the browser console for the RPC error |
+
+The enrollment pair, in order (each file is idempotent):
+
+```sql
+-- in the Supabase SQL Editor, or: supabase db push
+-- 1. supabase/migrations/20260922085236_enable_growth_partner_open_enrollment.sql
+-- 2. supabase/migrations/20260922091000_direct_growth_partner_dashboard_access.sql
+select public.ensure_my_growth_partner();   -- run as a signed-in user, not the SQL Editor
+```
+
+Confirm it is there before blaming the client:
+
+```bash
+npm run verify:growth-partner -- .env
+```
+
+`ensure_my_growth_partner` is one of the probes: it is reported as missing
+(`PGRST202`) when the migration was never applied, it is reported as refused
+when an anonymous caller tries it, and the script now also checks that the
+project host can be reached at all — an unreachable project is reported as a
+network problem instead of a schema problem.
+
+Notes:
+
+* `ensure_my_growth_partner()` takes **no arguments** — it acts on `auth.uid()`
+  only. There is no way to name another account from the browser, and it is
+  `SECURITY DEFINER` with a pinned `search_path`.
+* An existing suspended partner is **not** reactivated by it: `is_active = false`
+  stays false. Only an admin can lift a suspension
+  (`select public.provision_growth_partner('<auth uid>', null, true);`).
+* Open enrollment (`20260922085236`) is what makes the signup form approve
+  immediately; the manual KYC queue from §4 still works for projects that prefer
+  review-first, because a pending application is no longer a hard stop — the
+  denial screen offers "Become a Growth Partner" instead.
+
 ## Troubleshooting
 
 | What you see | Cause | Fix |
@@ -472,6 +531,8 @@ mapping, no partner id in any path or body), and the jsdom flows in
 | "Sign in to open the Growth Partner area" | no session on `/growth-partner` | sign in (or use `/growth-partner/login`) |
 | "Growth Partners only" | signed in, but no `growth_partners` row | step 4 |
 | "Growth Partner access is paused" | `is_active = false` | re-provision with `p_active => true` |
+| "Could not verify your Growth Partner access. Please try again." | the verification/enrollment read threw — see 7.4 to tell a missing migration from a real outage | 7.4 |
+| "…database setup is missing on this project…" on `/partner/login` | `PGRST202` for `get_my_growth_partner` / `ensure_my_growth_partner` | 7.4: apply `20260922091000_direct_growth_partner_dashboard_access.sql`, then reload the schema cache |
 | `PGRST202` / "function … not found" in the verifier | a migration was never applied | step 3, in order |
 | Every operational section says "These records need the partner portal migrations" | `20260918035349_partner_portal_operations.sql` (and the 20260919120000 follow-up) are missing, or they were applied before `20260928`/`20260929` | step 3, in order — see 7.3 for the dependency |
 | Marketing download says storage is not configured (503) | no `partner-marketing-assets` bucket / no service-role storage credentials | apply the portal migration and set `SUPABASE_SERVICE_ROLE_KEY`; locally this refusal is expected |
