@@ -52,7 +52,7 @@ export interface GrowthPartnerAuthClient {
 export async function signUpGrowthPartner(
   client: GrowthPartnerAuthClient,
   input: { email: string; password: string; fullName: string; phone?: string; kycDocumentType: string; kycDocumentReference: string }
-): Promise<{ confirmed: boolean }> {
+): Promise<{ confirmed: boolean; viewer?: GrowthPartnerViewer }> {
   if (!client.auth.signUp) throw new Error('Signup is unavailable. Please try again later.');
   const { data, error } = await client.auth.signUp({
     email: input.email.trim(), password: input.password,
@@ -67,22 +67,23 @@ export async function signUpGrowthPartner(
     p_kyc_document_type: input.kycDocumentType, p_kyc_document_reference: input.kycDocumentReference.trim(),
   });
   if (applicationError) throw new Error('Account created, but the partner application could not be submitted. Please sign in and try again.');
-  return { confirmed: true };
+  return { confirmed: true, viewer: viewerFromUser(data.session.user ?? data.user) };
 }
 
 /** Submit an application for an account that is already authenticated. */
 export async function submitGrowthPartnerApplication(
   client: GrowthPartnerAuthClient,
   input: { fullName: string; phone?: string; kycDocumentType: string; kycDocumentReference: string }
-): Promise<void> {
+): Promise<{ status: string; referral_code?: string }> {
   if (!client.rpc) throw new Error('Applications are unavailable. Please try again later.');
-  const { error } = await client.rpc('submit_growth_partner_application', {
+  const { data, error } = await client.rpc('submit_growth_partner_application', {
     p_full_name: input.fullName.trim(),
     p_phone: input.phone?.trim() || null,
     p_kyc_document_type: input.kycDocumentType,
     p_kyc_document_reference: input.kycDocumentReference.trim(),
   });
   if (error) throw new Error('Your application could not be submitted. Please try again.');
+  return { status: String(data?.status || 'approved'), referral_code: data?.referral_code };
 }
 
 /** The authenticated viewer identity (id + email), never a role. */
