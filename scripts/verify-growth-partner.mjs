@@ -246,6 +246,16 @@ const FUNCTION_CHECKS = [
   ['submit_my_partner_support_ticket', { p_subject: 'x', p_message: 'y' }, 'Support section — ticket form (refused here: subject too short)'],
 ];
 
+/**
+ * The migration that creates each probed function, so a PGRST202 failure names
+ * the exact file to apply instead of sending the operator on a hunt. Only the
+ * functions whose absence is a known, reported symptom are listed.
+ */
+const MIGRATION_FOR_FUNCTION = {
+  ensure_my_growth_partner: '20260922091000_direct_growth_partner_dashboard_access.sql',
+  submit_growth_partner_application: '20260922085236_enable_growth_partner_open_enrollment.sql',
+};
+
 for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
   if (!admin) {
     record(`function public.${fn}() exists — ${usedBy}`, true, missingServiceKey);
@@ -260,7 +270,9 @@ for (const [fn, payload, usedBy] of FUNCTION_CHECKS) {
     `function public.${fn}() exists — ${usedBy}`,
     kind !== 'missing-function',
     kind === 'missing-function'
-      ? 'PGRST202: not exposed — the migration that creates it was never applied'
+      ? `PGRST202: not exposed — apply supabase/migrations/${
+          MIGRATION_FOR_FUNCTION[fn] ?? '(the migration that creates it)'
+        } (GROWTH_PARTNER_SETUP.md §3 has the full order)`
       : error
         ? `present (${kind}: ${error.message?.slice(0, 90)})`
         : 'present'
