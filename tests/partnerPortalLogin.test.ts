@@ -140,10 +140,11 @@ test('the resolver grants only an ACTIVE partner and denies every other account 
   assert.equal(resolvePartnerPortalLogin({ ...base, userId: PARTNER_A, partnerRow: ROW_ACTIVE }), 'granted');
   // Normal user: zero partner rows → no access to the portal.
   assert.equal(resolvePartnerPortalLogin({ ...base, userId: USER_1, partnerRow: null }), 'unauthorized');
-  // Pending application: hold, never the dashboard.
+  // Legacy pending applications use open enrollment while provisioning catches
+  // up; manual review must not block access with the old holding screen.
   assert.equal(
     resolvePartnerPortalLogin({ ...base, userId: USER_1, partnerRow: null, applicationStatus: 'pending' }),
-    'pending-review'
+    'unauthorized'
   );
   // Rejected application: denied.
   assert.equal(
@@ -633,7 +634,8 @@ test('the backend grants an ACTIVE partner and denies pending / rejected / suspe
       'inactive'
     );
 
-    // A pending application (submitted as the user, reviewed by nobody yet).
+    // With the legacy migration fixture this remains pending in the database,
+    // but the current UI resolver must never render the manual-review screen.
     await asUser(
       db,
       USER_1,
@@ -655,7 +657,7 @@ test('the backend grants an ACTIVE partner and denies pending / rejected / suspe
         applicationStatus: applicationRow.rows[0].status,
         loadError: null,
       }),
-      'pending-review'
+      'unauthorized'
     );
 
     // A rejected application → denied. (Review runs as an admin/service role,

@@ -174,7 +174,6 @@ export type PartnerPortalLoginState =
   | 'mock-mode'
   | 'signed-out'
   | 'unauthorized'
-  | 'pending-review'
   | 'rejected'
   | 'inactive'
   | 'session-expired'
@@ -209,7 +208,6 @@ export function resolvePartnerPortalLogin(input: {
   if (!input.userId) return 'signed-out';
   if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
   if (!input.partnerRow) {
-    if (input.applicationStatus === 'pending') return 'pending-review';
     if (input.applicationStatus === 'rejected') return 'rejected';
     return 'unauthorized';
   }

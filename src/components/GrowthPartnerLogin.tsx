@@ -56,7 +56,7 @@ export const GROWTH_PARTNER_LOGIN_SESSION_TITLE = 'Your session expired';
 export const GROWTH_PARTNER_LOGIN_SESSION_BODY = 'Please sign in again to continue.';
 export const GROWTH_PARTNER_LOGIN_ERROR_TITLE = 'Could not verify your Growth Partner access';
 export const GROWTH_PARTNER_LOGIN_ERROR_BODY = 'Please try again.';
-export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Application submitted. We will review it and email you after approval.';
+export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Growth Partner access activated. Opening your dashboard…';
 export const GROWTH_PARTNER_LOGIN_PENDING_TITLE = 'Application under review';
 export const GROWTH_PARTNER_LOGIN_PENDING_BODY =
   'Your Growth Partner application is with our team. You will get access here as soon as it is approved.';
@@ -830,9 +830,13 @@ export const GrowthPartnerLogin: React.FC<{
     void signUpGrowthPartner(sb, input)
       .then(
         (result) => {
+          if (result.viewer) {
+            setSessionUser(result.viewer);
+            setAttempt((value) => value + 1);
+          }
           setSignupSuccess(
             result.confirmed
-              ? GROWTH_PARTNER_SIGNUP_SUCCESS
+              ? 'Growth Partner access activated. Opening your dashboard…'
               : 'Account created. Verify your email, then return here to sign in and submit your application.'
           );
         },
@@ -858,15 +862,6 @@ export const GrowthPartnerLogin: React.FC<{
         onPasswordChange={setPassword}
         onSubmit={handleSubmit}
         onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
-      />
-    );
-  if (state === 'pending-review')
-    return (
-      <GrowthPartnerLoginPendingReview
-        submittedAt={application?.created_at ?? null}
-        onBack={onBack}
-        onCheckAgain={() => setAttempt((value) => value + 1)}
-        onSwitchAccount={() => void clearSession()}
       />
     );
   if (state === 'unauthorized')

@@ -1087,9 +1087,13 @@ export const PartnerPortalLogin: React.FC<{
     setSignupSuccess('');
     void signUpGrowthPartner(sb, input).then(
       (result) => {
+        if (result.viewer) {
+          setSessionUser(result.viewer);
+          setAttempt((value) => value + 1);
+        }
         setSignupSuccess(
           result.confirmed
-            ? 'Application submitted. We will review it and email you after approval.'
+            ? 'Growth Partner access activated. Opening your dashboard…'
             : 'Account created. Verify your email, then return here to sign in and submit your application.'
         );
       },
@@ -1106,8 +1110,9 @@ export const PartnerPortalLogin: React.FC<{
     setFormError('');
     void submitGrowthPartnerApplication(sb, input).then(
       () => {
-        setApplication({ id: 'submitted', status: 'pending', kyc_status: 'pending', created_at: new Date().toISOString() });
+        setApplication({ id: 'submitted', status: 'approved', kyc_status: 'approved', created_at: new Date().toISOString() });
         setMode('login');
+        setAttempt((value) => value + 1);
       },
       (error: Error) => setFormError(safePartnerErrorMessage(error, 'Application failed. Please try again.'))
     ).finally(() => setBusy(false));
@@ -1214,17 +1219,6 @@ export const PartnerPortalLogin: React.FC<{
           setMode('signup');
           setFormError('');
         }}
-      />
-    );
-  }
-
-  if (state === 'pending-review') {
-    return (
-      <PartnerPortalPendingReview
-        submittedAt={application?.created_at ?? null}
-        onBack={onBack}
-        onCheckAgain={() => setAttempt((value) => value + 1)}
-        onSwitchAccount={() => void clearSession()}
       />
     );
   }

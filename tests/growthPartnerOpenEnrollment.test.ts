@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { PartnerPortalUnauthorized } from '../src/components/PartnerPortalLogin.js';
 import { submitGrowthPartnerApplication, type GrowthPartnerAuthClient } from '../src/lib/growthPartnerLogin.js';
 
@@ -44,4 +45,26 @@ test('an authenticated existing user can submit the secure partner application R
       p_kyc_document_reference: 'ABCDE1234F',
     },
   }]);
+});
+
+test('open-enrollment migration provisions only the authenticated caller and removes manual approval', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20260922085236_enable_growth_partner_open_enrollment.sql', import.meta.url), 'utf8');
+  assert.match(migration, /actor uuid := auth\.uid\(\)/);
+  assert.match(migration, /provision_growth_partner\(actor\)/);
+  assert.doesNotMatch(migration, /p_user_id/);
+  assert.match(migration, /status = 'approved'/);
+  assert.match(migration, /revoke all on function[\s\S]*from public, anon/);
+  assert.match(migration, /grant execute on function[\s\S]*to authenticated/);
+  assert.match(migration, /where status = 'pending'[\s\S]*provision_growth_partner\(application\.user_id\)/);
+});
+
+test('both portal and owner-dashboard partner entry render open enrollment for unauthorized users', () => {
+  const page = readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /if \(gate === 'unauthorized'\)/);
+  assert.doesNotMatch(page, /isPartnerNamespace && gate === 'unauthorized'/);
+});
+
+test('Vercel routing middleware has the required default export', () => {
+  const middleware = readFileSync(new URL('../middleware.ts', import.meta.url), 'utf8');
+  assert.match(middleware, /export default function middleware/);
 });
