@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { Check, Copy, Download, FileText, Images, Megaphone, RefreshCw } from 'lucide-react';
-import {
-} from '../../lib/partnerPortalOperations';
 import { growthPartnerService } from '../../services/growthPartner';
 import { usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import { formatPartnerDate, formatPartnerFileSize } from '../../lib/partnerPresentation';
