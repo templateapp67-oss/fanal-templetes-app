@@ -314,7 +314,11 @@ test('the shell and page share the single gate resolver and never reference the 
   const guard = readFileSync(new URL('../src/components/PartnerRouteGuard.tsx', import.meta.url), 'utf8');
   assert.match(guard, /resolveGrowthPartnerGate/);
   assert.doesNotMatch(guard, /localStorage|sessionStorage|SERVICE_ROLE/);
-  assert.match(src, /fetchMyGrowthPartnerRow/);
+  // The row lookup moved behind the service facade: the page asks the service,
+  // the service asks the audited reader — no second reader appears anywhere.
+  assert.match(src, /growthPartnerService\.getMyPartner\(/);
+  const service = readFileSync(new URL('../src/services/growthPartner.ts', import.meta.url), 'utf8');
+  assert.match(service, /fetchMyGrowthPartnerRow\(\)/);
   assert.doesNotMatch(codeOnly, /service_role|SERVICE_ROLE|getSupabaseAdmin|supabaseAdmin/);
   // No frontend role/storage/URL trust in the page.
   assert.doesNotMatch(codeOnly, /localStorage|sessionStorage|URLSearchParams|searchParams/i);

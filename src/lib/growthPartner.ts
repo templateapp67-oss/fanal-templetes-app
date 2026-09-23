@@ -1,6 +1,23 @@
 import type { ReferralStatus, ReferralStatusCounts } from './referralStatus';
 import { supabase } from './supabaseClient';
 import { projectReferralRelationship, projectValidationResponse } from './safePartnerResponse';
+// The failure predicates and the operator-facing setup copy live in ONE module
+// (`partnerAreaFailure.ts`) so the browser screen, the live diagnostic and the
+// operator script can never disagree about what a failure means. Re-exported
+// here because this module is the area's public front door.
+import {
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
+  isMissingPartnerSchemaError,
+  isPartnerSuspendedError,
+  isSessionExpiredError,
+} from './partnerAreaFailure';
+
+export {
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
+  isMissingPartnerSchemaError,
+  isPartnerSuspendedError,
+  isSessionExpiredError,
+};
 
 // ============================================================================
 // Growth Partner + shared Onboarding — typed client for the Phase 1 backend
@@ -235,30 +252,6 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
 }
 
 /**
- * Classify "this project has not had the migration applied" — PostgREST answers
- * PGRST202 (function/table not in the schema cache) or, on older gateways, an
- * HTTP 404 with "Could not find the function ... in the schema cache".
- *
- * It is worth its own classifier because the fix is an operator action
- * (apply the migration), not a retry: telling a partner "Please try again"
- * forever is exactly the dead end this distinguishes.
- */
-export function isMissingPartnerSchemaError(error: unknown): boolean {
-  if (!error) return false;
-  const anyErr = error as { code?: string; status?: number };
-  if (anyErr.code === 'PGRST202' || anyErr.code === 'PGRST205' || anyErr.code === 'PGRST204') return true;
-  if (anyErr.status === 404) return true;
-  return /could not find the (function|table|.* in the schema cache)|function .* does not exist|schema cache/i.test(
-    String((error as Error)?.message || anyErr || '')
-  );
-}
-
-/** Operator-facing copy when the Growth Partner RPCs are not on this project. */
-export const GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE =
-  'The Growth Partner database setup is missing on this project, so access cannot be verified. ' +
-  'An administrator must apply the Growth Partner migrations (see GROWTH_PARTNER_SETUP.md).';
-
-/**
  * Ensure the authenticated caller has a partner row, then return that row.
  * The RPC accepts no user id: the database provisions auth.uid() only and
  * preserves an existing suspended partner instead of reactivating it.
@@ -340,19 +333,8 @@ export async function copyReferralCodeToClipboard(
 }
 
 
-/** True when a Supabase/PostgREST failure means the session must be renewed. */
-export function isSessionExpiredError(error: unknown): boolean {
-  if (!error) return false;
-  const anyErr = error as { status?: number; code?: string; message?: string };
-  if (anyErr.status === 401 || anyErr.code === 'PGRST301') return true;
-  const message = String((error as Error)?.message || anyErr || '');
-  return /jwt expired|invalid jwt|session.*expired|not authenticated|auth.*required|sign in required/i.test(message);
-}
-
-/** Includes mid-request revocation, not just the initial partner gate read. */
-export function isPartnerSuspendedError(error: unknown): boolean {
-  return /(?:partner|account|access).*(?:inactive|paused|suspended)/i.test(String((error as Error)?.message || ''));
-}
+// `isSessionExpiredError` / `isPartnerSuspendedError` are re-exported at the
+// top of this file from `partnerAreaFailure.ts` (one definition per predicate).
 
 /** Page-level gate states for the Growth Partner area. */
 export type GrowthPartnerGate =

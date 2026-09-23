@@ -523,6 +523,46 @@ Notes:
   review-first, because a pending application is no longer a hard stop — the
   denial screen offers "Become a Growth Partner" instead.
 
+### 7.5 "/partner/dashboard" cannot load — the screen now names the cause
+
+The area gate (`/partner/dashboard`, and the legacy `/growth-partner` sections)
+used to answer every failure with one sentence — *"Could not load the Growth
+Partner area. Could not load this section. Please try again."* — which is a dead
+end for the two causes it most often is: a migration that was never applied, and
+a grant refused for that account. Both need an administrator, not a refresh, and
+the report of "hard refresh and incognito did not help" is exactly what that
+sentence produces.
+
+The failure screen now classifies the error and states **who can fix it**:
+
+| What the screen shows | Cause | Who fixes it |
+| --- | --- | --- |
+| "The Growth Partner database setup is missing on this project" | `PGRST202`/`PGRST205`, or schema drift (`relation/column … does not exist`) | administrator — step 3, then `notify pgrst, 'reload schema';` |
+| "You are signed in, but the database refused this read" | `42501` — missing/inactive partner row or a missing grant | administrator / support — step 4 |
+| "This account is not an active Growth Partner" | signed in, no approved+active `growth_partners` row | support — step 4 |
+| "Your session expired" | `401` / `PGRST301` | the user — sign in again |
+| "Could not reach the Growth Partner service" | transport failure (offline, VPN, ad blocker, DNS) | the user — connection |
+| "The Growth Partner service returned an error" | `5xx` | the platform — retry shortly |
+
+Every one of those screens also offers **Run diagnostic**, which probes the live
+service from the signed-in session (browser connection → session → partner table
+→ `get_my_growth_partner` → `get_my_partner_dashboard`) and prints a per-call
+result plus a **Copy report for support** button. The report carries the cause,
+the error code, the route, the project host, the masked account and the check
+list — never a key, token or address. `ensure_my_growth_partner()` is
+deliberately *not* probed (it can create the partner row), and the screen says so
+instead of pretending it was checked.
+
+To reproduce the same sequence from a terminal, with the project's env file:
+
+```bash
+npm run diagnose:partner-dashboard -- .env
+PARTNER_DIAG_PASSWORD='…' npm run diagnose:partner-dashboard -- .env --email you@example.com
+```
+
+Step-by-step triage, the SQL checks for the account and the full migration list:
+**`GROWTH_PARTNER_DASHBOARD_ACCESS_FIX.md`**.
+
 ## Troubleshooting
 
 | What you see | Cause | Fix |
@@ -536,7 +576,10 @@ Notes:
 | `PGRST202` / "function … not found" in the verifier | a migration was never applied | step 3, in order |
 | Every operational section says "These records need the partner portal migrations" | `20260918035349_partner_portal_operations.sql` (and the 20260919120000 follow-up) are missing, or they were applied before `20260928`/`20260929` | step 3, in order — see 7.3 for the dependency |
 | Marketing download says storage is not configured (503) | no `partner-marketing-assets` bucket / no service-role storage credentials | apply the portal migration and set `SUPABASE_SERVICE_ROLE_KEY`; locally this refusal is expected |
-| "Could not load the Growth Partner area" | RPC error (see the message) | check the verifier output for the failing function |
+| "Could not load the Growth Partner area" | the gate read threw — the screen now names which of the six causes it is (see 7.5) | read the cause off the screen, press **Run diagnostic**, or run `npm run diagnose:partner-dashboard -- .env` |
+| "The Growth Partner database setup is missing on this project" | `PGRST202`/`PGRST205` or schema drift — the migration was never applied (or the schema cache is stale) | 7.5: apply the migrations in step 3, then `notify pgrst, 'reload schema';` |
+| "You are signed in, but the database refused this read" | `42501` — no/inactive `growth_partners` row for that account, or a missing grant | 7.5 + `GROWTH_PARTNER_DASHBOARD_ACCESS_FIX.md` §5 |
+| "The Growth Partner service returned an error" | the API answered `5xx` | retry shortly; it is not an account or cache problem |
 
 ## Known, intentional gaps
 

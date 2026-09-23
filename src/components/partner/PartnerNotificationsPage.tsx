@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bell, BellRing, Check, CheckCheck, RefreshCw } from 'lucide-react';
-import {
-  getPartnerNotificationPreferences,
-  getPartnerNotifications,
-  markPartnerNotificationsRead,
-  updatePartnerNotificationPreferences,
-} from '../../lib/partnerPortalOperations';
-import { usePartnerAction, usePartnerQuery } from '../../lib/partnerPortalQueries';
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceAction, usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import { formatPartnerDateTime } from '../../lib/partnerPresentation';
 import { PartnerToast } from '../PartnerToast';
 import {
@@ -51,12 +46,12 @@ export const PartnerNotificationsPage: React.FC<{ accentHex?: string }> = ({ acc
   const [notice, setNotice] = useState({ id: 0, message: '' });
   const [prefs, setPrefs] = useState<{ email_enabled: boolean; in_app_enabled: boolean } | null>(null);
 
-  const feed = usePartnerQuery(() => getPartnerNotifications(type, { limit: 50 }), [type]);
-  const preferences = usePartnerQuery(() => getPartnerNotificationPreferences(), []);
-  const markAll = usePartnerAction(() => markPartnerNotificationsRead());
-  const markOne = usePartnerAction((id: string) => markPartnerNotificationsRead([id]));
-  const savePrefs = usePartnerAction((next: { email_enabled: boolean; in_app_enabled: boolean }) =>
-    updatePartnerNotificationPreferences(next)
+  const feed = usePartnerServiceQuery(() => growthPartnerService.getNotifications({ type, limit: 50 }), [type]);
+  const preferences = usePartnerServiceQuery(() => growthPartnerService.getNotificationPreferences(), []);
+  const markAll = usePartnerServiceAction(() => growthPartnerService.markNotificationsRead());
+  const markOne = usePartnerServiceAction((id: string) => growthPartnerService.markNotificationsRead([id]));
+  const savePrefs = usePartnerServiceAction((next: { email_enabled: boolean; in_app_enabled: boolean }) =>
+    growthPartnerService.updateNotificationPreferences(next)
   );
 
   // Seed the toggles from the stored row, and only from the stored row: local
@@ -107,7 +102,7 @@ export const PartnerNotificationsPage: React.FC<{ accentHex?: string }> = ({ acc
 
   if (feed.loading && !feed.data) return <PartnerSectionLoading label="Loading your notifications…" kind="table" module="notifications" />;
   if (feed.error && !feed.data) {
-    return <PartnerSectionError error={feed.error} onRetry={feed.reload} title="Your notifications could not load" module="notifications" />;
+    return <PartnerSectionError error={feed.error} failure={feed.failure} onRetry={feed.reload} title="Your notifications could not load" module="notifications" />;
   }
 
   return (

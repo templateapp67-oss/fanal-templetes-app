@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, Lock, Medal, Sparkles, TrendingUp } from 'lucide-react';
-import { getPartnerLevels } from '../../lib/partnerPortalOperations';
-import { usePartnerQuery } from '../../lib/partnerPortalQueries';
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import { formatPartnerRateBps } from '../../lib/partnerPresentation';
 import {
   PartnerInlineNotice,
@@ -36,11 +36,13 @@ const LEVEL_ACCENTS: Record<string, string> = {
 const titleCase = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : value);
 
 export const PartnerLevelsPage: React.FC<{ accentHex?: string }> = ({ accentHex }) => {
-  const query = usePartnerQuery(() => getPartnerLevels(), []);
+  const query = usePartnerServiceQuery(() => growthPartnerService.getLevels(), []);
   const { data, loading, error } = query;
 
   if (loading && !data) return <PartnerSectionLoading label="Loading your partner level…" kind="dashboard" module="partner-levels" />;
-  if (error && !data) return <PartnerSectionError error={error} onRetry={query.reload} title="Partner levels could not load" module="partner-levels" />;
+  if (error && !data) {
+    return <PartnerSectionError error={error} failure={query.failure} onRetry={query.reload} title="Partner levels could not load" module="partner-levels" />;
+  }
 
   const levels = data?.levels ?? [];
   const unlocked = levels.filter((level) => level.unlocked);

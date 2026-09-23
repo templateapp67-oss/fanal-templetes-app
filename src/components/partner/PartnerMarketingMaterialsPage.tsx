@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import { Check, Copy, Download, FileText, Images, Megaphone, RefreshCw } from 'lucide-react';
 import {
-  getPartnerAssetDownloadUrl,
-  getPartnerMarketingAssetCategories,
-  getPartnerMarketingAssets,
 } from '../../lib/partnerPortalOperations';
-import { usePartnerQuery } from '../../lib/partnerPortalQueries';
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import { formatPartnerDate, formatPartnerFileSize } from '../../lib/partnerPresentation';
 import { partnerReferralShareLink } from '../../lib/partnerReferralLink';
 import { usePartnerClipboard } from '../../lib/usePartnerClipboard';
@@ -67,8 +65,8 @@ export const PartnerMarketingMaterialsPage: React.FC<{
   const [downloadError, setDownloadError] = useState<{ id: string; message: string } | null>(null);
   const [downloadingId, setDownloadingId] = useState('');
 
-  const categories = usePartnerQuery(() => getPartnerMarketingAssetCategories(), []);
-  const assets = usePartnerQuery(() => getPartnerMarketingAssets(category), [category]);
+  const categories = usePartnerServiceQuery(() => growthPartnerService.getMarketingCategories(), []);
+  const assets = usePartnerServiceQuery(() => growthPartnerService.getMarketingAssets(category), [category]);
   const clipboard = usePartnerClipboard();
 
   const code = String(referralCode || '').trim();
@@ -77,15 +75,13 @@ export const PartnerMarketingMaterialsPage: React.FC<{
   const download = async (assetId: string) => {
     setDownloadError(null);
     setDownloadingId(assetId);
-    try {
-      const url = await getPartnerAssetDownloadUrl(assetId);
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      setDownloadError({
-        id: assetId,
-        message: error instanceof Error ? error.message : 'This file could not be prepared for download.',
-      });
-    } finally {
+    const result = await growthPartnerService.getAssetDownloadUrl(assetId);
+    if (result.ok === false) {
+      setDownloadError({ id: assetId, message: result.error.message });
+    } else {
+      window.open(result.data, '_blank', 'noopener,noreferrer');
+    }
+    {
       setDownloadingId('');
     }
   };
@@ -173,7 +169,7 @@ export const PartnerMarketingMaterialsPage: React.FC<{
           </div>
         ) : assets.error && !assets.data ? (
           <div className="p-5">
-            <PartnerSectionError error={assets.error} onRetry={assets.reload} title="The asset library could not load" />
+            <PartnerSectionError error={assets.error} failure={assets.failure} onRetry={assets.reload} title="The asset library could not load" />
           </div>
         ) : !rows.length ? (
           <PartnerSectionEmpty

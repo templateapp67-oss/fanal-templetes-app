@@ -17,6 +17,7 @@
     "verify": "node --import tsx scripts/verify-supabase-connection.mjs",
     "verify:connection": "node --import tsx scripts/verify-supabase-connection.mjs",
     "verify:growth-partner": "node scripts/verify-growth-partner.mjs",
+    "diagnose:partner-dashboard": "node --import tsx scripts/diagnose-partner-dashboard-access.mjs",
     "verify:partner-operations": "node --import tsx scripts/verify-partner-operations-schema.mjs",
     "verify:withdrawals": "node --import tsx scripts/verify-withdrawals-schema.mjs",
     "apply:partner-operations": "node --import tsx scripts/apply-partner-operations-migrations.mjs",
