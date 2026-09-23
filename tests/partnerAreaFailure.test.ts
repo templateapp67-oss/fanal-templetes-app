@@ -23,6 +23,7 @@ import {
   safePartnerAreaDetail,
   PARTNER_AREA_ENROLLMENT_MIGRATION,
   type PartnerAreaFailureKind,
+  type PartnerAreaErrorDetail,
 } from '../src/lib/partnerAreaFailure';
 import {
   GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE as RE_EXPORTED_MESSAGE,
@@ -232,16 +233,40 @@ test('raw database text is only echoed when it is on the allow list', () => {
 });
 
 test('readPartnerAreaErrorDetail understands every shape a promise can reject with', () => {
-  assert.deepEqual(readPartnerAreaErrorDetail(pgrst202), {
+  // The three fields the classifier reads…
+  const required = (detail: PartnerAreaErrorDetail) => ({
+    message: detail.message,
+    code: detail.code,
+    status: detail.status,
+  });
+  // …plus the raw PostgREST facts the LOG carries (absent unless a layer that
+  // saw the backend preserved them — see partnerAreaFailureLogging.test.ts).
+  const raw = (detail: PartnerAreaErrorDetail) => ({
+    rawCode: detail.rawCode ?? null,
+    rawMessage: detail.rawMessage ?? null,
+    rawStatus: detail.rawStatus ?? null,
+    call: detail.call ?? null,
+  });
+
+  assert.deepEqual(required(readPartnerAreaErrorDetail(pgrst202)), {
     message: pgrst202.message,
     code: 'PGRST202',
     status: 404,
   });
-  assert.deepEqual(readPartnerAreaErrorDetail(new Error('boom')), { message: 'boom', code: null, status: null });
-  assert.deepEqual(readPartnerAreaErrorDetail('plain string'), { message: 'plain string', code: null, status: null });
-  assert.deepEqual(readPartnerAreaErrorDetail({ code: 42501 }), { message: '', code: '42501', status: null });
-  assert.deepEqual(readPartnerAreaErrorDetail(null), { message: '', code: null, status: null });
-  assert.deepEqual(readPartnerAreaErrorDetail({}), { message: '', code: null, status: null });
+  assert.deepEqual(required(readPartnerAreaErrorDetail(new Error('boom'))), { message: 'boom', code: null, status: null });
+  assert.deepEqual(required(readPartnerAreaErrorDetail('plain string')), { message: 'plain string', code: null, status: null });
+  assert.deepEqual(required(readPartnerAreaErrorDetail({ code: 42501 })), { message: '', code: '42501', status: null });
+  assert.deepEqual(required(readPartnerAreaErrorDetail(null)), { message: '', code: null, status: null });
+  assert.deepEqual(required(readPartnerAreaErrorDetail({})), { message: '', code: null, status: null });
+
+  // A plain promise rejection carries no raw backend facts, and that is not an
+  // error: the log simply records what exists.
+  assert.deepEqual(raw(readPartnerAreaErrorDetail(new Error('boom'))), {
+    rawCode: null,
+    rawMessage: null,
+    rawStatus: null,
+    call: null,
+  });
 });
 
 test('the support report identifies the failure without leaking an identity or a key', () => {

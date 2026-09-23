@@ -1,5 +1,28 @@
 import type { ReferralStatus, ReferralStatusCounts } from './referralStatus';
 import { supabase } from './supabaseClient';
+import { isPartnerAreaErrorLogged, logPartnerAreaFailure } from './partnerAreaFailure';
+
+/**
+ * The LOG vocabulary for the throw-based reads.
+ *
+ * The `context` strings below stay human sentences — they are part of the
+ * messages this module throws and existing behaviour depends on them. What an
+ * operator greps is this table instead: one stable operation label and the
+ * backend call it maps to, shared with `src/services/growthPartner.ts` (the
+ * facade labels every one of these identically, so both layers of one failure
+ * produce the SAME line).
+ */
+const PARTNER_READ_LOG: Record<string, { operation: string; call: string }> = {
+  'Growth Partner lookup failed': { operation: 'gate.read-partner-row', call: 'get_my_growth_partner' },
+  'Growth Partner activation failed': { operation: 'gate.provision-partner-row', call: 'ensure_my_growth_partner' },
+  'Partner dashboard lookup failed': { operation: 'dashboard.load', call: 'get_my_partner_dashboard' },
+  'Partner referral lookup failed': { operation: 'referrals.load', call: 'get_my_partner_referrals_filtered' },
+  'Partner performance lookup failed': { operation: 'performance.load', call: 'get_my_partner_performance' },
+  'Referral detail lookup failed': { operation: 'referral-detail.load', call: 'get_my_partner_referral_detail' },
+  'Onboarding status lookup failed': { operation: 'onboarding.read-status', call: 'get_my_onboarding_status' },
+  'Onboarding update failed': { operation: 'onboarding.update-progress', call: 'update_my_onboarding_progress' },
+  'Template completion update failed': { operation: 'onboarding.record-template-completion', call: 'complete_template_onboarding' },
+};
 import { projectReferralRelationship, projectValidationResponse } from './safePartnerResponse';
 // The failure predicates and the operator-facing setup copy live in ONE module
 // (`partnerAreaFailure.ts`) so the browser screen, the live diagnostic and the
@@ -125,10 +148,24 @@ export function isGrowthReferralCodeFormat(code: unknown): boolean {
   return GROWTH_CODE_RE.test(normalizeGrowthReferralCode(code));
 }
 
-function rpcError(context: string, error: { message?: string; code?: string; status?: number } | null): Error {
+function rpcError(
+  context: string,
+  error: { message?: string; code?: string; status?: number; details?: string; hint?: string } | null
+): Error {
   const detail = error?.message || 'Unknown database error';
   const code = error?.code ? ` (${error.code})` : '';
-  return Object.assign(new Error(`${context}${code}: ${detail}`), { code: error?.code, status: error?.status });
+  // `code`/`status` are read by the existing classifiers; `call` plus the raw
+  // fields are what make the failure diagnosable in a log without putting
+  // database text on a screen.
+  return Object.assign(new Error(`${context}${code}: ${detail}`), {
+    code: error?.code,
+    status: error?.status,
+    rawCode: error?.code ?? null,
+    rawMessage: error?.message ?? null,
+    rawStatus: error?.status ?? null,
+    details: (error as { details?: string } | null)?.details,
+    hint: (error as { hint?: string } | null)?.hint,
+  });
 }
 
 /**
@@ -262,7 +299,16 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
  */
 export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
   const { data, error } = await supabase.rpc('ensure_my_growth_partner');
-  if (error) throw rpcError('Growth Partner activation failed', error);
+  if (error) {
+    const raised = rpcError('Growth Partner activation failed', error);
+    // The provisioning call is the one most likely to fail on a project that has
+    // not applied a migration, and the screen hides the reason by design.
+    logPartnerAreaFailure(raised, {
+      operation: 'gate.provision-partner-row',
+      call: 'ensure_my_growth_partner',
+    });
+    throw raised;
+  }
   return data as GrowthPartner;
 }
 
@@ -953,7 +999,13 @@ async function readPartnerPayload<T>(
   }
   if (settled.error) {
     const failure = settled.error as { message?: string; code?: string; status?: number };
-    throw rpcError(context, failure);
+    const raised = rpcError(context, failure);
+    // The failures that used to vanish: this read is called by the gate, the
+    // login screens and the referral surfaces, all of which render safe copy
+    // only. Log the backend's own answer here, where it still exists.
+    const label = PARTNER_READ_LOG[context] ?? { operation: 'partner.read', call: context };
+    logPartnerAreaFailure(raised, { operation: label.operation, call: label.call });
+    throw raised;
   }
   return normalize(settled.data);
 }
@@ -1029,6 +1081,12 @@ export const PARTNER_SECTION_ERROR_MESSAGE = 'Could not load this section. Pleas
  * so raw SQL/database errors are never displayed.
  */
 export function toSafePartnerSectionError(error: unknown): Error {
+  // Safety net: anything that arrives here unlogged is a failure about to be
+  // replaced by generic copy, which is exactly how the original bug stayed
+  // undiagnosable. Already-logged errors are left alone (one line per failure).
+  if (error !== null && error !== undefined && !isPartnerAreaErrorLogged(error)) {
+    logPartnerAreaFailure(error, { operation: 'section.read' });
+  }
   const message = String((error as Error)?.message || error || '');
   if (isPartnerSuspendedError(error)) return new Error('Your Growth Partner access is paused. Contact support to reactivate it.');
   if (/network|failed to fetch|fetch failed|connection|timeout/i.test(message)) return new Error('Network error. Check your connection and try again.');

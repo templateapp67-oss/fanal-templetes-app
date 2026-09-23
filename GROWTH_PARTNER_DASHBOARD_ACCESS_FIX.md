@@ -84,6 +84,42 @@ npm run verify:growth-partner -- .env
   the partner record, and a diagnostic must not change the account it is
   diagnosing (pinned by `tests/partnerAreaDiagnostics.test.ts`).
 
+### Every failure is now logged
+
+The reason this issue kept returning is that the evidence was destroyed on the
+way to the screen: the raw PostgREST answer (`PGRST202`, `42501`, `23505`, the
+raised message) was replaced by safe copy and then dropped, so nobody — not the
+console, not the logs — could see what the backend had actually said.
+
+Now **every failure that reaches a screen is recorded exactly once**, in the
+browser console and whatever it forwards to:
+
+```
+[growth-partner] earnings.load failed — get_my_partner_earnings
+  { operation: 'earnings.load', call: 'get_my_partner_earnings',
+    kind: 'schema-missing', owner: 'administrator', retryable: false,
+    code: 'PARTNER_SCHEMA_MISSING', http: 404,
+    postgrest: { code: 'PGRST202', message: 'Could not find the function …', status: 404 },
+    shown: 'Database setup is missing' }
+```
+
+* the first line is greppable (`grep 42501` / `grep PGRST202` lands on it) and
+  names the operation and the call that failed;
+* `postgrest` is the backend's own answer, before sanitizing — the evidence;
+* `shown` is what the partner actually read, so the two can never drift apart;
+* credentials, keys, JWTs, `apikey=` values and email addresses are **redacted**
+  before anything is recorded (`redactPartnerAreaLogText`);
+* the same failure crossing several layers (read wrapper → service facade →
+  screen sanitizer) still produces **one** line, not three;
+* a healthy call logs nothing.
+
+The read paths are covered end to end: the facade (`settle()` in
+`src/services/growthPartner.ts`), the throw-based reads the gate and login
+screens use (`readPartnerPayload` / `ensureMyGrowthPartner` in
+`src/lib/growthPartner.ts`), and `toSafePartnerSectionError` as the last
+boundary before generic copy. Pinned by
+`tests/partnerAreaFailureLogging.test.ts`.
+
 ## 4. Fix: apply the dashboard migrations (the most likely cause)
 
 Migrations are ordered; each file is idempotent. In the Supabase SQL Editor, in

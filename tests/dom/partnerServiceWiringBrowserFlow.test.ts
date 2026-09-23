@@ -203,6 +203,40 @@ test('a money field the backend omitted shows an error, never a ₹0 wallet', as
   }
 });
 
+test('a failure the partner only sees as safe copy still leaves the code in the logs', async () => {
+  // The reported bug, end to end: the screen said "Please try again" (or
+  // "Could not verify …") and the PostgREST answer existed nowhere. Now the
+  // console carries it — one line, naming the operation and the call.
+  const network = stubNetwork({
+    rpcError: { code: '42501', message: 'Active Growth Partner required' },
+  });
+  const originalError = console.error;
+  const logged: Array<{ prefix: string; fields: any }> = [];
+  (console as any).error = (prefix?: unknown, fields?: unknown) => {
+    logged.push({ prefix: String(prefix ?? ''), fields });
+  };
+  let app: Awaited<ReturnType<typeof mountPortal>> | null = null;
+  try {
+    app = await mountPortal('/partner/earnings');
+    await waitFor(() => body().includes('only available to an approved, active Growth Partner'), 'the refusal copy');
+    // The partner sees reviewed copy…
+    assert.doesNotMatch(body(), /42501/, 'no driver code on the screen');
+    // …and the log carries the code, the call and the operation.
+    assert.ok(logged.length >= 1, 'the failure was recorded, not swallowed');
+    const line = logged[0];
+    assert.deepEqual(line.fields.postgrest.code, '42501');
+    assert.equal(line.fields.kind, 'not-a-partner');
+    assert.ok(
+      /^\[growth-partner\] .+ failed/.test(line.prefix),
+      `the line is greppable: ${line.prefix}`
+    );
+  } finally {
+    (console as any).error = originalError;
+    if (app) await app.unmount();
+    network.restore();
+  }
+});
+
 test('a count the backend did not send never prints as "0 referrals"', async () => {
   const network = stubNetwork({ earnings: { currency: 'INR', totals: {}, transactions: [] } });
   const app = await mountPortal('/partner/earnings');

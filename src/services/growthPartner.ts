@@ -78,6 +78,9 @@ import {
 } from '../lib/partnerPortalOperations';
 import {
   classifyPartnerAreaFailure,
+  isPartnerAreaErrorLogged,
+  logPartnerAreaFailure,
+  markPartnerAreaErrorLogged,
   partnerContractMismatch,
   partnerInputInvalid,
   type PartnerAreaFailure,
@@ -127,14 +130,25 @@ export class GrowthPartnerServiceError extends Error {
     this.failure = failure;
   }
 
-  /** Classify anything a rejected promise (or a guard) produced. */
-  static from(raw: unknown): GrowthPartnerServiceError {
-    const online = typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : null;
-    const failure = classifyPartnerAreaFailure(raw, { online });
+  /**
+   * Classify anything a rejected promise (or a guard) produced.
+   *
+   * A caller that already classified AND logged the raw error hands that
+   * classification in: it is then not computed twice, and the "already logged"
+   * mark travels with the wrapper so one failure stays one log line.
+   */
+  static from(raw: unknown, failure?: PartnerAreaFailure): GrowthPartnerServiceError {
+    const classified =
+      failure ??
+      classifyPartnerAreaFailure(raw, {
+        online: typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : null,
+      });
     // An `input-invalid` message is authored by this app (a form value), so it is
     // shown verbatim; every other kind uses the reviewed short copy below.
-    const authored = failure.kind === 'input-invalid' ? String((raw as Error)?.message || '') : '';
-    return new GrowthPartnerServiceError(failure, authored || undefined);
+    const authored = classified.kind === 'input-invalid' ? String((raw as Error)?.message || '') : '';
+    const error = new GrowthPartnerServiceError(classified, authored || undefined);
+    if (isPartnerAreaErrorLogged(raw)) markPartnerAreaErrorLogged(error);
+    return error;
   }
 
   toFailure(): PartnerAreaFailure {
@@ -427,11 +441,16 @@ export function unwrapPartnerResult<T>(result: GrowthPartnerResult<T>): T {
 }
 
 /** Run one delegated call and turn its rejection into `{ ok: false, error }`. */
-async function settle<T>(work: () => Promise<T>): Promise<GrowthPartnerResult<T>> {
+async function settle<T>(operation: string, work: () => Promise<T>): Promise<GrowthPartnerResult<T>> {
   try {
     return { ok: true, data: await work() };
   } catch (raw) {
-    return { ok: false, error: GrowthPartnerServiceError.from(raw) };
+    // Log the RAW failure before it becomes safe copy. Every screen's read and
+    // write passes through here, so no partner failure can be swallowed without
+    // leaving evidence: one redacted line naming the operation, the call and the
+    // PostgREST code the backend actually answered with (see partnerAreaFailure).
+    const failure = logPartnerAreaFailure(raw, { operation });
+    return { ok: false, error: GrowthPartnerServiceError.from(raw, failure) };
   }
 }
 
@@ -441,17 +460,17 @@ async function settle<T>(work: () => Promise<T>): Promise<GrowthPartnerResult<T>
 
 /** The caller's own partner row — or `null`, meaning "signed in, not a partner". */
 export function getMyPartner(): Promise<GrowthPartnerResult<GrowthPartner | null>> {
-  return settle(() => fetchMyGrowthPartnerRow());
+  return settle('gate.read-partner-row', () => fetchMyGrowthPartnerRow());
 }
 
 /** Provision the CALLER's own partner row (the database acts on `auth.uid()` only). */
 export function ensureMyPartner(): Promise<GrowthPartnerResult<GrowthPartner>> {
-  return settle(() => ensureMyGrowthPartner());
+  return settle('gate.provision-partner-row', () => ensureMyGrowthPartner());
 }
 
 /** The caller's own application (used to tell "under review" from "never applied"). */
 export function getMyApplication(): Promise<GrowthPartnerResult<GrowthPartnerApplicationRow | null>> {
-  return settle(() => fetchMyGrowthPartnerApplication());
+  return settle('gate.read-application', () => fetchMyGrowthPartnerApplication());
 }
 
 // ===========================================================================
@@ -460,7 +479,7 @@ export function getMyApplication(): Promise<GrowthPartnerResult<GrowthPartnerApp
 
 /** KPI card + recent activity. Counts may be `null` when the backend omits them. */
 export function getDashboard(): Promise<GrowthPartnerResult<PartnerDashboardData>> {
-  return settle(() => fetchMyPartnerDashboard());
+  return settle('dashboard.load', () => fetchMyPartnerDashboard());
 }
 
 export interface PartnerReferralQuery {
@@ -476,7 +495,7 @@ export interface PartnerReferralQuery {
 
 /** Server-side filtered/searched/paged referrals — the caller's own rows. */
 export function getReferrals(options: PartnerReferralQuery = {}): Promise<GrowthPartnerResult<PartnerReferralList>> {
-  return settle(() => fetchMyPartnerReferrals({ ...options }));
+  return settle('referrals.load', () => fetchMyPartnerReferrals({ ...options }));
 }
 
 /**
@@ -490,7 +509,7 @@ export function getCustomers(options: PartnerReferralQuery = {}): Promise<Growth
 
 /** Aggregates: totals, completion rate, monthly history. */
 export function getPerformance(): Promise<GrowthPartnerResult<PartnerPerformanceData>> {
-  return settle(() => fetchMyPartnerPerformance());
+  return settle('performance.load', () => fetchMyPartnerPerformance());
 }
 
 /** One referral's own detail. `null` covers "not yours" as well as "not found". */
@@ -498,7 +517,7 @@ export function getReferralDetail(referralId: string): Promise<GrowthPartnerResu
   if (!referralId || !referralId.trim()) {
     return Promise.resolve({ ok: false, error: GrowthPartnerServiceError.from(partnerInputInvalid('A referral id is required.')) });
   }
-  return settle(() => fetchMyPartnerReferralDetail(referralId));
+  return settle('referral-detail.load', () => fetchMyPartnerReferralDetail(referralId));
 }
 
 // ===========================================================================
@@ -509,7 +528,7 @@ export function getReferralDetail(referralId: string): Promise<GrowthPartnerResu
 export function getEarnings(options: { limit?: number; offset?: number } = {}): Promise<GrowthPartnerResult<PartnerEarningsPayload>> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 25), 1), 200);
   const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
-  return settle(() =>
+  return settle('earnings.load', () =>
     callPartnerOperation({
       path: `/api/partner/earnings?limit=${limit}&offset=${offset}`,
       rpc: 'get_my_partner_earnings',
@@ -525,7 +544,7 @@ export function getPayoutRequests(
 ): Promise<GrowthPartnerResult<PartnerPayoutRequestsPayload>> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 25), 1), 100);
   const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
-  return settle(() =>
+  return settle('withdrawals.load-requests', () =>
     callPartnerOperation({
       path: `/api/partner/payout-requests?limit=${limit}&offset=${offset}`,
       rpc: 'get_my_partner_payout_requests',
@@ -565,7 +584,7 @@ export function requestPayout(input: PayoutRequestInput): Promise<GrowthPartnerR
       error: GrowthPartnerServiceError.from(partnerInputInvalid('Tell us where to send the payout (UPI ID, email or account reference).')),
     });
   }
-  return settle(async () => {
+  return settle('withdrawals.request-payout', async () => {
     const created = await callPartnerOperation<{ id: string; status: string; amount_paise: number }>({
       path: '/api/partner/payout-requests',
       method: 'POST',
@@ -591,7 +610,7 @@ export function cancelPayoutRequest(requestId: string): Promise<GrowthPartnerRes
   if (!requestId || !requestId.trim()) {
     return Promise.resolve({ ok: false, error: GrowthPartnerServiceError.from(partnerInputInvalid('A payout request id is required.')) });
   }
-  return settle(() =>
+  return settle('withdrawals.cancel-request', () =>
     callPartnerOperation<{ id: string; status: string }>({
       path: '/api/partner/payout-requests/cancel',
       method: 'POST',
@@ -611,7 +630,7 @@ export function cancelPayoutRequest(requestId: string): Promise<GrowthPartnerRes
 // ===========================================================================
 
 export function getLevels(): Promise<GrowthPartnerResult<PartnerLevelsPayload>> {
-  return settle(() =>
+  return settle('levels.load', () =>
     callPartnerOperation({ path: '/api/partner/levels', rpc: 'get_my_partner_levels', normalize: toLevels })
   );
 }
@@ -619,7 +638,7 @@ export function getLevels(): Promise<GrowthPartnerResult<PartnerLevelsPayload>> 
 /** Anonymous peer earnings (paise) — ranks only, no identity of other partners. */
 export function getLeaderboard(options: { limit?: number } = {}): Promise<GrowthPartnerResult<PartnerLeaderboardPayload>> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 25), 1), 100);
-  return settle(() =>
+  return settle('leaderboard.load', () =>
     callPartnerOperation({
       path: `/api/partner/leaderboard?limit=${limit}`,
       rpc: 'get_partner_leaderboard',
@@ -634,7 +653,7 @@ export function getNotifications(
 ): Promise<GrowthPartnerResult<PartnerNotificationsPayload>> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 50), 1), 100);
   const filter = options.type && options.type !== 'all' ? options.type : null;
-  return settle(() =>
+  return settle('notifications.load', () =>
     callPartnerOperation({
       path: `/api/partner/notifications?limit=${limit}${filter ? `&type=${encodeURIComponent(filter)}` : ''}`,
       rpc: 'get_my_partner_notifications',
@@ -647,7 +666,7 @@ export function getNotifications(
 /** No ids → mark everything read. Resolves with the number of rows touched. */
 export function markNotificationsRead(ids?: string[]): Promise<GrowthPartnerResult<number>> {
   const cleaned = Array.isArray(ids) ? ids.map((id) => String(id).trim()).filter(Boolean) : [];
-  return settle(() =>
+  return settle('notifications.mark-read', () =>
     callPartnerOperation<number>({
       path: '/api/partner/notifications/read',
       method: 'POST',
@@ -663,7 +682,7 @@ export function markNotificationsRead(ids?: string[]): Promise<GrowthPartnerResu
 }
 
 export function getNotificationPreferences(): Promise<GrowthPartnerResult<PartnerNotificationPreferences>> {
-  return settle(() =>
+  return settle('notifications.read-preferences', () =>
     callPartnerOperation({
       path: '/api/partner/notification-preferences',
       rpc: 'get_my_partner_notification_preferences',
@@ -682,7 +701,7 @@ export function updateNotificationPreferences(prefs: {
       error: GrowthPartnerServiceError.from(partnerInputInvalid('Choose whether each notification channel is on or off.')),
     });
   }
-  return settle(() =>
+  return settle('notifications.save-preferences', () =>
     callPartnerOperation({
       path: '/api/partner/notification-preferences',
       method: 'POST',
@@ -700,7 +719,7 @@ export function updateNotificationPreferences(prefs: {
 
 export function getMarketingAssets(category?: string | null): Promise<GrowthPartnerResult<PartnerMarketingAsset[]>> {
   const filter = category && category !== 'all' ? category : null;
-  return settle(() =>
+  return settle('marketing.load-assets', () =>
     callPartnerOperation({
       path: `/api/partner/marketing-assets${filter ? `?category=${encodeURIComponent(filter)}` : ''}`,
       rpc: 'get_partner_marketing_assets',
@@ -711,7 +730,7 @@ export function getMarketingAssets(category?: string | null): Promise<GrowthPart
 }
 
 export function getMarketingCategories(): Promise<GrowthPartnerResult<PartnerMarketingCategory[]>> {
-  return settle(() =>
+  return settle('marketing.load-categories', () =>
     callPartnerOperation({
       path: '/api/partner/marketing-assets/categories',
       rpc: 'get_partner_marketing_asset_categories',
@@ -725,7 +744,7 @@ export function getAssetDownloadUrl(assetId: string): Promise<GrowthPartnerResul
   if (!assetId || !assetId.trim()) {
     return Promise.resolve({ ok: false, error: GrowthPartnerServiceError.from(partnerInputInvalid('An asset id is required.')) });
   }
-  return settle(() =>
+  return settle('marketing.asset-download-url', () =>
     callPartnerOperation<string>({
       path: `/api/partner/marketing-assets/${encodeURIComponent(assetId)}/download`,
       rpc: 'get_my_partner_asset_download_url',
@@ -744,7 +763,7 @@ export function getSupportTickets(
 ): Promise<GrowthPartnerResult<PartnerSupportTicketRow[]>> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 25), 1), 100);
   const status = options.status && options.status !== 'all' ? options.status : null;
-  return settle(() =>
+  return settle('support.load-tickets', () =>
     callPartnerOperation({
       path: `/api/partner/support-tickets?limit=${limit}${status ? `&status=${encodeURIComponent(status)}` : ''}`,
       rpc: 'get_my_partner_support_tickets',
@@ -770,7 +789,7 @@ export function submitSupportTicket(
       error: GrowthPartnerServiceError.from(partnerInputInvalid('Describe the issue in at least a sentence so the desk can act on it.')),
     });
   }
-  return settle(() =>
+  return settle('support.submit-ticket', () =>
     callPartnerOperation({
       path: '/api/partner/support-tickets',
       method: 'POST',

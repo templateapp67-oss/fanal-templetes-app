@@ -122,17 +122,52 @@ export interface PartnerAreaErrorDetail {
   message: string;
   code: string | null;
   status: number | null;
+  /** The PostgREST/Postgres code before semantic rewriting (e.g. `42501`). */
+  rawCode?: string | null;
+  /** The backend's own message before sanitizing. NEVER rendered. */
+  rawMessage?: string | null;
+  /** The HTTP status the backend answered with. */
+  rawStatus?: number | null;
+  /** The call that failed: RPC name, API path or read label. */
+  call?: string | null;
 }
 
 /**
  * Read `{ message, code, status }` out of anything a promise can reject with:
  * a PostgREST error object, an `Error`, a bare string, `null`. Never throws.
  */
+/**
+ * Read the fields this module cares about without trusting the object: a
+ * throwing getter (or a Proxy) must degrade to "no detail", never to an
+ * exception thrown out of a failure screen.
+ */
+function safeShallowRead(error: object): Record<string, unknown> {
+  const keys = ['message', 'code', 'status', 'call', 'rawCode', 'rawMessage', 'rawStatus'] as const;
+  const read: Record<string, unknown> = {};
+  for (const key of keys) {
+    try {
+      read[key] = (error as Record<string, unknown>)[key];
+    } catch {
+      // Leave the field undefined: absent detail beats a broken screen.
+    }
+  }
+  return read;
+}
+
+/** `error.message` without letting a hostile getter escape. */
+function safeErrorMessage(error: Error): string {
+  try {
+    return typeof error.message === 'string' ? error.message : '';
+  } catch {
+    return '';
+  }
+}
+
 export function readPartnerAreaErrorDetail(error: unknown): PartnerAreaErrorDetail {
   if (error === null || error === undefined) return { message: '', code: null, status: null };
   if (typeof error === 'string') return { message: error, code: null, status: null };
   if (typeof error === 'object') {
-    const candidate = error as { message?: unknown; code?: unknown; status?: unknown };
+    const candidate = safeShallowRead(error);
     const message = typeof candidate.message === 'string' ? candidate.message : '';
     const code =
       typeof candidate.code === 'string' && candidate.code
@@ -141,12 +176,22 @@ export function readPartnerAreaErrorDetail(error: unknown): PartnerAreaErrorDeta
           ? String(candidate.code)
           : null;
     const status = typeof candidate.status === 'number' ? candidate.status : null;
-    if (message || code || status) return { message, code, status };
+    // The backend's own answer, when the layer that saw it preserved it (see
+    // `partnerOperationError` and `rpcError`). Falls back to the semantic
+    // fields so a hand-built error still reports something.
+    const rawCode =
+      typeof candidate.rawCode === 'string' && candidate.rawCode ? candidate.rawCode : null;
+    const rawMessage = typeof candidate.rawMessage === 'string' ? candidate.rawMessage : null;
+    const rawStatus = typeof candidate.rawStatus === 'number' ? candidate.rawStatus : null;
+    const call = typeof candidate.call === 'string' && candidate.call ? candidate.call : null;
+    if (message || code || status) return { message, code, status, rawCode, rawMessage, rawStatus, call };
     // An Error subclass whose `message` came through the prototype chain.
-    if (error instanceof Error) return { message: error.message, code: null, status: null };
+    if (error instanceof Error) {
+      return { message: safeErrorMessage(error), code: null, status: null, rawCode, rawMessage, rawStatus, call };
+    }
     // Any other object: no message to read. `String({})` would put
     // "[object Object]" in front of a user, so report "no message" instead.
-    return { message: '', code: null, status: null };
+    return { message: '', code: null, status: null, rawCode, rawMessage, rawStatus, call };
   }
   try {
     return { message: String(error), code: null, status: null };
@@ -648,4 +693,185 @@ export function buildPartnerAreaSupportReport(input: PartnerAreaReportInput): st
     'Docs: GROWTH_PARTNER_SETUP.md · operator check: npm run verify:growth-partner -- .env'
   );
   return lines.join('\n');
+}
+
+// ============================================================================
+// Failure LOGGING — the evidence trail.
+//
+// Why this exists: a raw PostgREST refusal used to be flattened into safe copy
+// and then dropped. The partner got "Please try again" (or "Could not verify
+// your access") and nobody — not the browser console, not the server logs, not
+// the operator — could see the `42501` / `PGRST202` / `23505` behind it. That
+// is why the same failure kept being re-reported: it was undiagnosable.
+//
+// Every failure that reaches a screen is now logged exactly once, with the
+// backend's own code/message/status and the call that produced it, redacted of
+// anything credential-shaped and PII-shaped. What is logged is DIAGNOSIS; what
+// is rendered stays the reviewed safe copy from `classifyPartnerAreaFailure`.
+// ============================================================================
+
+/** The values that must never reach a log line. */
+const LOG_SECRET_PATTERNS: Array<[RegExp, string]> = [
+  // JSON Web Tokens (Supabase access/refresh tokens, service keys).
+  [/\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b/g, '<redacted:jwt>'],
+  // Authorization headers, whatever the scheme.
+  [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 <redacted>'],
+  // Credential-bearing names in a URL, header dump or error message.
+  [/\b(apikey|api_key|access_token|refresh_token|id_token|password|passwd|secret|service_role_key|private_key|razorpay_key_secret)\b(\s*[:=]\s*)("?)([^\s"'&,;)]{4,})\3/gi, '$1$2<redacted>'],
+  // Provider key shapes that appear as bare values.
+  [/\b(sk|pk|rzp)_(live|test)_[A-Za-z0-9]{6,}\b/g, '<redacted:key>'],
+  // Email addresses: not a credential, still not something to ship to a log
+  // collector. The domain survives so a support engineer can still see whose
+  // tenant is involved.
+  [/\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/g, '<redacted:email>@$1'],
+];
+
+/**
+ * Strip anything credential- or PII-shaped from text that is about to be
+ * logged. Exported so the diagnostic report, the CLI and any future sink can
+ * share one definition of "safe to record".
+ */
+export function redactPartnerAreaLogText(value: string): string {
+  let redacted = value;
+  for (const [pattern, replacement] of LOG_SECRET_PATTERNS) redacted = redacted.replace(pattern, replacement);
+  return redacted;
+}
+
+/** Where a failure happened — enough for an operator to find the code path. */
+export interface PartnerAreaFailureLogContext {
+  /** Stable label for the attempt, e.g. `gate.read-partner-row`. */
+  operation: string;
+  /** The surface the partner was on, e.g. `/partner/dashboard`. */
+  route?: string | null;
+  /** The backend call when known: RPC name or API path. */
+  call?: string | null;
+}
+
+/** The record handed to the console (also the unit under test). */
+export interface PartnerAreaFailureLogRecord {
+  /** Greppable one-line prefix: `[growth-partner] <operation> failed`. */
+  prefix: string;
+  fields: {
+    operation: string;
+    route: string | null;
+    call: string | null;
+    kind: PartnerAreaFailure['kind'];
+    scope: PartnerAreaFailure['scope'];
+    owner: PartnerAreaFailure['owner'];
+    retryable: boolean;
+    code: string | null;
+    http: number | null;
+    /** The backend's own code/message, redacted — the point of all this. */
+    postgrest: { code: string | null; message: string | null; status: number | null } | null;
+    /** What the app did with it (safe copy, no driver text). */
+    shown: string;
+  };
+}
+
+/**
+ * Build the log record. Pure, so a test can assert exactly what an operator
+ * would see without capturing the console.
+ */
+export function partnerAreaFailureLogRecord(
+  error: unknown,
+  context: PartnerAreaFailureLogContext,
+  failure?: PartnerAreaFailure
+): PartnerAreaFailureLogRecord {
+  const classified = failure ?? classifyPartnerAreaFailure(error);
+  let detail: PartnerAreaErrorDetail;
+  try {
+    detail = readPartnerAreaErrorDetail(error);
+  } catch {
+    // A hostile error (throwing property getter) still gets a record.
+    detail = { message: '', code: null, status: null };
+  }
+  const code = detail.rawCode ?? detail.code;
+  const message = detail.rawMessage ?? detail.message;
+  const status = detail.rawStatus ?? detail.status;
+  const call = detail.call ?? context.call ?? null;
+  const hasBackendDetail = Boolean(code || message);
+  // The greppable part: `[growth-partner] <operation> failed — <call>`. A
+  // support engineer greps the RPC name from the console and lands on the line
+  // carrying its code and message.
+  return {
+    prefix: call
+      ? `[growth-partner] ${context.operation} failed — ${call}`
+      : `[growth-partner] ${context.operation} failed`,
+    fields: {
+      operation: context.operation,
+      route: context.route ?? null,
+      call,
+      kind: classified.kind,
+      scope: classified.scope,
+      owner: classified.owner,
+      retryable: classified.retryable,
+      code: classified.code,
+      http: status,
+      postgrest: hasBackendDetail
+        ? {
+            code: code ? redactPartnerAreaLogText(code) : null,
+            message: message ? redactPartnerAreaLogText(message) : null,
+            status,
+          }
+        : null,
+      shown: redactPartnerAreaLogText(classified.title),
+    },
+  };
+}
+
+/**
+ * Errors already logged, so a failure that passes through several layers (the
+ * wrapper that saw the RPC, the facade that classified it, the screen that
+ * sanitized it) produces ONE line, not three.
+ */
+const LOGGED_PARTNER_ERRORS = new WeakSet<object>();
+
+/**
+ * Log a failure once and return its classification.
+ *
+ * Call it wherever a raw failure is about to become safe copy — that is the
+ * moment the evidence would otherwise be lost. User-facing behaviour is
+ * unchanged: this only records.
+ */
+/** True when this exact error already produced a log line. */
+export function isPartnerAreaErrorLogged(error: unknown): boolean {
+  return Boolean(error) && typeof error === 'object' && LOGGED_PARTNER_ERRORS.has(error as object);
+}
+
+/**
+ * Carry the "logged" mark onto a wrapper built from an already-logged error, so
+ * the next layer's safety net stays quiet and one failure keeps one line.
+ */
+export function markPartnerAreaErrorLogged<T>(error: T): T {
+  if (error && typeof error === 'object') LOGGED_PARTNER_ERRORS.add(error as object);
+  return error;
+}
+
+export function logPartnerAreaFailure(
+  error: unknown,
+  context: PartnerAreaFailureLogContext,
+  failure?: PartnerAreaFailure
+): PartnerAreaFailure {
+  // Deliberately TOTAL: a hostile error (a `message` getter that throws) or an
+  // unwritable console must not break the screen that was only reporting a
+  // problem. On any failure it still returns a usable classification.
+  let classified: PartnerAreaFailure;
+  try {
+    classified = failure ?? classifyPartnerAreaFailure(error);
+  } catch {
+    classified = failure ?? classifyPartnerAreaFailure(null);
+  }
+  try {
+    if (error && typeof error === 'object') {
+      if (LOGGED_PARTNER_ERRORS.has(error as object)) return classified;
+      LOGGED_PARTNER_ERRORS.add(error as object);
+    }
+    const record = partnerAreaFailureLogRecord(error, context, classified);
+    // One call: the greppable line first (what a `grep 42501` finds), the
+    // structured fields second (what a log collector indexes).
+    console.error(record.prefix, record.fields);
+  } catch {
+    // Logging must never be the reason a screen fails.
+  }
+  return classified;
 }
