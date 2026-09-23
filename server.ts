@@ -227,7 +227,13 @@ async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // The host decides the port. Hard-coding 3000 means every platform that
+  // injects one (Railway/Render/Heroku/Replit/Fly do, and their healthcheck
+  // probes THAT port) reports "connection refused" while the app is running
+  // fine on 3000 — a crash loop with no crash. `server/localSupabase.ts` already
+  // read `process.env.PORT`; this is the same rule for the listener.
+  const parsedPort = Number.parseInt(String(process.env.PORT ?? ''), 10);
+  const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 3000;
 
   // `verify` stashes the RAW bytes of every JSON body. The Razorpay webhook
   // signature is an HMAC over exactly those bytes — re-serializing req.body
@@ -1069,8 +1075,12 @@ Return strictly JSON with the following keys:
     });
   }
 
+  // 0.0.0.0, not 127.0.0.1: a platform proxy reaches the container from
+  // outside, and a loopback-only bind is unreachable however healthy the
+  // process is.
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Nexora Salon OS running on http://0.0.0.0:${PORT}`);
+    const source = process.env.PORT ? 'from $PORT' : 'default';
+    console.log(`Nexora Salon OS running on http://0.0.0.0:${PORT} (${source})`);
   });
 }
 
