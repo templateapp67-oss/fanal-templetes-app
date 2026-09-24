@@ -290,7 +290,11 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     if (boot !== 'ready' || !viewer || existingAccountNotice || passwordRecovery) return;
     if (requested === 'signup' && !referralCameFromLink.current) {
       writeFlashToast('You are already logged in.');
-      navigate('/owner/dashboard');
+      if (typeof window !== 'undefined' && window.location) {
+        window.location.assign('/owner/dashboard');
+      } else {
+        navigate('/owner/dashboard');
+      }
     }
   }, [boot, viewer, requested, existingAccountNotice, passwordRecovery, navigate]);
 
