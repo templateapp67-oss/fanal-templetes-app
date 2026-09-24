@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
-test('quick launch keeps the owner journey focused and searchable', async () => {
-  const source = await readFile(new URL('../src/components/onExploreTemplates.tsx', import.meta.url), 'utf8');
+test('quick launch redirects template browsing to the existing catalogue', async () => {
+  const source = await readFile(new URL('../src/components/QuickWebsiteLaunch.tsx', import.meta.url), 'utf8');
   assert.match(source, /Set up your profile, then choose your website/);
   assert.match(source, /About 30 minutes/);
   assert.match(source, /Explore Custom Templates/);
