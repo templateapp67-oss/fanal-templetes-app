@@ -1158,8 +1158,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 saving={live.saving}
                 appointments={appointments}
                 setAppointments={setAppointments}
-                services={live.services || []}
-                stylists={live.stylists || []}
+                services={hasLiveSnapshot ? (live.services || []) : services}
+                stylists={hasLiveSnapshot ? (live.stylists || []) : stylists}
                 primaryAccentColor={currentPrimaryColor}
               />
             ) : (
