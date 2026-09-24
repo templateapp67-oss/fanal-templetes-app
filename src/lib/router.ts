@@ -19,6 +19,9 @@ export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
 export const STAFF_COMMISSION_PATH = '/owner/dashboard/staff-performance/commission';
 export const OWNER_STAFF_PERFORMANCE_PATH = STAFF_PERFORMANCE_PATH;
+/** Owner website setup routes. These are real SPA routes, not query-only state. */
+export const WEBSITE_EDITOR_PATH = '/editor';
+export const PROFILE_SETTINGS_PATH = '/settings/profile';
 
 // ---------------------------------------------------------------------------
 // Customer App (`/app/...`)
@@ -124,14 +127,34 @@ export function customerPath(section: CustomerSection, id = '', tab = ''): strin
 
 /** Strip a trailing slash (keeping the bare "/") so both spellings match. */
 export function normalizePath(pathname: string): string {
-  const value = String(pathname ?? '').trim();
+  const value = String(pathname ?? '').trim().split(/[?#]/, 1)[0];
   if (!value || value === '/') return '/';
   return value.replace(/\/+$/, '') || '/';
+}
+
+function normalizeLocation(to: string): string {
+  const value = String(to ?? '').trim();
+  if (!value) return '/';
+  const [pathAndQuery, hash = ''] = value.split('#', 2);
+  const queryIndex = pathAndQuery.indexOf('?');
+  const pathname = queryIndex >= 0 ? pathAndQuery.slice(0, queryIndex) : pathAndQuery;
+  const query = queryIndex >= 0 ? pathAndQuery.slice(queryIndex) : '';
+  return `${normalizePath(pathname)}${query}${hash ? `#${hash}` : ''}`;
 }
 
 /** True when the path is the customer's "My Bookings" page. */
 export function isMyBookingsPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === MY_BOOKINGS_PATH;
+}
+
+/** True when the Website Editor route is requested. */
+export function isWebsiteEditorPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === WEBSITE_EDITOR_PATH;
+}
+
+/** True when the user-level profile settings route is requested. */
+export function isProfileSettingsPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === PROFILE_SETTINGS_PATH;
 }
 
 /** True when the path is the owner-only Staff Performance dashboard. */
@@ -488,6 +511,11 @@ function currentPath(): string {
   return normalizePath(window.location.pathname);
 }
 
+function currentLocation(): string {
+  if (typeof window === 'undefined' || !window.location) return '/';
+  return normalizeLocation(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+}
+
 /**
  * Track the current path and expose a `navigate` that keeps the URL and the
  * rendered screen in step. Subscribes to `popstate` so back/forward work.
@@ -505,17 +533,17 @@ export function usePathRoute(): { path: string; navigate: (to: string) => void }
   }, []);
 
   const navigate = useCallback((to: string) => {
-    const next = normalizePath(to);
+    const next = normalizeLocation(to);
     if (typeof window === 'undefined' || !window.history?.pushState) {
-      setPath(next);
+      setPath(normalizePath(next));
       return;
     }
-    if (normalizePath(window.location.pathname) === next) {
-      setPath(next);
+    if (currentLocation() === next) {
+      setPath(normalizePath(next));
       return;
     }
     window.history.pushState({}, '', next);
-    setPath(next);
+    setPath(normalizePath(next));
   }, []);
 
   return { path, navigate };
