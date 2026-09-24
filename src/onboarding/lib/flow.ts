@@ -61,11 +61,12 @@ export function resolveOnboardingRoute(input: {
     return (AUTH_SECTIONS as string[]).includes(requested) ? requested : 'login';
   }
   if (!hasLinkedReferral(phase)) return 'referral';
-  // The Growth Partner referral journey has exactly one entry into the owner
-  // product: the status screen mints the one-time handoff, and the Template
-  // App exchanges it before entering the workspace.  Do not send referred
-  // owners to the separate shop wizard here: it bypasses the token exchange
-  // and can strand an owner in the Customer App.
+  // The one-time handoff is still the only way to enter setup. Once the
+  // backend records template_started, the signed-in owner may use the
+  // website step; a deep link before that is sent back to the status screen.
+  if (requested === 'website' && (phase === 'template_started' || phase === 'completed')) {
+    return 'website';
+  }
   return 'status';
 }
 
