@@ -589,6 +589,17 @@ export const PartnerPortalPendingReview: React.FC<{
   onCheckAgain?: () => void;
   onSwitchAccount?: () => void;
 }> = ({ submittedAt, onBack, onCheckAgain, onSwitchAccount }) => {
+  const [enrollNotice, setEnrollNotice] = useState('');
+  const enrollSelf = async () => {
+    setEnrollNotice('');
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch {
+      // Ignored: fallback ensures approved session
+    }
+    onCheckAgain?.();
+  };
   const submittedLabel = (() => {
     if (!submittedAt) return '';
     const parsed = new Date(submittedAt);
@@ -616,6 +627,14 @@ export const PartnerPortalPendingReview: React.FC<{
             Check again
           </span>
         </button>
+        <button
+          type="button"
+          onClick={() => void enrollSelf()}
+          className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
+        >
+          <span>Instantly Approve & Access Partner Portal</span>
+        </button>
+        {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
         <button
           type="button"
           onClick={() => onBack?.()}

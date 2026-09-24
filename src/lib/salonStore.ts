@@ -253,7 +253,7 @@ export function mergeTemplatePreservingUserData(
       tmpl.instagramHandle,
     ownerPhotoUrl: prev.ownerPhotoUrl?.trim()
       ? prev.ownerPhotoUrl
-      : (tmpl.ownerPhotoUrl || ''),
+      : (tmpl.ownerPhotoUrl || '/nexora-salonos-logo.png'),
     coverImageUrl:
       prev.coverImageUrl?.startsWith('data:') || prev.coverImageUrl === prevTmpl?.coverImageUrl
         ? prev.coverImageUrl
@@ -401,7 +401,7 @@ export function getBlankOnboardingProfile(user?: any): SalonProfile {
     email: email,
     tagline: '',
     about: '',
-    ownerPhotoUrl: '',
+    ownerPhotoUrl: '/nexora-salonos-logo.png',
     coverImageUrl: '',
     themePreset: 'slate_silver',
     themeAccentKey: 'slate',

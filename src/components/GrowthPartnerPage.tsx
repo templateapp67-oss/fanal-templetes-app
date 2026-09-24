@@ -320,13 +320,9 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     setLoadError(null);
     (async () => {
       try {
-        let row = await fetchMyGrowthPartnerRow();
-        if (!row) {
-          await ensureMyGrowthPartner();
-          row = await fetchMyGrowthPartnerRow();
-        }
+        const row = await fetchMyGrowthPartnerRow();
         if (cancelled) return;
-        const application = row ? null : await fetchMyGrowthPartnerApplication();
+        const application = row ? null : await fetchMyGrowthPartnerApplication().catch(() => null);
         if (cancelled) return;
         setPartner(row);
         setApplicationStatus(application?.status ?? null);

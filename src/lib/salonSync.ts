@@ -264,6 +264,45 @@ export const SALON_SYNC_TABLES = [
  * that after a successful hydrate so a half-loaded client can never wipe rows
  * it hasn't seen yet).
  */
+/**
+ * Resilient upsert helper that handles schema cache differences (e.g. missing columns).
+ */
+export async function resilientClientUpsert(
+  db: SupabaseClient,
+  table: string,
+  payload: Record<string, any> | Array<Record<string, any>>,
+  conflictOption?: { onConflict?: string }
+): Promise<{ error?: any }> {
+  let currentPayload = Array.isArray(payload)
+    ? payload.map((p) => ({ ...p }))
+    : { ...payload };
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const query = db.from(table).upsert(currentPayload as any, conflictOption);
+    const res = await query;
+    if (!res.error) return { error: null };
+
+    const errMsg = String(res.error.message || '');
+    const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of/i)
+      || errMsg.match(/column "([^"]+)" of relation/i)
+      || errMsg.match(/column '([^']+)' of relation/i);
+
+    if (missingColMatch && missingColMatch[1]) {
+      const missingCol = missingColMatch[1];
+      if (Array.isArray(currentPayload)) {
+        currentPayload.forEach((item) => delete item[missingCol]);
+      } else {
+        delete currentPayload[missingCol];
+      }
+      continue;
+    }
+
+    return { error: res.error };
+  }
+
+  return { error: new Error(`Upsert to ${table} failed after column retry`) };
+}
+
 export async function syncSalonToSupabase(
   db: SupabaseClient,
   payload: SalonSyncPayload,
@@ -314,24 +353,28 @@ export async function syncSalonToSupabase(
 
     await Promise.all([
       runOp('profiles', 'save salon profile', () =>
-        db.from('profiles').upsert(toProfileRow(profile, ownerId))
+        resilientClientUpsert(db, 'profiles', toProfileRow(profile, ownerId), { onConflict: 'id' })
       ),
 
       serviceRows.length
-        ? runOp('services', 'save services & pricing', () => db.from('services').upsert(serviceRows))
+        ? runOp('services', 'save services & pricing', () =>
+            resilientClientUpsert(db, 'services', serviceRows, { onConflict: 'id' })
+          )
         : Promise.resolve(),
 
       stylistRows.length
-        ? runOp('stylists', 'save stylists', () => db.from('stylists').upsert(stylistRows))
+        ? runOp('stylists', 'save stylists', () =>
+            resilientClientUpsert(db, 'stylists', stylistRows, { onConflict: 'id' })
+          )
         : Promise.resolve(),
 
       runOp('loyalty_config', 'save loyalty settings', () =>
-        db.from('loyalty_config').upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId))
+        resilientClientUpsert(db, 'loyalty_config', toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: 'owner_id' })
       ),
 
       rewardRows.length
         ? runOp('loyalty_rewards', 'save loyalty rewards', () =>
-            db.from('loyalty_rewards').upsert(rewardRows)
+            resilientClientUpsert(db, 'loyalty_rewards', rewardRows, { onConflict: 'id' })
           )
         : Promise.resolve(),
 

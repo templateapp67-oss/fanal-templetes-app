@@ -107,23 +107,50 @@ export const Field: React.FC<{
   hint?: string;
   disabled?: boolean;
   required?: boolean;
-}> = ({ label, value, onChange, placeholder, type = 'text', hint, disabled, required }) => (
-  <label className="block">
-    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-      {label}
-      {required ? <span className="text-rose-600 ml-0.5">*</span> : null}
-    </span>
-    <input
-      type={type}
-      value={value}
-      disabled={disabled}
-      placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:bg-slate-50"
-    />
-    {hint ? <span className={`block text-xs mt-1.5 ${MUTED_CLASS}`}>{hint}</span> : null}
-  </label>
-);
+  phonePrefix?: boolean;
+}> = ({ label, value, onChange, placeholder, type = 'text', hint, disabled, required, phonePrefix }) => {
+  const isPhone = phonePrefix || type === 'tel' || /whatsapp|mobile|phone/i.test(label);
+  const displayVal = isPhone ? value.replace(/^\+91\s?|^91\s?/, '').slice(0, 10) : value;
+
+  return (
+    <label className="block">
+      <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+        {label}
+        {required ? <span className="text-rose-600 ml-0.5">*</span> : null}
+      </span>
+      {isPhone ? (
+        <div className="flex w-full rounded-xl border border-slate-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-slate-300">
+          <span className="inline-flex items-center gap-1 px-3 bg-slate-100 border-r border-slate-200 text-xs font-bold text-slate-700 select-none">
+            <span className="text-base leading-none">🇮🇳</span> +91
+          </span>
+          <input
+            type="tel"
+            inputMode="numeric"
+            value={displayVal}
+            disabled={disabled}
+            placeholder={placeholder || '98765 43210'}
+            maxLength={10}
+            onChange={(event) => {
+              const clean = event.target.value.replace(/\D/g, '').slice(0, 10);
+              onChange(clean ? `+91 ${clean}` : '');
+            }}
+            className="w-full px-3.5 py-2.5 bg-white text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:bg-slate-50"
+          />
+        </div>
+      ) : (
+        <input
+          type={type}
+          value={value}
+          disabled={disabled}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:bg-slate-50"
+        />
+      )}
+      {hint ? <span className={`block text-xs mt-1.5 ${MUTED_CLASS}`}>{hint}</span> : null}
+    </label>
+  );
+};
 
 export const Avatar: React.FC<{ src?: string; name: string; size?: number }> = ({ src, name, size = 40 }) => {
   const initials = String(name || '?')

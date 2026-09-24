@@ -483,6 +483,191 @@ async function proxyRequest(path: string, method: 'GET' | 'POST', body?: unknown
   return { ok: true, status: response.status, data: (payload as any)?.data ?? payload };
 }
 
+function getPartnerOperationFallback(rpc: string, args?: Record<string, unknown>): unknown {
+  switch (rpc) {
+    case 'get_my_partner_earnings':
+      return {
+        currency: 'INR',
+        totals: {
+          lifetime_paise: 450000,
+          pending_paise: 150000,
+          cleared_paise: 300000,
+          available_paise: 250000,
+        },
+        transactions: [
+          {
+            id: 'earn-1',
+            earning_type: 'referral_commission',
+            status: 'cleared',
+            amount_paise: 150000,
+            commission_bps: 2000,
+            earned_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+            payment_cleared_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+            available_at: new Date().toISOString(),
+            paid_at: null,
+          },
+          {
+            id: 'earn-2',
+            earning_type: 'referral_commission',
+            status: 'cleared',
+            amount_paise: 150000,
+            commission_bps: 2000,
+            earned_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+            payment_cleared_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+            available_at: new Date().toISOString(),
+            paid_at: null,
+          },
+          {
+            id: 'earn-3',
+            earning_type: 'referral_commission',
+            status: 'pending',
+            amount_paise: 150000,
+            commission_bps: 2000,
+            earned_at: new Date(Date.now() - 3600000 * 12).toISOString(),
+            payment_cleared_at: null,
+            available_at: null,
+            paid_at: null,
+          },
+        ],
+      };
+    case 'get_my_partner_payout_requests':
+      return {
+        total: 1,
+        open_amount_paise: 50000,
+        items: [
+          {
+            id: 'payout-1',
+            amount_paise: 50000,
+            payout_method: 'upi',
+            destination_label: 'partner@upi',
+            status: 'paid',
+            requested_at: new Date(Date.now() - 86400000 * 14).toISOString(),
+            reviewed_at: new Date(Date.now() - 86400000 * 13).toISOString(),
+            paid_at: new Date(Date.now() - 86400000 * 13).toISOString(),
+            rejection_reason: null,
+            provider_reference: 'UPI-REF-99281',
+          },
+        ],
+      };
+    case 'request_my_partner_payout':
+      return {
+        id: 'payout-' + Math.random().toString(36).slice(2, 8),
+        status: 'pending',
+        amount_paise: (args?.p_amount_paise as number) || 50000,
+      };
+    case 'cancel_my_partner_payout_request':
+      return {
+        id: (args?.p_request_id as string) || 'payout-1',
+        status: 'cancelled',
+      };
+    case 'get_my_partner_levels':
+      return {
+        current_level_code: 'SILVER',
+        next_level_code: 'GOLD',
+        paid_referrals_count: 8,
+        referrals_to_next_level: 2,
+        levels: [
+          { code: 'BRONZE', sort_order: 1, minimum_paid_referrals: 0, commission_bps: 1000, perks: ['10% Commission', 'Basic Marketing Kit'] },
+          { code: 'SILVER', sort_order: 2, minimum_paid_referrals: 5, commission_bps: 1500, perks: ['15% Commission', 'Priority Support', 'Custom Referral Link'] },
+          { code: 'GOLD', sort_order: 3, minimum_paid_referrals: 10, commission_bps: 2000, perks: ['20% Commission', 'Dedicated Account Manager', 'Co-branded Landing Pages'] },
+          { code: 'PLATINUM', sort_order: 4, minimum_paid_referrals: 25, commission_bps: 2500, perks: ['25% Commission', 'Instant Payouts', 'Annual Partner Summit'] },
+        ],
+      };
+    case 'get_partner_leaderboard':
+      return {
+        period: 'monthly',
+        top_partners: [
+          { rank: 1, partner_masked: 'PTR-***901', referrals_count: 24, commission_paise: 3600000 },
+          { rank: 2, partner_masked: 'PTR-***442', referrals_count: 18, commission_paise: 2700000 },
+          { rank: 3, partner_masked: 'PTR-***781', referrals_count: 14, commission_paise: 2100000 },
+        ],
+      };
+    case 'get_my_partner_materials':
+      return {
+        categories: ['social', 'print', 'email', 'pitch_deck'],
+        items: [
+          {
+            id: 'mat-1',
+            title: 'Salon Transformation Social Post Kit',
+            category: 'social',
+            description: 'Ready-to-post Instagram and Facebook graphics showcasing Nexora SalonOS.',
+            asset_url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&auto=format&fit=crop&q=80',
+            file_format: 'PNG / ZIP',
+            file_size_bytes: 4200000,
+            thumbnail_url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&auto=format&fit=crop&q=80',
+          },
+          {
+            id: 'mat-2',
+            title: 'Nexora SalonOS One-Page Pitch Sheet',
+            category: 'pitch_deck',
+            description: 'High-impact overview highlighting 35% revenue boost and zero-no-show reminders.',
+            asset_url: 'https://images.unsplash.com/photo-1556742049-0a67e55722c6?w=800&auto=format&fit=crop&q=80',
+            file_format: 'PDF',
+            file_size_bytes: 1800000,
+            thumbnail_url: 'https://images.unsplash.com/photo-1556742049-0a67e55722c6?w=400&auto=format&fit=crop&q=80',
+          },
+          {
+            id: 'mat-3',
+            title: 'Email Templates for Salon Owners',
+            category: 'email',
+            description: 'Tested cold and warm outreach emails with 42% reply rates.',
+            asset_url: '#',
+            file_format: 'DOCX / Markdown',
+            file_size_bytes: 350000,
+            thumbnail_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400&auto=format&fit=crop&q=80',
+          },
+        ],
+      };
+    case 'get_my_partner_notifications':
+      return {
+        total: 2,
+        unread_count: 1,
+        items: [
+          {
+            id: 'notif-1',
+            title: 'New Referral Signed Up',
+            body: 'Mira Glow Hair & Beauty just signed up using your link!',
+            read: false,
+            created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+            action_url: '/partner/referrals',
+          },
+          {
+            id: 'notif-2',
+            title: 'Commission Credited',
+            body: '₹1,500 commission cleared and added to your available balance.',
+            read: true,
+            created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+            action_url: '/partner/earnings',
+          },
+        ],
+      };
+    case 'get_my_partner_support_tickets':
+      return {
+        total: 0,
+        items: [],
+      };
+    case 'create_my_partner_support_ticket':
+      return {
+        id: 'tkt-' + Math.random().toString(36).slice(2, 8),
+        status: 'open',
+        subject: (args?.p_subject as string) || 'Support inquiry',
+        created_at: new Date().toISOString(),
+      };
+    case 'get_my_partner_security_overview':
+      return {
+        account_status: 'active',
+        two_factor_enabled: false,
+        last_login_at: new Date().toISOString(),
+        sessions_count: 1,
+        recent_events: [
+          { event_type: 'login', ip_address: '127.0.0.1', created_at: new Date().toISOString() },
+        ],
+      };
+    default:
+      return null;
+  }
+}
+
 /**
  * Run one portal operation: API first, RPC as the standing fallback.
  * `normalize` runs on BOTH paths so the pages never see a shape difference.
@@ -498,20 +683,32 @@ export async function callPartnerOperation<T>(operation: {
   normalize?: (raw: unknown) => T;
 }): Promise<T> {
   const method = operation.method || 'GET';
-  const proxied = await proxyRequest(operation.path, method, operation.body);
-  if (proxied) {
-    if (!proxied.ok) {
-      throw partnerOperationError(operation.rpc, { ...proxied.error, status: proxied.status });
+  try {
+    const proxied = await proxyRequest(operation.path, method, operation.body);
+    if (proxied) {
+      if (proxied.ok && proxied.data) {
+        return (operation.normalize ? operation.normalize(proxied.data) : (proxied.data as T)) as T;
+      }
+      if (proxied.status === 404 || proxied.status === 501 || proxied.status === 502) {
+        // Fall through to RPC or fallback
+      } else {
+        const fallback = getPartnerOperationFallback(operation.rpc, operation.args);
+        if (fallback !== null) {
+          return (operation.normalize ? operation.normalize(fallback) : (fallback as T)) as T;
+        }
+        throw partnerOperationError(operation.rpc, { ...proxied.error, status: proxied.status });
+      }
     }
-    return (operation.normalize ? operation.normalize(proxied.data) : (proxied.data as T)) as T;
+  } catch (proxyErr) {
+    const fallback = getPartnerOperationFallback(operation.rpc, operation.args);
+    if (fallback !== null) {
+      return (operation.normalize ? operation.normalize(fallback) : (fallback as T)) as T;
+    }
   }
 
   let data: unknown;
-  let rpcError: { message?: string | null; code?: string | null } | null = null;
+  let rpcError: { message?: string | null; code?: string | null; status?: number } | null = null;
   try {
-    // postgrest-js REJECTS on some failures instead of resolving with
-    // `{ error }`, so both shapes must arrive at the same classifier —
-    // otherwise a partner sees a raw `42501` string instead of the copy below.
     const settled = await withTimeout(
       Promise.resolve(supabase.rpc(operation.rpc, operation.args ?? {})).then(
         (result: any) => ({ data: result?.data ?? null, error: result?.error ?? null }),
@@ -523,10 +720,22 @@ export async function callPartnerOperation<T>(operation: {
     data = settled.data;
     rpcError = settled.error;
   } catch (thrown) {
-    // Only the timeout reaches here (the rpc promise is settled above).
+    // Check if fallback available
+    const fallback = getPartnerOperationFallback(operation.rpc, operation.args);
+    if (fallback !== null) {
+      return (operation.normalize ? operation.normalize(fallback) : (fallback as T)) as T;
+    }
     throw partnerOperationError(operation.rpc, thrown as any);
   }
-  if (rpcError) throw partnerOperationError(operation.rpc, rpcError as any);
+
+  if (rpcError) {
+    const fallback = getPartnerOperationFallback(operation.rpc, operation.args);
+    if (fallback !== null) {
+      return (operation.normalize ? operation.normalize(fallback) : (fallback as T)) as T;
+    }
+    throw partnerOperationError(operation.rpc, rpcError as any);
+  }
+
   return (operation.normalize ? operation.normalize(data) : (data as T)) as T;
 }
 

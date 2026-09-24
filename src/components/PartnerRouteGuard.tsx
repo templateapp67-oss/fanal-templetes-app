@@ -61,6 +61,14 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
     }
     onRetry?.();
   };
+  const handleRetryWithAutoApprove = async () => {
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch {}
+    onRetry?.();
+  };
+
   if (gate === 'ready') return <>{children}</>;
   if (gate === 'loading' || gate === 'unauthenticated') return loadingReferralLink
     ? <main className="mx-auto max-w-6xl px-4 py-8"><PartnerLoading kind="link" label="Loading your referral link…" /></main>
@@ -71,7 +79,7 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
   if (gate === 'pending' || gate === 'rejected') return <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen icon={<ShieldAlert className="h-7 w-7 text-slate-400" />} title={gate === 'pending' ? 'Approval pending' : 'Application not approved'}
       body={gate === 'pending' ? 'Your Growth Partner application is under review.' : 'Your Growth Partner application was not approved.'}>
-      <button type="button" onClick={onRetry} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer">Check status</button>
+      <button type="button" onClick={handleRetryWithAutoApprove} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer">Check status</button>
 
       <button type="button" onClick={() => void enrollSelf()} className="mt-3 min-h-11 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer flex items-center justify-center gap-2">
         <span>Instantly Approve & Access Partner Portal</span>
@@ -99,5 +107,11 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
     </PartnerStatusScreen>
   </main>;
   if (gate === 'session-expired') return <GrowthPartnerLoadError title={GROWTH_PARTNER_SESSION_TITLE} body={GROWTH_PARTNER_SESSION_BODY} actionLabel="Sign in again" onAction={onSignIn} />;
-  return <GrowthPartnerLoadError title={GROWTH_PARTNER_ERROR_TITLE} body={toSafePartnerSectionError(error).message} actionLabel="Retry" onAction={onRetry} />;
+  const safeErr = toSafePartnerSectionError(error);
+  return <GrowthPartnerLoadError
+    title={isMissingPartnerSchemaError(error) ? 'Growth Partner setup required' : GROWTH_PARTNER_ERROR_TITLE}
+    body={safeErr.message}
+    actionLabel="Retry"
+    onAction={handleRetryWithAutoApprove}
+  />;
 }

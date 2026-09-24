@@ -169,16 +169,14 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <button
                 onClick={() => setProfileOpen(true)}
-                className="w-10 h-10 rounded-full overflow-hidden border border-pink-200"
+                className="w-10 h-10 rounded-full overflow-hidden border border-pink-200 bg-slate-900 shrink-0 shadow-xs"
                 aria-label="User Profile Settings" title="User Profile Settings"
               >
-                {(profile.ownerPhotoUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.photo_url || user?.user_metadata?.picture || user?.user_metadata?.profile_photo) ? (
-                  <img
-                    src={profile.ownerPhotoUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.photo_url || user?.user_metadata?.picture || user?.user_metadata?.profile_photo}
-                    alt="Your profile"
-                    className="w-full h-full object-cover"
-                  />
-                ) : <span>Profile</span>}
+                <img
+                  src={profile.ownerPhotoUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.photo_url || user?.user_metadata?.picture || user?.user_metadata?.profile_photo || '/nexora-salonos-logo.png'}
+                  alt="Your profile"
+                  className="w-full h-full object-cover"
+                />
               </button>
               <button
                 onClick={handleLogout}

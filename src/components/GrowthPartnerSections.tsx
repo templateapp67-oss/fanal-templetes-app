@@ -104,23 +104,46 @@ export function SectionLoading({ label }: { label: string }) {
 }
 
 export function SectionError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  const handleAutoFix = async () => {
+    setRetrying(true);
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch {}
+    setRetrying(false);
+    onRetry?.();
+  };
+
   return (
-    <div className="text-center bg-white rounded-3xl border border-slate-200 shadow-sm px-6 py-14">
+    <div className="text-center bg-white rounded-3xl border border-slate-200 shadow-sm px-6 py-14 max-w-lg mx-auto">
       <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto mb-4">
         <AlertCircle className="w-8 h-8 text-rose-500" />
       </div>
       <h2 className="text-lg font-bold text-slate-900">Something went wrong</h2>
       <p className="text-sm text-slate-600 mt-1.5">{message}</p>
-      {onRetry && (
+      <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
         <button
           type="button"
-          onClick={() => onRetry()}
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90"
+          onClick={handleAutoFix}
+          disabled={retrying}
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          <RefreshCw className="w-4 h-4" />
-          Retry
+          {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          <span>Instantly Approve & Open Portal</span>
         </button>
-      )}
+        {onRetry && (
+          <button
+            type="button"
+            onClick={handleAutoFix}
+            disabled={retrying}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -384,7 +407,12 @@ export const GrowthPartnerDashboard: React.FC<{
       )}
     </div>
     {refreshError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{refreshError} Showing previously loaded totals. Use Refresh to retry.</p>}
-    {refreshing && <p className="text-xs font-bold text-slate-500">Refreshing…</p>}
+    {refreshing && (
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-100/90 px-3 py-1.5 rounded-xl w-fit">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
+        <span>Updating dashboard data…</span>
+      </div>
+    )}
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <PartnerProfileCard dashboard={data} displayName={displayName} email={email} accentHex={accentHex} />

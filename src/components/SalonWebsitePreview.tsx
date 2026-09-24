@@ -1651,9 +1651,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 <div className="relative shrink-0">
                   <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 shadow-sm" style={{ borderColor: activeAccent.primaryHex }}>
                     <img
-                      src={activeProfile.ownerPhotoUrl}
+                      src={activeProfile.ownerPhotoUrl || '/nexora-salonos-logo.png'}
                       alt={activeProfile.ownerName}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover bg-slate-950"
                     />
                   </div>
                   <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-xs">

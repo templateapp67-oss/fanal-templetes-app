@@ -108,16 +108,13 @@ export async function saveOwnerEditorState(
   // one RPC. ensure_owner_workspace() is idempotent, scoped to auth.uid() and
   // best-effort: if it cannot help (legacy schema, older database) the
   // original failure is returned unchanged rather than being masked.
-  const workspace = await resolveOwnerWorkspace(db as any);
+  try {
+    await resolveOwnerWorkspace(db as any);
+  } catch (err) {
+    console.warn('[AutoSave] resolveOwnerWorkspace attempt skipped or failed:', err);
+  }
 
-  // PHASE 10: several salons are no longer a dead end. Migration 20261006
-  // resolves the target server-side (primary -> most recent -> first
-  // authorized) inside nexora_save_owner_workspace(), so the retry below is
-  // the normal path for a multi-salon owner. `workspace.ambiguous` stays
-  // informational and is deliberately NOT consulted here: refusing to retry
-  // was what produced the "more than one salon, could not pick one" message
-  // for perfectly valid accounts.
-  if (!workspace.salonId) return first;
+  // Always attempt a retry write after workspace resolution
   const retried = await writeOwnerEditorState(db, payload);
   return retried.ok ? retried : first;
 }

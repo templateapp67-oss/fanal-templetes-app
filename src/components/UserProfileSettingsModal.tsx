@@ -214,22 +214,16 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
         <form onSubmit={handleSave} className="p-6 overflow-y-auto space-y-5 flex-1">
           {/* Avatar Section */}
           <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
-            <div className="relative group">
-              {formData.ownerPhotoUrl ? (
-                <img
-                  src={formData.ownerPhotoUrl}
-                  alt="Avatar Preview"
-                  className="w-20 h-20 rounded-full object-cover ring-4 ring-white shadow-md"
-                />
-              ) : (
-                <div className="w-20 h-20 rounded-full bg-rose-100 text-[#C20E5A] flex items-center justify-center font-bold text-2xl ring-4 ring-white shadow-md">
-                  {formData.ownerName ? formData.ownerName.charAt(0).toUpperCase() : '👤'}
-                </div>
-              )}
+            <div className="relative group shrink-0">
+              <img
+                src={formData.ownerPhotoUrl || '/nexora-salonos-logo.png'}
+                alt="Avatar Preview"
+                className="w-20 h-20 rounded-full object-cover ring-4 ring-pink-100 shadow-md bg-slate-950"
+              />
             </div>
             <div className="flex-1 w-full space-y-2">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>Partner Avatar Image</span>
+                <span>Partner Logo / Avatar Image</span>
                 {errors.ownerPhotoUrl && <span className="text-rose-600 font-medium">{errors.ownerPhotoUrl}</span>}
               </label>
               <input
@@ -239,15 +233,26 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 onChange={handleFileChange}
                 className="hidden"
               />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-[#C20E5A] bg-rose-50 hover:bg-rose-100 border border-rose-200 flex items-center gap-2 transition-all shadow-xs"
-              >
-                <span className="material-symbols-outlined text-base">upload</span>
-                {formData.ownerPhotoUrl ? 'Change Avatar' : 'Upload Avatar'}
-              </button>
-              <p className="text-[10px] text-gray-400">Max size 5MB. Automatically optimized for web.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-[#C20E5A] bg-rose-50 hover:bg-rose-100 border border-rose-200 flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">upload</span>
+                  {formData.ownerPhotoUrl && formData.ownerPhotoUrl !== '/nexora-salonos-logo.png' ? 'Change Photo / Logo' : 'Upload Custom Logo'}
+                </button>
+                {formData.ownerPhotoUrl && formData.ownerPhotoUrl !== '/nexora-salonos-logo.png' && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, ownerPhotoUrl: '/nexora-salonos-logo.png' }))}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 transition-all cursor-pointer"
+                  >
+                    Reset to Permanent Logo
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400">Permanent Nexora Salonos logo is active by default. You can change it anytime.</p>
             </div>
           </div>
 

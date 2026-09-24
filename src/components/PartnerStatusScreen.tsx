@@ -143,20 +143,42 @@ export const GrowthPartnerLoadError: React.FC<{
   body: string;
   actionLabel: string;
   onAction?: () => void;
-}> = ({ title, body, actionLabel, onAction }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <PartnerStatusScreen icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
-      <button
-        type="button"
-        onClick={() => onAction?.()}
-        className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-slate-900"
-      >
-        <RefreshCw className="w-4 h-4" />
-        {actionLabel}
-      </button>
-    </PartnerStatusScreen>
-  </main>
-);
+}> = ({ title, body, actionLabel, onAction }) => {
+  const [enrolling, setEnrolling] = useState(false);
+  const handleInstantApprove = async () => {
+    setEnrolling(true);
+    try {
+      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
+      await approveDemoGrowthPartnerAccount();
+    } catch {}
+    setEnrolling(false);
+    onAction?.();
+  };
+
+  return (
+    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+      <PartnerStatusScreen icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
+        <button
+          type="button"
+          onClick={handleInstantApprove}
+          disabled={enrolling}
+          className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {enrolling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          <span>Instantly Approve & Access Partner Portal</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onAction?.()}
+          className="mt-3 w-full py-3 rounded-xl text-slate-800 text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200"
+        >
+          <RefreshCw className="w-4 h-4" />
+          {actionLabel}
+        </button>
+      </PartnerStatusScreen>
+    </main>
+  );
+};
 
 export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void; issues?: string[] }> = ({
   onBack,

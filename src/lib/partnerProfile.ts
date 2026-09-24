@@ -1,7 +1,8 @@
 export function normalizeWhatsApp(value: string): string {
   const digits = value.replace(/[\s()+-]/g, '');
-  const normalized = /^[6-9]\d{9}$/.test(digits) ? `91${digits}` : digits;
-  if (!/^[1-9]\d{7,14}$/.test(normalized)) throw new Error('Enter a valid WhatsApp number with country code.');
+  if (!digits) throw new Error('WhatsApp number is required.');
+  const normalized = digits.length === 10 ? `91${digits}` : /^[6-9]\d{9}$/.test(digits) ? `91${digits}` : digits;
+  if (!/^[1-9]\d{7,14}$/.test(normalized)) throw new Error('Enter a valid 10-digit WhatsApp number.');
   return `+${normalized}`;
 }
 

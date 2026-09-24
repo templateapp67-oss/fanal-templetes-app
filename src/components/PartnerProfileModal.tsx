@@ -25,7 +25,8 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     dob: profile.dob || '',
     notifications: profile.whatsappNotificationsEnabled ?? false
   });
-  const [avatar, setAvatar] = useState(profile.ownerPhotoUrl || '');
+  const DEFAULT_AVATAR_LOGO = '/nexora-salonos-logo.png';
+  const [avatar, setAvatar] = useState(profile.ownerPhotoUrl || DEFAULT_AVATAR_LOGO);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -52,7 +53,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
       dob: profile.dob ?? f.dob,
       notifications: profile.whatsappNotificationsEnabled ?? f.notifications,
     }));
-    setAvatar(profile.ownerPhotoUrl || '');
+    setAvatar(profile.ownerPhotoUrl || DEFAULT_AVATAR_LOGO);
   }, [profile]);
 
   useEffect(() => {
@@ -156,7 +157,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
         }
       }
 
-      if (!photo) throw new Error('Please upload an avatar image.');
+      photo = photo || avatar || DEFAULT_AVATAR_LOGO;
 
       const { dob, notifications, ...shared } = form;
       const patch: Partial<SalonProfile> = {
@@ -272,42 +273,63 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
             )}
 
             <fieldset disabled={!editable || loading || busy} className="space-y-5 disabled:opacity-60">
-              <div className="flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
-                {avatar && (
+              <div className="flex items-center gap-4 rounded-2xl bg-slate-50 p-4 border border-slate-100">
+                <div className="relative shrink-0">
                   <img
-                    src={avatar}
+                    src={avatar || DEFAULT_AVATAR_LOGO}
                     alt="Partner avatar"
-                    className="w-20 h-20 rounded-full object-cover border-2 border-pink-200"
+                    className="w-20 h-20 rounded-full object-cover border-2 border-pink-300 bg-slate-900 shadow-md"
                   />
-                )}
-                <label className="text-sm font-semibold text-slate-800">
-                  Partner Avatar Image{' '}
-                  {editable && (
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="block mt-2 w-full text-xs"
-                      onChange={async e => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        if (!file) return;
-                        dirty.current = true;
-                        setBusy(true);
-                        setError('');
-                        try {
-                          setBlob(await compressPartnerAvatar(file));
-                        } catch (e: any) {
-                          setError(e.message);
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    />
-                  )}
-                  <span className="block text-xs font-normal text-slate-500 mt-2">
-                    Max 5 MB. Automatically compressed to 500px.
+                  <span className="absolute -bottom-1 -right-1 bg-pink-600 text-white p-1 rounded-full text-[10px] flex items-center justify-center shadow-xs">
+                    ★
                   </span>
-                </label>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="text-sm font-semibold text-slate-800 block">
+                    Logo / Avatar Image
+                    <span className="block text-xs font-normal text-slate-500 mt-0.5">
+                      Default permanent Nexora logo is set. You can customize or change it anytime.
+                    </span>
+                    {editable && (
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="block mt-2 w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-pink-100 file:text-[#C20E5A] hover:file:bg-pink-200 cursor-pointer"
+                        onChange={async e => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          dirty.current = true;
+                          setBusy(true);
+                          setError('');
+                          try {
+                            setBlob(await compressPartnerAvatar(file));
+                          } catch (e: any) {
+                            setError(e.message);
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      />
+                    )}
+                    <span className="block text-[11px] font-normal text-slate-400 mt-1">
+                      Max 5 MB. Automatically compressed and optimized.
+                    </span>
+                  </label>
+                  {avatar && avatar !== DEFAULT_AVATAR_LOGO && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        dirty.current = true;
+                        setAvatar(DEFAULT_AVATAR_LOGO);
+                        setBlob(null);
+                      }}
+                      className="mt-1.5 text-xs font-bold text-pink-600 hover:text-pink-700 underline"
+                    >
+                      Reset to permanent Nexora logo
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -323,25 +345,57 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
                   ['address', 'Physical Address', 'text', false],
                   ['state', 'State', 'text', false],
                   ['landmark', 'Landmark', 'text', false]
-                ] as const).map(([key, label, type, required]) => (
-                  <label key={key} className="text-xs font-semibold text-slate-700">
-                    {label}
-                    {required ? ' *' : ''}
-                    <input
-                      required={required}
-                      type={type}
-                      value={form[key]}
-                      maxLength={key === 'postalCode' ? 6 : key === 'address' ? 1000 : 160}
-                      max={key === 'dob' ? new Date().toISOString().slice(0, 10) : undefined}
-                      inputMode={key === 'postalCode' ? 'numeric' : undefined}
-                      onChange={e => {
-                        dirty.current = true;
-                        setForm(f => ({ ...f, [key]: e.target.value }));
-                      }}
-                      className="block mt-2 w-full rounded-xl border border-slate-200 p-3 font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A]"
-                    />
-                  </label>
-                ))}
+                ] as const).map(([key, label, type, required]) => {
+                  if (key === 'whatsapp' || key === 'phone') {
+                    const rawVal = form[key] || '';
+                    const displayDigits = rawVal.replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10);
+                    return (
+                      <label key={key} className="text-xs font-semibold text-slate-700">
+                        {label}
+                        {required ? ' *' : ''}
+                        <div className="flex mt-2 w-full rounded-xl border border-slate-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-[#C20E5A]/20 focus-within:border-[#C20E5A]">
+                          <span className="inline-flex items-center gap-1 px-3 bg-slate-100 border-r border-slate-200 text-xs font-bold text-slate-700 select-none">
+                            <span className="text-base leading-none">🇮🇳</span> +91
+                          </span>
+                          <input
+                            required={required}
+                            type="tel"
+                            inputMode="numeric"
+                            placeholder="98765 43210"
+                            value={displayDigits}
+                            maxLength={10}
+                            onChange={e => {
+                              dirty.current = true;
+                              const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                              setForm(f => ({ ...f, [key]: clean ? `+91 ${clean}` : '' }));
+                            }}
+                            className="w-full p-3 font-normal text-slate-900 focus:outline-none"
+                          />
+                        </div>
+                      </label>
+                    );
+                  }
+
+                  return (
+                    <label key={key} className="text-xs font-semibold text-slate-700">
+                      {label}
+                      {required ? ' *' : ''}
+                      <input
+                        required={required}
+                        type={type}
+                        value={form[key]}
+                        maxLength={key === 'postalCode' ? 6 : key === 'address' ? 1000 : 160}
+                        max={key === 'dob' ? new Date().toISOString().slice(0, 10) : undefined}
+                        inputMode={key === 'postalCode' ? 'numeric' : undefined}
+                        onChange={e => {
+                          dirty.current = true;
+                          setForm(f => ({ ...f, [key]: e.target.value }));
+                        }}
+                        className="block mt-2 w-full rounded-xl border border-slate-200 p-3 font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A]"
+                      />
+                    </label>
+                  );
+                })}
               </div>
 
               <label className="flex gap-3 items-center rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm cursor-pointer">

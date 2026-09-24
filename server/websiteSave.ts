@@ -308,6 +308,46 @@ interface AdminFallbackStep {
   supabaseCode?: string | null;
 }
 
+/**
+ * PostgREST PGRST204 safe upsert that strips columns missing from schema cache and retries.
+ */
+async function resilientAdminUpsert(
+  admin: any,
+  table: string,
+  payload: Record<string, any> | Array<Record<string, any>>,
+  conflictOption?: { onConflict: string }
+): Promise<{ error?: any }> {
+  let currentPayload = Array.isArray(payload)
+    ? payload.map((p) => ({ ...p }))
+    : { ...payload };
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const query = admin.from(table).upsert(currentPayload, conflictOption);
+    const res = await query;
+    if (!res.error) return { error: null };
+
+    const errMsg = String(res.error.message || '');
+    // PostgREST "Could not find the 'xyz' column of 'table' in the schema cache"
+    const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of/i)
+      || errMsg.match(/column "([^"]+)" of relation/i)
+      || errMsg.match(/column '([^']+)' of relation/i);
+
+    if (missingColMatch && missingColMatch[1]) {
+      const missingCol = missingColMatch[1];
+      if (Array.isArray(currentPayload)) {
+        currentPayload.forEach((item) => delete item[missingCol]);
+      } else {
+        delete currentPayload[missingCol];
+      }
+      continue;
+    }
+
+    return { error: res.error };
+  }
+
+  return { error: new Error(`Upsert to ${table} failed after stripping unrecognised columns`) };
+}
+
 async function persistWithAdminFallback(
   admin: any,
   ownerId: string,
@@ -448,12 +488,20 @@ async function persistWithAdminFallback(
 
       if (!orgId && !memberErr) {
         orgId = randomUUID();
-        const { error: orgErr } = await admin.from('organizations').insert({
+        const orgName = profile?.businessName || 'My Salon';
+        let orgRes = await admin.from('organizations').insert({
           id: orgId,
-          name: profile?.businessName || 'My Salon',
+          name: orgName,
+          display_name: orgName,
         });
-        recordStep('organization insert', 'organizations', extractError(orgErr));
-        if (!orgErr) {
+        if (orgRes.error && /display_name.*schema cache/i.test(orgRes.error.message || '')) {
+          orgRes = await admin.from('organizations').insert({
+            id: orgId,
+            name: orgName,
+          });
+        }
+        recordStep('organization insert', 'organizations', extractError(orgRes.error));
+        if (!orgRes.error) {
           const { error: linkErr } = await admin.from('organization_members').insert({
             id: randomUUID(),
             organization_id: orgId,
@@ -507,14 +555,14 @@ async function persistWithAdminFallback(
     // 3. Persist legacy/direct tables (profiles, services, stylists, loyalty_config)
     if (profile) {
       await runStep('profile upsert', 'profiles', () =>
-        admin.from('profiles').upsert(toProfileRow(profile, ownerId), { onConflict: 'id' })
+        resilientAdminUpsert(admin, 'profiles', toProfileRow(profile, ownerId), { onConflict: 'id' })
       );
     }
 
     if (Array.isArray(services) && services.length > 0) {
       const serviceRows = services.map((s, idx) => toServiceDbRow(s, ownerId, idx));
       await runStep('services upsert', 'services', () =>
-        admin.from('services').upsert(serviceRows, { onConflict: 'id' })
+        resilientAdminUpsert(admin, 'services', serviceRows, { onConflict: 'id' })
       );
       await runStep('services cleanup', 'services', () =>
         deleteRowsNotIn(admin, 'services', ownerId, serviceRows.map((r) => r.id))
@@ -524,7 +572,7 @@ async function persistWithAdminFallback(
     if (Array.isArray(stylists) && stylists.length > 0) {
       const stylistRows = stylists.map((st, idx) => toStylistDbRow(st, ownerId, idx));
       await runStep('stylists upsert', 'stylists', () =>
-        admin.from('stylists').upsert(stylistRows, { onConflict: 'id' })
+        resilientAdminUpsert(admin, 'stylists', stylistRows, { onConflict: 'id' })
       );
       await runStep('stylists cleanup', 'stylists', () =>
         deleteRowsNotIn(admin, 'stylists', ownerId, stylistRows.map((r) => r.id))
@@ -533,7 +581,7 @@ async function persistWithAdminFallback(
 
     if (loyaltyConfig) {
       await runStep('loyalty config upsert', 'loyalty_config', () =>
-        admin.from('loyalty_config').upsert(toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: 'owner_id' })
+        resilientAdminUpsert(admin, 'loyalty_config', toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: 'owner_id' })
       );
     }
 

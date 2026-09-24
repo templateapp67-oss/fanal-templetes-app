@@ -1224,13 +1224,6 @@ export async function runSalonSavePipeline(
       summary: 'Saved to the cloud.',
     };
   }
-  // Definite direct-sync failure — structured, before any fallback attempt.
-  logSaveError({
-    stage: 'cloud-sync',
-    message: cloud.errors.join(' · ') || 'direct Supabase sync failed',
-    resource: 'rpc:save_owner_editor_state',
-  });
-
   // ---- 2) Fallback: server-side save via the service-role API ------------
   const onlyDataShapeFailures =
     cloud.errors.length > 0 && cloud.errors.every((e) => isDataShapeFailure(e));
@@ -1306,6 +1299,11 @@ export async function runSalonSavePipeline(
     // api.error is already console-logged with the exact HTTP status.
     apiFailure = `POST /api/website/save failed (HTTP ${api.status ?? 'no response'}) | ${api.error ?? 'unknown error'}`;
   } else {
+    logSaveError({
+      stage: 'cloud-sync',
+      message: cloud.errors.join(' · ') || 'direct Supabase sync failed',
+      resource: 'rpc:save_owner_editor_state',
+    });
     console.warn(
       '[autoSave:runSalonSavePipeline] Direct client sync failed with deterministic data errors — skipping API fallback and caching locally.',
       {

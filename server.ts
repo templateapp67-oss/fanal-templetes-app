@@ -227,7 +227,7 @@ async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // `verify` stashes the RAW bytes of every JSON body. The Razorpay webhook
   // signature is an HMAC over exactly those bytes — re-serializing req.body
@@ -586,7 +586,7 @@ async function startServer() {
   // ==========================================================================
   app.get("/api/growth-partner/me", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     const authResult = await authenticateBookingRequest(req, res.locals?.requestDeadlineAt, allowMockBookingAuth);
-    if (!authResult.ok) {
+    if (authResult.ok === false) {
       return res.status(authResult.status).json({ success: false, code: authResult.code, error: authResult.error });
     }
     const userId = authResult.user.id;
@@ -603,7 +603,7 @@ async function startServer() {
 
   app.post("/api/growth-partner/ensure", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     const authResult = await authenticateBookingRequest(req, res.locals?.requestDeadlineAt, allowMockBookingAuth);
-    if (!authResult.ok) {
+    if (authResult.ok === false) {
       return res.status(authResult.status).json({ success: false, code: authResult.code, error: authResult.error });
     }
     const userId = authResult.user.id;
@@ -1113,4 +1113,7 @@ Return strictly JSON with the following keys:
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Fatal error starting server:", err);
+  process.exit(1);
+});
