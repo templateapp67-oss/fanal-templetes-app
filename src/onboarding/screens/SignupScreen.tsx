@@ -74,12 +74,12 @@ export const SignupScreen: React.FC<{
   // A code arriving from a share URL is only a prefill. It must remain editable
   // so an owner can correct a stale/invalid code or remove it and sign up normally.
   const [referralInput, setReferralInput] = useState(referralCode);
-  const referralEdited = referralInput !== referralCode;
-  const displayedReferralState = referralEdited ? 'none' : referralState;
+  const [referralDirty, setReferralDirty] = useState(false);
+  const displayedReferralState = referralDirty ? 'none' : referralState;
   useEffect(() => {
     // Sync a code captured after boot without overwriting a value the owner typed.
-    if (!referralEdited) setReferralInput(referralCode);
-  }, [referralCode, referralEdited]);
+    if (!referralDirty) setReferralInput(referralCode);
+  }, [referralCode, referralDirty]);
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{
     fullName?: string;
@@ -166,6 +166,7 @@ export const SignupScreen: React.FC<{
           autoComplete="off"
           disabled={busy}
           onChange={(value) => {
+            setReferralDirty(true);
             setReferralInput(value);
             onReferralCodeChange?.(value);
           }}
