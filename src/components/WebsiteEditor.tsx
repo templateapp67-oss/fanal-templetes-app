@@ -58,6 +58,8 @@ interface WebsiteEditorProps {
   showToast?: (message: string, type?: 'success' | 'error') => void;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
+  /** Opens the user-level Profile Settings route; contact data is not edited here. */
+  onOpenProfileSettings?: () => void;
   /**
    * True when the last cloud save was rejected because the Supabase session is
    * no longer usable (expired/revoked token) even after the save engine
@@ -85,6 +87,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   showToast,
   isAuthenticated = true,
   onRequireAuth,
+  onOpenProfileSettings,
   sessionExpired = false,
 }) => {
   const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
@@ -433,6 +436,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           <div className="flex items-center gap-2 mb-1">
             <UserRound className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
+            <button
+              type="button"
+              onClick={onOpenProfileSettings}
+              className="ml-auto text-xs font-bold text-[#C20E5A] hover:underline"
+            >
+              Edit Profile Details
+            </button>
             <div className="text-sm">
               {profileCompletion === 'incomplete' && <button type="button" onClick={() => setContactDetailsOpen(true)} className="mt-2 font-semibold text-pink-700 underline">Complete profile · DOB & photo upload</button>}
               {profileCompletion === 'complete' && <span className="text-emerald-700">Profile saved. Edit from Profile Settings.</span>}
@@ -442,12 +452,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             {contactDetailsOpen && <PartnerProfileModal editable profile={profile} onSaved={patch => { upd(patch); setProfileCompletion('complete'); }} onClose={() => setContactDetailsOpen(false)} />}
           </div>
           <p className="text-[11px] text-gray-500 mb-5">
-            How customers reach, call, WhatsApp or find your physical salon.
+            Contact information is auto-synced from Profile Settings. Use “Edit Profile Details” to update it.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {([['Phone', profile.phone], ['WhatsApp', profile.whatsapp], ['Contact Email', profile.email], ['City', profile.city], ['PIN Code', profile.postalCode], ['Area / Locality', profile.areaLocality]] as const).map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-slate-200 p-3"><p className="text-xs text-slate-500">{label}</p><p className="text-sm mt-1 break-words">{value || 'Not provided'}</p></div>
+              <div key={label} className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="text-sm mt-1 break-words">{value?.trim() || '—'}</p>
+              </div>
             ))}
             <div className="md:col-span-2 space-y-4">
               <GooglePlacesAutocompleteInput

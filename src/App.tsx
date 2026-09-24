@@ -2,6 +2,7 @@ import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSes
 import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from './lib/diagnostics';
 import { RLSDiagnosticsModal } from './components/RLSDiagnosticsModal';
 import { normalizePath } from './lib/router';
+import { isOwnerProfileComplete, ownerLocationWithQuery, profileSettingsPath, safeOwnerReturnPath } from './lib/profileCompletion';
 import { mergeHydratedSalonState } from './lib/hydrationMerge';
 import {
   decideOwnerEntry,
@@ -74,6 +75,9 @@ import {
   MY_BOOKINGS_PATH,
   STAFF_PERFORMANCE_PATH,
   STAFF_COMMISSION_PATH,
+  WEBSITE_EDITOR_PATH,
+  isWebsiteEditorPath,
+  isProfileSettingsPath,
   GROWTH_PARTNER_PATH,
   PARTNER_DASHBOARD_PATH,
   PARTNER_LOGIN_PATH,
@@ -278,6 +282,15 @@ export default function App() {
       setCurrentViewState((view) => (view === 'bookingDetail' ? view : 'bookingDetail'));
       return;
     }
+    if (isProfileSettingsPath(path)) {
+      setIsProfileSettingsOpen(true);
+      setCurrentViewState((view) => (view === 'wizard' ? 'dashboard' : view));
+      return;
+    }
+    if (isWebsiteEditorPath(path)) {
+      setCurrentViewState((view) => (view === 'wizard' ? view : 'wizard'));
+      return;
+    }
     if (isMyBookingsPath(path)) {
       setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
       return;
@@ -321,6 +334,8 @@ export default function App() {
         navigate(STAFF_PERFORMANCE_PATH);
       } else if (view === 'staffCommission') {
         navigate(STAFF_COMMISSION_PATH);
+      } else if (view === 'wizard') {
+        navigate(WEBSITE_EDITOR_PATH);
       } else if (view === 'growthPartner') {
         // PART 2: the header entry points at the canonical /partner/dashboard
         // portal route (unauthenticated visitors are redirected from there to
@@ -2034,6 +2049,24 @@ export default function App() {
     }
   };
 
+  /**
+   * URL-level editor guard. This SPA has no Next middleware, so every editor
+   * entry (buttons, browser back/forward and a pasted /editor URL) converges
+   * here before WebsiteEditor is mounted. The database-backed profile hydration
+   * supplies the values; completion is derived from the mandatory fields rather
+   * than trusting a stale browser flag.
+   */
+  useEffect(() => {
+    const wantsEditor = isWebsiteEditorPath(path) || (currentView === 'wizard' && !isProfileSettingsPath(path));
+    if (!wantsEditor || !user || authStatus !== 'ready' || isOwnerProfileComplete(profile)) return;
+
+    const intended = isWebsiteEditorPath(path) ? ownerLocationWithQuery() : WEBSITE_EDITOR_PATH;
+    try { sessionStorage.setItem('nexora_owner_intended_destination', intended); } catch {}
+    setIsProfileSettingsOpen(true);
+    navigate(profileSettingsPath(intended));
+    showToast('Please complete your profile contact details to proceed to the Website Editor.', 'error');
+  }, [authStatus, currentView, navigate, path, profile, showToast, user]);
+
   const handleBuildWebsiteClick = () => {
     // The backend-derived stage wins when it is known. ONBOARDING_COMPLETED_KEY
     // is per-device localStorage, so on a new phone it says "not completed" for
@@ -2233,7 +2266,15 @@ export default function App() {
         />
       )}
 
-      {currentView === 'wizard' && (
+      {currentView === 'wizard' && !user && (
+        <div className="mx-auto mt-28 max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-bold text-slate-900">Sign in to set up your website</h1>
+          <p className="mt-2 text-sm text-slate-600">Create or sign in to your owner account first, then complete your contact profile.</p>
+          <button type="button" onClick={() => openBookingAuth('login')} className="mt-5 rounded-xl bg-[#C20E5A] px-5 py-2.5 text-sm font-bold text-white">Sign in</button>
+        </div>
+      )}
+
+      {currentView === 'wizard' && !!user && isOwnerProfileComplete(profile) && (
         <WebsiteEditor
           profile={profile}
           setProfile={setProfile}
@@ -2250,6 +2291,11 @@ export default function App() {
           showToast={showToast}
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
+          onOpenProfileSettings={() => {
+            try { sessionStorage.setItem('nexora_owner_intended_destination', ownerLocationWithQuery()); } catch {}
+            setIsProfileSettingsOpen(true);
+            navigate(profileSettingsPath(ownerLocationWithQuery()));
+          }}
           sessionExpired={saveNeedsSignIn}
         />
       )}
@@ -2395,17 +2441,33 @@ export default function App() {
 
       <UserProfileSettingsModal
         isOpen={isProfileSettingsOpen}
-        onClose={() => setIsProfileSettingsOpen(false)}
+        onClose={() => {
+          setIsProfileSettingsOpen(false);
+          if (isProfileSettingsPath(path)) navigate('/');
+        }}
         profile={profile}
         setProfile={setProfile}
         showToast={showToast}
         onSave={async (updated) => {
           setProfile(updated);
-          // PHASE 11: the "saved successfully" toast is emitted by the save
-          // engine ONLY after the cloud (or service-role API) accepted the
-          // state; a failed publish shows "Save failed" with the summarized
-          // server error instead, and the exact error in the console.
-          void persistChange('User profile settings saved successfully!', { profile: updated });
+          const result = await persistChange('User profile settings saved successfully!', { profile: updated });
+          if (!result.published && !result.localDraft) {
+            throw new Error('Profile save was not accepted.');
+          }
+        }}
+        onProfileCompleted={() => {
+          let stored = '';
+          try {
+            stored = sessionStorage.getItem('nexora_owner_intended_destination') || '';
+            sessionStorage.removeItem('nexora_owner_intended_destination');
+          } catch {}
+          const nextParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+          const target = safeOwnerReturnPath(stored || nextParam, WEBSITE_EDITOR_PATH);
+          setIsProfileSettingsOpen(false);
+          if (isWebsiteEditorPath(target)) {
+            setCurrentViewState('wizard');
+          }
+          navigate(target);
         }}
       />
 
