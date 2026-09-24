@@ -7,7 +7,6 @@ import {
   normalizeGrowthReferralCode,
 } from '../lib/growthPartner';
 import {
-  captureReferralIntentFromLocation,
   hasReferralIntentInLocation,
   persistReferralIntent,
   readReferralIntent,
