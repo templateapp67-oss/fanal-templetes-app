@@ -9,6 +9,8 @@ interface UserProfileSettingsModalProps {
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   showToast: (msg: string, type?: 'success' | 'error') => void;
   onSave?: (updatedProfile: SalonProfile) => Promise<void> | void;
+  /** Called only after the profile save resolves successfully. */
+  onProfileCompleted?: () => void;
 }
 
 export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> = ({
@@ -18,15 +20,18 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   setProfile,
   showToast,
   onSave,
+  onProfileCompleted,
 }) => {
   const [formData, setFormData] = useState({
     ownerName: profile.ownerName || '',
     ownerPhotoUrl: profile.ownerPhotoUrl || '',
+    phone: profile.phone || '',
     whatsapp: profile.whatsapp || profile.phone || '',
     dob: profile.dob || '',
     postalCode: profile.postalCode || '',
     city: profile.city || '',
     areaLocality: profile.areaLocality || '',
+    address: profile.address || '',
   });
 
   const [whatsappNotificationsEnabled, setWhatsappNotificationsEnabled] = useState(
@@ -43,11 +48,13 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       setFormData({
         ownerName: profile.ownerName || '',
         ownerPhotoUrl: profile.ownerPhotoUrl || '',
+        phone: profile.phone || '',
         whatsapp: profile.whatsapp || '',
         dob: profile.dob || '',
         postalCode: profile.postalCode || '',
         city: profile.city || '',
         areaLocality: profile.areaLocality || '',
+        address: profile.address || '',
       });
       setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
       setErrors({});
@@ -136,20 +143,18 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     reader.readAsDataURL(file);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
     if (!formData.ownerName.trim()) newErrors.ownerName = 'Full Name is required.';
     
+    const rawPhone = formData.phone.replace(/\D/g, '');
     const rawWhatsapp = formData.whatsapp.replace(/\D/g, '');
-    if (formData.whatsapp.trim() && rawWhatsapp.length < 10) {
-      newErrors.whatsapp = 'Valid 10-digit WhatsApp number required.';
-    }
-    
-    if (formData.postalCode.trim() && formData.postalCode.length !== 6) {
-      newErrors.postalCode = 'Pin code must be exactly 6 digits.';
-    }
+    if (rawPhone.length < 10) newErrors.phone = 'A valid 10-digit phone number is required.';
+    if (rawWhatsapp.length < 10) newErrors.whatsapp = 'A valid 10-digit WhatsApp number is required.';
+    if (!formData.city.trim()) newErrors.city = 'City is required.';
+    if (formData.postalCode.trim().length !== 6) newErrors.postalCode = 'A 6-digit PIN code is required.';
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -161,26 +166,28 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       ...profile,
       ownerName: formData.ownerName.trim(),
       ownerPhotoUrl: formData.ownerPhotoUrl || profile.ownerPhotoUrl,
+      phone: formData.phone.trim(),
       whatsapp: formData.whatsapp.trim(),
       dob: formData.dob,
       postalCode: formData.postalCode.trim(),
       city: formData.city.trim(),
       areaLocality: formData.areaLocality.trim(),
+      address: formData.address.trim(),
       whatsappNotificationsEnabled,
     };
 
     setProfile(updatedProfile);
-    if (onSave) {
-      // The save engine reports the REAL outcome: "saved successfully" only
-      // after the cloud accepts the state, "saved on this device" for a local
-      // draft, or "Save failed" with a retry — never a local-state claim.
-      void onSave(updatedProfile);
-    } else {
-      // PHASE 11: no onSave wired — only the local state changed. Do not claim
-      // a save: the auto-save engine reports the actual outcome.
-      showToast('Profile updated — changes will be published automatically…');
+    try {
+      if (onSave) {
+        await onSave(updatedProfile);
+      } else {
+        showToast('Profile updated — changes will be published automatically…');
+      }
+      onProfileCompleted?.();
+      onClose();
+    } catch {
+      showToast('Profile could not be saved. Please retry.', 'error');
     }
-    onClose();
   };
 
   return (
@@ -274,10 +281,25 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
               />
             </div>
 
+            {/* Phone Number */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
+                <span>Phone Number <span className="text-rose-500">*</span></span>
+                {errors.phone && <span className="text-rose-600 font-medium">{errors.phone}</span>}
+              </label>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => handleChange('phone', e.target.value)}
+                placeholder="+91 98765 43210"
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all ${errors.phone ? 'border-rose-300 ring-2 ring-rose-100' : 'border-gray-200'}`}
+              />
+            </div>
+
             {/* WhatsApp Number */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>WhatsApp Number</span>
+                <span>WhatsApp Number <span className="text-rose-500">*</span></span>
                 {errors.whatsapp && <span className="text-rose-600 font-medium">{errors.whatsapp}</span>}
               </label>
               <input
@@ -310,7 +332,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* Pin Code */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>Pin Code / Postal Code</span>
+                <span>Pin Code / Postal Code <span className="text-rose-500">*</span></span>
                 {errors.postalCode && <span className="text-rose-600 font-medium">{errors.postalCode}</span>}
               </label>
               <input
@@ -327,7 +349,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             {/* City */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                <span>City</span>
+                <span>City <span className="text-rose-500">*</span></span>
                 {errors.city && <span className="text-rose-600 font-medium">{errors.city}</span>}
               </label>
               <input
@@ -338,6 +360,21 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all ${
                   errors.city ? 'border-rose-300 ring-2 ring-rose-100' : 'border-gray-200'
                 }`}
+              />
+            </div>
+
+            {/* Address */}
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
+                <span>Address / Locality</span>
+                {errors.address && <span className="text-rose-600 font-medium">{errors.address}</span>}
+              </label>
+              <textarea
+                value={formData.address}
+                onChange={(e) => handleChange('address', e.target.value)}
+                rows={2}
+                placeholder="House/shop number, street and locality"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#C20E5A]/20 transition-all"
               />
             </div>
 
