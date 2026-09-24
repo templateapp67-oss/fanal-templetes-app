@@ -337,7 +337,7 @@ export function resolvePartnerAvatarUrl(
 }
 
 export async function saveGrowthPartnerProfile(input: {
-  fullName: string; phone: string; expectedUserId: string; photo?: Blob | null; removePhoto?: boolean;
+  fullName: string; phone: string; expectedUserId?: string; photo?: Blob | null; removePhoto?: boolean;
 }, client: GrowthPartnerProfileClient = defaultClient): Promise<GrowthPartnerProfileData> {
   const fullName = input.fullName.trim();
   const phone = input.phone.replace(/[\s().-]/g, '');
@@ -346,8 +346,16 @@ export async function saveGrowthPartnerProfile(input: {
   if (input.photo && (!['image/jpeg', 'image/png', 'image/webp'].includes(input.photo.type) || input.photo.size > 5 * 1024 * 1024)) throw new Error('Choose a JPG, PNG or WebP image no larger than 5 MB.');
   const verifyViewer = async () => {
     const { data, error } = await client.auth.getUser();
-    if (error || !data.user || data.user.id !== input.expectedUserId) throw new Error('Your session changed. Reload your profile before saving.');
-    return data.user.id as string;
+    const userId = data.user?.id as string | undefined;
+    if (error || !userId) throw new Error('Sign in again before saving your partner profile.');
+
+    // A loaded profile can temporarily contain the offline/demo placeholder.
+    // Treat only a real UUID as a stale-session guard; the authenticated
+    // Supabase user is always the authority for the write.
+    const expected = String(input.expectedUserId || '').trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(expected);
+    if (isUuid && userId !== expected) throw new Error('Your session changed. Reload your profile before saving.');
+    return userId;
   };
   const id = await verifyViewer();
   const patch: Record<string, unknown> = { full_name: fullName, phone: phone || null };
@@ -366,7 +374,12 @@ export async function saveGrowthPartnerProfile(input: {
     await verifyViewer();
     attemptedSave = true;
     const { data, error } = await client.rpc('save_my_growth_partner_profile', { p_patch: patch });
-    if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not save your partner profile. Please retry.'));
+    if (error || !data) {
+      // Keep the original Supabase error in DevTools; the UI still gets a safe,
+      // actionable message and never exposes a service-role credential.
+      console.error('Partner profile save error:', error ?? new Error('Profile RPC returned no data'));
+      throw new Error(safePartnerErrorMessage(error, 'Could not save your partner profile. Please retry.'));
+    }
     return data as GrowthPartnerProfileData;
   } catch (error) {
     // Never delete a successfully committed photo after a lost RPC response.
