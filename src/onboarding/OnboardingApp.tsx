@@ -38,6 +38,7 @@ import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { ReferralScreen } from './screens/ReferralScreen';
 import { StatusScreen } from './screens/StatusScreen';
 import { SetPasswordScreen } from './screens/SetPasswordScreen';
+import { BusinessSetupScreen } from './screens/BusinessSetupScreen';
 
 // ============================================================================
 // Onboarding App (`/onboarding/...`) — auth + referral gateway on the SHARED
@@ -386,6 +387,20 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         initialCode={skipLinkPrefill ? '' : sharedReferralCode}
         onLinked={() => void handleAuthDone()}
         onLogout={() => void handleLogout()}
+      />
+    );
+  }
+  if (resolved === 'website') {
+    return (
+      <BusinessSetupScreen
+        client={sb}
+        email={viewer?.email || ''}
+        onLogout={() => void handleLogout()}
+        onProvisioned={({ salonId }) => {
+          // The editor route (rather than the public ?site entry) keeps this
+          // owner session inside the guarded, authenticated surface.
+          navigate(`/editor?site=${encodeURIComponent(salonId)}`);
+        }}
       />
     );
   }
