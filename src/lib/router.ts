@@ -393,7 +393,7 @@ export function partnerPortalPath(section: PartnerPortalSection = 'dashboard'): 
 // correct screen). Unknown sub-paths fall back to `login`, never blank.
 export const ONBOARDING_PATH = '/onboarding';
 
-export type OnboardingSection = 'login' | 'signup' | 'forgot-password' | 'referral' | 'status' | 'shop';
+export type OnboardingSection = 'login' | 'signup' | 'forgot-password' | 'referral' | 'status' | 'website' | 'shop';
 
 export const ONBOARDING_SECTIONS: OnboardingSection[] = [
   'login',
@@ -401,6 +401,7 @@ export const ONBOARDING_SECTIONS: OnboardingSection[] = [
   'forgot-password',
   'referral',
   'status',
+  'website',
   'shop',
 ];
 
