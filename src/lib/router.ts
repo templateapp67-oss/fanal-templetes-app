@@ -130,6 +130,11 @@ export function normalizePath(pathname: string): string {
   return value.replace(/\/+$/, '') || '/';
 }
 
+/** True when the path is the owner dashboard root. */
+export function isOwnerDashboardPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === OWNER_DASHBOARD_PATH;
+}
+
 /** True when the path is the customer's "My Bookings" page. */
 export function isMyBookingsPath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase() === MY_BOOKINGS_PATH;
