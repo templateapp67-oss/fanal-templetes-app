@@ -7,6 +7,7 @@ import {
   normalizeGrowthReferralCode,
 } from '../lib/growthPartner';
 import {
+  clearReferralIntent,
   hasReferralIntentInLocation,
   persistReferralIntent,
   readReferralIntent,
@@ -425,6 +426,12 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         client={sb}
         onDone={() => void handleAuthDone()}
         onGoLogin={() => navigate(onboardingPath('login'))}
+        onReferralCodeChange={(value) => {
+          // The field is editable: keep only a canonical complete code as
+          // convenience state, never as an attribution decision.
+          if (value.trim()) persistReferralIntent(value);
+          else clearReferralIntent();
+        }}
       />
     );
   }
