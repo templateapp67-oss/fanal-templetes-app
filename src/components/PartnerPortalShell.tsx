@@ -598,6 +598,7 @@ export const PartnerPortalShell: React.FC<{
           accentHex={accentHex}
           email={email}
           onSelect={selectSection}
+          onHome={returnHome}
           onLogout={onLogout}
         />
       </div>
