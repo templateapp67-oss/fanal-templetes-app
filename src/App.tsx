@@ -17,6 +17,10 @@ import {
   fetchUserOwnedSalons,
   validateSiteOwnership,
 } from './lib/ownerSalonResolution';
+import {
+  requiresOwnerEditorSetup,
+  shouldRedirectEditorToWebsiteOnboarding,
+} from './lib/ownerRouteGuard';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
@@ -899,9 +903,11 @@ export default function App() {
   //     ensure_owner_workspace(). Logging in still provisions nothing.
   //   • ONCE PER OWNER: keyed on user.id, so a token refresh or a re-render
   //     cannot yank the owner off a screen they navigated to.
-  //   • ENTRY POINT ONLY: it acts only while the URL is '/'. A deep link
-  //     (/my-bookings, /partner/dashboard, /customer/booking/…) and any
-  //     deliberate navigation are left alone.
+  //   • OPT-IN ONLY: `/` is the product home. It must remain a stable route
+  //     after authentication, so automatic resume routing only runs for an
+  //     explicit `?resume=1` request. A deep link
+  //     (/dashboard, /my-bookings, /partner/dashboard, /customer/booking/…)
+  //     and any deliberate navigation are left alone.
   //   • NEVER GUESSES: an unreadable state resolves to 'landing' and the owner
   //     stays exactly where they were.
   // ---------------------------------------------------------------------------
@@ -911,6 +917,11 @@ export default function App() {
     if (isMockSupabase || !user?.id || authStatus !== 'ready') return;
     if (entryRoutedForRef.current === user.id) return;
     if (normalizePath(path) !== '/') return;
+    // Do not turn a visit to Home into an onboarding/editor redirect. Login
+    // callbacks that intentionally want the old resume behaviour can opt in
+    // with `/?resume=1`.
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    if (new URLSearchParams(search).get('resume') !== '1') return;
     const ownerId = user.id;
     // Claimed before the read so a second run cannot race the first.
     entryRoutedForRef.current = ownerId;
@@ -1056,18 +1067,18 @@ export default function App() {
   }, [user?.id, path, setCurrentView]);
 
   // ---------------------------------------------------------------------------
-  // GLOBAL MIDDLEWARE GUARD
+  // OWNER EDITOR GUARD
   // Flow:
   // [User Sign Up / Login]
   //    ↓
-  // [Global Middleware Guard] ─── (Profile Incomplete?) ───► [Redirect to /settings/profile?next=...]
+  // [Explicit editor request] ─── (Profile Incomplete?) ───► [Redirect to /settings/profile?next=...]
   //    │                                                            │
   // (Profile Complete)                                              │ (User Fills & Saves Profile)
   //    │                                                            │
   //    ▼                                                            ▼
   // [Check Destination / Sites] ◄───────────────────────────────────┘
   //    │
-  //    ├─── (User has 0 sites OR target = /onboarding) ───► [/onboarding/website Flow]
+  //    ├─── (Explicit /editor request with 0 sites) ───────► [/onboarding/website Flow]
   //    │                                                             │ (Creates Site)
   //    │                                                             ▼
   //    └─── (Target = /editor?site=123 & Ownership Valid) ───────────► [/editor?site=123]
@@ -1083,10 +1094,17 @@ export default function App() {
     const isEditorRoute = isEditorPath(path);
     const isOnboardingRoute = isOnboardingWebsitePath(path);
 
+    // Home and the SaaS dashboard are valid destinations for every signed-in
+    // owner. They are not setup gates: a slow/empty salon query must never
+    // eject someone from either route into Explore Templates.
+    // `/onboarding/website` is likewise explicit: visiting it is allowed, but
+    // it must not trap a user who later chooses Home or Dashboard.
+    const requiresEditorSetup = requiresOwnerEditorSetup(path);
+
     const completeness = checkProfileCompleteness(profile, user);
 
     // 1. Profile Incomplete check -> redirect to /settings/profile?next=...
-    if (!completeness.isComplete) {
+    if (!completeness.isComplete && requiresEditorSetup) {
       if (!isProfileRoute) {
         const nextParam = isEditorRoute || isOnboardingRoute ? path : '/editor';
         const redirectUrl = buildSettingsProfileUrl(nextParam);
@@ -1116,10 +1134,12 @@ export default function App() {
       const { salons, count } = await fetchUserOwnedSalons(supabase, user.id);
       if (cancelled) return;
 
-      // Case A: (User has 0 sites OR target = /onboarding) -> /onboarding/website Flow
-      if (count === 0 || isOnboardingRoute) {
+      // A missing salon matters only after the owner explicitly asks to open
+      // the editor. Do not infer that Home (`/`) or Dashboard (`/dashboard`)
+      // should become the Explore Templates route.
+      if (shouldRedirectEditorToWebsiteOnboarding(path, count)) {
         if (!isOnboardingRoute && currentPathNorm !== '/wizard') {
-          console.info('[Middleware Guard] 0 sites found -> routing to /onboarding/website');
+          console.info('[Owner Editor Guard] 0 sites found -> routing to /onboarding/website');
           navigate(ONBOARDING_WEBSITE_PATH);
           setCurrentViewState('wizard');
           setWizardStartingStep(1);
@@ -1128,7 +1148,7 @@ export default function App() {
       }
 
       // Case B: (Target = /editor?site=123 & Ownership Valid) -> /editor?site=123
-      if (isEditorRoute || currentPathNorm === '/' || currentPathNorm === '/wizard') {
+      if (isEditorRoute) {
         const searchParams = typeof window !== 'undefined' ? window.location.search : '';
         const requestedSiteId = parseSiteParam(searchParams);
 
