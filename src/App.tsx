@@ -2094,8 +2094,7 @@ export default function App() {
 
   const handleSelectCategory = (catId: BusinessTypeId) => {
     handleSelectTemplate(catId);
-    setWizardStartingStep(2);
-    setCurrentView('wizard');
+    setCurrentView('dashboard');
   };
 
   const handleAddAppointment = async (newApt: Appointment) => {
@@ -2415,10 +2414,7 @@ export default function App() {
         isOnboardingWebsitePath(path) ? <QuickWebsiteLaunch
           profile={profile}
           setProfile={setProfile}
-          selectedTemplateId={selectedTemplateId}
-          onSelectTemplate={handleSelectTemplate}
-          onSave={handleSaveNow}
-          onGoLive={handleWizardComplete}
+          onExploreTemplates={() => setCurrentView('landing')}
           onOpenDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}
         /> : <WebsiteEditor
