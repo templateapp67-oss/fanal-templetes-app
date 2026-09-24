@@ -17,9 +17,8 @@ test('profile shows protected fields read-only, persists profile + account setti
   const id='a0000000-0000-4000-8000-000000000001';
   let profile:any={full_name:'Rahul',email:'rahul@example.com',phone:'+919876543210',partner_id:id,referral_code:'NEXORA-RAHUL25',account_status:'Active',partner_role:'Growth Partner',approval_status:'Approved',joined_at:'2026-09-01T00:00:00Z',photo_path:`${id}/a0000000-0000-4000-8000-000000000099.webp`};
   const rpcCalls:any[]=[],authCalls:any[]=[];
-  let firstLoad=true;
   const client:GrowthPartnerProfileClient={
-    rpc:async(fn,args)=>{rpcCalls.push({fn,args});if(fn==='get_my_growth_partner_profile'){if(firstLoad){firstLoad=false;return{data:null,error:{message:'offline'}};}return{data:profile,error:null};}profile={...profile,...args!.p_patch as any};return{data:profile,error:null};},
+    rpc:async(fn,args)=>{rpcCalls.push({fn,args});if(fn==='get_my_growth_partner_profile'||fn==='get_or_create_my_growth_partner_profile')return{data:profile,error:null};if(fn==='get_my_partner_account_settings')return{data:null,error:{message:'not configured'}};profile={...profile,...args!.p_patch as any};return{data:profile,error:null};},
     auth:{getUser:async()=>({data:{user:{id,email:profile.email}},error:null}),updateUser:async(args,opts)=>{authCalls.push({args,opts});return{data:{user:{id,email:profile.email}},error:null};}},
     storage:{from:()=>({upload:async()=>({error:null}),remove:async()=>({error:null}),getPublicUrl:path=>({data:{publicUrl:`https://images.example/${path}`}})})},
   };
@@ -28,7 +27,6 @@ test('profile shows protected fields read-only, persists profile + account setti
   const button=(label:string)=>[...host.querySelectorAll('button')].find(el=>el.textContent===label);
   try{
     await act(async()=>root.render(React.createElement(GrowthPartnerProfilePage,{client})));
-    assert.match(host.textContent!,/Could not load/);await click(button('Retry profile'),'retry');
     await wait(()=>!!input('Full Name'));
     for(const label of ['Partner Name','Email','Phone','Partner ID','Referral Code','Account status','Joined date','Profile Photo','Approval Status','Partner Role'])assert.ok(host.textContent!.includes(label),label);
     for(const protectedLabel of ['Partner ID','Partner Role','Referral Code','Approval Status'])assert.equal([...host.querySelectorAll('label')].some(el=>el.textContent?.startsWith(protectedLabel)),false);

@@ -52,7 +52,7 @@ test('profile client only sends basic fields, uploads to the session owner and u
   const client:GrowthPartnerProfileClient={
     auth:{getUser:async()=>({data:{user:{id,email:'rahul@example.com'}},error:null}),updateUser:async(attributes,options)=>{calls.push({auth:attributes,options});return{data:{user:{id}},error:null};}},
     rpc:async(fn,args)=>{
-      calls.push({fn,args});if(fn==='get_my_growth_partner_profile')return{data:saved,error:null};
+      calls.push({fn,args});if(fn==='get_my_growth_partner_profile'||fn==='get_or_create_my_growth_partner_profile')return{data:saved,error:null};
       if(failSave)return{data:null,error:{message:'failed'}};
       const patch=args!.p_patch as any;saved={...saved,...patch};
       return lostResponse?{data:null,error:{message:'lost response'}}:{data:saved,error:null};

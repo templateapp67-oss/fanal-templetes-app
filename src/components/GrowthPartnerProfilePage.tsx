@@ -75,7 +75,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
         if (cancelled) return;
         setBusiness(prev => ({ ...prev, ...saved, social_links: normalizeSocialLinks(saved.social_links) }));
       }).catch(() => setBusiness(prev => ({ ...prev, agency_name: 'Growth Partner Desk', whatsapp_phone: data.phone || '' })));
-    }, error => { if (!cancelled) { setError(safePartnerErrorMessage(error, 'Could not load your partner profile. Please retry.')); setLoading(false); } });
+    }, error => { if (!cancelled) { setError(safePartnerErrorMessage(error, 'Your session has expired. Please sign in again.')); setLoading(false); } });
     return () => { cancelled = true; };
   }, [client, retry]);
   useEffect(() => {
@@ -87,7 +87,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
   if (!profile) return (
     <div className="min-w-0 space-y-5">
       <PartnerToastCenter />
-      <div role="alert" className="rounded-3xl bg-white p-8"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white">Retry profile</button></div>
+      <div className="rounded-3xl bg-white p-8"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white">Reconnect profile</button></div>
     </div>
   );
   const avatar = preview || (!removePhoto && growthPartnerPhotoUrl(profile.photo_path, client)) || '';

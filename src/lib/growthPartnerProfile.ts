@@ -95,10 +95,48 @@ export interface GrowthPartnerProfileClient {
 }
 const defaultClient = supabase as unknown as GrowthPartnerProfileClient;
 
+async function requireProfileUser(client: GrowthPartnerProfileClient): Promise<{ id: string; email?: string; user_metadata?: Record<string, unknown> }> {
+  const { data, error } = await client.auth.getUser();
+  if (error || !data?.user?.id) {
+    throw new Error('Your session has expired. Please sign in again.');
+  }
+  return data.user;
+}
+
+function temporaryProfile(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): GrowthPartnerProfileData {
+  const name = typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+    ? user.user_metadata.full_name.trim()
+    : String(user.email || '').split('@')[0] || 'Growth Partner';
+  return {
+    full_name: name, email: String(user.email || ''), phone: null, photo_path: null,
+    partner_id: user.id, referral_code: 'Generating…', account_status: 'Setting up',
+    partner_role: 'Growth Partner', approval_status: 'Active', joined_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Profile bootstrap is session-first. It asks the backend to provision only
+ * auth.uid() and create the linked profiles/onboarding rows before reading the
+ * profile. A temporary, non-authorizing display model prevents a broken RPC
+ * from turning the profile page into a blocking error screen.
+ */
+export async function getOrCreateMyGrowthPartnerProfile(client: GrowthPartnerProfileClient = defaultClient): Promise<GrowthPartnerProfileData> {
+  const user = await requireProfileUser(client);
+  const { data, error } = await client.rpc('get_or_create_my_growth_partner_profile');
+  if (!error && data) return data as GrowthPartnerProfileData;
+
+  // Rolling deployments can briefly have the previous pair of RPCs only.
+  const activation = await Promise.resolve(client.rpc('ensure_my_growth_partner'))
+    .catch(() => ({ data: null, error }));
+  if (!activation.error) {
+    const existing = await client.rpc('get_my_growth_partner_profile');
+    if (!existing.error && existing.data) return existing.data as GrowthPartnerProfileData;
+  }
+  return temporaryProfile(user);
+}
+
 export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClient = defaultClient): Promise<GrowthPartnerProfileData> {
-  const { data, error } = await client.rpc('get_my_growth_partner_profile');
-  if (error || !data) throw new Error(safePartnerErrorMessage(error, 'Could not load your partner profile. Please retry.'));
-  return data as GrowthPartnerProfileData;
+  return getOrCreateMyGrowthPartnerProfile(client);
 }
 export async function fetchPartnerAccountSettings(client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
   const { data, error } = await client.rpc('get_my_partner_account_settings');

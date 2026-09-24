@@ -226,6 +226,8 @@ export async function fetchMyGrowthPartnerApplication(): Promise<GrowthPartnerAp
  * not a partner. RLS decides — the frontend only renders the outcome.
  */
 export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw rpcError('Growth Partner lookup failed', authError);
   const { data, error } = await supabase.rpc('get_my_growth_partner');
   if (error) throw rpcError('Growth Partner lookup failed', error);
   return (data ?? null) as GrowthPartner | null;
@@ -237,8 +239,22 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
  * preserves an existing suspended partner instead of reactivating it.
  */
 export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw rpcError('Growth Partner activation failed', authError);
   const { data, error } = await supabase.rpc('ensure_my_growth_partner');
   if (error) throw rpcError('Growth Partner activation failed', error);
+  return data as GrowthPartner;
+}
+
+/**
+ * Provision and read the current caller's partner identity in one backend
+ * transaction. The RPC has no user-id argument and always uses auth.uid().
+ */
+export async function getOrCreateMyGrowthPartner(): Promise<GrowthPartner> {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw rpcError('Growth Partner setup failed', authError);
+  const { data, error } = await supabase.rpc('get_or_create_my_growth_partner');
+  if (error || !data) throw rpcError('Growth Partner setup failed', error);
   return data as GrowthPartner;
 }
 
