@@ -1,4 +1,6 @@
 import { toSafeReferralError } from '../lib/flow';
+import { captureSignupReferral } from '../lib/referralAttribution';
+import { clearReferralIntent, persistReferralIntent, readReferralIntent } from '../lib/referralPersistence';
 import React, { useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton } from './Shell';
 import { linkReferralCode, type OnboardingSupabaseClient } from '../lib/auth';
@@ -56,7 +58,10 @@ export const ReferralScreen: React.FC<{
   onLinked?: () => void;
   onLogout?: () => void;
 }> = ({ client, email, initialCode = '', onLinked, onLogout }) => {
-  const [code, setCode] = useState(() => (typeof initialCode === 'string' ? initialCode : ''));
+  // URL wins over persisted intent, then the router-provided initial code.
+  // This runs on mount so a direct /onboarding/referral?code=... link works
+  // even if it reaches this screen without first visiting /signup.
+  const [code, setCode] = useState(() => readReferralIntent() || (typeof initialCode === 'string' ? initialCode : ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const flight = useRef(createSingleFlight());
@@ -65,15 +70,23 @@ export const ReferralScreen: React.FC<{
     if (busy) return;
     const trimmed = code.trim();
     if (!trimmed) {
+      clearReferralIntent();
       setError('Enter your referral code.');
       return;
     }
     setBusy(true);
     setError('');
-    // Single-flight: an in-flight verification cannot be duplicated, and the
-    // button is disabled meanwhile — no accidental double submissions.
+    // Validate/canonicalize the input through the existing same-origin
+    // attribution endpoint before linking. The stored value remains intent
+    // only; linkReferralCode still performs the authenticated DB write.
     void flight.current
-      .run(() => linkReferralCode(client as OnboardingSupabaseClient, trimmed))
+      .run(async () => {
+        const canonical = await captureSignupReferral(trimmed);
+        if (!canonical) throw new OnboardingError('invalid-code', 'Invalid referral code. Please check and try again.');
+        persistReferralIntent(canonical);
+        setCode(canonical);
+        await linkReferralCode(client as OnboardingSupabaseClient, canonical);
+      })
       .then((result) => {
         if (result === null) return; // duplicate tap while busy — ignored
         onLinked?.();
@@ -111,7 +124,17 @@ export const ReferralScreen: React.FC<{
         </>
       }
     >
-      <ReferralForm code={code} busy={busy} error={error} onCodeChange={setCode} onSubmit={submit} />
+      <ReferralForm
+        code={code}
+        busy={busy}
+        error={error}
+        onCodeChange={(value) => {
+          setCode(value);
+          if (!value.trim()) clearReferralIntent();
+          else persistReferralIntent(value);
+        }}
+        onSubmit={submit}
+      />
     </GatewayShell>
   );
 };
