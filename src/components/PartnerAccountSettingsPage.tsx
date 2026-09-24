@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toDataURL } from 'qrcode';
+import { copyToClipboard } from '../lib/clipboard';
 import {
   AlertTriangle,
   Check,
@@ -474,10 +475,10 @@ const TwoFactorSection: React.FC<{
 
   const copySecret = async () => {
     if (!setup) return;
-    try {
-      await navigator.clipboard?.writeText(setup.secret);
-      showPartnerToast.success('Setup key copied.');
-    } catch {
+    const ok = await copyToClipboard(setup.secret);
+    if (ok) {
+      showPartnerToast.success('Setup key copied to clipboard.');
+    } else {
       showPartnerToast.error('Copy failed — select the key and copy it manually.');
     }
   };

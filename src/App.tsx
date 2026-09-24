@@ -10,7 +10,13 @@ import {
   readOwnerEntryFacts,
   type OwnerEntryStage,
 } from './lib/ownerEntryRoute';
-import { resolveOwnerSalon, createBlankSalonProfile } from './lib/ownerSalonResolution';
+import {
+  resolveOwnerSalon,
+  createBlankSalonProfile,
+  checkProfileCompleteness,
+  fetchUserOwnedSalons,
+  validateSiteOwnership,
+} from './lib/ownerSalonResolution';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
@@ -73,6 +79,16 @@ import {
   isStaffCommissionPath,
   isGrowthPartnerPath,
   isPartnerPortalPath,
+  isSettingsProfilePath,
+  isEditorPath,
+  isOnboardingWebsitePath,
+  parseNextUrl,
+  parseSiteParam,
+  buildEditorUrl,
+  buildSettingsProfileUrl,
+  SETTINGS_PROFILE_PATH,
+  ONBOARDING_WEBSITE_PATH,
+  EDITOR_PATH,
   MY_BOOKINGS_PATH,
   OWNER_DASHBOARD_PATH,
   STAFF_PERFORMANCE_PATH,
@@ -83,6 +99,7 @@ import {
   matchBookingDetailPath,
   bookingDetailPath,
 } from './lib/router';
+import { useReferralTracker } from './lib/useReferralTracker';
 import { MyBookingsPage } from './components/MyBookingsPage';
 import { CustomerApp } from './customer/CustomerApp';
 import { OnboardingApp } from './onboarding/OnboardingApp';
@@ -305,6 +322,14 @@ export default function App() {
       setCurrentViewState((view) => (view === 'growthPartner' ? view : 'growthPartner'));
       return;
     }
+    if (isSettingsProfilePath(path)) {
+      setIsProfileSettingsOpen(true);
+      return;
+    }
+    if (isEditorPath(path) || isOnboardingWebsitePath(path)) {
+      setCurrentViewState((view) => (view === 'wizard' ? view : 'wizard'));
+      return;
+    }
     setCurrentViewState((view) =>
       view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission' || view === 'growthPartner'
         ? 'landing'
@@ -364,6 +389,14 @@ export default function App() {
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isRLSDiagnosticsOpen, setIsRLSDiagnosticsOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
+  // Global Referral Tracker & Automatic Direct Signup Modal Trigger
+  useReferralTracker({
+    onReferralDetected: useCallback((_code: string) => {
+      setIsAuthModalOpen(true);
+      setAuthMode('signup');
+    }, []),
+  });
 
   // Load the persistent salon state from localStorage on initial mount.
   const initialSaved = typeof window !== 'undefined' ? loadSalonState() : null;
@@ -1021,6 +1054,132 @@ export default function App() {
       cancelled = true;
     };
   }, [user?.id, path, setCurrentView]);
+
+  // ---------------------------------------------------------------------------
+  // GLOBAL MIDDLEWARE GUARD
+  // Flow:
+  // [User Sign Up / Login]
+  //    ↓
+  // [Global Middleware Guard] ─── (Profile Incomplete?) ───► [Redirect to /settings/profile?next=...]
+  //    │                                                            │
+  // (Profile Complete)                                              │ (User Fills & Saves Profile)
+  //    │                                                            │
+  //    ▼                                                            ▼
+  // [Check Destination / Sites] ◄───────────────────────────────────┘
+  //    │
+  //    ├─── (User has 0 sites OR target = /onboarding) ───► [/onboarding/website Flow]
+  //    │                                                             │ (Creates Site)
+  //    │                                                             ▼
+  //    └─── (Target = /editor?site=123 & Ownership Valid) ───────────► [/editor?site=123]
+  // ---------------------------------------------------------------------------
+  const [targetNextPath, setTargetNextPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id || authStatus !== 'ready' || isMockSupabase) return;
+    if (isPublicSite || isCustomerApp || isPartnerPortal) return;
+
+    const currentPathNorm = normalizePath(path);
+    const isProfileRoute = isSettingsProfilePath(path);
+    const isEditorRoute = isEditorPath(path);
+    const isOnboardingRoute = isOnboardingWebsitePath(path);
+
+    const completeness = checkProfileCompleteness(profile, user);
+
+    // 1. Profile Incomplete check -> redirect to /settings/profile?next=...
+    if (!completeness.isComplete) {
+      if (!isProfileRoute) {
+        const nextParam = isEditorRoute || isOnboardingRoute ? path : '/editor';
+        const redirectUrl = buildSettingsProfileUrl(nextParam);
+        console.info('[Middleware Guard] Profile incomplete -> redirecting to', redirectUrl);
+        setTargetNextPath(nextParam);
+        setIsProfileSettingsOpen(true);
+        navigate(redirectUrl);
+      } else {
+        setIsProfileSettingsOpen(true);
+      }
+      return;
+    }
+
+    // If profile was incomplete and is now complete:
+    if (isProfileRoute && completeness.isComplete) {
+      const searchParams = typeof window !== 'undefined' ? window.location.search : '';
+      const nextFromUrl = parseNextUrl(searchParams) || targetNextPath || '/editor';
+      console.info('[Middleware Guard] Profile complete -> proceeding to next destination:', nextFromUrl);
+      setIsProfileSettingsOpen(false);
+      navigate(nextFromUrl);
+      return;
+    }
+
+    // 2. Check Destination / Sites
+    let cancelled = false;
+    void (async () => {
+      const { salons, count } = await fetchUserOwnedSalons(supabase, user.id);
+      if (cancelled) return;
+
+      // Case A: (User has 0 sites OR target = /onboarding) -> /onboarding/website Flow
+      if (count === 0 || isOnboardingRoute) {
+        if (!isOnboardingRoute && currentPathNorm !== '/wizard') {
+          console.info('[Middleware Guard] 0 sites found -> routing to /onboarding/website');
+          navigate(ONBOARDING_WEBSITE_PATH);
+          setCurrentViewState('wizard');
+          setWizardStartingStep(1);
+        }
+        return;
+      }
+
+      // Case B: (Target = /editor?site=123 & Ownership Valid) -> /editor?site=123
+      if (isEditorRoute || currentPathNorm === '/' || currentPathNorm === '/wizard') {
+        const searchParams = typeof window !== 'undefined' ? window.location.search : '';
+        const requestedSiteId = parseSiteParam(searchParams);
+
+        if (requestedSiteId) {
+          const { isValid, salon } = await validateSiteOwnership(supabase, user.id, requestedSiteId);
+          if (cancelled) return;
+
+          if (isValid && salon) {
+            console.info('[Middleware Guard] Valid site ownership for site:', requestedSiteId);
+            if (currentView !== 'wizard' && currentView !== 'dashboard') {
+              setCurrentViewState('wizard');
+            }
+          } else {
+            // Ownership Invalid -> fallback to user's primary owned site
+            const userPrimarySite = salons[0];
+            const primarySiteId = userPrimarySite?.id || userPrimarySite?.slug || userPrimarySite?.subdomain;
+            console.warn(`[Middleware Guard] Access denied for site "${requestedSiteId}". Redirecting to primary site "${primarySiteId}".`);
+            showToast(`Access denied for site "${requestedSiteId}". Redirected to your site.`, 'error');
+            const fallbackUrl = buildEditorUrl(primarySiteId);
+            navigate(fallbackUrl);
+            setCurrentViewState('wizard');
+          }
+        } else {
+          // Automatically bind primary site if on barefoot editor route
+          const primarySite = salons[0];
+          const primarySiteId = primarySite?.id || primarySite?.slug || primarySite?.subdomain;
+          if (primarySiteId && currentPathNorm === '/') {
+            const defaultEditorUrl = buildEditorUrl(primarySiteId);
+            navigate(defaultEditorUrl);
+            setCurrentViewState('wizard');
+          }
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user?.id,
+    authStatus,
+    path,
+    profile,
+    isPublicSite,
+    isCustomerApp,
+    isPartnerPortal,
+    navigate,
+    showToast,
+    targetNextPath,
+    currentView,
+  ]);
 
   // Auto-Fetch Profile Sync
   useEffect(() => {

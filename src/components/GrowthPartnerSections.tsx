@@ -1,6 +1,7 @@
 import { ReferralTable } from './ReferralTable';
-import { formatPartnerDate, referralTitle } from '../lib/partnerPresentation';
-export { formatPartnerDate } from '../lib/partnerPresentation';
+import { formatPartnerDate, formatPartnerMoney, referralTitle } from '../lib/partnerPresentation';
+export { formatPartnerDate, formatPartnerMoney } from '../lib/partnerPresentation';
+import { getPartnerEarnings } from '../lib/partnerPortalOperations';
 import { PartnerStatCard as KpiCard } from './PartnerStatCard';
 export { PartnerStatCard as KpiCard } from './PartnerStatCard';
 import { ReferralStatusPill } from './ReferralStatusPill';
@@ -21,11 +22,14 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Copy,
   Inbox,
   Loader2,
   RefreshCw,
   Search,
+  TrendingUp,
+  Users,
 } from 'lucide-react';
 import {
   GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE,
@@ -486,6 +490,72 @@ export function ReferralStatusTabs({ value, counts, onChange, panelId }: {
   );
 }
 
+export function ReferralSummaryCards({
+  totalReferrals,
+  pendingPaise,
+  lifetimePaise,
+  currency = 'INR',
+  loading = false,
+}: {
+  totalReferrals: number | null | undefined;
+  pendingPaise: number | null | undefined;
+  lifetimePaise: number | null | undefined;
+  currency?: string;
+  loading?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3 sm:gap-4 mb-2">
+      {/* Total Referrals Card */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Referrals</span>
+          <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600">
+            <Users className="h-4 w-4" aria-hidden="true" />
+          </div>
+        </div>
+        <div className="mt-2">
+          <div className="font-mono text-2xl font-bold tabular-nums text-slate-900">
+            {loading && totalReferrals === undefined ? '—' : (totalReferrals ?? 0).toLocaleString()}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Total referred users tracked</p>
+        </div>
+      </div>
+
+      {/* Pending Payouts Card */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Pending Payouts</span>
+          <div className="rounded-xl bg-amber-50 p-2 text-amber-600">
+            <Clock className="h-4 w-4" aria-hidden="true" />
+          </div>
+        </div>
+        <div className="mt-2">
+          <div className="font-mono text-2xl font-bold tabular-nums text-slate-900">
+            {loading && pendingPaise === undefined ? '—' : formatPartnerMoney(pendingPaise ?? 0, currency)}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Pending clearance & payouts</p>
+        </div>
+      </div>
+
+      {/* Total Lifetime Earnings Card */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Lifetime Earnings</span>
+          <div className="rounded-xl bg-emerald-50 p-2 text-emerald-600">
+            <TrendingUp className="h-4 w-4" aria-hidden="true" />
+          </div>
+        </div>
+        <div className="mt-2">
+          <div className="font-mono text-2xl font-bold tabular-nums text-slate-900">
+            {loading && lifetimePaise === undefined ? '—' : formatPartnerMoney(lifetimePaise ?? 0, currency)}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Total commission earned</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Responsive, privacy-minimized referred users table (Sections 9–10).
 export const GrowthPartnerReferrals: React.FC<
   Omit<PartnerListSectionProps, 'filter' | 'onFilterChange'> & {
@@ -498,6 +568,33 @@ export const GrowthPartnerReferrals: React.FC<
 > = ({ list, loading, error, onPage, onRetry, statusTab = 'all' as ReferralStatusTab, onStatusTabChange, filtersActive = false, onApplyFilters, referralCode }) => {
   const [filtersResetKey, setFiltersResetKey] = useState(0);
   const [selectedReferral, setSelectedReferral] = useState<string | null>(null);
+  const [earnings, setEarnings] = useState<{ pending_paise: number; lifetime_paise: number; currency: string } | null>(null);
+  const [earningsLoading, setEarningsLoading] = useState(true);
+
+  const fetchEarningsData = useCallback(() => {
+    setEarningsLoading(true);
+    getPartnerEarnings({ limit: 1 })
+      .then((res) => {
+        if (res?.totals) {
+          setEarnings({
+            pending_paise: res.totals.pending_paise ?? 0,
+            lifetime_paise: res.totals.lifetime_paise ?? 0,
+            currency: res.currency || 'INR',
+          });
+        }
+      })
+      .catch(() => {
+        setEarnings({ pending_paise: 0, lifetime_paise: 0, currency: 'INR' });
+      })
+      .finally(() => {
+        setEarningsLoading(false);
+      });
+  }, []);
+
+  React.useEffect(() => {
+    fetchEarningsData();
+  }, [fetchEarningsData]);
+
   const closeDetails = useCallback(() => setSelectedReferral(null), []);
   const panelId = useId();
   // Normalized on entry: rows/counters/pager values are always well-formed, so
@@ -509,16 +606,28 @@ export const GrowthPartnerReferrals: React.FC<
         <h2 className="text-base font-bold text-slate-900">Referred Users</h2>
         <button
           type="button"
-          onClick={onRetry}
+          onClick={() => {
+            onRetry?.();
+            fetchEarningsData();
+          }}
           disabled={loading}
           aria-label="Refresh referred users"
           title="Refresh referred users"
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
           Refresh
         </button>
       </div>
+
+      <ReferralSummaryCards
+        totalReferrals={view?.total ?? list?.total ?? 0}
+        pendingPaise={earnings?.pending_paise}
+        lifetimePaise={earnings?.lifetime_paise}
+        currency={earnings?.currency || 'INR'}
+        loading={earningsLoading && !earnings}
+      />
+
       {onApplyFilters && <ReferralSearchControls onApply={onApplyFilters} resetKey={filtersResetKey} />}
       <ReferralStatusTabs value={statusTab} counts={view?.status_counts} onChange={onStatusTabChange} panelId={panelId} />
       <div role="tabpanel" id={panelId} aria-labelledby={`${panelId}-tab-${statusTab}`} aria-busy={loading} tabIndex={0}>

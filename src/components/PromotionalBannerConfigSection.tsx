@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SalonProfile, PromotionalBannerConfig, PromoBannerTheme } from '../types';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface PromotionalBannerConfigSectionProps {
   profile: SalonProfile;
@@ -198,11 +199,13 @@ export const PromotionalBannerConfigSection: React.FC<PromotionalBannerConfigSec
     });
   };
 
-  const handleTestCopyCode = () => {
+  const handleTestCopyCode = async () => {
     if (currentBanner.discountCode) {
-      navigator.clipboard?.writeText(currentBanner.discountCode);
-      setPreviewCopied(true);
-      setTimeout(() => setPreviewCopied(false), 2000);
+      const ok = await copyToClipboard(currentBanner.discountCode);
+      if (ok) {
+        setPreviewCopied(true);
+        setTimeout(() => setPreviewCopied(false), 2000);
+      }
     }
   };
 

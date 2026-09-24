@@ -354,6 +354,9 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
   return null;
 }
 
+/** Alias for fetchMyGrowthPartnerRow providing safe backwards compatibility. */
+export const getMyGrowthPartner = fetchMyGrowthPartnerRow;
+
 /**
  * Classify "this project has not had the migration applied" — PostgREST answers
  * PGRST202 (function/table not in the schema cache) or, on older gateways, an
@@ -519,6 +522,8 @@ export async function approveDemoGrowthPartnerAccount(): Promise<GrowthPartner> 
 // helper copies ONLY the code string and keeps no browser-side state.
 // ============================================================================
 
+import { copyToClipboard } from './clipboard';
+
 /** Safe copy when the partner has no referral code yet (never invented). */
 export const GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE = 'Referral code not available.';
 
@@ -529,10 +534,9 @@ export interface ClipboardLike {
 
 /**
  * Copy the referral code to the clipboard. Resolves true only when the value
- * was actually written (clipboard present and writeText resolved); otherwise
- * false — the UI keeps its "Copy" affordance instead of claiming a copy that
- * never happened. Never throws. `target` is optional (tests inject a fake);
- * the default reads the browser `navigator`.
+ * was actually written (clipboard or fallback resolved); otherwise false.
+ * Never throws. `target` is optional (tests inject a fake);
+ * the default reads the browser `navigator` and falls back to execCommand.
  */
 export async function copyReferralCodeToClipboard(
   code: unknown,
@@ -540,16 +544,18 @@ export async function copyReferralCodeToClipboard(
 ): Promise<boolean> {
   const value = String(code ?? '').trim();
   if (!value) return false;
-  try {
-    const nav: ClipboardLike | null =
-      target ?? (typeof navigator !== 'undefined' ? (navigator as unknown as ClipboardLike) : null);
-    const writeText = nav?.clipboard?.writeText;
-    if (typeof writeText !== 'function') return false;
-    await writeText(value);
-    return true;
-  } catch {
-    return false;
+
+  // Custom target injection (e.g. unit tests)
+  if (target && target.clipboard?.writeText) {
+    try {
+      await target.clipboard.writeText(value);
+      return true;
+    } catch {
+      return false;
+    }
   }
+
+  return copyToClipboard(value);
 }
 
 

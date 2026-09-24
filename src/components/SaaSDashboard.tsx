@@ -15,6 +15,7 @@ import { LoyaltyTierProgressBar } from './LoyaltyTierProgressBar';
 import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
 import { getSiteUrl } from '../lib/salonStore';
+import { copyToClipboard } from '../lib/clipboard';
 
 import { AppointmentsCalendarView } from './AppointmentsCalendarView';
 import { BookingManager } from './BookingManager';
@@ -89,6 +90,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   const appointments = hasLiveSnapshot ? live.appointments : suppliedAppointments;
   const clients = hasLiveSnapshot ? live.clients : suppliedClients;
   const [actionError, setActionError] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
   const setLoyaltyConfig = externalSetLoyaltyConfig || setInternalLoyaltyConfig;
@@ -306,14 +308,19 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 </a>
                 <span className="text-xs text-gray-500 font-mono">• {profile?.city || 'India'}</span>
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(siteUrl);
-                    alert("Website Link Copied: " + siteUrl);
+                  type="button"
+                  onClick={async () => {
+                    const ok = await copyToClipboard(siteUrl);
+                    if (ok) {
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                    }
                   }}
-                  className="p-1 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
+                  className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors cursor-pointer flex items-center gap-1"
                   title="Copy Website Link"
                 >
-                  <span className="material-symbols-outlined text-sm">content_copy</span>
+                  <span className="material-symbols-outlined text-sm">{copiedLink ? 'check' : 'content_copy'}</span>
+                  {copiedLink && <span className="text-[10px] font-bold text-emerald-600">Copied!</span>}
                 </button>
                 <a
                   href={siteUrl}

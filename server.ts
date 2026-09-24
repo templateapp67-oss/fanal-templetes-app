@@ -64,6 +64,7 @@ import {
 } from "./server/safeError";
 import { lookupSalon } from "./server/siteLookup";
 import { handleReengageClients } from "./server/geminiReengagement";
+import { handleGeocodeRequest } from "./server/geocode";
 
 // Log (instead of silently dying on) stray async faults.
 installProcessGuards("server.ts");
@@ -246,6 +247,9 @@ async function startServer() {
   // /api/* (incl. /api/website/save) get a 204 instead of a 404.
   app.use(nexoraCors);
   registerReferralAttributionRoutes(app);
+
+  // Server-side Geocoding Proxy Route (prevents client-side CORS errors)
+  app.get("/api/geocode", asyncRoute(handleGeocodeRequest));
 
   // API Routes
   // Configuration + connectivity diagnostics. `?deep=1` also round-trips the

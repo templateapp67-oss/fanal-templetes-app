@@ -265,6 +265,38 @@ export const SALON_SYNC_TABLES = [
  * it hasn't seen yet).
  */
 /**
+ * Helper to identify if an error is specifically an unrecognized/missing column error
+ * (and NOT a not-null constraint violation, unique constraint, or missing table).
+ */
+export function isMissingColumnError(errMsg: string): string | null {
+  if (!errMsg) return null;
+  if (
+    /null value in column/i.test(errMsg) ||
+    /violates not-null constraint/i.test(errMsg) ||
+    /violates/i.test(errMsg) ||
+    /duplicate key/i.test(errMsg) ||
+    /permission denied/i.test(errMsg) ||
+    (/schema cache/i.test(errMsg) && /table/i.test(errMsg))
+  ) {
+    return null;
+  }
+
+  // 1. PostgREST "Could not find the 'xyz' column of 'table' in the schema cache"
+  const m1 = errMsg.match(/Could not find the '([^']+)' column of/i);
+  if (m1 && m1[1]) return m1[1];
+
+  // 2. PostgreSQL "column 'xyz' does not exist" OR "column 'xyz' of relation 'abc' does not exist"
+  const m2 = errMsg.match(/column ["']?([a-zA-Z0-9_]+)["']?(?:\s+of\s+relation\s+\S+)?\s+does not exist/i);
+  if (m2 && m2[1]) return m2[1];
+
+  // 3. PostgreSQL table.column: "column table.xyz does not exist"
+  const m3 = errMsg.match(/column\s+\w+\.([a-zA-Z0-9_]+)\s+does not exist/i);
+  if (m3 && m3[1]) return m3[1];
+
+  return null;
+}
+
+/**
  * Resilient upsert helper that handles schema cache differences (e.g. missing columns).
  */
 export async function resilientClientUpsert(
@@ -277,30 +309,39 @@ export async function resilientClientUpsert(
     ? payload.map((p) => ({ ...p }))
     : { ...payload };
 
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     const query = db.from(table).upsert(currentPayload as any, conflictOption);
     const res = await query;
     if (!res.error) return { error: null };
 
     const errMsg = String(res.error.message || '');
-    const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of/i)
-      || errMsg.match(/column "([^"]+)" of relation/i)
-      || errMsg.match(/column '([^']+)' of relation/i);
+    const missingCol = isMissingColumnError(errMsg);
 
-    if (missingColMatch && missingColMatch[1]) {
-      const missingCol = missingColMatch[1];
-      if (Array.isArray(currentPayload)) {
-        currentPayload.forEach((item) => delete item[missingCol]);
-      } else {
-        delete currentPayload[missingCol];
+    if (missingCol) {
+      if (missingCol === 'id' || missingCol === 'owner_id' || missingCol === 'user_id' || missingCol === 'organization_id') {
+        return { error: res.error };
       }
-      continue;
+      let removedAny = false;
+      if (Array.isArray(currentPayload)) {
+        currentPayload.forEach((item) => {
+          if (missingCol in item) {
+            delete item[missingCol];
+            removedAny = true;
+          }
+        });
+      } else {
+        if (missingCol in currentPayload) {
+          delete currentPayload[missingCol];
+          removedAny = true;
+        }
+      }
+      if (removedAny) continue;
     }
 
     return { error: res.error };
   }
 
-  return { error: new Error(`Upsert to ${table} failed after column retry`) };
+  return { error: new Error(`Upsert to ${table} failed after stripping unrecognised columns`) };
 }
 
 export async function syncSalonToSupabase(

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SalonProfile, SalonOffer } from '../types';
+import { copyToClipboard } from '../lib/clipboard';
 import { 
   Plus, 
   Edit2, 
@@ -151,14 +152,18 @@ export const OffersManagement: React.FC<OffersManagementProps> = ({
         });
       } catch (err) {
         console.log('Share failed or was cancelled, falling back to clipboard:', err);
-        navigator.clipboard.writeText(promoText);
+        const ok = await copyToClipboard(promoText);
+        if (ok) {
+          setShareCopied(true);
+          setTimeout(() => setShareCopied(false), 2000);
+        }
+      }
+    } else {
+      const ok = await copyToClipboard(promoText);
+      if (ok) {
         setShareCopied(true);
         setTimeout(() => setShareCopied(false), 2000);
       }
-    } else {
-      navigator.clipboard.writeText(promoText);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
     }
   };
 
@@ -735,8 +740,10 @@ export const OffersManagement: React.FC<OffersManagementProps> = ({
                           <button
                             type="button"
                             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-700 cursor-pointer transition-colors"
-                            onClick={() => {
-                              navigator.clipboard.writeText(code || 'DRAFT20');
+                            onClick={async () => {
+                              await copyToClipboard(code || 'DRAFT20');
+                              setShareCopied(true);
+                              setTimeout(() => setShareCopied(false), 2000);
                             }}
                           >
                             Copy Code

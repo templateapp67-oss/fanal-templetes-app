@@ -1,8 +1,18 @@
-export function normalizeWhatsApp(value: string): string {
+export function normalizeWhatsApp(value: string, required: boolean = false): string {
+  if (!value || !value.trim()) {
+    if (required) throw new Error('WhatsApp number is required.');
+    return '';
+  }
   const digits = value.replace(/[\s()+-]/g, '');
-  if (!digits) throw new Error('WhatsApp number is required.');
+  if (!digits || digits === '91') {
+    if (required) throw new Error('WhatsApp number is required.');
+    return '';
+  }
   const normalized = digits.length === 10 ? `91${digits}` : /^[6-9]\d{9}$/.test(digits) ? `91${digits}` : digits;
-  if (!/^[1-9]\d{7,14}$/.test(normalized)) throw new Error('Enter a valid 10-digit WhatsApp number.');
+  if (!/^[1-9]\d{7,14}$/.test(normalized)) {
+    if (required) throw new Error('Enter a valid 10-digit WhatsApp number.');
+    return value.trim();
+  }
   return `+${normalized}`;
 }
 

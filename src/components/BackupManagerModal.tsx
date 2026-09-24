@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, ClientRecord, LoyaltyConfig } from '../types';
+import { copyToClipboard } from '../lib/clipboard';
 
 export interface SalonConfigurationBackup {
   _metadata: {
@@ -191,11 +192,13 @@ export const BackupManagerModal: React.FC<BackupManagerModalProps> = ({
     }
   };
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     const payload = buildSnapshotPayload();
-    navigator.clipboard?.writeText(JSON.stringify(payload, null, 2));
-    setCopiedJson(true);
-    setTimeout(() => setCopiedJson(false), 2500);
+    const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
+    if (ok) {
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2500);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

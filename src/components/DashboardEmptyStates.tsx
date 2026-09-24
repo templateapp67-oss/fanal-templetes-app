@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SALON_IMAGES } from '../assets/images';
 import { Appointment, ClientRecord } from '../types';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface EmptyAppointmentsProps {
   filterStatus?: string;
@@ -35,14 +36,16 @@ export const EmptyAppointmentsPlaceholder: React.FC<EmptyAppointmentsProps> = ({
     );
   }
 
-  const handleShareClick = () => {
+  const handleShareClick = async () => {
     if (onShareSite) {
       onShareSite();
       return;
     }
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    const ok = await copyToClipboard(window.location.href);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
   };
 
   return (
@@ -158,14 +161,16 @@ export const EmptyClientsPlaceholder: React.FC<EmptyClientsProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleShareClick = () => {
+  const handleShareClick = async () => {
     if (onShareSite) {
       onShareSite();
       return;
     }
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    const ok = await copyToClipboard(window.location.href);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
   };
 
   return (

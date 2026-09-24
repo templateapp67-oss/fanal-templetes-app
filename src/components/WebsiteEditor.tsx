@@ -1,7 +1,8 @@
 import { readPartnerProfile } from '../lib/readPartnerProfile';
-import { isMockSupabase } from '../lib/supabaseClient';
+import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { isPartnerProfileComplete } from '../lib/profileCompletion';
 import { PartnerProfileModal } from './PartnerProfileModal';
+import { copyToClipboard } from '../lib/clipboard';
 import React, { useRef, useState } from 'react';
 import {
   Save,
@@ -26,6 +27,11 @@ import {
   Instagram,
   Facebook,
   Share2,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Hash,
+  Settings,
 } from 'lucide-react';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
@@ -90,6 +96,71 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
   const [profileCompletion, setProfileCompletion] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading');
   const [completionRetry, setCompletionRetry] = useState(0);
+  const [isSyncingProfile, setIsSyncingProfile] = useState(false);
+
+  // Auto-fill "Contact & Location" fields from User Profile data (profiles table / readPartnerProfile)
+  const loadProfileContactDetails = React.useCallback(async (forceSync = false) => {
+    try {
+      setIsSyncingProfile(true);
+      let profileData: any = null;
+      let authUser: any = null;
+
+      if (!isMockSupabase) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          authUser = user;
+          if (user?.id) {
+            const res = await readPartnerProfile(user.id);
+            if (res?.data) {
+              profileData = res.data;
+            }
+          }
+        } catch {
+          // Fallback direct query if readPartnerProfile errors
+          const { data: { user } } = await supabase.auth.getUser();
+          authUser = user;
+          if (user?.id) {
+            const { data } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (data) profileData = data;
+          }
+        }
+      }
+
+      setProfile((prev) => {
+        const phoneVal = profileData?.phone_number || profileData?.phone || '';
+        const whatsappVal = profileData?.whatsapp || profileData?.whatsapp_number || '';
+        const emailVal = profileData?.email || authUser?.email || '';
+        const addressVal = profileData?.full_address || profileData?.address || '';
+        const cityVal = profileData?.city || '';
+        const postalCodeVal = profileData?.postal_code || profileData?.pincode || profileData?.postalCode || '';
+        const areaLocalityVal = profileData?.area_locality || profileData?.areaLocality || profileData?.landmark || '';
+
+        return {
+          ...prev,
+          phone: forceSync ? (phoneVal || prev.phone || '') : (prev.phone || phoneVal || ''),
+          whatsapp: forceSync ? (whatsappVal || prev.whatsapp || '') : (prev.whatsapp || whatsappVal || ''),
+          email: forceSync ? (emailVal || prev.email || '') : (prev.email || emailVal || ''),
+          address: forceSync ? (addressVal || prev.address || '') : (prev.address || addressVal || ''),
+          city: forceSync ? (cityVal || prev.city || '') : (prev.city || cityVal || ''),
+          postalCode: forceSync ? (postalCodeVal || prev.postalCode || '') : (prev.postalCode || postalCodeVal || ''),
+          areaLocality: forceSync ? (areaLocalityVal || prev.areaLocality || '') : (prev.areaLocality || areaLocalityVal || ''),
+        };
+      });
+    } catch (err) {
+      console.warn('[WebsiteEditor] Contact details auto-fill notice:', err);
+    } finally {
+      setIsSyncingProfile(false);
+    }
+  }, [setProfile]);
+
+  React.useEffect(() => {
+    loadProfileContactDetails(false);
+  }, [loadProfileContactDetails]);
+
   React.useEffect(() => {
     let active = true;
     setProfileCompletion('loading');
@@ -190,13 +261,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   };
 
   const handleCopyLink = async () => {
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
-      await navigator.clipboard.writeText(siteUrl);
+    const ok = await copyToClipboard(siteUrl);
+    if (ok) {
       setCopied(true);
       showToast?.('Website link copied to clipboard!');
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       setCopied(false);
       showToast?.('Couldn’t copy the link. Please copy the displayed site URL manually.', 'error');
     }
@@ -430,28 +500,185 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
         {/* ===== 2. CONTACT & LOCATION ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <UserRound className="w-4 h-4 text-[#C20E5A]" />
-            <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
-            <div className="text-sm">
-              {profileCompletion === 'incomplete' && <button type="button" onClick={() => setContactDetailsOpen(true)} className="mt-2 font-semibold text-pink-700 underline">Complete profile · DOB & photo upload</button>}
-              {profileCompletion === 'complete' && <span className="text-emerald-700">Profile saved. Edit from Profile Settings.</span>}
-              {profileCompletion === 'loading' && <span role="status">Loading saved profile…</span>}
-              {profileCompletion === 'error' && <button type="button" onClick={() => setCompletionRetry(v => v + 1)} className="text-red-700 underline">Could not load profile status. Retry</button>}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <UserRound className="w-4 h-4 text-[#C20E5A]" />
+              <h2 className="font-display font-bold text-base">Contact &amp; Location</h2>
             </div>
-            {contactDetailsOpen && <PartnerProfileModal editable profile={profile} onSaved={patch => { upd(patch); setProfileCompletion('complete'); }} onClose={() => setContactDetailsOpen(false)} />}
+
+            <div className="flex items-center flex-wrap gap-2 text-xs">
+              {profileCompletion === 'incomplete' && (
+                <button
+                  type="button"
+                  onClick={() => setContactDetailsOpen(true)}
+                  className="inline-flex items-center gap-1 font-semibold text-pink-700 bg-pink-50 hover:bg-pink-100 px-2.5 py-1 rounded-full border border-pink-200 transition-colors cursor-pointer"
+                >
+                  <span>Complete profile · DOB &amp; photo upload</span>
+                </button>
+              )}
+              {profileCompletion === 'complete' && (
+                <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Profile saved</span>
+                </span>
+              )}
+              {profileCompletion === 'loading' && (
+                <span className="inline-flex items-center gap-1 text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-200">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Loading profile…</span>
+                </span>
+              )}
+              {profileCompletion === 'error' && (
+                <button
+                  type="button"
+                  onClick={() => setCompletionRetry((v) => v + 1)}
+                  className="text-rose-700 hover:underline"
+                >
+                  Retry load
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  await loadProfileContactDetails(true);
+                  if (showToast) showToast('Contact & Location synced from User Profile!', 'success');
+                }}
+                disabled={isSyncingProfile}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                title="Auto-fill Contact & Location from User Profile settings"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isSyncingProfile ? 'animate-spin' : ''}`} />
+                <span>Sync from Profile Settings</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setContactDetailsOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-pink-50 hover:bg-pink-100 text-[#C20E5A] text-xs font-bold transition-colors cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Profile Settings</span>
+              </button>
+            </div>
+            {contactDetailsOpen && (
+              <PartnerProfileModal
+                editable
+                profile={profile}
+                onSaved={(patch) => {
+                  upd(patch);
+                  setProfileCompletion('complete');
+                  if (showToast) showToast('Profile details updated!');
+                }}
+                onClose={() => setContactDetailsOpen(false)}
+              />
+            )}
           </div>
+
           <p className="text-[11px] text-gray-500 mb-5">
-            How customers reach, call, WhatsApp or find your physical salon.
+            How customers reach, call, WhatsApp or find your physical salon. Auto-filled from your profile data or editable below.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {([['Phone', profile.phone], ['WhatsApp', profile.whatsapp], ['Contact Email', profile.email], ['City', profile.city], ['PIN Code', profile.postalCode], ['Area / Locality', profile.areaLocality]] as const).map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-slate-200 p-3"><p className="text-xs text-slate-500">{label}</p><p className="text-sm mt-1 break-words">{value || 'Not provided'}</p></div>
-            ))}
-            <div className="md:col-span-2 space-y-4">
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                Phone Number
+              </label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="tel"
+                  value={profile.phone || ''}
+                  onChange={(e) => upd({ phone: e.target.value })}
+                  placeholder="e.g. +91 98765 43210"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                WhatsApp Number
+              </label>
+              <div className="relative">
+                <MessageSquare className="w-4 h-4 text-emerald-500 absolute left-3 top-3" />
+                <input
+                  type="tel"
+                  value={profile.whatsapp || ''}
+                  onChange={(e) => upd({ whatsapp: e.target.value })}
+                  placeholder="e.g. +91 98765 43210"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                Contact Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="email"
+                  value={profile.email || ''}
+                  onChange={(e) => upd({ email: e.target.value })}
+                  placeholder="e.g. contact@mysalon.com"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                City / Location
+              </label>
+              <div className="relative">
+                <Building2 className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={profile.city || ''}
+                  onChange={(e) => upd({ city: e.target.value })}
+                  placeholder="e.g. Mumbai, Maharashtra"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                PIN Code / Postal Code
+              </label>
+              <div className="relative">
+                <Hash className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={profile.postalCode || ''}
+                  onChange={(e) => upd({ postalCode: e.target.value })}
+                  placeholder="e.g. 400001"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                Area / Locality
+              </label>
+              <div className="relative">
+                <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={profile.areaLocality || ''}
+                  onChange={(e) => upd({ areaLocality: e.target.value })}
+                  placeholder="e.g. Bandra West"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="md:col-span-2 space-y-4 pt-1">
               <GooglePlacesAutocompleteInput
-                value={profile.address}
+                value={profile.address || ''}
                 onChange={(val) => upd({ address: val })}
                 latitude={profile.latitude}
                 longitude={profile.longitude}
@@ -495,19 +722,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </div>
                 </div>
               ) : null}
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
-                City / Area
-              </label>
-              <input
-                type="text"
-                value={profile.city}
-                onChange={(e) => upd({ city: e.target.value })}
-                placeholder="e.g. Hyderabad, Telangana"
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              />
             </div>
           </div>
         </section>

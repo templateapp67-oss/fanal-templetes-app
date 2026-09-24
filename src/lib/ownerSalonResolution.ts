@@ -147,3 +147,105 @@ export async function resolveOwnerSalon(
     return { status: 'needs_onboarding', salon: null };
   }
 }
+
+export interface ProfileCompletenessResult {
+  isComplete: boolean;
+  missingFields: string[];
+}
+
+/**
+ * Evaluates profile completeness for the global middleware guard.
+ * Essential fields: ownerName (or full_name), phone (or whatsapp/phone_number), city.
+ */
+export function checkProfileCompleteness(
+  profile?: Partial<SalonProfile> | null,
+  user?: any
+): ProfileCompletenessResult {
+  const missingFields: string[] = [];
+  const ownerName = String(profile?.ownerName || user?.user_metadata?.full_name || '').trim();
+  const phone = String(profile?.phone || profile?.whatsapp || user?.user_metadata?.phone_number || '').trim();
+  const city = String(profile?.city || user?.user_metadata?.city || '').trim();
+
+  if (!ownerName) missingFields.push('ownerName');
+  if (!phone) missingFields.push('phone');
+  if (!city) missingFields.push('city');
+
+  return {
+    isComplete: missingFields.length === 0,
+    missingFields,
+  };
+}
+
+export interface UserOwnedSalonsResult {
+  salons: any[];
+  count: number;
+}
+
+export async function fetchUserOwnedSalons(
+  client: any = supabase,
+  userId?: string
+): Promise<UserOwnedSalonsResult> {
+  if (isMockSupabase) {
+    return { salons: [], count: 0 };
+  }
+
+  let actor = userId;
+  if (!actor) {
+    try {
+      const { data: sessionData } = await client.auth.getSession();
+      actor = sessionData?.session?.user?.id;
+    } catch {
+      return { salons: [], count: 0 };
+    }
+  }
+
+  if (!actor) return { salons: [], count: 0 };
+
+  try {
+    const { data: members, error: memErr } = await client
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', actor)
+      .eq('role', 'owner')
+      .eq('status', 'active');
+
+    if (memErr || !members || members.length === 0) {
+      return { salons: [], count: 0 };
+    }
+
+    const orgIds = members.map((m: any) => m.organization_id).filter(Boolean);
+    if (orgIds.length === 0) return { salons: [], count: 0 };
+
+    const { data: salons, error: salonErr } = await client
+      .from('salons')
+      .select('*')
+      .in('organization_id', orgIds);
+
+    if (salonErr || !salons) return { salons: [], count: 0 };
+
+    const validSalons = salons.filter((s: any) => !s.deleted_at);
+    return { salons: validSalons, count: validSalons.length };
+  } catch (err) {
+    console.warn('[fetchUserOwnedSalons] Error:', err);
+    return { salons: [], count: 0 };
+  }
+}
+
+export async function validateSiteOwnership(
+  client: any = supabase,
+  userId: string,
+  targetSiteId: string
+): Promise<{ isValid: boolean; salon: any | null }> {
+  if (!targetSiteId || !userId) return { isValid: false, salon: null };
+  const { salons } = await fetchUserOwnedSalons(client, userId);
+  const match = salons.find(
+    (s: any) =>
+      String(s.id) === String(targetSiteId) ||
+      String(s.slug) === String(targetSiteId) ||
+      String(s.subdomain) === String(targetSiteId)
+  );
+  if (match) {
+    return { isValid: true, salon: match };
+  }
+  return { isValid: false, salon: null };
+}

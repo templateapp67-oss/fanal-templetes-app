@@ -409,6 +409,7 @@ export const ONBOARDING_SECTIONS: OnboardingSection[] = [
 /** True when the path belongs to the Onboarding App at all. */
 export function isOnboardingPath(pathname: string): boolean {
   const path = normalizePath(pathname).toLowerCase();
+  if (path === '/onboarding/website' || path === '/onboarding/handoff') return false;
   return path === '/signup' || path === '/register' || path === ONBOARDING_PATH || path.startsWith(`${ONBOARDING_PATH}/`);
 }
 
@@ -483,6 +484,54 @@ export function matchBookingDetailPath(pathname: string): string | null {
   if (segments[1].toLowerCase() !== 'booking') return null;
   const id = segments[2];
   return id ? decodeURIComponent(id) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Settings, Editor & Onboarding Website Guard Routes
+// ---------------------------------------------------------------------------
+export const SETTINGS_PROFILE_PATH = '/settings/profile';
+export const ONBOARDING_WEBSITE_PATH = '/onboarding/website';
+export const EDITOR_PATH = '/editor';
+
+export function isSettingsProfilePath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase().startsWith(SETTINGS_PROFILE_PATH);
+}
+
+export function isEditorPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase().startsWith(EDITOR_PATH);
+}
+
+export function isOnboardingWebsitePath(pathname: string): boolean {
+  const p = normalizePath(pathname).toLowerCase();
+  return p === ONBOARDING_WEBSITE_PATH || p === '/onboarding' || p.startsWith('/onboarding/');
+}
+
+export function parseNextUrl(search: string): string | null {
+  try {
+    const params = new URLSearchParams(String(search || ''));
+    const next = params.get('next');
+    return next ? (next.startsWith('/') ? next : `/${next}`) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseSiteParam(search: string): string | null {
+  try {
+    const params = new URLSearchParams(String(search || ''));
+    const site = params.get('site');
+    return site ? site.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildEditorUrl(siteId?: string | null): string {
+  return siteId ? `${EDITOR_PATH}?site=${encodeURIComponent(siteId)}` : EDITOR_PATH;
+}
+
+export function buildSettingsProfileUrl(nextPath?: string | null): string {
+  return nextPath ? `${SETTINGS_PROFILE_PATH}?next=${encodeURIComponent(nextPath)}` : SETTINGS_PROFILE_PATH;
 }
 
 function currentPath(): string {

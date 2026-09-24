@@ -22,6 +22,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
+import { copyToClipboard } from '../../lib/clipboard';
 import {
   BadgePercent,
   Check,
@@ -721,10 +722,11 @@ const ReferralPanel: React.FC<{
             type="button"
             aria-label="Copy referral code"
             onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(payload?.code || '');
+              const ok = await copyToClipboard(payload?.code || '');
+              if (ok) {
                 setCopied('code');
-              } catch {
+                setTimeout(() => setCopied(null), 4000);
+              } else {
                 setCopied('unavailable');
               }
             }}
@@ -742,10 +744,11 @@ const ReferralPanel: React.FC<{
               type="button"
               aria-label="Copy invite link"
               onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(payload.link);
+                const ok = await copyToClipboard(payload.link);
+                if (ok) {
                   setCopied('link');
-                } catch {
+                  setTimeout(() => setCopied(null), 4000);
+                } else {
                   setCopied('unavailable');
                 }
               }}

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { SalonProfile, SalonService } from '../types';
 import { CATEGORY_STANDARDIZED_DATA } from '../templateData';
 import { getSiteUrl } from '../lib/salonStore';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface PromoStudioProps {
   profile: SalonProfile;
@@ -363,8 +364,8 @@ ${bookingUrl}
   };
 
   // Share to Instagram Handler
-  const handleShareToInstagram = () => {
-    navigator.clipboard.writeText(instagramCaption);
+  const handleShareToInstagram = async () => {
+    await copyToClipboard(instagramCaption);
     showToast('📋 Instagram caption copied to clipboard! Opening Instagram...');
     setTimeout(() => {
       window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
@@ -372,9 +373,13 @@ ${bookingUrl}
   };
 
   // Copy Template to Clipboard
-  const handleCopyText = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    showToast(`✓ Copied ${label} to clipboard!`);
+  const handleCopyText = async (text: string, label: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      showToast(`✓ Copied ${label} to clipboard!`);
+    } else {
+      showToast(`Select and copy the ${label} text manually.`);
+    }
   };
 
   return (

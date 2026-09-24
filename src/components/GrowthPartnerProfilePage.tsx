@@ -2,6 +2,7 @@ import { safePartnerErrorMessage } from '../lib/partnerUiErrors';
 import React, { useEffect, useRef, useState } from 'react';
 import { ExternalLink, ShieldCheck } from 'lucide-react';
 import { compressPartnerAvatar } from '../lib/partnerProfile';
+import { copyToClipboard } from '../lib/clipboard';
 import {
   fetchGrowthPartnerProfile,
   fetchPartnerAccountSettings,
@@ -51,7 +52,22 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
   onProfileChange?: (profile: GrowthPartnerProfileData) => void;
 }) {
   const [profile, setProfile] = useState<GrowthPartnerProfileData | null>(null);
-  const [form, setForm] = useState({ fullName: '', phone: '' });
+  const [formData, setFormData] = useState({
+    fullName: '',
+    phone: '',
+    agencyName: '',
+    whatsapp: '',
+    city: '',
+    state: '',
+    address: '',
+    alternatePhone: '',
+    website: '',
+    instagram: '',
+    linkedin: '',
+    facebook: '',
+    twitter: '',
+    bio: ''
+  });
   const [business, setBusiness] = useState<PartnerAccountSettings>({ agency_name: '', whatsapp_phone: '', city: '', state: '', public_bio: '', full_address: '', alternate_phone: '', website_url: '', social_handles: '', social_links: { instagram: '', linkedin: '', facebook: '', twitter: '' }, payout_method: null, payout_account_name: '', payout_account_number: '', payout_confirm_account_number: '', payout_ifsc: '', payout_upi_id: '', bank_name: '', bank_branch: '', swift_code: '', pan_number: '', notify_email: true, notify_whatsapp: false, notify_sms: false } as PartnerAccountSettings);
   const [activeTab, setActiveTab] = useState<'contact' | 'payout' | 'notifications' | 'security'>('contact');
   const [photo, setPhoto] = useState<Blob | null>(null);
@@ -72,22 +88,40 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
       .then(data => {
         if (cancelled) return;
         setProfile(data);
-        setForm({ fullName: data.full_name, phone: data.phone || '' });
+        setFormData(prev => ({ ...prev, fullName: data.full_name || '', phone: data.phone || '' }));
         setLoading(false);
         profileCallback.current?.(data);
         fetchPartnerAccountSettings(client)
           .then(saved => {
             if (cancelled) return;
             setBusiness(prev => ({ ...prev, ...saved, social_links: normalizeSocialLinks(saved.social_links) }));
+            const social = normalizeSocialLinks(saved.social_links);
+            setFormData(prev => ({
+              ...prev,
+              fullName: data.full_name || prev.fullName || '',
+              phone: data.phone || prev.phone || '',
+              agencyName: saved.agency_name || '',
+              whatsapp: saved.whatsapp_phone || '',
+              city: saved.city || '',
+              state: saved.state || '',
+              address: saved.full_address || '',
+              alternatePhone: saved.alternate_phone || '',
+              website: saved.website_url || '',
+              instagram: social.instagram || '',
+              linkedin: social.linkedin || '',
+              facebook: social.facebook || '',
+              twitter: social.twitter || '',
+              bio: saved.public_bio || '',
+            }));
           })
-          .catch(() => setBusiness(prev => ({ ...prev, agency_name: 'Growth Partner Desk', whatsapp_phone: data.phone || '' })));
+          .catch(() => setBusiness(prev => ({ ...prev, agency_name: '', whatsapp_phone: data.phone || '' })));
       })
       .catch(err => {
         if (!cancelled) {
           const fallback = {
-            full_name: 'Growth Partner',
-            email: 'partner@nexora.app',
-            phone: '+91 98765 43210',
+            full_name: '',
+            email: '',
+            phone: '',
             photo_path: null,
             partner_id: 'ptr-active-partner',
             referral_code: 'NEXORA-GROWTH',
@@ -97,7 +131,6 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
             joined_at: new Date().toISOString(),
           };
           setProfile(fallback);
-          setForm({ fullName: fallback.full_name, phone: fallback.phone });
           setLoading(false);
         }
       });
@@ -125,12 +158,22 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
     event.preventDefault();
     if (busy) return;
     const candidate = {
-      fullName: form.fullName, phone: form.phone,
-      agencyName: business.agency_name || '', whatsappPhone: business.whatsapp_phone || '',
-      city: business.city || '', state: business.state || '',
-      fullAddress: business.full_address || '', alternatePhone: business.alternate_phone || '',
-      websiteUrl: business.website_url || '', publicBio: business.public_bio || '',
-      socialLinks: social,
+      fullName: formData.fullName,
+      phone: formData.phone,
+      agencyName: formData.agencyName,
+      whatsappPhone: formData.whatsapp,
+      city: formData.city,
+      state: formData.state,
+      fullAddress: formData.address,
+      alternatePhone: formData.alternatePhone,
+      websiteUrl: formData.website,
+      publicBio: formData.bio,
+      socialLinks: {
+        instagram: formData.instagram,
+        linkedin: formData.linkedin,
+        facebook: formData.facebook,
+        twitter: formData.twitter,
+      },
     };
     let parsed: ReturnType<typeof contactProfileSchema.parse>;
     try {
@@ -152,8 +195,25 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
         social_links: normalizeSocialLinks(parsed.socialLinks),
       }, client);
       if (!mounted.current) return;
-      setProfile(savedProfile); setForm({ fullName: savedProfile.full_name, phone: savedProfile.phone || '' });
-      setBusiness(prev => ({ ...prev, ...savedSettings, social_links: normalizeSocialLinks(savedSettings.social_links) }));
+      setProfile(savedProfile);
+      const savedSocial = normalizeSocialLinks(savedSettings.social_links);
+      setFormData({
+        fullName: savedProfile.full_name || '',
+        phone: savedProfile.phone || '',
+        agencyName: savedSettings.agency_name || '',
+        whatsapp: savedSettings.whatsapp_phone || '',
+        city: savedSettings.city || '',
+        state: savedSettings.state || '',
+        address: savedSettings.full_address || '',
+        alternatePhone: savedSettings.alternate_phone || '',
+        website: savedSettings.website_url || '',
+        instagram: savedSocial.instagram || '',
+        linkedin: savedSocial.linkedin || '',
+        facebook: savedSocial.facebook || '',
+        twitter: savedSocial.twitter || '',
+        bio: savedSettings.public_bio || '',
+      });
+      setBusiness(prev => ({ ...prev, ...savedSettings, social_links: savedSocial }));
       setPhoto(null); setRemovePhoto(false);
       showPartnerToast.success('Profile and account settings saved.');
       profileCallback.current?.(savedProfile);
@@ -243,7 +303,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
       <PartnerToastCenter />
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3"><div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-slate-900 border border-pink-200 text-xl font-black text-pink-700"><img src={avatar || '/nexora-salonos-logo.png'} alt="Profile" className="h-full w-full object-cover" /></div><div><h1 className="text-xl font-black text-slate-900">{form.fullName || 'Growth Partner'}</h1><p className="text-xs text-slate-500">{business.agency_name || 'Growth Partner Desk'} · {business.city || 'Partner Network'}</p></div></div>
+          <div className="flex items-center gap-3"><div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-slate-900 border border-pink-200 text-xl font-black text-pink-700"><img src={avatar || '/nexora-salonos-logo.png'} alt="Profile" className="h-full w-full object-cover" /></div><div><h1 className="text-xl font-black text-slate-900">{formData.fullName || profile.full_name || 'Growth Partner'}</h1><p className="text-xs text-slate-500">{formData.agencyName || business.agency_name || 'Growth Partner Desk'} · {formData.city || business.city || 'Partner Network'}</p></div></div>
           <div className="flex gap-2 text-xs"><span className="rounded-xl bg-slate-100 px-3 py-2 font-bold">Status: {profile.account_status}</span><span className="rounded-xl bg-pink-50 px-3 py-2 font-bold text-pink-700">{profile.partner_role}</span></div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2 border-b border-slate-100 pb-3">
@@ -338,7 +398,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
             </div>
             {error ? <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700" data-photo-error>{error}</p> : null}
             <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-              <label className="text-sm font-bold text-slate-600">Full Name<input required maxLength={120} autoComplete="name" value={form.fullName} onChange={e => { setForm({ ...form, fullName: e.target.value }); }} aria-invalid={contactErrors.fullName ? true : undefined} className={`${inputClass} ${contactErrors.fullName ? errInput : ''}`} />{fieldError(contactErrors, 'fullName')}</label>
+              <label className="text-sm font-bold text-slate-600">Full Name<input required maxLength={120} autoComplete="name" placeholder="e.g. Rahul Sharma" value={formData.fullName} onChange={e => { setFormData(prev => ({ ...prev, fullName: e.target.value })); }} aria-invalid={contactErrors.fullName ? true : undefined} className={`${inputClass} ${contactErrors.fullName ? errInput : ''}`} />{fieldError(contactErrors, 'fullName')}</label>
               
               <label className="text-sm font-bold text-slate-600">
                 Phone
@@ -349,12 +409,12 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                   <input
                     type="tel"
                     inputMode="numeric"
-                    placeholder="98765 43210"
-                    value={(form.phone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
+                    placeholder="e.g. 9876543210"
+                    value={(formData.phone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
                     maxLength={10}
                     onChange={e => {
                       const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setForm({ ...form, phone: clean ? `+91 ${clean}` : '' });
+                      setFormData(prev => ({ ...prev, phone: clean ? `+91 ${clean}` : '' }));
                     }}
                     aria-invalid={contactErrors.phone ? true : undefined}
                     className="w-full px-3 py-2.5 text-sm font-normal text-slate-900 focus:outline-none"
@@ -363,7 +423,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                 {fieldError(contactErrors, 'phone')}
               </label>
 
-              <label className="text-sm font-bold text-slate-600">Agency / Partner Brand Name<input maxLength={120} value={business.agency_name} onChange={e => setBusiness({ ...business, agency_name: e.target.value })} aria-invalid={contactErrors.agencyName ? true : undefined} className={`${inputClass} ${contactErrors.agencyName ? errInput : ''}`} />{fieldError(contactErrors, 'agencyName')}</label>
+              <label className="text-sm font-bold text-slate-600">Agency / Partner Brand Name<input maxLength={120} placeholder="e.g. Apex Marketing Agency" value={formData.agencyName} onChange={e => setFormData(prev => ({ ...prev, agencyName: e.target.value }))} aria-invalid={contactErrors.agencyName ? true : undefined} className={`${inputClass} ${contactErrors.agencyName ? errInput : ''}`} />{fieldError(contactErrors, 'agencyName')}</label>
 
               <label className="text-sm font-bold text-slate-600">
                 WhatsApp Business Helpline
@@ -374,12 +434,12 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                   <input
                     type="tel"
                     inputMode="numeric"
-                    placeholder="98765 43210"
-                    value={(business.whatsapp_phone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
+                    placeholder="e.g. 9876543210"
+                    value={(formData.whatsapp || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
                     maxLength={10}
                     onChange={e => {
                       const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setBusiness({ ...business, whatsapp_phone: clean ? `+91 ${clean}` : '' });
+                      setFormData(prev => ({ ...prev, whatsapp: clean ? `+91 ${clean}` : '' }));
                     }}
                     aria-invalid={contactErrors.whatsappPhone ? true : undefined}
                     className="w-full px-3 py-2.5 text-sm font-normal text-slate-900 focus:outline-none"
@@ -388,9 +448,9 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                 {fieldError(contactErrors, 'whatsappPhone')}
               </label>
 
-              <label className="text-sm font-bold text-slate-600">City Base<input maxLength={80} value={business.city} onChange={e => setBusiness({ ...business, city: e.target.value })} aria-invalid={contactErrors.city ? true : undefined} className={`${inputClass} ${contactErrors.city ? errInput : ''}`} />{fieldError(contactErrors, 'city')}</label>
-              <label className="text-sm font-bold text-slate-600">State<input maxLength={80} value={business.state} onChange={e => setBusiness({ ...business, state: e.target.value })} aria-invalid={contactErrors.state ? true : undefined} className={`${inputClass} ${contactErrors.state ? errInput : ''}`} />{fieldError(contactErrors, 'state')}</label>
-              <label className="text-sm font-bold text-slate-600 sm:col-span-2">Full Address / Location<input maxLength={240} value={business.full_address} onChange={e => setBusiness({ ...business, full_address: e.target.value })} aria-invalid={contactErrors.fullAddress ? true : undefined} className={`${inputClass} ${contactErrors.fullAddress ? errInput : ''}`} />{fieldError(contactErrors, 'fullAddress')}</label>
+              <label className="text-sm font-bold text-slate-600">City Base<input maxLength={80} placeholder="e.g. Mumbai" value={formData.city} onChange={e => setFormData(prev => ({ ...prev, city: e.target.value }))} aria-invalid={contactErrors.city ? true : undefined} className={`${inputClass} ${contactErrors.city ? errInput : ''}`} />{fieldError(contactErrors, 'city')}</label>
+              <label className="text-sm font-bold text-slate-600">State<input maxLength={80} placeholder="e.g. Maharashtra" value={formData.state} onChange={e => setFormData(prev => ({ ...prev, state: e.target.value }))} aria-invalid={contactErrors.state ? true : undefined} className={`${inputClass} ${contactErrors.state ? errInput : ''}`} />{fieldError(contactErrors, 'state')}</label>
+              <label className="text-sm font-bold text-slate-600 sm:col-span-2">Full Address / Location<input maxLength={240} placeholder="Enter complete office or business address" value={formData.address} onChange={e => setFormData(prev => ({ ...prev, address: e.target.value }))} aria-invalid={contactErrors.fullAddress ? true : undefined} className={`${inputClass} ${contactErrors.fullAddress ? errInput : ''}`} />{fieldError(contactErrors, 'fullAddress')}</label>
               
               <label className="text-sm font-bold text-slate-600">
                 Emergency / Alternate Phone
@@ -401,12 +461,12 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                   <input
                     type="tel"
                     inputMode="numeric"
-                    placeholder="98765 43210"
-                    value={(business.alternate_phone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
+                    placeholder="e.g. 9876543210"
+                    value={(formData.alternatePhone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
                     maxLength={10}
                     onChange={e => {
                       const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setBusiness({ ...business, alternate_phone: clean ? `+91 ${clean}` : '' });
+                      setFormData(prev => ({ ...prev, alternatePhone: clean ? `+91 ${clean}` : '' }));
                     }}
                     aria-invalid={contactErrors.alternatePhone ? true : undefined}
                     className="w-full px-3 py-2.5 text-sm font-normal text-slate-900 focus:outline-none"
@@ -414,14 +474,14 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                 </div>
                 {fieldError(contactErrors, 'alternatePhone')}
               </label>
-              <label className="text-sm font-bold text-slate-600">Website Link<input type="url" maxLength={200} value={business.website_url || ''} onChange={e => setBusiness({ ...business, website_url: e.target.value })} aria-invalid={contactErrors.websiteUrl ? true : undefined} className={`${inputClass} ${contactErrors.websiteUrl ? errInput : ''}`} />{fieldError(contactErrors, 'websiteUrl')}</label>
-              <label className="text-sm font-bold text-slate-600">Instagram URL<input type="url" maxLength={300} placeholder="https://instagram.com/yourhandle" value={social.instagram} onChange={e => setSocial('instagram', e.target.value)} aria-invalid={contactErrors['socialLinks.instagram'] ? true : undefined} data-social-field="instagram" className={`${inputClass} ${contactErrors['socialLinks.instagram'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.instagram')}</label>
-              <label className="text-sm font-bold text-slate-600">LinkedIn URL<input type="url" maxLength={300} placeholder="https://www.linkedin.com/in/yourhandle" value={social.linkedin} onChange={e => setSocial('linkedin', e.target.value)} aria-invalid={contactErrors['socialLinks.linkedin'] ? true : undefined} data-social-field="linkedin" className={`${inputClass} ${contactErrors['socialLinks.linkedin'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.linkedin')}</label>
-              <label className="text-sm font-bold text-slate-600">Facebook URL<input type="url" maxLength={300} placeholder="https://www.facebook.com/yourpage" value={social.facebook} onChange={e => setSocial('facebook', e.target.value)} aria-invalid={contactErrors['socialLinks.facebook'] ? true : undefined} data-social-field="facebook" className={`${inputClass} ${contactErrors['socialLinks.facebook'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.facebook')}</label>
-              <label className="text-sm font-bold text-slate-600">X / Twitter URL<input type="url" maxLength={300} placeholder="https://x.com/yourhandle" value={social.twitter} onChange={e => setSocial('twitter', e.target.value)} aria-invalid={contactErrors['socialLinks.twitter'] ? true : undefined} data-social-field="twitter" className={`${inputClass} ${contactErrors['socialLinks.twitter'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.twitter')}</label>
-            <div className="sm:col-span-2 rounded-2xl border border-pink-100 bg-pink-50 p-4"><p className="text-sm font-bold text-slate-900">Social Media Share / Connections</p><p className="mt-1 text-xs text-slate-600">Save your handles, then share your Nexora partner profile.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { const link = `${window.location.origin}/partner/profile`; void navigator.clipboard?.writeText(link); showPartnerToast.success('Profile link copied.'); }} className="rounded-xl bg-pink-600 px-4 py-2 text-xs font-bold text-white">Copy Profile Link</button><a target="_blank" rel="noopener noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`View my Nexora partner profile: ${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-green-600 px-4 py-2 text-xs font-bold text-white">WhatsApp</a><a target="_blank" rel="noopener noreferrer" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white">LinkedIn</a><a target="_blank" rel="noopener noreferrer" href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white">Facebook</a><a target="_blank" rel="noopener noreferrer" href={`https://twitter.com/intent/tweet?text=${encodeURIComponent('View my Nexora partner profile')}&url=${encodeURIComponent(`${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white">X / Twitter</a><a target="_blank" rel="noopener noreferrer" href="https://www.instagram.com/" className="rounded-xl bg-gradient-to-r from-fuchsia-600 to-orange-500 px-4 py-2 text-xs font-bold text-white">Instagram</a></div></div>
+              <label className="text-sm font-bold text-slate-600">Website Link<input type="url" maxLength={200} placeholder="https://yourwebsite.com" value={formData.website} onChange={e => setFormData(prev => ({ ...prev, website: e.target.value }))} aria-invalid={contactErrors.websiteUrl ? true : undefined} className={`${inputClass} ${contactErrors.websiteUrl ? errInput : ''}`} />{fieldError(contactErrors, 'websiteUrl')}</label>
+              <label className="text-sm font-bold text-slate-600">Instagram URL<input type="url" maxLength={300} placeholder="https://instagram.com/yourhandle" value={formData.instagram} onChange={e => setFormData(prev => ({ ...prev, instagram: e.target.value }))} aria-invalid={contactErrors['socialLinks.instagram'] ? true : undefined} data-social-field="instagram" className={`${inputClass} ${contactErrors['socialLinks.instagram'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.instagram')}</label>
+              <label className="text-sm font-bold text-slate-600">LinkedIn URL<input type="url" maxLength={300} placeholder="https://linkedin.com/in/yourhandle" value={formData.linkedin} onChange={e => setFormData(prev => ({ ...prev, linkedin: e.target.value }))} aria-invalid={contactErrors['socialLinks.linkedin'] ? true : undefined} data-social-field="linkedin" className={`${inputClass} ${contactErrors['socialLinks.linkedin'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.linkedin')}</label>
+              <label className="text-sm font-bold text-slate-600">Facebook URL<input type="url" maxLength={300} placeholder="https://facebook.com/yourpage" value={formData.facebook} onChange={e => setFormData(prev => ({ ...prev, facebook: e.target.value }))} aria-invalid={contactErrors['socialLinks.facebook'] ? true : undefined} data-social-field="facebook" className={`${inputClass} ${contactErrors['socialLinks.facebook'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.facebook')}</label>
+              <label className="text-sm font-bold text-slate-600">X / Twitter URL<input type="url" maxLength={300} placeholder="https://x.com/yourhandle" value={formData.twitter} onChange={e => setFormData(prev => ({ ...prev, twitter: e.target.value }))} aria-invalid={contactErrors['socialLinks.twitter'] ? true : undefined} data-social-field="twitter" className={`${inputClass} ${contactErrors['socialLinks.twitter'] ? errInput : ''}`} />{fieldError(contactErrors, 'socialLinks.twitter')}</label>
+            <div className="sm:col-span-2 rounded-2xl border border-pink-100 bg-pink-50 p-4"><p className="text-sm font-bold text-slate-900">Social Media Share / Connections</p><p className="mt-1 text-xs text-slate-600">Save your handles, then share your Nexora partner profile.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={async () => { const link = `${window.location.origin}/partner/profile`; const ok = await copyToClipboard(link); if (ok) showPartnerToast.success('Profile link copied.'); else showPartnerToast.error('Could not copy link.'); }} className="rounded-xl bg-pink-600 px-4 py-2 text-xs font-bold text-white cursor-pointer hover:bg-pink-700 transition-colors">Copy Profile Link</button><a target="_blank" rel="noopener noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`View my Nexora partner profile: ${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-green-600 px-4 py-2 text-xs font-bold text-white">WhatsApp</a><a target="_blank" rel="noopener noreferrer" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white">LinkedIn</a><a target="_blank" rel="noopener noreferrer" href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white">Facebook</a><a target="_blank" rel="noopener noreferrer" href={`https://twitter.com/intent/tweet?text=${encodeURIComponent('View my Nexora partner profile')}&url=${encodeURIComponent(`${window.location.origin}/partner/profile`)}`} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white">X / Twitter</a><a target="_blank" rel="noopener noreferrer" href="https://www.instagram.com/" className="rounded-xl bg-gradient-to-r from-fuchsia-600 to-orange-500 px-4 py-2 text-xs font-bold text-white">Instagram</a></div></div>
             </div>
-            <label className="block text-sm font-bold text-slate-600">Public Partner Bio &amp; Expertise<textarea maxLength={500} rows={4} value={business.public_bio} onChange={e => setBusiness({ ...business, public_bio: e.target.value })} aria-invalid={contactErrors.publicBio ? true : undefined} className={`${inputClass} ${contactErrors.publicBio ? errInput : ''}`} />{fieldError(contactErrors, 'publicBio')}</label>
+            <label className="block text-sm font-bold text-slate-600">Public Partner Bio &amp; Expertise<textarea maxLength={500} rows={4} placeholder="Briefly describe your agency background and expertise..." value={formData.bio} onChange={e => setFormData(prev => ({ ...prev, bio: e.target.value }))} aria-invalid={contactErrors.publicBio ? true : undefined} className={`${inputClass} ${contactErrors.publicBio ? errInput : ''}`} />{fieldError(contactErrors, 'publicBio')}</label>
             <button type="submit" disabled={busy} data-profile-save className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save Profile & Account Settings'}</button>
           </fieldset>
         </form>
@@ -431,7 +491,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
         <div className="flex items-center justify-between"><h2 className="font-bold text-slate-900">Account details</h2><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">KYB/KYC: {business.kyb_status || 'Pending'}</span></div>
         <dl className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2">
           {([
-            ['Partner Name', profile.full_name || 'Not provided'], ['Email', profile.email || 'Not provided'], ['Phone', profile.phone || 'Not provided'], ['Business / Salon Name', business.agency_name || 'Not provided'], ['Full Address', business.full_address || 'Not provided'], ['Alternate Phone', business.alternate_phone || 'Not provided'], ['Website', business.website_url || 'Not provided'], ['Social Handles', socialSummary || 'Not provided'],
+            ['Partner Name', formData.fullName || profile.full_name || 'Not provided'], ['Email', profile.email || 'Not provided'], ['Phone', formData.phone || profile.phone || 'Not provided'], ['Business / Salon Name', formData.agencyName || business.agency_name || 'Not provided'], ['Full Address', formData.address || business.full_address || 'Not provided'], ['Alternate Phone', formData.alternatePhone || business.alternate_phone || 'Not provided'], ['Website', formData.website || business.website_url || 'Not provided'], ['Social Handles', socialSummary || 'Not provided'],
             ['Partner ID', profile.partner_id], ['Referral Code', profile.referral_code], ['Account status', profile.account_status],
             ['Joined date', new Date(profile.joined_at).toLocaleDateString()], ['Partner Role', profile.partner_role], ['Approval Status', profile.approval_status],
           ] as Array<[string, string]>).map(([label, value]) => <div key={label} data-summary-field={label}><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 break-all text-sm text-slate-900">{value}</dd></div>)}

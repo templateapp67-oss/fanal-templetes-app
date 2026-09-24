@@ -96,9 +96,9 @@ export interface GrowthPartnerProfileClient {
 const defaultClient = supabase as unknown as GrowthPartnerProfileClient;
 
 export const DEFAULT_GROWTH_PARTNER_PROFILE: GrowthPartnerProfileData = {
-  full_name: 'Growth Partner',
-  email: 'partner@nexora.app',
-  phone: '+91 98765 43210',
+  full_name: '',
+  email: '',
+  phone: null,
   photo_path: null,
   partner_id: 'ptr-active-partner',
   referral_code: 'NEXORA-GROWTH',
@@ -119,10 +119,10 @@ export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClie
   }
 
   // Graceful fallback: construct profile from auth user, localStorage, or partner session
-  let userEmail = 'partner@nexora.app';
-  let userName = 'Growth Partner';
+  let userEmail = '';
+  let userName = '';
   let userId = 'ptr-active-partner';
-  let userPhone: string | null = '+91 98765 43210';
+  let userPhone: string | null = null;
   let referralCode = 'NEXORA-GROWTH';
   let avatarPath: string | null = null;
 
@@ -132,8 +132,8 @@ export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClie
       const u = authRes.data.user;
       userId = u.id || userId;
       userEmail = u.email || userEmail;
-      userName = u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split('@')[0] || userName;
-      userPhone = u.user_metadata?.phone || u.phone || userPhone;
+      userName = u.user_metadata?.full_name || u.user_metadata?.name || '';
+      userPhone = u.user_metadata?.phone || u.phone || null;
       avatarPath = u.user_metadata?.avatar_url || u.user_metadata?.photo_path || null;
     }
   } catch {}
@@ -181,21 +181,21 @@ export async function fetchPartnerAccountSettings(client: GrowthPartnerProfileCl
   }
 
   return {
-    agency_name: 'Growth Partner Desk',
-    whatsapp_phone: '+91 98765 43210',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    public_bio: 'Official Nexora Growth & Distribution Partner.',
-    full_address: 'Nexora Partner Hub, BKC',
+    agency_name: '',
+    whatsapp_phone: null,
+    city: '',
+    state: '',
+    public_bio: '',
+    full_address: '',
     alternate_phone: null,
     website_url: null,
     social_handles: '',
     social_links: { instagram: '', linkedin: '', facebook: '', twitter: '' },
-    payout_method: 'upi',
-    payout_account_name: 'Partner Account',
+    payout_method: null,
+    payout_account_name: null,
     payout_account_number: null,
     payout_ifsc: null,
-    payout_upi_id: 'partner@upi',
+    payout_upi_id: null,
     bank_name: null,
     bank_branch: null,
     swift_code: null,
@@ -230,12 +230,12 @@ export async function savePartnerAccountSettings(patch: Partial<PartnerAccountSe
 
   // Gracefully return patched settings when backend RPC is unreachable
   return {
-    agency_name: 'Growth Partner Desk',
-    whatsapp_phone: '+91 98765 43210',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    public_bio: 'Official Nexora Growth & Distribution Partner.',
-    full_address: 'Nexora Partner Hub, BKC',
+    agency_name: '',
+    whatsapp_phone: null,
+    city: '',
+    state: '',
+    public_bio: '',
+    full_address: '',
     alternate_phone: null,
     website_url: null,
     social_handles: '',

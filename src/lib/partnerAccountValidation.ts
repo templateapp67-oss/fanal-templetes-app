@@ -21,11 +21,22 @@ const phoneText = z
   .transform((value) => value.replace(/[\s().-]/g, ''))
   .refine((value) => value === '' || /^\+?[0-9]{7,15}$/.test(value), 'Enter a phone number with 7–15 digits.');
 
-/** A bare http(s) URL — social/network fields never take scripts or data: URLs. */
+/** A bare http(s) URL — social/network fields auto-prepend https:// if protocol is omitted. */
 const httpUrl = z
   .string()
-  .transform((value) => value.trim())
-  .refine((value) => value === '' || (/^https?:\/\/[^\s]+$/i.test(value) && value.length <= 300), 'Enter a full https URL (max 300 characters).');
+  .transform((value) => {
+    let clean = value.trim();
+    if (!clean) return '';
+    if (clean.startsWith('@')) clean = clean.slice(1);
+    if (!/^https?:\/\//i.test(clean)) {
+      clean = 'https://' + clean;
+    }
+    return clean;
+  })
+  .refine(
+    (value) => value === '' || (/^https?:\/\/[^\s]+$/i.test(value) && value.length <= 300),
+    'Enter a valid website or social profile URL (e.g. https://instagram.com/yourhandle).'
+  );
 
 // ---------------------------------------------------------------------------
 // Tab 1 — Contact & personal info

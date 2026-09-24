@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Appointment, ClientRecord, SalonProfile, SalonService, ReengagementAnalysisResult, ReengagementRecommendation } from '../types';
 import { calculateLoyaltyTier, TIER_METADATA } from '../loyaltyData';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface AIClientReengagementProps {
   clients: ClientRecord[];
@@ -76,12 +77,14 @@ export const AIClientReengagement: React.FC<AIClientReengagementProps> = ({
     runAnalysis(inactivityThreshold);
   }, [inactivityThreshold]);
 
-  const handleCopyMessage = (rec: ReengagementRecommendation, customText?: string) => {
+  const handleCopyMessage = async (rec: ReengagementRecommendation, customText?: string) => {
     const textToCopy = customText || customOffers[rec.clientId] || rec.personalizedWhatsApp;
-    navigator.clipboard.writeText(textToCopy);
-    setCopiedId(rec.clientId);
-    setTimeout(() => setCopiedId(null), 2500);
-    showToast(`Personalized WhatsApp offer copied for ${rec.clientName}!`, 'success');
+    const ok = await copyToClipboard(textToCopy);
+    if (ok) {
+      setCopiedId(rec.clientId);
+      setTimeout(() => setCopiedId(null), 2500);
+      showToast(`Personalized WhatsApp offer copied for ${rec.clientName}!`, 'success');
+    }
   };
 
   const handleSendWhatsApp = (rec: ReengagementRecommendation) => {

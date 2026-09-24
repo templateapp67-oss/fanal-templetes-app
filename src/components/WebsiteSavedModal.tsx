@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, LayoutDashboard, Loader2, X } from 'lucide-react';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface WebsiteSavedModalProps {
   siteUrl: string;
@@ -53,18 +54,16 @@ export const WebsiteSavedModal: React.FC<WebsiteSavedModalProps> = ({
     setIsCopying(true);
     setCopyNotice(null);
 
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
-      await navigator.clipboard.writeText(siteUrl);
+    const ok = await copyToClipboard(siteUrl);
+    if (ok) {
       setCopyNotice({ type: 'success', message: 'Site link copied to clipboard!' });
-    } catch {
+    } else {
       setCopyNotice({
         type: 'error',
         message: 'Couldn’t copy automatically. Select the site link above and copy it manually.',
       });
-    } finally {
-      setIsCopying(false);
     }
+    setIsCopying(false);
   };
 
   const copied = copyNotice?.type === 'success';

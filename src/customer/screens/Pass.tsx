@@ -13,6 +13,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { toDataURL } from 'qrcode';
+import { copyToClipboard } from '../../lib/clipboard';
 import { getMyPass, getMyProfile } from '../../lib/customer/api';
 import { Button, CARD_CLASS, ErrorState, LoadingRows, MUTED_CLASS, SectionTitle } from '../ui';
 
@@ -99,11 +100,11 @@ export const PassScreen: React.FC<PassScreenProps> = ({
 
   const copyCode = async () => {
     if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
+    const ok = await copyToClipboard(code);
+    if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
+      setTimeout(() => setCopied(false), 2000);
+    } else {
       setCopied(false);
     }
   };

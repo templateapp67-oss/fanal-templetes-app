@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from '../lib/diagnostics';
+import { copyToClipboard } from '../lib/clipboard';
 
 export interface AuditLogItem {
   id: string;
@@ -209,15 +210,17 @@ export const RLSDiagnosticsModal: React.FC<RLSDiagnosticsModalProps> = ({
     );
   });
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     const exportData = {
       user_id: currentUid,
       suite_report: suiteReport,
       audit_logs: filteredLogs,
     };
-    navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(JSON.stringify(exportData, null, 2));
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   if (!isOpen) return null;

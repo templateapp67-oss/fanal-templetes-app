@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
+import { copyToClipboard } from '../lib/clipboard';
 import {
   CalendarPlus,
   Calendar,
@@ -199,13 +200,11 @@ export const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
     [summary]
   );
 
-  const handleCopyBookingId = () => {
-    try {
-      navigator.clipboard?.writeText(summary.bookingId);
+  const handleCopyBookingId = async () => {
+    const ok = await copyToClipboard(summary.bookingId);
+    if (ok) {
       setCopiedId(true);
       setTimeout(() => setCopiedId(false), 2000);
-    } catch {
-      // Clipboard permission denied — the id is on screen and selectable.
     }
   };
 

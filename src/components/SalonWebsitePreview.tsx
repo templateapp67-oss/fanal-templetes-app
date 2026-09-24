@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSiteUrl } from '../lib/salonStore';
+import { copyToClipboard } from '../lib/clipboard';
 import { 
   CheckCircle2, 
   Sparkles, 
@@ -100,10 +101,12 @@ interface SalonOfferCardProps {
 
 const SalonOfferCard: React.FC<SalonOfferCardProps> = ({ offer, isDarkCanvas }) => {
   const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(offer.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(offer.code);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -510,10 +513,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedGalleryPhoto, standardData.gallery]);
 
-  const handleCopyRefCode = (code: string) => {
-    navigator.clipboard?.writeText(code);
-    setCopiedRef(true);
-    setTimeout(() => setCopiedRef(false), 2000);
+  const handleCopyRefCode = async (code: string) => {
+    const ok = await copyToClipboard(code);
+    if (ok) {
+      setCopiedRef(true);
+      setTimeout(() => setCopiedRef(false), 2000);
+    }
   };
 
   const subCategoriesList = ['All', ...(activeTemplate.subCategories || ['Hair', 'Spa', 'Care'])];
@@ -856,12 +861,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               {/* Copy Link */}
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   const u = siteUrl || getSiteUrl(activeProfile);
-                  navigator.clipboard?.writeText(u);
-                  setCopiedSubdomain(true);
-                  showNotification('Live website link copied to clipboard!');
-                  setTimeout(() => setCopiedSubdomain(false), 2000);
+                  const ok = await copyToClipboard(u);
+                  if (ok) {
+                    setCopiedSubdomain(true);
+                    showNotification('Live website link copied to clipboard!');
+                    setTimeout(() => setCopiedSubdomain(false), 2000);
+                  }
                 }}
                 className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                 title="Copy Website Link"
@@ -1191,12 +1198,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 {activeProfile.promotionalBanner.discountCode && (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (activeProfile.promotionalBanner?.discountCode) {
-                        navigator.clipboard?.writeText(activeProfile.promotionalBanner.discountCode);
-                        setPromoCodeCopied(true);
-                        showNotification(`Discount code "${activeProfile.promotionalBanner.discountCode}" copied to clipboard!`);
-                        setTimeout(() => setPromoCodeCopied(false), 2500);
+                        const ok = await copyToClipboard(activeProfile.promotionalBanner.discountCode);
+                        if (ok) {
+                          setPromoCodeCopied(true);
+                          showNotification(`Discount code "${activeProfile.promotionalBanner.discountCode}" copied to clipboard!`);
+                          setTimeout(() => setPromoCodeCopied(false), 2500);
+                        }
                       }
                     }}
                     className={`px-2.5 py-1 rounded-lg border font-mono text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs ${themeStyle.code}`}
@@ -1218,12 +1227,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 {activeProfile.promotionalBanner.buttonText && (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (activeProfile.promotionalBanner?.buttonAction === 'copy' && activeProfile.promotionalBanner.discountCode) {
-                        navigator.clipboard?.writeText(activeProfile.promotionalBanner.discountCode);
-                        setPromoCodeCopied(true);
-                        showNotification(`Discount code copied!`);
-                        setTimeout(() => setPromoCodeCopied(false), 2000);
+                        const ok = await copyToClipboard(activeProfile.promotionalBanner.discountCode);
+                        if (ok) {
+                          setPromoCodeCopied(true);
+                          showNotification(`Discount code copied!`);
+                          setTimeout(() => setPromoCodeCopied(false), 2000);
+                        }
                       } else {
                         handleOpenBooking();
                       }
@@ -3053,10 +3064,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <button
                     type="button"
                     className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
-                    onClick={() => {
-                      navigator.clipboard.writeText(featuredOffer.code);
-                      setNotificationToast(`Code "${featuredOffer.code}" copied to clipboard! ✨`);
-                      setTimeout(() => setNotificationToast(null), 2500);
+                    onClick={async () => {
+                      const ok = await copyToClipboard(featuredOffer.code);
+                      if (ok) {
+                        setNotificationToast(`Code "${featuredOffer.code}" copied to clipboard! ✨`);
+                        setTimeout(() => setNotificationToast(null), 2500);
+                      }
                     }}
                   >
                     Copy Code

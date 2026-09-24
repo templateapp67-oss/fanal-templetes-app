@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, allowMockAuth, isMockSupabase } from '../lib/supabaseClient';
 import { clearAllLocalUserState, setStoredAuthenticatedProfile } from '../lib/salonStore';
+import { getStoredReferralCode, storeReferralCode, NEXORA_REFERRAL_EVENT } from '../lib/useReferralTracker';
 import {
   createSingleFlight,
   MAX_PASSWORD_LENGTH,
@@ -29,28 +30,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const isCustomer = purpose === 'customer';
 
-  useEffect(() => {
-    if (isOpen) {
-      setMode(initialMode);
-      setError(null);
-    }
-  }, [isOpen, initialMode]);
-
   // Form Fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [salonName, setSalonName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [city, setCity] = useState('');
+  const [referralCode, setReferralCode] = useState<string>(() => getStoredReferralCode());
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setError(null);
+      const stored = getStoredReferralCode();
+      if (stored) {
+        setReferralCode(stored);
+      }
+    }
+  }, [isOpen, initialMode]);
+
+  useEffect(() => {
+    const handleEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ code: string }>;
+      if (customEvent.detail?.code) {
+        setReferralCode(customEvent.detail.code);
+      }
+    };
+    window.addEventListener(NEXORA_REFERRAL_EVENT, handleEvent);
+    return () => window.removeEventListener(NEXORA_REFERRAL_EVENT, handleEvent);
+  }, []);
+
   // `loading` is React state, so two submit events landing in the same tick
   // both read `loading === false` before the re-render — a double click fires
   // two auth requests and burns two rate-limit slots. This ref is the real
   // guard; the disabled button is only the visible half.
   const authFlight = useRef(createSingleFlight());
-  const [salonName, setSalonName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [city, setCity] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    const activeReferralCode = (referralCode || getStoredReferralCode() || '').trim();
     // Ref-guarded single flight — see authFlight above.
     await authFlight.current.run(async () => {
     setLoading(true);
@@ -89,6 +108,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             ...(isCustomer ? {} : { salon_name: salonName || 'My Salon' }),
             ...(isCustomer ? {} : { phone_number: phoneNumber || '' }),
             ...(isCustomer ? {} : { city: city || '' }),
+            ...(activeReferralCode ? { referral_code: activeReferralCode } : {}),
           }
         };
         if (!isCustomer) {
@@ -121,6 +141,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               phone_number: phoneNumber,
               city: city,
               account_type: purpose,
+              referral_code: activeReferralCode || null,
             },
           },
         });
@@ -159,6 +180,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 phone_number: phoneNumber,
                 email: email,
                 city: city,
+                referral_code: activeReferralCode || null,
                 updated_at: new Date().toISOString(),
               });
 
@@ -301,6 +323,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         </div>
                       </div>
                     )}
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                          Referral Code / Partner Code <span className="text-gray-300 font-normal">(Optional)</span>
+                        </label>
+                        {referralCode.trim() && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            <span className="material-symbols-outlined text-xs">check_circle</span>
+                            Referral Applied: {referralCode.trim().toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={referralCode}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setReferralCode(val);
+                          storeReferralCode(val);
+                        }}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm font-medium tracking-wide uppercase placeholder:normal-case placeholder:tracking-normal"
+                        placeholder="e.g. GROWTH100 or USER123"
+                      />
+                    </div>
                   </div>
                 )}
 

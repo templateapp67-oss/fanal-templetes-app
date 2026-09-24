@@ -143,11 +143,13 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     if (!formData.ownerName.trim()) newErrors.ownerName = 'Full Name is required.';
     
     const rawWhatsapp = formData.whatsapp.replace(/\D/g, '');
-    if (formData.whatsapp.trim() && rawWhatsapp.length < 10) {
+    const hasEnteredWhatsapp = rawWhatsapp.length > 0 && rawWhatsapp !== '91';
+    if (hasEnteredWhatsapp && rawWhatsapp.slice(-10).length < 10) {
       newErrors.whatsapp = 'Valid 10-digit WhatsApp number required.';
     }
     
-    if (formData.postalCode.trim() && formData.postalCode.length !== 6) {
+    const cleanPostal = formData.postalCode.trim();
+    if (cleanPostal && cleanPostal.length !== 6) {
       newErrors.postalCode = 'Pin code must be exactly 6 digits.';
     }
 
@@ -157,13 +159,15 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       return;
     }
 
+    const cleanWhatsapp = hasEnteredWhatsapp ? formData.whatsapp.trim() : '';
+
     const updatedProfile: SalonProfile = {
       ...profile,
       ownerName: formData.ownerName.trim(),
       ownerPhotoUrl: formData.ownerPhotoUrl || profile.ownerPhotoUrl,
-      whatsapp: formData.whatsapp.trim(),
+      whatsapp: cleanWhatsapp,
       dob: formData.dob,
-      postalCode: formData.postalCode.trim(),
+      postalCode: cleanPostal,
       city: formData.city.trim(),
       areaLocality: formData.areaLocality.trim(),
       whatsappNotificationsEnabled,

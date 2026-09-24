@@ -10,6 +10,7 @@ import {
   toStylistDbRow,
   toLoyaltyConfigDbRow,
   deleteRowsNotIn,
+  isMissingColumnError,
 } from "../src/lib/salonSync.js";
 import { isUuid } from "../src/lib/autoSave.js";
 import { SalonProfile, SalonService, Stylist, LoyaltyConfig } from "../src/types.js";
@@ -321,25 +322,33 @@ async function resilientAdminUpsert(
     ? payload.map((p) => ({ ...p }))
     : { ...payload };
 
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     const query = admin.from(table).upsert(currentPayload, conflictOption);
     const res = await query;
     if (!res.error) return { error: null };
 
     const errMsg = String(res.error.message || '');
-    // PostgREST "Could not find the 'xyz' column of 'table' in the schema cache"
-    const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of/i)
-      || errMsg.match(/column "([^"]+)" of relation/i)
-      || errMsg.match(/column '([^']+)' of relation/i);
+    const missingCol = isMissingColumnError(errMsg);
 
-    if (missingColMatch && missingColMatch[1]) {
-      const missingCol = missingColMatch[1];
-      if (Array.isArray(currentPayload)) {
-        currentPayload.forEach((item) => delete item[missingCol]);
-      } else {
-        delete currentPayload[missingCol];
+    if (missingCol) {
+      if (missingCol === 'id' || missingCol === 'owner_id' || missingCol === 'user_id' || missingCol === 'organization_id') {
+        return { error: res.error };
       }
-      continue;
+      let removedAny = false;
+      if (Array.isArray(currentPayload)) {
+        currentPayload.forEach((item) => {
+          if (missingCol in item) {
+            delete item[missingCol];
+            removedAny = true;
+          }
+        });
+      } else {
+        if (missingCol in currentPayload) {
+          delete currentPayload[missingCol];
+          removedAny = true;
+        }
+      }
+      if (removedAny) continue;
     }
 
     return { error: res.error };
@@ -396,14 +405,18 @@ async function persistWithAdminFallback(
       ...(failed?.code ? { supabaseCode: failed.code } : {}),
     });
     if (failed?.message) {
-      // Never hidden — Phase 10 mandated shape:
-      console.error('[SAVE ERROR]', {
-        stage: 'cloud-sync',
-        httpStatus: null,
-        supabaseCode: failed.code ?? null,
-        message: `[Website save] admin fallback "${step}" failed: ${failed.message}`.slice(0, 400),
-        resource,
-      });
+      const isUnprovisioned = /schema cache/i.test(failed.message) || /does not exist/i.test(failed.message) || /42P01/i.test(failed.code || '');
+      if (isUnprovisioned) {
+        console.warn(`[Website save] admin fallback "${step}" skipped (unprovisioned in DB schema): ${failed.message}`);
+      } else {
+        console.error('[SAVE ERROR]', {
+          stage: 'cloud-sync',
+          httpStatus: null,
+          supabaseCode: failed.code ?? null,
+          message: `[Website save] admin fallback "${step}" failed: ${failed.message}`.slice(0, 400),
+          resource,
+        });
+      }
     }
   };
 
@@ -529,6 +542,9 @@ async function persistWithAdminFallback(
             admin.from('salons').update({
               name: profile?.businessName || targetSalon.name || 'My Salon',
               slug: subdomain,
+              address: profile?.address || targetSalon.address || 'Not provided',
+              city: profile?.city || targetSalon.city || 'Not provided',
+              phone: profile?.phone || targetSalon.phone || '',
               description: profile?.about ?? undefined,
               data: { ...(targetSalon.data || {}), editor_profile: profile },
               updated_at: new Date().toISOString(),
@@ -542,6 +558,9 @@ async function persistWithAdminFallback(
               owner_id: ownerId,
               name: profile?.businessName || 'My Salon',
               slug: subdomain,
+              address: profile?.address || 'Not provided',
+              city: profile?.city || 'Not provided',
+              phone: profile?.phone || '',
               description: profile?.about || '',
               data: { editor_profile: profile },
             })

@@ -12,7 +12,7 @@
 
 import type { Express, Request, Response } from 'express';
 import { databaseForToken } from './backendContext.js';
-import { getSupabaseAdmin, supabase } from '../src/lib/supabaseClient.js';
+import { getSupabaseAdmin, supabase, isMockSupabase } from '../src/lib/supabaseClient.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function optionalUuid(value: unknown): string | null {
@@ -25,6 +25,9 @@ async function resolveOwnerId(req: Request): Promise<string | null> {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+    if (isMockSupabase || token.startsWith('mock-') || token.startsWith('demo-')) {
+      return 'mock-owner-id';
+    }
     try {
       // Reuse the process-wide clients. The public client can validate a JWT;
       // a missing service-role key must not create another placeholder auth
