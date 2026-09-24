@@ -50,8 +50,13 @@ export async function captureSignupReferral(code: string): Promise<string> {
   return result.valid ? result.referralCode || '' : '';
 }
 
-/** The DB trigger accepts only a live one-use capability, not an arbitrary code. */
-export async function prepareSignupAttribution(): Promise<string | undefined> {
-  const result = await requestAttribution();
+/**
+ * The DB trigger accepts only a live one-use capability, not an arbitrary code.
+ * Passing the persisted referral intent refreshes the cookie/capability after an
+ * account switch or OAuth-style full-page redirect; the backend still decides
+ * whether that code is valid and linkable.
+ */
+export async function prepareSignupAttribution(referralCode?: string): Promise<string | undefined> {
+  const result = await requestAttribution(referralCode || undefined);
   return result.valid ? result.token : undefined;
 }
