@@ -2318,6 +2318,7 @@ export default function App() {
       {currentView === 'staffCommission' && (
         <StaffCommissionDashboard
           user={user}
+          authLoading={authStatus !== 'ready'}
           onRequireAuth={openBookingAuth}
           onBackToDashboard={() => setCurrentView('dashboard')}
           onOpenStaffPerformance={() => setCurrentView('staffPerformance')}
