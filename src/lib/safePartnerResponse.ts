@@ -110,11 +110,26 @@ function instantString(value: unknown): string | undefined {
  * re-validated against their canonical shape so a private value (an email, a
  * name, a user id) cannot be echoed back through a validation field.
  */
+/**
+ * Supabase RPC calls resolve to an envelope ({ data, error }), while HTTP
+ * routes normally pass just the RPC payload. Accept both shapes explicitly:
+ * an envelope with a non-null error is never treated as a valid result.
+ */
+export function unwrapValidationPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const envelope = raw as Record<string, unknown>;
+  if ('data' in envelope || 'error' in envelope) {
+    return envelope.error == null ? envelope.data : null;
+  }
+  return raw;
+}
+
 export function projectValidationResponse(
   surface: SafeValidationSurface,
   raw: unknown
 ): SafeValidationResult {
-  const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const payload = unwrapValidationPayload(raw);
+  const source = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const valid = source.valid === true;
   const allows = (field: string) => SAFE_VALIDATION_FIELDS[surface].includes(field);
   // The same answer exists in two spellings: snake_case from the database
