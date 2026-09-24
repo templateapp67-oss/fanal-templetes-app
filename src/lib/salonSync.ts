@@ -75,14 +75,27 @@ export function applyWorkingHoursFromRow(
  * reach the database.
  */
 export function toProfileRow(profile: SalonProfile, ownerId: string) {
+  const sanitizePhone = (num: string | undefined | null) => {
+    if (!num) return '';
+    const trimmed = num.trim();
+    const startsWithPlus = trimmed.startsWith('+');
+    const digitsOnly = trimmed.replace(/[^\d]/g, '');
+    return startsWithPlus ? `+${digitsOnly}` : digitsOnly;
+  };
+
+  const cleanPhone = sanitizePhone(profile.phone || (profile as any).phone_number);
+  const cleanWhatsapp = sanitizePhone(profile.whatsapp || (profile as any).whatsapp_number);
+
   return {
     id: ownerId,
     business_type: profile.businessType,
     full_name: profile.ownerName,
     salon_name: profile.businessName,
     email: profile.email,
-    phone_number: profile.phone,
-    whatsapp: profile.whatsapp,
+    phone_number: cleanPhone,
+    phone: cleanPhone,
+    whatsapp: cleanWhatsapp,
+    whatsapp_number: cleanWhatsapp,
     whatsapp_notifications_enabled: profile.whatsappNotificationsEnabled ?? true,
     owner_role: profile.ownerRole,
     owner_photo_url: profile.ownerPhotoUrl,
@@ -116,6 +129,14 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     // reload and never reached the public site served from the database.
     home_service: profile.homeService ?? null,
     offers: profile.offers ?? [],
+    custom_favicon_url: profile.customFaviconUrl ?? null,
+    custom_favicon: profile.customFaviconUrl ?? null,
+    favicon_url: profile.customFaviconUrl ?? null,
+    social_share_image_url: profile.socialShareImageUrl ?? null,
+    social_share_image: profile.socialShareImageUrl ?? null,
+    seo_keywords: profile.seoKeywords ?? null,
+    heading_font: profile.headingFont ?? null,
+    body_font: profile.bodyFont ?? null,
     working_hours: buildWorkingHours(profile),
     updated_at: new Date().toISOString(),
   };

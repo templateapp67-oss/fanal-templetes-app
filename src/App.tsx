@@ -27,6 +27,7 @@ import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { CATEGORY_TEMPLATES } from './categoryTemplates';
 import { ACCENT_PALETTES, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
+import { applyGoogleFonts } from './utils/fontHelper';
 import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
@@ -1327,6 +1328,11 @@ export default function App() {
               themePreset: data.theme_preset || base.themePreset,
               themeAccentKey: data.theme_accent_key || base.themeAccentKey,
               customAccentColor: data.custom_accent_color || base.customAccentColor,
+              customFaviconUrl: data.custom_favicon_url || data.custom_favicon || data.favicon_url || (isDifferentUser ? '' : base.customFaviconUrl),
+              socialShareImageUrl: data.social_share_image_url || data.social_share_image || (isDifferentUser ? '' : base.socialShareImageUrl),
+              seoKeywords: data.seo_keywords || (isDifferentUser ? '' : base.seoKeywords),
+              headingFont: data.heading_font || (isDifferentUser ? '' : base.headingFont),
+              bodyFont: data.body_font || (isDifferentUser ? '' : base.bodyFont),
             },
             data
           );
@@ -2095,6 +2101,10 @@ export default function App() {
     const secondaryColor = pal ? pal.secondaryHex : '#334155';
     applyPrimaryAccentCssVar(primaryColor, secondaryColor);
   }, [profile.themeAccentKey, profile.customAccentColor]);
+
+  useEffect(() => {
+    applyGoogleFonts(profile.headingFont, profile.bodyFont);
+  }, [profile.headingFont, profile.bodyFont]);
 
   const handleSelectTemplate = (catId: BusinessTypeId) => {
     const tmpl = CATEGORY_TEMPLATES[catId];

@@ -46,6 +46,30 @@ export function createBlankSalonProfile(user?: any): SalonProfile {
     depositPercentage: 20,
     whiteLabelEnabled: true,
     offers: [],
+    seoKeywords: [
+      'Nexora SalonOS',
+      'Nexora',
+      'salon management system',
+      'white label salon software',
+      'salon website builder',
+      'online salon booking app',
+      'beauty parlor management system',
+      'barber shop software',
+      'hair studio booking app',
+      'spa booking software',
+      'ayurvedic wellness center website',
+      'luxury hair salon management',
+      'salon billing software',
+      'salon appointment scheduling',
+      'automated whatsapp booking notifications',
+      'salon loyalty program software',
+      'best salon software in india',
+      'salon booking app india',
+      'salon billing and inventory software',
+      'unisex salon management software',
+      'beauty parlor billing software',
+      'top salon website template'
+    ].join(', '),
   };
 }
 

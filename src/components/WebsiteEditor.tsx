@@ -32,7 +32,9 @@ import {
   MessageSquare,
   Hash,
   Settings,
+  Type,
 } from 'lucide-react';
+import { CURATED_GOOGLE_FONTS } from '../utils/fontHelper';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { slugifySalonName } from '../lib/salonStore';
@@ -46,6 +48,10 @@ import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHa
 import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';
 import { GooglePlacesAutocompleteInput } from './GooglePlacesAutocompleteInput';
 import { GoogleMapsView } from './GoogleMapsView';
+import { generateFaviconDataUrls } from '../lib/useSalonFavicon';
+import { generateSocialSharePlaceholder } from '../utils/socialShareGenerator';
+import { Upload, Image as ImageIcon } from 'lucide-react';
+import { compressAndResizeImage } from '../utils/imageUploadHelper';
 
 interface WebsiteEditorProps {
   profile: SalonProfile;
@@ -196,14 +202,67 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   // after a successful cloud save. Never set optimistically, never blocks save.
   const [completionNote, setCompletionNote] = useState<string | null>(null);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const socialShareInputRef = useRef<HTMLInputElement | null>(null);
+  const faviconUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [faviconMode, setFaviconMode] = useState<'letter' | 'custom'>(profile.customFaviconUrl ? 'custom' : 'letter');
+
+  React.useEffect(() => {
+    if (profile.customFaviconUrl) {
+      setFaviconMode('custom');
+    }
+  }, [profile.customFaviconUrl]);
+
+  const handleFaviconUploadFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await compressAndResizeImage(file, 256, 2 * 1024 * 1024);
+      if (result.isValid && result.dataUrl) {
+        upd({ customFaviconUrl: result.dataUrl });
+        if (showToast) showToast('Custom favicon image uploaded successfully!', 'success');
+      } else {
+        if (showToast) showToast(result.errorMessage || 'Failed to compress favicon image.', 'error');
+      }
+    } catch (err: any) {
+      if (showToast) showToast('Error processing custom favicon image.', 'error');
+    }
+  };
+
+  const handleSocialShareFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await compressAndResizeImage(file, 1200, 2 * 1024 * 1024);
+      if (result.isValid && result.dataUrl) {
+        upd({ socialShareImageUrl: result.dataUrl });
+        if (showToast) showToast('Social share image updated!', 'success');
+      } else {
+        if (showToast) showToast(result.errorMessage || 'Failed to compress social image.', 'error');
+      }
+    } catch (err: any) {
+      if (showToast) showToast('Error processing social share image.', 'error');
+    }
+  };
   // 'pending' = edits are debounced and will save in ~1.2s; 'saving' = the
   // save request is in flight. Both show as "Saving…".
   const saveUi = getSaveUiState(saveStatus, { busyOverride: isSaving, lastSavedAt });
   const isSavePending = saveUi.busy;
   const isSaveFailed = saveUi.failed;
 
-  const upd = (patch: Partial<SalonProfile>) =>
-    setProfile((prev) => ({ ...prev, ...patch }));
+  const upd = (patch: Partial<SalonProfile>) => {
+    const merged = { ...patch };
+    if ('phone' in patch) {
+      (merged as any).phone_number = patch.phone;
+    } else if ('phone_number' in patch) {
+      merged.phone = (patch as any).phone_number;
+    }
+    if ('whatsapp' in patch) {
+      (merged as any).whatsapp_number = patch.whatsapp;
+    } else if ('whatsapp_number' in patch) {
+      merged.whatsapp = (patch as any).whatsapp_number;
+    }
+    setProfile((prev) => ({ ...prev, ...merged }));
+  };
 
   // Automatically geocode address with Google Maps API when profile.address updates
   React.useEffect(() => {
@@ -588,7 +647,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                 <input
                   type="tel"
-                  value={profile.phone || ''}
+                  value={profile.phone || (profile as any).phone_number || ''}
                   onChange={(e) => upd({ phone: e.target.value })}
                   placeholder="e.g. +91 98765 43210"
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
@@ -604,7 +663,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 <MessageSquare className="w-4 h-4 text-emerald-500 absolute left-3 top-3" />
                 <input
                   type="tel"
-                  value={profile.whatsapp || ''}
+                  value={profile.whatsapp || (profile as any).whatsapp_number || ''}
                   onChange={(e) => upd({ whatsapp: e.target.value })}
                   placeholder="e.g. +91 98765 43210"
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
@@ -723,6 +782,549 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 </div>
               ) : null}
             </div>
+          </div>
+        </section>
+
+        {/* ===== FAVICON & BRANDING ASSETS GENERATOR ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-favicon-generator-section">
+          <div className="flex items-center gap-2 mb-1">
+            <Settings className="w-4 h-4 text-[#C20E5A]" />
+            <h2 className="font-display font-bold text-base">Favicon &amp; Brand Assets Generator</h2>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">
+            Create high-fidelity tab favicons and mobile touch icons customized with your brand style.
+          </p>
+
+          {/* Generator Interface */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Left side: Controls */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* Segmented Control Mode Selector */}
+              <div className="flex p-1 bg-gray-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setFaviconMode('letter')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 text-center ${
+                    faviconMode === 'letter'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  Letter Favicon
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFaviconMode('custom')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 text-center ${
+                    faviconMode === 'custom'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  Custom Favicon Image
+                </button>
+              </div>
+
+              {faviconMode === 'letter' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                      Favicon Letter
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={1}
+                      value={profile.faviconLetter || profile.businessName?.trim().substring(0, 1) || 'N'}
+                      onChange={(e) => {
+                        const char = e.target.value.toUpperCase().trim();
+                        upd({ faviconLetter: char || ' ' });
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none font-bold text-center text-lg"
+                      placeholder="e.g. B"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">Single upper-case character (defaults to your salon name's first letter).</p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                      Brand Theme Color
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={profile.faviconColor || profile.customAccentColor || '#C20E5A'}
+                        onChange={(e) => upd({ faviconColor: e.target.value })}
+                        className="w-12 h-12 rounded-xl border border-gray-300 cursor-pointer overflow-hidden shrink-0"
+                      />
+                      <input
+                        type="text"
+                        value={profile.faviconColor || profile.customAccentColor || '#C20E5A'}
+                        onChange={(e) => {
+                          if (/^#[0-9A-F]{6}$/i.test(e.target.value) || e.target.value === '') {
+                            upd({ faviconColor: e.target.value });
+                          }
+                        }}
+                        placeholder="#C20E5A"
+                        className="flex-1 p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none font-mono text-center"
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">Uses your brand color or select a custom background color for the favicon.</p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Reset to brand defaults
+                        upd({
+                          faviconLetter: profile.businessName?.trim().substring(0, 1) || 'N',
+                          faviconColor: profile.customAccentColor || '#C20E5A',
+                        });
+                        if (showToast) showToast('Reset to brand defaults!');
+                      }}
+                      className="w-full py-2 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-bold transition-colors cursor-pointer text-center"
+                    >
+                      Reset to Brand Defaults
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Upload Custom Favicon Box */}
+                  <div>
+                    <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                      Upload Favicon Image
+                    </label>
+                    <div 
+                      onClick={() => faviconUploadInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-200 hover:border-[#C20E5A] rounded-xl p-4 text-center cursor-pointer hover:bg-pink-50/10 transition-all flex flex-col items-center justify-center gap-1.5"
+                    >
+                      <input 
+                        type="file"
+                        ref={faviconUploadInputRef}
+                        onChange={handleFaviconUploadFileChange}
+                        accept="image/png, image/x-icon, image/vnd.microsoft.icon, image/svg+xml, image/jpeg, image/jpg"
+                        className="hidden"
+                      />
+                      <Upload className="w-5 h-5 text-gray-400" />
+                      <span className="text-xs font-bold text-gray-700">Drag &amp; drop or click to upload</span>
+                      <span className="text-[10px] text-gray-400">Square layout (1:1), PNG/ICO/SVG, Max 2MB</span>
+                    </div>
+                  </div>
+
+                  {profile.customFaviconUrl && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          upd({ customFaviconUrl: undefined });
+                          setFaviconMode('letter');
+                          if (showToast) showToast('Custom favicon cleared, reverted to Character Favicon.', 'success');
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 hover:bg-rose-50 hover:text-rose-700 text-gray-600 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remove / Clear Custom Image</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Right side: Browser Tab & Mockups Previews */}
+            <div className="lg:col-span-7 bg-gray-50/50 border border-gray-100 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
+              
+              {/* Browser Tab Mockup */}
+              <div className="bg-white border border-gray-200/80 rounded-xl overflow-hidden shadow-sm mb-5">
+                {/* Browser bar */}
+                <div className="bg-gray-100/80 px-4 py-2 border-b border-gray-200/80 flex items-center gap-1.5 shrink-0 select-none">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-400 block" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 block" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 block" />
+                  
+                  {/* Active tab */}
+                  <div className="ml-4 bg-white px-3 py-1.5 rounded-t-lg border-t border-x border-gray-200/80 flex items-center gap-2 max-w-[160px] truncate shadow-sm -mb-[9px] z-10">
+                    <img 
+                      src={
+                        profile.customFaviconUrl ||
+                        generateFaviconDataUrls(
+                          profile.faviconColor || profile.customAccentColor || '#C20E5A',
+                          profile.faviconLetter || profile.businessName?.trim().substring(0, 1) || 'N'
+                        ).fav16
+                      } 
+                      alt="favicon-16" 
+                      className="w-3.5 h-3.5 rounded-sm shadow-sm object-cover"
+                    />
+                    <span className="text-[10px] font-semibold text-gray-700 truncate">{profile.businessName || 'My Salon'}</span>
+                  </div>
+                </div>
+                {/* Content preview area */}
+                <div className="p-3 bg-gray-50/20 h-10 border-t border-gray-200/60 flex items-center px-4">
+                  <div className="w-full bg-white border border-gray-200 rounded-full h-5 flex items-center px-3 text-[9px] text-gray-400 font-mono gap-1.5 truncate shadow-sm">
+                    <span className="text-emerald-500">🔒</span>
+                    <span className="text-gray-600 truncate">{siteUrl}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid of size previews */}
+              <div className="grid grid-cols-3 gap-4">
+                
+                {/* 16x16 */}
+                <div className="rounded-xl border border-gray-200 bg-white p-3 flex flex-col items-center justify-center text-center shadow-sm">
+                  <div className="h-10 flex items-center justify-center mb-1">
+                    <img 
+                      src={
+                        profile.customFaviconUrl ||
+                        generateFaviconDataUrls(
+                          profile.faviconColor || profile.customAccentColor || '#C20E5A',
+                          profile.faviconLetter || profile.businessName?.trim().substring(0, 1) || 'N'
+                        ).fav16
+                      } 
+                      alt="favicon-16" 
+                      className="w-4 h-4 rounded-sm shadow-sm object-cover"
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-800">16x16</span>
+                  <span className="text-[9px] text-gray-400">Tab Icon</span>
+                </div>
+
+                {/* 32x32 */}
+                <div className="rounded-xl border border-gray-200 bg-white p-3 flex flex-col items-center justify-center text-center shadow-sm">
+                  <div className="h-10 flex items-center justify-center mb-1">
+                    <img 
+                      src={
+                        profile.customFaviconUrl ||
+                        generateFaviconDataUrls(
+                          profile.faviconColor || profile.customAccentColor || '#C20E5A',
+                          profile.faviconLetter || profile.businessName?.trim().substring(0, 1) || 'N'
+                        ).fav32
+                      } 
+                      alt="favicon-32" 
+                      className="w-8 h-8 rounded-md shadow-sm object-cover"
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-800">32x32</span>
+                  <span className="text-[9px] text-gray-400">Desktop Icon</span>
+                </div>
+
+                {/* 180x180 */}
+                <div className="rounded-xl border border-gray-200 bg-white p-3 flex flex-col items-center justify-center text-center shadow-sm">
+                  <div className="h-10 flex items-center justify-center mb-1">
+                    <img 
+                      src={
+                        profile.customFaviconUrl ||
+                        generateFaviconDataUrls(
+                          profile.faviconColor || profile.customAccentColor || '#C20E5A',
+                          profile.faviconLetter || profile.businessName?.trim().substring(0, 1) || 'N'
+                        ).apple180
+                      } 
+                      alt="apple-touch-180" 
+                      className="w-10 h-10 rounded-lg shadow-sm object-cover"
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-800">180x180</span>
+                  <span className="text-[9px] text-gray-400">Apple Touch</span>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        </section>
+
+        {/* ===== TYPOGRAPHY & GOOGLE FONTS CUSTOMIZER ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-fonts-section">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Type className="w-4 h-4 text-[#C20E5A]" />
+              <h2 className="font-display font-bold text-base">Website Typography</h2>
+            </div>
+            <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full">
+              Google Fonts
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">
+            Choose custom typography to match your salon's unique brand mood. Changes apply dynamically to headings and body text on your site.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Heading Font Customizer */}
+            <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold font-mono-caps text-gray-700 block">
+                  Heading Typography
+                </span>
+                <span className="text-[10px] text-gray-400 font-medium font-sans">
+                  h1, h2, h3, labels
+                </span>
+              </div>
+              <div>
+                <select
+                  value={profile.headingFont || ''}
+                  onChange={(e) => upd({ headingFont: e.target.value || undefined })}
+                  className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none bg-white font-semibold text-gray-800"
+                >
+                  <option value="">Default (Manrope)</option>
+                  {CURATED_GOOGLE_FONTS.map((font) => (
+                    <option key={`head-${font.family}`} value={font.family}>
+                      {font.name} ({font.category})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-white p-3.5 rounded-lg border border-gray-150 min-h-[70px] flex flex-col justify-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Live Heading Preview</span>
+                <span 
+                  style={{ fontFamily: profile.headingFont ? `"${profile.headingFont}", sans-serif` : undefined }}
+                  className="text-lg font-bold text-gray-900 leading-tight"
+                >
+                  {profile.businessName || 'Elite Styling Studio'}
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-400 leading-normal">
+                {profile.headingFont 
+                  ? CURATED_GOOGLE_FONTS.find(f => f.family === profile.headingFont)?.description 
+                  : 'Modern, balanced and geometric sans-serif headings.'
+                }
+              </p>
+            </div>
+
+            {/* Body Font Customizer */}
+            <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold font-mono-caps text-gray-700 block">
+                  Body &amp; Text Typography
+                </span>
+                <span className="text-[10px] text-gray-400 font-medium font-sans">
+                  Descriptions, service list, forms
+                </span>
+              </div>
+              <div>
+                <select
+                  value={profile.bodyFont || ''}
+                  onChange={(e) => upd({ bodyFont: e.target.value || undefined })}
+                  className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none bg-white font-semibold text-gray-800"
+                >
+                  <option value="">Default (Hanken Grotesk)</option>
+                  {CURATED_GOOGLE_FONTS.map((font) => (
+                    <option key={`body-${font.family}`} value={font.family}>
+                      {font.name} ({font.category})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-white p-3.5 rounded-lg border border-gray-150 min-h-[70px] flex flex-col justify-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Live Body Preview</span>
+                <p 
+                  style={{ fontFamily: profile.bodyFont ? `"${profile.bodyFont}", sans-serif` : undefined }}
+                  className="text-xs text-gray-600 leading-relaxed font-normal"
+                >
+                  Book your haircut, styling, skin therapy, or custom bridal makeover easily online today.
+                </p>
+              </div>
+              <p className="text-[10px] text-gray-400 leading-normal">
+                {profile.bodyFont 
+                  ? CURATED_GOOGLE_FONTS.find(f => f.family === profile.bodyFont)?.description 
+                  : 'Friendly and highly readable sans-serif body text.'
+                }
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ===== SOCIAL SHARE IMAGE (OG:IMAGE) MANAGER ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-social-share-section">
+          <div className="flex items-center gap-2 mb-1">
+            <Share2 className="w-4 h-4 text-[#C20E5A]" />
+            <h2 className="font-display font-bold text-base">Social Share Image (og:image)</h2>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">
+            Manage your dedicated website social share card. This is the graphic that appears when clients share your website on WhatsApp, Twitter, Instagram, or iMessage.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left side: Upload & Generate Actions */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* Upload Box */}
+              <div>
+                <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
+                  Upload Custom Social Image
+                </label>
+                <div 
+                  onClick={() => socialShareInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-200 hover:border-[#C20E5A] rounded-xl p-4 text-center cursor-pointer hover:bg-pink-50/10 transition-all flex flex-col items-center justify-center gap-1.5"
+                >
+                  <input 
+                    type="file"
+                    ref={socialShareInputRef}
+                    onChange={handleSocialShareFileChange}
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    className="hidden"
+                  />
+                  <Upload className="w-5 h-5 text-gray-400" />
+                  <span className="text-xs font-bold text-gray-700">Drag &amp; drop or click to upload</span>
+                  <span className="text-[10px] text-gray-400">1200x630 (1.91:1) recommended, Max 2MB</span>
+                </div>
+              </div>
+
+              {/* AI Generator Box */}
+              <div className="bg-pink-50/30 border border-pink-100 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-pink-600" />
+                  <span className="text-xs font-bold text-gray-800">AI Branded Placeholder</span>
+                </div>
+                <p className="text-[10px] leading-relaxed text-gray-500">
+                  Don't have a social image? Generate a stunning salon-branded card using your business details, tagline, and brand color instantly.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dynamicUrl = generateSocialSharePlaceholder(profile);
+                    if (dynamicUrl) {
+                      upd({ socialShareImageUrl: dynamicUrl });
+                      if (showToast) showToast('AI Salon-Branded share graphic generated!', 'success');
+                    }
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#C20E5A] hover:bg-[#A30B4A] text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Generate with AI</span>
+                </button>
+              </div>
+
+              {/* Reset / Delete Custom Image */}
+              {profile.socialShareImageUrl && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      upd({ socialShareImageUrl: undefined });
+                      if (showToast) showToast('Social share image cleared. Site will use default cover image.', 'success');
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 hover:bg-rose-50 hover:text-rose-700 text-gray-600 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear Share Image</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right side: Live Card Mockup Previews */}
+            <div className="lg:col-span-7 bg-gray-50/50 border border-gray-100 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-3">
+                  Live Social Share Card Preview (Facebook / WhatsApp / iMessage)
+                </label>
+                
+                {/* Social Card Preview Component */}
+                <div className="bg-white border border-gray-200/80 rounded-xl overflow-hidden shadow-sm max-w-[480px] mx-auto">
+                  {/* Image Area (1.91:1) */}
+                  <div className="relative aspect-[1.91/1] bg-slate-100 flex items-center justify-center overflow-hidden border-b border-gray-150">
+                    {profile.socialShareImageUrl ? (
+                      <img 
+                        src={profile.socialShareImageUrl} 
+                        alt="Social Share Card" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      // Show AI auto-computed graphic live in the preview!
+                      <img 
+                        src={generateSocialSharePlaceholder(profile)} 
+                        alt="AI Placeholder Preview" 
+                        className="w-full h-full object-cover opacity-90 transition-opacity"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div className="absolute top-2.5 left-2.5 bg-slate-900/80 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                      <ImageIcon className="w-3 h-3" />
+                      <span>{profile.socialShareImageUrl ? 'Custom Image Active' : 'AI Branded Placeholder Active'}</span>
+                    </div>
+                  </div>
+
+                  {/* Metadata Area */}
+                  <div className="p-3 bg-gray-50/50 text-left space-y-1">
+                    <div className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+                      {profile.subdomain || 'salon'}.nexora.in
+                    </div>
+                    <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
+                      {profile.businessName || 'My Premium Salon'} – {profile.tagline || 'Premium Salon Services'}
+                    </h4>
+                    <p className="text-[10px] leading-relaxed text-gray-500 line-clamp-2">
+                      {profile.about || 'Book appointments, view services and check stylist availability online.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status explanation */}
+              <div className="mt-4 pt-3 border-t border-gray-150 text-[10px] leading-relaxed text-slate-500">
+                <span className="font-bold text-slate-700">SEO &amp; OpenGraph Standard:</span>
+                {profile.socialShareImageUrl ? (
+                  <span> Your custom-uploaded share image is fully registered.</span>
+                ) : (
+                  <span> No image uploaded. The platform is automatically serving a high-resolution, salon-branded dynamic placeholder graphic using your active brand palette, tagline, and phone details.</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ===== ADVANCED SEO KEYWORDS ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-seo-keywords-section">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#C20E5A]" />
+              <h2 className="font-display font-bold text-base">Search Engine Keywords (SEO)</h2>
+            </div>
+            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full">
+              Google &amp; Bing
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">
+            Boost your Google search relevance. Enter comma-separated terms related to your location, specialized styling, or products.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1.5">
+                SEO Keywords (Comma-Separated)
+              </label>
+              <textarea
+                value={profile.seoKeywords || ''}
+                onChange={(e) => upd({ seoKeywords: e.target.value })}
+                placeholder="e.g. hair salon Mumbai, Balayage specialist Bandra, organic facials, bridal hair, Keratin treatment"
+                rows={3}
+                className="w-full p-3 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none resize-none font-sans"
+              />
+              <p className="text-[10px] text-gray-400 mt-1.5">
+                Separate each phrase with a comma. These keywords are dynamically injected as a meta-keywords tag inside your website's header.
+              </p>
+            </div>
+
+            {/* Keyword tag-pill previewer */}
+            {profile.seoKeywords && profile.seoKeywords.trim().length > 0 && (
+              <div className="bg-gray-50 border border-gray-150 rounded-xl p-3">
+                <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-2">Registered SEO Terms Preview</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {profile.seoKeywords
+                    .split(',')
+                    .map((kw) => kw.trim())
+                    .filter(Boolean)
+                    .map((kw, idx) => (
+                      <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md bg-[#C20E5A]/5 border border-[#C20E5A]/10 text-[#C20E5A] text-[10px] font-medium shadow-sm">
+                        🏷️ {kw}
+                      </span>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

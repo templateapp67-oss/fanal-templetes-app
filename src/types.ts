@@ -262,6 +262,13 @@ export interface SalonProfile {
   workingHoursSun?: string;
   whiteLabelEnabled?: boolean;
   offers?: SalonOffer[];
+  faviconLetter?: string;
+  faviconColor?: string;
+  customFaviconUrl?: string;
+  socialShareImageUrl?: string;
+  seoKeywords?: string;
+  headingFont?: string;
+  bodyFont?: string;
 }
 
 export interface SalonService {

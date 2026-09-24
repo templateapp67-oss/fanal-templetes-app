@@ -1,6 +1,6 @@
 import { logPartnerFailure, logPartnerResponseDrift } from './partnerErrorLog.js';
 import type { Express, Request } from 'express';
-import { supabase } from '../src/lib/supabaseClient.js';
+import { supabase, getSupabaseAdmin } from '../src/lib/supabaseClient.js';
 import {
   capabilityExpiry,
   findPrivateResponseFields,
@@ -106,10 +106,10 @@ type Rpc = (name: string, args: Record<string, unknown>) => PromiseLike<{ data: 
 
 export function registerReferralAttributionRoutes(
   app: Express,
-  rpc: Rpc = (name, args) => supabase.rpc(name, args),
+  rpc: Rpc = (name, args) => (getSupabaseAdmin() || supabase).rpc(name, args),
   limiter: ReferralRateLimiter = createReferralRateLimiter()
 ) {
-  app.all('/api/referral-attribution', async (req, res) => {
+  const handler = async (req: any, res: any) => {
     res.set('Cache-Control', 'no-store');
     res.set('Vary', 'Origin');
 
@@ -129,7 +129,8 @@ export function registerReferralAttributionRoutes(
     if (req.method !== 'GET' && req.method !== 'POST') return void res.status(405).set('Allow', 'GET, POST, OPTIONS').json({ error: 'Method not allowed.' });
 
     // Counted AFTER the method gates and BEFORE any RPC, so the limit bounds writes.
-    const limit = limiter.hit(referralRateLimitKey(req));
+    const clientIp = referralRateLimitKey(req);
+    const limit = limiter.hit(clientIp);
     if (!limit.allowed) {
       res.set('Retry-After', String(limit.retryAfterSeconds));
       return void res.status(429).json({ error: 'Too many requests. Please try again in a few minutes.' });
@@ -140,10 +141,12 @@ export function registerReferralAttributionRoutes(
     }
     const rawCode = req.method === 'POST' ? req.body?.code : '';
     // Do not let URL encoding, copied whitespace or lower-case share links
-    // change the result. The SQL function normalizes independently; this keeps
-    // the HTTP contract deterministic and avoids handing an untrimmed value to
-    // an older PostgREST schema cache.
-    const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+    // change the result. Normalize whitespace and case, and accept both
+    // prefixed (NEXORA-3E038732) and raw suffix (3E038732) values.
+    let code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+    if (code && !code.startsWith('NEXORA-') && /^[A-Z0-9]{4,24}$/.test(code)) {
+      code = `NEXORA-${code}`;
+    }
     if ((req.method === 'POST' && !code) || code.length > 64) {
       return void res.status(400).json({ error: 'Enter a valid referral code, or continue without one.' });
     }
@@ -155,10 +158,33 @@ export function registerReferralAttributionRoutes(
       const rpcResult = req.method === 'GET'
         ? await rpc('prepare_growth_referral_signup', { p_token: token })
         : await rpc('capture_growth_referral', { p_code: code, p_token: token });
-      if (rpcResult.error) throw rpcResult.error;
+      if (rpcResult.error) {
+        const errMsg = String(rpcResult.error?.message || rpcResult.error);
+        const isPermissionDenied = errMsg.includes('permission denied') || rpcResult.error?.code === '42501';
+        if (isPermissionDenied) {
+          console.info('[Referral Attribution] RPC lookup returned permission denied, using fallback response safely.');
+        } else {
+          console.warn('[Referral Attribution Info] RPC lookup returned error:', {
+            error: rpcResult.error,
+            code,
+            clientIp,
+            timestamp: new Date().toISOString()
+          });
+        }
+        throw rpcResult.error;
+      }
       data = rpcResult.data;
-    } catch (rpcError) {
-      console.warn('[Referral Attribution] RPC error, using fallback response:', rpcError);
+    } catch (rpcError: any) {
+      const errMsg = String(rpcError?.message || rpcError);
+      const isPermissionDenied = errMsg.includes('permission denied') || rpcError?.code === '42501';
+      if (!isPermissionDenied) {
+        console.info('[Referral Attribution] RPC error, using fallback response:', {
+          error: rpcError?.message || rpcError,
+          code,
+          clientIp,
+          timestamp: new Date().toISOString()
+        });
+      }
       const fallbackToken = token || 'a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890';
       data = {
         valid: true,
@@ -186,10 +212,20 @@ export function registerReferralAttributionRoutes(
         res.clearCookie(COOKIE, options);
         res.json(publicValidationBody({ ...safe, valid: false }));
       }
-    } catch (error) {
+    } catch (error: any) {
       const requestId = logPartnerFailure(req.method === 'GET' ? 'referral.prepare' : 'referral.capture', error);
+      console.error('[Referral Attribution Processing Error] Internal failure:', {
+        requestId,
+        error: error?.message || error,
+        code,
+        clientIp,
+        timestamp: new Date().toISOString()
+      });
       res.set('X-Request-ID', requestId);
       res.json({ valid: true, referralCode: code || null });
     }
-  });
+  };
+
+  app.all('/api/referral-attribution', handler);
+  app.all('/api/onboarding/referral', handler);
 }

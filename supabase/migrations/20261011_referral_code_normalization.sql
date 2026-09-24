@@ -22,7 +22,10 @@ begin
 
   select gp.referral_code into v_stored_code
   from public.growth_partners gp
-  where upper(gp.referral_code) = v_code and gp.is_active
+  where (upper(gp.referral_code) = v_code 
+         or upper(gp.referral_code) = replace(v_code, 'NEXORA-', '')
+         or ('NEXORA-' || upper(gp.referral_code)) = v_code)
+    and gp.is_active
   limit 1;
 
   return jsonb_build_object(

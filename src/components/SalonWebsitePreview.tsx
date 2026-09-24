@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSiteUrl } from '../lib/salonStore';
+import { useSalonSEO } from '../lib/useSalonSEO';
+import { useSalonFavicon } from '../lib/useSalonFavicon';
 import { copyToClipboard } from '../lib/clipboard';
 import { 
   CheckCircle2, 
@@ -227,6 +229,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const activeStylists = setStylistsProp ? stylists : internalStylists;
   const setStylists = setStylistsProp || setInternalStylists;
 
+  // Dynamically update page titles, meta descriptions, canonical URLs, and structured data
+  useSalonSEO(activeProfile, true);
+
   // Google Maps URLs for address click redirection
   const googleMapsUrl = React.useMemo(() => {
     const lat = Number(activeProfile.latitude);
@@ -333,27 +338,37 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const activeAccent = ACCENT_PALETTES[selectedAccentKey] || ACCENT_PALETTES.slate;
   const primaryAccentColor = activeProfile.customAccentColor || activeAccent.primaryHex;
 
+  // Dynamically generate and inject favicons in document head
+  useSalonFavicon(activeProfile, primaryAccentColor, true);
+
   // Update primary accent CSS variable across the document
   useEffect(() => {
     applyPrimaryAccentCssVar(primaryAccentColor, activeAccent.secondaryHex);
   }, [primaryAccentColor, activeAccent]);
 
   // Dynamic Image-Based AI Styling State
+  const resolvedHeroUrl = activeProfile.coverImageUrl || activeTemplate.coverImageUrl || "";
+  const [heroImageSrc, setHeroImageSrc] = useState<string>(resolvedHeroUrl);
+
+  useEffect(() => {
+    setHeroImageSrc(activeProfile.coverImageUrl || activeTemplate.coverImageUrl || "");
+  }, [activeProfile.coverImageUrl, activeTemplate.coverImageUrl]);
+
   const [heroAIStyling, setHeroAIStyling] = useState<HeroAIStyling>(() =>
-    computeHeroAIStyling(activeProfile.coverImageUrl, primaryAccentColor)
+    computeHeroAIStyling(resolvedHeroUrl, primaryAccentColor)
   );
 
   useEffect(() => {
     let isMounted = true;
 
-    extractImageMoodAsync(activeProfile.coverImageUrl, primaryAccentColor).then((extracted) => {
+    extractImageMoodAsync(heroImageSrc, primaryAccentColor).then((extracted) => {
       if (isMounted) {
         setHeroAIStyling(extracted);
       }
     });
 
     return () => { isMounted = false; };
-  }, [activeProfile.coverImageUrl, primaryAccentColor]);
+  }, [heroImageSrc, primaryAccentColor]);
 
   const standardData = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
 
@@ -1421,8 +1436,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
             <div className="absolute inset-0 z-0 overflow-hidden">
               <img
-                src={activeProfile.coverImageUrl}
+                src={heroImageSrc}
                 alt={activeProfile.businessName}
+                onError={(e) => {
+                  if (heroImageSrc !== activeTemplate.coverImageUrl) {
+                    setHeroImageSrc(activeTemplate.coverImageUrl);
+                  }
+                }}
                 className={`w-full max-w-full h-full object-cover rounded-xl object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
               />
               {/* Dynamic Overlay Ambient Tint (Gentle ~15-25% mask max) */}

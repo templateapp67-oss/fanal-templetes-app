@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SalonProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase, isMockSupabase } from '../lib/supabaseClient';
 
 interface UserProfileSettingsModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   showToast,
   onSave,
 }) => {
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     ownerName: profile.ownerName || '',
     ownerPhotoUrl: profile.ownerPhotoUrl || '',
@@ -136,12 +138,15 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     reader.readAsDataURL(file);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
+
     const newErrors: Record<string, string> = {};
 
     if (!formData.ownerName.trim()) newErrors.ownerName = 'Full Name is required.';
     
+    // Strip formatting from phone numbers (leave only digits)
     const rawWhatsapp = formData.whatsapp.replace(/\D/g, '');
     const hasEnteredWhatsapp = rawWhatsapp.length > 0 && rawWhatsapp !== '91';
     if (hasEnteredWhatsapp && rawWhatsapp.slice(-10).length < 10) {
@@ -153,38 +158,107 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       newErrors.postalCode = 'Pin code must be exactly 6 digits.';
     }
 
+    // Validate and sanitize Date of Birth string
+    let validDateStr: string | null = null;
+    if (formData.dob.trim()) {
+      const dobParsed = Date.parse(formData.dob.trim());
+      if (isNaN(dobParsed)) {
+        newErrors.dob = 'Please enter a valid date of birth.';
+      } else {
+        validDateStr = new Date(dobParsed).toISOString().slice(0, 10);
+      }
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       showToast('Please check the required fields.', 'error');
       return;
     }
 
+    setIsSaving(true);
+
     const cleanWhatsapp = hasEnteredWhatsapp ? formData.whatsapp.trim() : '';
+    const cleanPhone = rawWhatsapp ? `+${rawWhatsapp}` : '';
 
     const updatedProfile: SalonProfile = {
       ...profile,
       ownerName: formData.ownerName.trim(),
       ownerPhotoUrl: formData.ownerPhotoUrl || profile.ownerPhotoUrl,
       whatsapp: cleanWhatsapp,
-      dob: formData.dob,
+      dob: validDateStr || '',
       postalCode: cleanPostal,
       city: formData.city.trim(),
       areaLocality: formData.areaLocality.trim(),
       whatsappNotificationsEnabled,
     };
 
-    setProfile(updatedProfile);
-    if (onSave) {
-      // The save engine reports the REAL outcome: "saved successfully" only
-      // after the cloud accepts the state, "saved on this device" for a local
-      // draft, or "Save failed" with a retry — never a local-state claim.
-      void onSave(updatedProfile);
-    } else {
-      // PHASE 11: no onSave wired — only the local state changed. Do not claim
-      // a save: the auto-save engine reports the actual outcome.
-      showToast('Profile updated — changes will be published automatically…');
+    try {
+      if (!isMockSupabase) {
+        // Resolve active Supabase authenticated session user ID
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+
+        const user = session?.user;
+        if (!user) {
+          throw new Error('No active user session found. Please sign in again.');
+        }
+
+        // Perform upsert query on profiles table matching id = user.id
+        // Handles both column spelling variations (whatsapp_number / whatsapp, date_of_birth / dob, avatar_url / photo_url / owner_photo_url)
+        const { error: dbError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: user.id,
+            full_name: formData.ownerName.trim(),
+            whatsapp_number: cleanPhone || null,
+            whatsapp: cleanWhatsapp || null,
+            phone_number: cleanPhone || null,
+            phone: cleanPhone || null,
+            date_of_birth: validDateStr,
+            dob: validDateStr,
+            avatar_url: formData.ownerPhotoUrl || null,
+            owner_photo_url: formData.ownerPhotoUrl || null,
+            photo_url: formData.ownerPhotoUrl || null,
+            pincode: cleanPostal || null,
+            postal_code: cleanPostal || null,
+            city: formData.city.trim() || null,
+            preferred_city: formData.city.trim() || null,
+            area: formData.areaLocality.trim() || null,
+            preferred_area: formData.areaLocality.trim() || null,
+            whatsapp_notifications_enabled: whatsappNotificationsEnabled,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+
+        if (dbError) {
+          throw dbError;
+        }
+      }
+
+      // Sync local app state / context
+      setProfile(updatedProfile);
+
+      if (onSave) {
+        await onSave(updatedProfile);
+      } else {
+        showToast('Profile settings saved and persisted successfully!');
+      }
+
+      onClose();
+    } catch (error: any) {
+      console.error('[Database Profile Settings Save Error] Detailed failure details:', {
+        error: error?.message || error,
+        payload: {
+          full_name: formData.ownerName.trim(),
+          whatsapp_number: cleanPhone,
+          date_of_birth: validDateStr,
+          avatar_url: formData.ownerPhotoUrl
+        },
+        timestamp: new Date().toISOString()
+      });
+      showToast('Error saving profile settings: ' + (error?.message || 'Database connection problem'), 'error');
+    } finally {
+      setIsSaving(false);
     }
-    onClose();
   };
 
   return (
@@ -395,9 +469,18 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-[#C20E5A] hover:bg-[#A30B4A] shadow-md shadow-[#C20E5A]/20 transition-all active:scale-95"
+              disabled={isSaving}
+              className={`px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-[#C20E5A] hover:bg-[#A30B4A] shadow-md shadow-[#C20E5A]/20 transition-all active:scale-95 flex items-center gap-2 ${
+                isSaving ? 'opacity-80 cursor-not-allowed' : ''
+              }`}
             >
-              Save Profile Settings
+              {isSaving && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {isSaving ? 'Saving...' : 'Save Profile Settings'}
             </button>
           </div>
         </form>

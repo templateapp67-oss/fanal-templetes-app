@@ -246,7 +246,7 @@ async function startServer() {
   // untouched. Mounted before the routes so OPTIONS preflights for
   // /api/* (incl. /api/website/save) get a 204 instead of a 404.
   app.use(nexoraCors);
-  registerReferralAttributionRoutes(app);
+  registerReferralAttributionRoutes(app, (name, args) => db.rpc(name, args));
 
   // Server-side Geocoding Proxy Route (prevents client-side CORS errors)
   app.get("/api/geocode", asyncRoute(handleGeocodeRequest));

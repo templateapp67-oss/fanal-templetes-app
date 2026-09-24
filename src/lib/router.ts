@@ -17,6 +17,11 @@ import { useCallback, useEffect, useState } from 'react';
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 export const OWNER_DASHBOARD_PATH = '/owner/dashboard';
+
+export function isOwnerDashboardPath(pathname: string): boolean {
+  const path = normalizePath(pathname);
+  return path === OWNER_DASHBOARD_PATH || path === '/dashboard' || path === '/owner';
+}
 export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
 export const STAFF_COMMISSION_PATH = '/owner/dashboard/staff-performance/commission';
 export const OWNER_STAFF_PERFORMANCE_PATH = STAFF_PERFORMANCE_PATH;
@@ -130,10 +135,6 @@ export function normalizePath(pathname: string): string {
   return value.replace(/\/+$/, '') || '/';
 }
 
-/** True when the path is the owner dashboard root. */
-export function isOwnerDashboardPath(pathname: string): boolean {
-  return normalizePath(pathname).toLowerCase() === OWNER_DASHBOARD_PATH;
-}
 
 /** True when the path is the customer's "My Bookings" page. */
 export function isMyBookingsPath(pathname: string): boolean {
