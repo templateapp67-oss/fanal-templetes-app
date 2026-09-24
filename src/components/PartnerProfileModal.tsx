@@ -70,24 +70,28 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     setLoading(true);
     (async () => {
       try {
-        const { data, error: fetchErr } = await readPartnerProfile(profile.ownerId);
-        if (fetchErr) throw fetchErr;
-        if (active) {
-          setForm(f => ({
-            ...f,
-            dob: data?.dob || f.dob || '',
-            areaLocality: profile.areaLocality ?? data?.area ?? f.areaLocality ?? '',
-            notifications: data?.notifications === true,
-          }));
-          if (data?.avatar && !avatar) {
-            setAvatar(data.avatar);
-          }
+        const read = await readPartnerProfile(profile.ownerId);
+        if (!active) return;
+        if (read.ok === false) {
+          // `read.error.message` is reviewed copy; the database's own text was
+          // already logged by readPartnerProfile().
+          setError(read.error.message);
+          return;
+        }
+        const data = read.data;
+        setForm(f => ({
+          ...f,
+          dob: data?.dob || f.dob || '',
+          areaLocality: profile.areaLocality ?? data?.area ?? f.areaLocality ?? '',
+          notifications: data?.notifications === true,
+        }));
+        if (data?.avatar && !avatar) {
+          setAvatar(data.avatar);
         }
       } catch (e: any) {
-        if (active) {
-          console.warn('[PartnerProfileModal] Cloud profile sync notice:', e.message);
-          setError(e.message || 'Could not load cloud profile details.');
-        }
+        // Only an unexpected failure (e.g. client construction) reaches here.
+        console.error('[partner-profile] profile sync crashed', e);
+        if (active) setError('Could not load cloud profile details.');
       } finally {
         if (active) setLoading(false);
       }
@@ -176,10 +180,16 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
           const result = await supabase.rpc('save_partner_profile_details', {
             p_details: { ...patch, subdomain: profile.subdomain, dob, notifications }
           });
-          if (result.error) throw result.error;
+          if (result.error) {
+            console.error(`[partner-profile] save_partner_profile_details failed — ${result.error.code || 'database'}: ${result.error.message}`);
+            throw new Error('Profile could not be saved. Please retry.');
+          }
           uploaded = null;
           const verification = await supabase.rpc('get_partner_profile');
-          if (verification.error) throw verification.error;
+          if (verification.error) {
+            console.error(`[partner-profile] get_partner_profile verification failed — ${verification.error.code || 'database'}: ${verification.error.message}`);
+            throw new Error('Saved profile could not be verified. Please retry.');
+          }
           if (verification.data?.dob !== dob || verification.data?.avatar !== photo) {
             throw new Error('Saved profile could not be verified. Please retry.');
           }

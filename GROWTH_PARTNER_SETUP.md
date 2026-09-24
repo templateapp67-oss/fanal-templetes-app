@@ -73,6 +73,15 @@ $$;
 
 `private` is not exposed by PostgREST, so the admin list is not readable over
 the API.
+* **The reward/attribution tables** — `shop_attributions`, `partner_reward_milestones` and
+  `user_preferences` are created by `2026100500_growth_partner_attribution_prerequisites.sql` (see §3,
+  row 15) because six committed migrations referenced them while no migration created them. The three
+  reward RPCs additionally read four **legacy production** tables that no migration in this repository
+  creates — `partner_reward_claims`, `partner_reward_shop_qualifications`, `qualifying_transactions`,
+  `shop_onboarding_applications` — because they are part of the production ledger. A project that has
+  applied `20261007/08/09` already has them; on a fresh project, export them from the production project
+  rather than re-inventing their shape. `GROWTH_PARTNER_DATABASE_AUDIT.md` §3 lists every column the
+  reward migrations use.
 * `private.is_trusted_server_or_admin()` — the ledger half of the portal gates on
   it (`release_partner_earnings()` makes cleared commission withdrawable,
   `admin_mark_partner_payout_paid()` pays a request out), and no migration in this
@@ -103,6 +112,8 @@ file is idempotent:
 | 12 | `20260922085236_enable_growth_partner_open_enrollment.sql` | open enrollment: a signed-in account that submits its own validated application is approved immediately (the `/partner/login` "Become a Growth Partner" form) |
 | 13 | `20260922091000_direct_growth_partner_dashboard_access.sql` | **`ensure_my_growth_partner()`** — direct self-enrollment for `auth.uid()`. Required by `/partner/dashboard`: without it every denial screen's "Instantly Approve & Access" action and the login page's automatic activation cannot run (see 7.4) |
 | 14 | `20260919120000_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
+| 15 | `2026100500_growth_partner_attribution_prerequisites.sql` | **required by 20261007+** — `shop_attributions`, `partner_reward_milestones` and `user_preferences`: the three relations committed migrations read/write but no migration created. `create table if not exists`, so a project that already carries them (the legacy production generation) is untouched. Apply **after** `20261002` (the FK target `public.salons` is created there) and **before** `20261007` |
+| 16 | `20261013_reload_postgrest_schema_growth_partner.sql` | one `notify pgrst, 'reload schema'` for the Growth Partner migrations that cannot flush the cache themselves (`20260909035237`, `20260918070000`, `20260918100100`, `20260920`, `20260921`, `20260930`, `20261001`, `2026100500`, `20261007`, `20261008`). Without it those RPCs answer `PGRST202 … not in the schema cache` — the "database setup is missing" notice — on a project where they were applied while PostgREST was running |
 
 The two portal migrations sort earlier than they apply:
 `partner_earnings.partner_id` and the referral joins FK to

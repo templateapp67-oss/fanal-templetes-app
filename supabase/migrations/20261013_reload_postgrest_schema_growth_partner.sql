@@ -1,0 +1,44 @@
+-- ============================================================================
+-- Reload PostgREST's schema cache after the Growth Partner migrations that
+-- create functions but never ask PostgREST to pick them up.
+--
+-- WHY THIS EXISTS
+--
+--   PostgREST caches the function/table catalogue at startup. A migration that
+--   runs while PostgREST is already serving traffic does not become callable
+--   until that cache is reloaded — the browser's `rpc('<fn>')` is answered with
+--
+--       PGRST202  Could not find the function public.<fn>() in the schema cache
+--
+--   which is exactly the "database setup is missing on this project" notice the
+--   Growth Partner area renders, even though the migration applied cleanly.
+--
+--   The repository already fixed this once for the security RPCs
+--   (`20260919130100_reload_postgrest_schema_partner_security.sql`). These
+--   Growth Partner migrations have the same gap:
+--
+--     * 20260909035237_partner_profile_settings   — get_partner_profile(),
+--       save_partner_profile()            … the /partner profile screen
+--     * 20260918070000_partner_account_settings   — the account-settings read
+--     * 20260918100100_link_shop_onboarding_to_partner_rewards — the onboarding
+--       → partner-reward link
+--     * 20260919130000_partner_account_security_settings (covered by 20260919
+--       130100 as well; re-loading is free)
+--     * 20260920_growth_partner_application_queue — list_growth_partner_
+--       applications()            … the admin review queue
+--     * 20260921_public_partner_referral_codes    — the public referral-code
+--       lookup the /partner/login page needs
+--     * 20260930_partner_dashboard_metrics        — get_my_partner_performance()
+--     * 20261001_partner_dashboard_activity       — the dashboard activity feed
+--     * 2026100500_growth_partner_attribution_prerequisites — shop_attributions /
+--       partner_reward_milestones (new relations)
+--     * 20261007_growth_partner_premium_rewards_and_qr_commission,
+--       20261008_correct_growth_partner_commission_share — the reward dashboard,
+--       QR commission and reward-refresh RPCs
+--
+--   `notify pgrst, 'reload schema';` is the documented way to flush that cache.
+--   It is a no-op outside Supabase's PostgREST listener, changes no data, and
+--   costs nothing to run twice — re-running this migration is always safe.
+-- ============================================================================
+
+notify pgrst, 'reload schema';
