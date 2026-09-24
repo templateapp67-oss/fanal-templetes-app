@@ -47,6 +47,8 @@ const PRESETS: Array<{ id: StaffDatePreset; label: string }> = [
 
 export interface StaffCommissionDashboardProps {
   user: { id?: string } | null;
+  /** The app is restoring Supabase Auth; never deny during this transient state. */
+  authLoading?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
   onBackToDashboard?: () => void;
   onOpenStaffPerformance?: () => void;
@@ -152,6 +154,7 @@ function StatusPill({ status }: { status: string }) {
 
 export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> = ({
   user,
+  authLoading = false,
   onRequireAuth,
   onBackToDashboard,
   onOpenStaffPerformance,
@@ -178,7 +181,7 @@ export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> =
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [fatal, setFatal] = useState<StaffPerformanceError | null>(
-    user ? null : { code: 'session_expired', message: STAFF_COMMISSION_ERROR_COPY.session_expired, retryable: false }
+    user || authLoading ? null : { code: 'session_expired', message: STAFF_COMMISSION_ERROR_COPY.session_expired, retryable: false }
   );
   const [loadError, setLoadError] = useState<StaffPerformanceError | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -225,6 +228,11 @@ export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> =
   const load = useCallback(async () => {
     if (!user) {
       clearData();
+      if (authLoading) {
+        setFatal(null);
+        setLoading(true);
+        return;
+      }
       setFatal({ code: 'session_expired', message: STAFF_COMMISSION_ERROR_COPY.session_expired, retryable: false });
       setLoading(false);
       return;
@@ -276,7 +284,7 @@ export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> =
     setSummary(sumRes.ok ? sumRes.rows : []);
     setHistory(histRes.ok ? histRes.rows : []);
     setLoading(false);
-  }, [user, debouncedRange.from, debouncedRange.to, staffFilter, tab, clearData]);
+  }, [user, authLoading, debouncedRange.from, debouncedRange.to, staffFilter, tab, clearData]);
 
   useEffect(() => {
     void load();
@@ -286,12 +294,16 @@ export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> =
   }, [load]);
 
   useEffect(() => {
-    if (!user) {
+    if (!user && authLoading) {
+      clearData();
+      setFatal(null);
+      setLoading(true);
+    } else if (!user) {
       clearData();
       setFatal({ code: 'session_expired', message: STAFF_COMMISSION_ERROR_COPY.session_expired, retryable: false });
       setLoading(false);
     }
-  }, [user, clearData]);
+  }, [user, authLoading, clearData]);
 
   useEffect(() => {
     if (!confirm) return;
