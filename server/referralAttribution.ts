@@ -131,8 +131,15 @@ export function registerReferralAttributionRoutes(
     if (req.method === 'POST' && Object.keys(req.body || {}).some(key => key !== 'code')) {
       return void res.status(400).json({ error: 'Only a referral code may be submitted.' });
     }
-    const code = req.method === 'POST' ? req.body?.code : '';
-    if (typeof code !== 'string' || code.length > 64) return void res.status(400).json({ error: 'Invalid referral code.' });
+    const rawCode = req.method === 'POST' ? req.body?.code : '';
+    // Do not let URL encoding, copied whitespace or lower-case share links
+    // change the result. The SQL function normalizes independently; this keeps
+    // the HTTP contract deterministic and avoids handing an untrimmed value to
+    // an older PostgREST schema cache.
+    const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+    if ((req.method === 'POST' && !code) || code.length > 64) {
+      return void res.status(400).json({ error: 'Enter a valid referral code, or continue without one.' });
+    }
     const token = cookieToken(req);
     if (req.method === 'GET' && !token) return void res.json({ valid: false, token: null });
     try {

@@ -58,9 +58,12 @@ function writePendingConfirmation(email: string): void {
 export const SignupScreen: React.FC<{
   client?: OnboardingSupabaseClient;
   prepareAttribution?: () => Promise<string | undefined>;
+  /** Canonical code captured by the same-origin attribution API. */
+  referralCode?: string;
+  referralState?: 'checking' | 'valid' | 'invalid' | 'none';
   onDone?: () => void;
   onGoLogin?: () => void;
-}> = ({ client, onDone, onGoLogin, prepareAttribution }) => {
+}> = ({ client, onDone, onGoLogin, prepareAttribution, referralCode = '', referralState = 'none' }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -135,6 +138,24 @@ export const SignupScreen: React.FC<{
         </>
       }
     >
+      {referralState === 'checking' && <FormAlert tone="success">Checking referral code…</FormAlert>}
+      {referralState === 'valid' && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800">
+          ✓ Referral code applied: <span className="font-mono">{referralCode}</span>
+        </div>
+      )}
+      {referralState === 'invalid' && (
+        <FormAlert tone="error">This referral code is unavailable. You can continue without a referral.</FormAlert>
+      )}
+      {referralCode && (
+        <Field
+          id="onboarding-signup-referral-code"
+          label="Referral code"
+          value={referralCode}
+          disabled
+          onChange={() => {}}
+        />
+      )}
       <form
         className="space-y-4"
         onSubmit={(event) => {

@@ -78,7 +78,10 @@ export const ONBOARDING_MOCK_BODY =
  */
 export function readSharedReferralCode(): string {
   if (typeof window === 'undefined' || !window.location) return '';
-  const candidate = referralCodeFromQuery(window.location.search);
+  const fromUrl = referralCodeFromQuery(window.location.search);
+  let fromSession = '';
+  try { fromSession = sessionStorage.getItem('nexora_ref_code') || ''; } catch {}
+  const candidate = fromUrl || fromSession;
   return isGrowthReferralCodeFormat(candidate) ? normalizeGrowthReferralCode(candidate) : '';
 }
 
@@ -195,10 +198,21 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
           try {
             const code = await captureFlight.current;
             if (!code) {
+              // An invalid share link must not block an organic signup. The
+              // server did not create a usable capability, so this is display
+              // state only and cannot affect signup attribution.
               setInvalidReferral(true);
-              throw new Error('Invalid referral code. Please check and try again.');
+            } else {
+              setInvalidReferral(false);
+              setSharedReferralCode(code);
+              try { sessionStorage.setItem('nexora_ref_code', code); } catch {}
             }
-          } catch (error) { captureFlight.current = null; throw error; }
+          } catch {
+            // Network/API failure is actionable; a syntactically valid but
+            // unknown code is handled above as an optional referral.
+            captureFlight.current = null;
+            setInvalidReferral(true);
+          }
         }
         if (cancelled || !mounted.current) return;
         setViewer(restored);
@@ -353,6 +367,8 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     return (
       <SignupScreen
         prepareAttribution={prepareSignupAttribution}
+        referralCode={sharedReferralCode}
+        referralState={sharedReferralCode ? (invalidReferral ? 'invalid' : 'valid') : 'none'}
         client={sb}
         onDone={() => void handleAuthDone()}
         onGoLogin={() => navigate(onboardingPath('login'))}

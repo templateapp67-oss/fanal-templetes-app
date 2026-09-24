@@ -19,12 +19,16 @@ interface AttributionAnswer {
  * configuration, admin metadata or private contact details into signup state.
  */
 async function requestAttribution(code?: string): Promise<AttributionAnswer> {
+  // Match the database normalizer before crossing the HTTP boundary. The
+  // backend repeats this normalization; this is for consistent URL-prefill and
+  // manual-input behaviour, never an authorization decision.
+  const cleanedCode = code === undefined ? undefined : String(code).trim().toUpperCase();
   let response: Response;
   try { response = await fetch('/api/referral-attribution', {
-    method: code === undefined ? 'GET' : 'POST',
+    method: cleanedCode === undefined ? 'GET' : 'POST',
     credentials: 'same-origin',
     cache: 'no-store',
-    ...(code === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }),
+    ...(cleanedCode === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: cleanedCode }) }),
   });
   } catch { throw new OnboardingError('network', 'Network error. Check your connection and try again.'); }
   if (!response.ok) throw new OnboardingError('unknown', 'Referral attribution could not be checked. Please retry.');
