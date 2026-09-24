@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
+export const OWNER_DASHBOARD_PATH = '/owner/dashboard';
 export const STAFF_PERFORMANCE_PATH = '/owner/dashboard/staff-performance';
 export const STAFF_COMMISSION_PATH = '/owner/dashboard/staff-performance/commission';
 export const OWNER_STAFF_PERFORMANCE_PATH = STAFF_PERFORMANCE_PATH;
