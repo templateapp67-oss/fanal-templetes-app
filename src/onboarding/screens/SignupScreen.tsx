@@ -1,5 +1,5 @@
 import { toSafeAuthError } from '../lib/flow';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import {
   resendSignupConfirmation,
@@ -63,12 +63,23 @@ export const SignupScreen: React.FC<{
   referralState?: 'checking' | 'valid' | 'invalid' | 'none';
   onDone?: () => void;
   onGoLogin?: () => void;
-}> = ({ client, onDone, onGoLogin, prepareAttribution, referralCode = '', referralState = 'none' }) => {
+  /** Keeps a shared/edited code available if routing causes a full-page change. */
+  onReferralCodeChange?: (value: string) => void;
+}> = ({ client, onDone, onGoLogin, prepareAttribution, referralCode = '', referralState = 'none', onReferralCodeChange }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  // A code arriving from a share URL is only a prefill. It must remain editable
+  // so an owner can correct a stale/invalid code or remove it and sign up normally.
+  const [referralInput, setReferralInput] = useState(referralCode);
+  const referralEdited = referralInput !== referralCode;
+  const displayedReferralState = referralEdited ? 'none' : referralState;
+  useEffect(() => {
+    // Sync a code captured after boot without overwriting a value the owner typed.
+    if (!referralEdited) setReferralInput(referralCode);
+  }, [referralCode, referralEdited]);
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{
     fullName?: string;
@@ -138,22 +149,26 @@ export const SignupScreen: React.FC<{
         </>
       }
     >
-      {referralState === 'checking' && <FormAlert tone="success">Checking referral code…</FormAlert>}
-      {referralState === 'valid' && (
+      {displayedReferralState === 'checking' && <FormAlert tone="success">Checking referral code…</FormAlert>}
+      {displayedReferralState === 'valid' && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800">
           ✓ Referral code applied: <span className="font-mono">{referralCode}</span>
         </div>
       )}
-      {referralState === 'invalid' && (
-        <FormAlert tone="error">This referral code is unavailable. You can continue without a referral.</FormAlert>
+      {displayedReferralState === 'invalid' && (
+        <FormAlert tone="error">This referral code is unavailable. Update or remove it to continue without a referral.</FormAlert>
       )}
-      {referralCode && (
+      {(referralCode || referralInput) && (
         <Field
           id="onboarding-signup-referral-code"
           label="Referral code"
-          value={referralCode}
-          disabled
-          onChange={() => {}}
+          value={referralInput}
+          autoComplete="off"
+          disabled={busy}
+          onChange={(value) => {
+            setReferralInput(value);
+            onReferralCodeChange?.(value);
+          }}
         />
       )}
       <form
@@ -170,7 +185,7 @@ export const SignupScreen: React.FC<{
             .run(async () => {
               setBusy(true);
               try {
-                const attributionToken = await prepareAttribution?.(referralCode);
+                const attributionToken = await prepareAttribution?.(referralInput.trim());
                 return await signUpWithEmail(client as OnboardingSupabaseClient, {
                   fullName,
                   email,
