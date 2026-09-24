@@ -16,9 +16,9 @@
  * Accepted parameter names, in priority order. `ref` is canonical — it is what
  * a partner's share link emits (see partnerReferralShareLink) — and `referral`
  * is accepted as an alias because it is the spelling people type and paste by
- * hand.
+ * hand; `code` supports legacy referral links.
  */
-export const REFERRAL_QUERY_PARAMS = ['ref', 'referral'] as const;
+export const REFERRAL_QUERY_PARAMS = ['ref', 'referral', 'code'] as const;
 
 /**
  * Upper bound on a code read from a URL. The database's own format check tops

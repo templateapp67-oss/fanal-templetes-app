@@ -6,7 +6,12 @@ import {
   isSessionExpiredError,
   normalizeGrowthReferralCode,
 } from '../lib/growthPartner';
-import { referralCodeFromQuery } from '../lib/referralQuery';
+import {
+  hasReferralIntentInLocation,
+  persistReferralIntent,
+  readReferralIntent,
+  writeFlashToast,
+} from './lib/referralPersistence';
 import {
   normalizePath,
   matchOnboardingRoute,
@@ -78,12 +83,7 @@ export const ONBOARDING_MOCK_BODY =
  * pre-filling something that is guaranteed to fail on submit.
  */
 export function readSharedReferralCode(): string {
-  if (typeof window === 'undefined' || !window.location) return '';
-  const fromUrl = referralCodeFromQuery(window.location.search);
-  let fromSession = '';
-  try { fromSession = sessionStorage.getItem('nexora_ref_code') || ''; } catch {}
-  const candidate = fromUrl || fromSession;
-  return isGrowthReferralCodeFormat(candidate) ? normalizeGrowthReferralCode(candidate) : '';
+  return readReferralIntent();
 }
 
 
@@ -138,6 +138,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [handoffError, setHandoffError] = useState('');
   // A partner's share link (`?ref=CODE`) is captured once, before any
   // login-redirect drops the query, and pre-fills the referral screen.
+  // Capture synchronously on entry, before auth restoration or any route change
+  // can remove the referral query parameter.
+  const referralCameFromLink = useRef(hasReferralIntentInLocation());
   const [sharedReferralCode, setSharedReferralCode] = useState<string>(readSharedReferralCode);
   const [existingAccountNotice, setExistingAccountNotice] = useState(false);
   const [invalidReferral, setInvalidReferral] = useState(false);
@@ -191,7 +194,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         // capability or prefill reassignment for an existing signed-in account.
         const restored = await loadViewer(sb);
         if (cancelled || !mounted.current) return;
-        if (sharedReferralCode && restored) {
+        if (sharedReferralCode && restored && referralCameFromLink.current) {
           setExistingAccountNotice(true);
           setSkipLinkPrefill(true);
         } else if (sharedReferralCode) {
@@ -280,6 +283,21 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const phase: OnboardingPhase = snapshot?.phase ?? 'pending';
   const resolved = resolveOnboardingRoute({ hasSession: !!viewer, phase, requested });
 
+  // A bare /signup is never useful to an authenticated account. Keep a
+  // referral-bearing visit on the hybrid choice screen, but otherwise send the
+  // user to their current workspace with a one-time toast.
+  useEffect(() => {
+    if (boot !== 'ready' || !viewer || existingAccountNotice || passwordRecovery) return;
+    if (requested === 'signup' && !referralCameFromLink.current) {
+      writeFlashToast('You are already logged in.');
+      if (typeof window !== 'undefined' && window.location) {
+        window.location.assign('/owner/dashboard');
+      } else {
+        navigate('/owner/dashboard');
+      }
+    }
+  }, [boot, viewer, requested, existingAccountNotice, passwordRecovery, navigate]);
+
   // Sync the URL to the resolved route (converges in one step — no loops).
   useEffect(() => {
     if (boot !== 'ready' || existingAccountNotice || passwordRecovery) return;
@@ -342,9 +360,43 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       {invalidReferral && <div className="mx-auto max-w-md px-6 pb-8"><button type="button" className="min-h-11 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold" onClick={() => { setInvalidReferral(false); setSharedReferralCode(''); captureFlight.current = null; setBootKey(key => key + 1); }}>Continue without a referral</button></div>}</>;
   }
 
-  if (existingAccountNotice) return <GatewayShell title="This account is already registered." subtitle="Opening a referral link does not change your existing attribution.">
-    <button type="button" className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white" onClick={() => { setExistingAccountNotice(false); setSharedReferralCode(''); }}>Continue to your account</button>
-  </GatewayShell>;
+  if (existingAccountNotice) return (
+    <GatewayShell
+      title="Referral code saved"
+      subtitle={`You are currently signed in as ${viewer?.email || 'this account'}. Referral codes only apply to new account registrations.`}
+    >
+      <div className="space-y-3">
+        <FormAlert tone="success">
+          The referral code <span className="font-mono font-bold">{sharedReferralCode}</span> is saved for a new account. It will not change this account's existing attribution.
+        </FormAlert>
+        <button
+          type="button"
+          className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+          onClick={() => navigate('/owner/dashboard')}
+        >
+          Go to Dashboard
+        </button>
+        <button
+          type="button"
+          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800"
+          onClick={() => {
+            const code = persistReferralIntent(sharedReferralCode);
+            clearAllLocalUserState();
+            void signOutViewer(sb).finally(() => {
+              const destination = code ? `/signup?ref=${encodeURIComponent(code)}` : '/signup';
+              if (typeof window !== 'undefined' && window.location) {
+                window.location.assign(destination);
+              } else {
+                navigate('/signup');
+              }
+            });
+          }}
+        >
+          Log Out &amp; Apply Referral
+        </button>
+      </div>
+    </GatewayShell>
+  );
 
   if (passwordRecovery) {
     return (

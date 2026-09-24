@@ -402,13 +402,14 @@ test('a generated share link carries the canonical code form', () => {
 // 4.1 — every way a code can arrive in a URL funnels through one reader.
 // ---------------------------------------------------------------------------
 
-test('the query reader accepts ref and referral, and nothing else', () => {
-  assert.deepEqual([...REFERRAL_QUERY_PARAMS], ['ref', 'referral'], 'the two accepted names, ref first');
+test('the query reader accepts ref, referral and code aliases', () => {
+  assert.deepEqual([...REFERRAL_QUERY_PARAMS], ['ref', 'referral', 'code'], 'aliases stay ordered and explicit');
   assert.equal(referralCodeFromQuery('?ref=ALPHA01'), 'ALPHA01', '?ref= (what a share link emits)');
   assert.equal(referralCodeFromQuery('?referral=ALPHA01'), 'ALPHA01', '?referral= (typed by hand)');
   assert.equal(referralCodeFromQuery('?referral=%20alpha01%20'), 'alpha01', 'surrounding whitespace is trimmed');
+  assert.equal(referralCodeFromQuery('?code=ALPHA01'), 'ALPHA01', '?code= legacy alias');
   assert.equal(referralCodeFromQuery('?ref=ALPHA01&referral=OTHER1'), 'ALPHA01', 'ref wins when both are present');
-  assert.equal(referralCodeFromQuery('?code=ALPHA01&invite=ALPHA01&campaign=x'), '', 'no other parameter is read');
+  assert.equal(referralCodeFromQuery('?invite=ALPHA01&campaign=x'), '', 'unrecognized parameters are ignored');
   assert.equal(referralCodeFromQuery('?ref='), '', 'an empty value is not a code');
   assert.equal(referralCodeFromQuery('?ref=%20%20'), '', 'whitespace alone is not a code');
   assert.equal(referralCodeFromQuery(''), '', 'no query at all');

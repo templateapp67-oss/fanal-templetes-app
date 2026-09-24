@@ -57,7 +57,7 @@ function writePendingConfirmation(email: string): void {
 
 export const SignupScreen: React.FC<{
   client?: OnboardingSupabaseClient;
-  prepareAttribution?: () => Promise<string | undefined>;
+  prepareAttribution?: (referralCode?: string) => Promise<string | undefined>;
   /** Canonical code captured by the same-origin attribution API. */
   referralCode?: string;
   referralState?: 'checking' | 'valid' | 'invalid' | 'none';
@@ -170,7 +170,7 @@ export const SignupScreen: React.FC<{
             .run(async () => {
               setBusy(true);
               try {
-                const attributionToken = await prepareAttribution?.();
+                const attributionToken = await prepareAttribution?.(referralCode);
                 return await signUpWithEmail(client as OnboardingSupabaseClient, {
                   fullName,
                   email,
