@@ -56,6 +56,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..800;1,300..800&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <!-- Google Material Symbols -->
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <!--
+      Runtime client configuration, served by the app itself (server.ts).
+      The browser bundle only ever sees BUILD-time VITE_* values, so a deployment
+      that set the server-side SUPABASE_URL / SUPABASE_ANON_KEY (the names hosts
+      and the Vercel dashboard use) shipped a bundle with no Supabase at all —
+      every sign-in screen answered "Accounts are not connected to a database in
+      this deployment" while /api/health showed a live connection. This script
+      carries the same PUBLIC pair to the browser at runtime. It never carries
+      the service-role key, and it stays empty when nothing is configured.
+    -->
+    <script src="/env.js"></script>
   </head>
   <body class="bg-[#f9f9ff] text-[#151c27] antialiased min-h-screen selection:bg-[#d81b60] selection:text-white">
     <div id="root"></div>

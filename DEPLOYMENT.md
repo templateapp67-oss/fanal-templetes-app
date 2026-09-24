@@ -37,6 +37,29 @@ There is no `.output/`, no Nitro, no Nuxt, and no `server/index.mjs`.
 Do **not** set the run command to `node .output/server/index.mjs`,
 `npm run preview`, or `nuxi start`; none of them describe this repo.
 
+## Supabase environment variables: server-side names are enough
+
+A Vite bundle only carries the `VITE_*` values that existed at **build** time. A
+deployment that set only the server-side names — `SUPABASE_URL` and
+`SUPABASE_ANON_KEY`, which is what most host dashboards call them — therefore
+shipped a browser with no Supabase at all: `/api/health` reported `mode: "live"`
+while every sign-in screen answered *"Accounts are not connected to a database in
+this deployment."*
+
+`server.ts` now serves `/env.js`, which hands that same **public** pair
+(project URL + anon key) to the browser at runtime; `index.html` loads it before
+the app bundle. So:
+
+* set `SUPABASE_URL` + `SUPABASE_ANON_KEY` (+ `SUPABASE_SERVICE_ROLE_KEY` for
+  server writes) and redeploy — no `VITE_*` duplication needed;
+* setting `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` as well is still fine
+  and still wins (build-time values take precedence);
+* the **service-role key is never part of the payload** — pinned by
+  `tests/clientRuntimeConfig.test.ts`, alongside the no-cache header and the
+  script-order rule;
+* with nothing configured, `/env.js` answers `window.__NEXORA_ENV__={}` and the
+  app stays in mock mode exactly as before.
+
 ## The port
 
 `server.ts` reads the port the platform assigns and only falls back to 3000 for

@@ -6,6 +6,25 @@ import { createRememberAwareAuthStorage } from './authRememberStorage.js';
 // The browser build only ever gets the *anon* key; the service-role key is
 // read exclusively in the Node server/Edge Functions and is NEVER bundled.
 // ---------------------------------------------------------------------------
+/**
+ * The public client configuration the server injects at `/env.js` (index.html
+ * loads it before the app bundle). Only the project URL and the anon key are
+ * ever placed there — both ship in every Supabase browser bundle by design. It
+ * exists because build-time `VITE_*` values are invisible to a bundle that was
+ * compiled without them: a deployment whose SERVER had a live Supabase
+ * connection still showed "Accounts are not connected to a database in this
+ * deployment" on every sign-in screen. Read at call time so the script order
+ * cannot matter.
+ */
+const getRuntimeClientEnv = (): Record<string, string> | null => {
+  try {
+    const injected = (globalThis as any)?.__NEXORA_ENV__;
+    return injected && typeof injected === 'object' ? (injected as Record<string, string>) : null;
+  } catch {
+    return null;
+  }
+};
+
 const getEnvVar = (...keys: string[]): string => {
   if (typeof process !== 'undefined' && process.env) {
     for (const k of keys) {
@@ -21,6 +40,16 @@ const getEnvVar = (...keys: string[]): string => {
     }
   } catch {
     // ignore
+  }
+  // Last: the runtime payload the server sends. Bundled/build-time values win,
+  // so an existing deployment behaves identically; this only fills the gap where
+  // the build carried no VITE_* values at all.
+  const runtimeEnv = getRuntimeClientEnv();
+  if (runtimeEnv) {
+    for (const k of keys) {
+      const value = runtimeEnv[k];
+      if (typeof value === 'string' && value) return value;
+    }
   }
   return '';
 };

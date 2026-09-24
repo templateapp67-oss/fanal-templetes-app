@@ -1061,6 +1061,38 @@ Return strictly JSON with the following keys:
     });
   }
 
+  // --------------------------------------------------------------------------
+  // RUNTIME CLIENT CONFIGURATION (/env.js).
+  //
+  // A Vite bundle only sees the VITE_* values that existed at BUILD time. A
+  // deployment that set the server-side names instead — SUPABASE_URL /
+  // SUPABASE_ANON_KEY, which is what hosts and the Vercel dashboard call them —
+  // therefore shipped a browser with no Supabase at all: every sign-in screen
+  // answered "Accounts are not connected to a database in this deployment"
+  // while /api/health reported a live connection. Those two values are public
+  // by design (they ship in every Supabase browser bundle), so the server hands
+  // them to the browser at runtime rather than demanding a rebuild.
+  //
+  // The service-role key is NEVER part of this payload, and the local gateway
+  // (whose browser config comes from its own flags) is never overridden.
+  // --------------------------------------------------------------------------
+  const publicClientUrl =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publicClientAnonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const runtimeClientConfig: Record<string, string> = {};
+  if (!localSupabaseEnabled && publicClientUrl) runtimeClientConfig.SUPABASE_URL = publicClientUrl;
+  if (!localSupabaseEnabled && publicClientAnonKey) runtimeClientConfig.SUPABASE_ANON_KEY = publicClientAnonKey;
+
+  app.get("/env.js", (_req, res) => {
+    res.type("application/javascript");
+    res.set("Cache-Control", "no-store");
+    res.send(`window.__NEXORA_ENV__=${JSON.stringify(runtimeClientConfig)};`);
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
