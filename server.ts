@@ -580,6 +580,45 @@ async function startServer() {
   }));
 
   // ==========================================================================
+  // CANONICAL GROWTH PARTNER API ROUTES
+  // --------------------------------------------------------------------------
+  // Authenticated via JWT bearer token (auth.uid()); never accepts client user_id.
+  // ==========================================================================
+  app.get("/api/growth-partner/me", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    const authResult = await authenticateBookingRequest(req, res.locals?.requestDeadlineAt, allowMockBookingAuth);
+    if (!authResult.ok) {
+      return res.status(authResult.status).json({ success: false, code: authResult.code, error: authResult.error });
+    }
+    const userId = authResult.user.id;
+    if (isMockSupabase) {
+      return res.json({ success: true, data: { user_id: userId, referral_code: 'MOCK' + userId.slice(0, 6).toUpperCase(), is_active: true } });
+    }
+    const { data, error } = await db.rpc('get_my_growth_partner');
+    if (error) {
+      const safe = safeDatabaseError(error, 'Could not retrieve growth partner profile.');
+      return res.status(safe.status).json({ success: false, code: safe.code, error: safe.message });
+    }
+    return res.json({ success: true, data: data ?? null });
+  }));
+
+  app.post("/api/growth-partner/ensure", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    const authResult = await authenticateBookingRequest(req, res.locals?.requestDeadlineAt, allowMockBookingAuth);
+    if (!authResult.ok) {
+      return res.status(authResult.status).json({ success: false, code: authResult.code, error: authResult.error });
+    }
+    const userId = authResult.user.id;
+    if (isMockSupabase) {
+      return res.json({ success: true, data: { user_id: userId, referral_code: 'MOCK' + userId.slice(0, 6).toUpperCase(), is_active: true } });
+    }
+    const { data, error } = await db.rpc('ensure_my_growth_partner');
+    if (error) {
+      const safe = safeDatabaseError(error, 'Could not ensure growth partner enrollment.');
+      return res.status(safe.status).json({ success: false, code: safe.code, error: safe.message });
+    }
+    return res.json({ success: true, data });
+  }));
+
+  // ==========================================================================
   // BOOKINGS + NOTIFICATIONS (read/update)
   // --------------------------------------------------------------------------
   // Shared with the serverless entrypoint via server/bookingRoutes.ts so the

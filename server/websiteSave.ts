@@ -321,12 +321,31 @@ async function persistWithAdminFallback(
   const steps: AdminFallbackStep[] = [];
 
   const extractError = (input: any): { message?: string; code?: string | null } => {
-    const e = input?.error ?? input;
-    if (!e) return {};
-    return {
-      message: typeof e?.message === 'string' ? e.message : String(e),
-      code: typeof e?.code === 'string' ? e.code : null,
-    };
+    if (!input) return {};
+    if (typeof input === 'object' && 'error' in input) {
+      if (!input.error) return {};
+      const err = input.error;
+      return {
+        message: typeof err?.message === 'string' ? err.message : String(err),
+        code: typeof err?.code === 'string' ? err.code : null,
+      };
+    }
+    if (input instanceof Error) {
+      return {
+        message: input.message,
+        code: (input as any).code ? String((input as any).code) : null,
+      };
+    }
+    if (typeof input === 'object' && input !== null) {
+      if (typeof input.message === 'string') {
+        return {
+          message: input.message,
+          code: typeof input.code === 'string' ? input.code : null,
+        };
+      }
+      return {};
+    }
+    return { message: String(input) };
   };
 
   const recordStep = (step: string, resource: string, failed?: { message?: string; code?: string | null }) => {

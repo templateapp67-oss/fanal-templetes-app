@@ -105,16 +105,12 @@ export async function fetchPartnerAccountSettings(client: GrowthPartnerProfileCl
   if (!error && data) {
     return data as PartnerAccountSettings;
   }
-  if (typeof (client as any).from === 'function') {
+  if (typeof client.rpc === 'function') {
     try {
-      const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-      const userId = userRes?.user?.id;
-      if (userId) {
-        const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-        if (partnerRow?.id) {
-          const { data: row } = await (client as any).from('partner_account_settings').select('*').eq('partner_id', partnerRow.id).maybeSingle();
-          if (row) return row as PartnerAccountSettings;
-        }
+      const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+      if (partnerRow?.id && typeof (client as any).from === 'function') {
+        const { data: row } = await (client as any).from('partner_account_settings').select('*').eq('partner_id', partnerRow.id).maybeSingle();
+        if (row) return row as PartnerAccountSettings;
       }
     } catch { /* ignore fallback error */ }
   }
@@ -126,20 +122,16 @@ export async function savePartnerAccountSettings(patch: Partial<PartnerAccountSe
   if (!error && data) {
     return data as PartnerAccountSettings;
   }
-  if (typeof (client as any).from === 'function') {
+  if (typeof client.rpc === 'function') {
     try {
-      const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-      const userId = userRes?.user?.id;
-      if (userId) {
-        const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-        if (partnerRow?.id) {
-          const { data: updated, error: upsertErr } = await (client as any)
-            .from('partner_account_settings')
-            .upsert({ partner_id: partnerRow.id, ...patch, updated_at: new Date().toISOString() })
-            .select()
-            .single();
-          if (!upsertErr && updated) return updated as PartnerAccountSettings;
-        }
+      const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+      if (partnerRow?.id && typeof (client as any).from === 'function') {
+        const { data: updated, error: upsertErr } = await (client as any)
+          .from('partner_account_settings')
+          .upsert({ partner_id: partnerRow.id, ...patch, updated_at: new Date().toISOString() })
+          .select()
+          .single();
+        if (!upsertErr && updated) return updated as PartnerAccountSettings;
       }
     } catch { /* ignore fallback error */ }
   }
