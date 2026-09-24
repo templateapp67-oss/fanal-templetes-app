@@ -235,10 +235,19 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
   -- table with no table privileges at all, so an owner could not read back
   -- the row their own signup created.
   alter table public.profiles enable row level security;
-  grant select on public.profiles to authenticated;
+  grant select, insert, update on public.profiles to authenticated;
   drop policy if exists profiles_select_owner on public.profiles;
   create policy profiles_select_owner on public.profiles
     for select using (id = auth.uid());
+  -- Production grants the owner the same insert/update rights on their own row
+  -- (00001_init.sql:71-73). Without them the sign-up flow's own profile write
+  -- was refused and the app only logged "Profile creation error".
+  drop policy if exists profiles_insert_owner on public.profiles;
+  create policy profiles_insert_owner on public.profiles
+    for insert with check (id = auth.uid());
+  drop policy if exists profiles_update_owner on public.profiles;
+  create policy profiles_update_owner on public.profiles
+    for update using (id = auth.uid()) with check (id = auth.uid());
   create table if not exists public.services (id uuid primary key, owner_id uuid);
 
   -- Same trigger production uses (00001_init): every auth user gets a profile.
@@ -1157,6 +1166,86 @@ export async function registerLocalSupabaseGateway(
       });
     }
   });
+
+  // --------------------------------------------------------------------------
+  // The one table the sign-up flow writes itself: public.profiles, own row.
+  //
+  // Production grants exactly that (00001_init.sql:71-73 — insert/update with
+  // `id = auth.uid()`), and the RLS policy is what makes it safe. The gateway
+  // used to answer 501 here, so the owner sign-up path logged
+  // "Profile creation error" and carried on with only the browser-local profile.
+  // Every other table write stays refused: the Growth Partner area writes
+  // through RPCs, and the rest of the normalized schema is not served locally.
+  // --------------------------------------------------------------------------
+  const profileWrite = (mode: 'insert' | 'update') => async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims?.sub) {
+      return res.status(401).json({ code: 'PGRST301', message: 'Sign in required' });
+    }
+
+    const columns = await local.ownerQuery(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'profiles'`
+    );
+    const known = new Set(columns.rows.map((row: any) => String(row.column_name)));
+    const isColumn = (value: string) => known.has(value) && /^[a-z_][a-z0-9_]*$/i.test(value);
+
+    const prefer = String(req.headers.prefer || '');
+    const wantsRows = prefer.includes('return=representation');
+    const merge = prefer.includes('merge-duplicates');
+    const body: unknown = req.body;
+    const rows: Record<string, unknown>[] = Array.isArray(body)
+      ? (body as Record<string, unknown>[])
+      : body && typeof body === 'object'
+        ? [body as Record<string, unknown>]
+        : [];
+
+    const reject = (message: string) => Object.assign(new Error(message), { code: 'PGRST204' });
+
+    try {
+      const written = await local.asRequest(
+        { sub: claims.sub, isAdmin: claims.isAdmin ?? false, sessionId: claims.sessionId ?? null },
+        async (db) => {
+          const out: any[] = [];
+          for (const row of rows) {
+            const keys = Object.keys(row || {}).filter((key) => isColumn(key) && row[key] !== undefined);
+            if (mode === 'insert') {
+              if (keys.length === 0) throw reject('No known profiles columns in the request body');
+              const updates = keys.filter((key) => key !== 'id').map((key) => `${key} = excluded.${key}`);
+              const sql =
+                `insert into public.profiles (${keys.join(', ')}) ` +
+                `values (${keys.map((_, index) => `$${index + 1}`).join(', ')})` +
+                (merge && updates.length ? ` on conflict (id) do update set ${updates.join(', ')}` : '') +
+                ' returning *';
+              out.push(...(await db.query(sql, keys.map((key) => row[key]))).rows);
+            } else {
+              const updates = keys.filter((key) => key !== 'id');
+              if (updates.length === 0) throw reject('No updatable profiles columns in the request body');
+              // Deliberately no WHERE: the update policy restricts the change to
+              // the caller's own row (`id = auth.uid()`), exactly as production
+              // does, so a forged filter cannot reach another account.
+              const sql = `update public.profiles set ${updates
+                .map((key, index) => `${key} = $${index + 1}`)
+                .join(', ')} returning *`;
+              out.push(...(await db.query(sql, updates.map((key) => row[key]))).rows);
+            }
+          }
+          return out;
+        }
+      );
+
+      if (!wantsRows) return res.status(201).end();
+      return res.status(201).json(mode === 'insert' && rows.length === 1 ? written[0] ?? null : written);
+    } catch (error: any) {
+      const code = String(error?.code || 'XX000');
+      return res
+        .status(code === '42501' ? 403 : 400)
+        .json({ code, message: safeGatewayFailure(error) });
+    }
+  };
+
+  app.post('/rest/v1/profiles', profileWrite('insert'));
+  app.patch('/rest/v1/profiles', profileWrite('update'));
 
   app.all('/rest/v1/:table', (req: Request, res: Response) => tableReadUnavailable(req, res));
 
