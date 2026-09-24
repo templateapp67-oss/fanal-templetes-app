@@ -28,6 +28,10 @@ export function readPersistedReferralIntent(): string {
   try { return canonical(storage()?.getItem(REFERRAL_INTENT_STORAGE_KEY) || ''); } catch { return ''; }
 }
 
+export function clearReferralIntent(): void {
+  try { storage()?.removeItem(REFERRAL_INTENT_STORAGE_KEY); } catch {}
+}
+
 /** Capture a referral link immediately, before any auth redirect drops ?ref=. */
 export function captureReferralIntentFromLocation(search?: string): string {
   const query = search ?? (typeof window !== 'undefined' ? window.location?.search || '' : '');
