@@ -2,6 +2,7 @@ import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSes
 import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from './lib/diagnostics';
 import { RLSDiagnosticsModal } from './components/RLSDiagnosticsModal';
 import { normalizePath } from './lib/router';
+import { takeFlashToast } from './onboarding/lib/referralPersistence';
 import { mergeHydratedSalonState } from './lib/hydrationMerge';
 import {
   decideOwnerEntry,
@@ -67,11 +68,13 @@ import {
   isOnboardingPath,
   isTemplateHandoffPath,
   isMyBookingsPath,
+  isOwnerDashboardPath,
   isStaffPerformancePath,
   isStaffCommissionPath,
   isGrowthPartnerPath,
   isPartnerPortalPath,
   MY_BOOKINGS_PATH,
+  OWNER_DASHBOARD_PATH,
   STAFF_PERFORMANCE_PATH,
   STAFF_COMMISSION_PATH,
   GROWTH_PARTNER_PATH,
@@ -282,6 +285,10 @@ export default function App() {
       setCurrentViewState((view) => (view === 'bookings' ? view : 'bookings'));
       return;
     }
+    if (isOwnerDashboardPath(path)) {
+      setCurrentViewState((view) => (view === 'dashboard' ? view : 'dashboard'));
+      return;
+    }
     if (isStaffCommissionPath(path)) {
       setCurrentViewState((view) => (view === 'staffCommission' ? view : 'staffCommission'));
       return;
@@ -315,6 +322,8 @@ export default function App() {
       setCurrentViewState(view);
       if (view === 'bookings') {
         navigate(MY_BOOKINGS_PATH);
+      } else if (view === 'dashboard') {
+        navigate(OWNER_DASHBOARD_PATH);
       } else if (view === 'bookingDetail') {
         navigate(bookingDetailPath(bookingDetailId ?? ''));
       } else if (view === 'staffPerformance') {
@@ -680,6 +689,11 @@ export default function App() {
     },
     []
   );
+
+  useEffect(() => {
+    const notice = takeFlashToast();
+    if (notice) showToast(notice.message, notice.type);
+  }, [showToast]);
 
   useEffect(() => {
     previousTemplateIdRef.current = selectedTemplateId;
