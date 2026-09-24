@@ -7,6 +7,7 @@ import {
   CircleUserRound,
   FileSpreadsheet,
   Gift,
+  Home,
   LayoutDashboard,
   LifeBuoy,
   LogOut,
@@ -377,8 +378,9 @@ const PartnerPortalNavList: React.FC<{
   accentHex: string;
   email: string;
   onSelect: (section: PartnerPortalSection) => void;
+  onHome: () => void;
   onLogout: () => void;
-}> = ({ section, accentHex, email, onSelect, onLogout }) => (
+}> = ({ section, accentHex, email, onSelect, onHome, onLogout }) => (
   <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">
     {PARTNER_PORTAL_NAV_GROUPS.map((group) => {
       const items = PARTNER_PORTAL_NAV.filter((item) => item.group === group.id);
@@ -401,6 +403,15 @@ const PartnerPortalNavList: React.FC<{
       );
     })}
     <div className="mt-auto border-t border-slate-100 pt-3">
+      <button
+        type="button"
+        data-partner-home
+        onClick={onHome}
+        className={`${NAV_ITEM_CLASS} text-slate-600 hover:bg-slate-100 hover:text-slate-900`}
+      >
+        <Home className="h-[18px] w-[18px] shrink-0" />
+        <span className="truncate">Back to Nexora Home</span>
+      </button>
       <button
         type="button"
         data-partner-logout
@@ -436,6 +447,7 @@ export const PartnerPortalShell: React.FC<{
   notifications?: PartnerActivityEntry[];
   notificationsLoading?: boolean;
   navigate: (to: string) => void;
+  onBack?: () => void;
   onLogout: () => void;
   accentHex?: string;
   children?: React.ReactNode;
@@ -448,6 +460,7 @@ export const PartnerPortalShell: React.FC<{
   notifications = [],
   notificationsLoading = false,
   navigate,
+  onBack,
   onLogout,
   accentHex = '#C20E5A',
   children,
@@ -461,6 +474,12 @@ export const PartnerPortalShell: React.FC<{
   const selectSection = (next: PartnerPortalSection) => {
     setNavOpen(false);
     navigate(partnerPortalPath(next));
+  };
+  const returnHome = () => {
+    setNavOpen(false);
+    setOpenMenu(null);
+    if (onBack) onBack();
+    else navigate('/');
   };
 
   const menusOpen = openMenu !== null;
@@ -529,6 +548,7 @@ export const PartnerPortalShell: React.FC<{
           accentHex={accentHex}
           email={email}
           onSelect={selectSection}
+          onHome={returnHome}
           onLogout={onLogout}
         />
       </aside>
@@ -578,6 +598,7 @@ export const PartnerPortalShell: React.FC<{
           accentHex={accentHex}
           email={email}
           onSelect={selectSection}
+          onHome={returnHome}
           onLogout={onLogout}
         />
       </div>
@@ -627,6 +648,17 @@ export const PartnerPortalShell: React.FC<{
               </h1>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+              <button
+                type="button"
+                title="Back to Nexora Home"
+                aria-label="Back to Nexora Home"
+                data-partner-home
+                onClick={returnHome}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                <Home className="h-5 w-5" />
+                <span className="hidden md:inline">Home</span>
+              </button>
               {/* Notifications (real recent-activity feed; honest empty state). */}
               <div className="relative">
                 <button
