@@ -27,6 +27,7 @@ import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { WebsiteEditor } from './components/WebsiteEditor';
+import { QuickWebsiteLaunch } from './components/QuickWebsiteLaunch';
 import { SalonWebsitePreview } from './components/SalonWebsitePreview';
 import { SaaSDashboard } from './components/SaaSDashboard';
 import { AuthModal } from './components/AuthModal';
@@ -109,6 +110,7 @@ import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
 import { GrowthPartnerPage } from './components/GrowthPartnerPage';
+import { recordTemplateCompletion } from './lib/growthPartner';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -2232,6 +2234,9 @@ export default function App() {
 
   const handleWizardComplete = () => {
     localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+    void recordTemplateCompletion().catch((error: unknown) => {
+      console.warn('[Quick launch] Could not update completion status:', error);
+    });
     setCurrentView('preview');
   };
 
@@ -2407,7 +2412,16 @@ export default function App() {
       )}
 
       {currentView === 'wizard' && (
-        <WebsiteEditor
+        isOnboardingWebsitePath(path) ? <QuickWebsiteLaunch
+          profile={profile}
+          setProfile={setProfile}
+          selectedTemplateId={selectedTemplateId}
+          onSelectTemplate={handleSelectTemplate}
+          onSave={handleSaveNow}
+          onGoLive={handleWizardComplete}
+          onOpenDashboard={() => setCurrentView('dashboard')}
+          showToast={showToast}
+        /> : <WebsiteEditor
           profile={profile}
           setProfile={setProfile}
           services={services}
@@ -2562,8 +2576,10 @@ export default function App() {
         purpose="owner"
         onSuccess={(u) => {
           setUser(u);
-          setCurrentView('dashboard');
-          showToast('Welcome! Successfully entered SaaS Dashboard.');
+          setCurrentViewState('wizard');
+          setWizardStartingStep(1);
+          navigate(ONBOARDING_WEBSITE_PATH);
+          showToast('Welcome! Complete your quick website setup to go live.');
         }}
       />
 
