@@ -87,14 +87,11 @@ export const PartnerAuditDiagnosticPanel: React.FC<{
       hasValidSession = Boolean(currentUserId);
     }
 
-    // 2. Test RLS Policy Access for Current Session
+    // 2. Test RLS / RPC Access for Current Session
     let rlsTested = false;
     let rlsError: string | null = null;
     try {
-      const { error: rlsErr } = await supabase
-        .from('growth_partners')
-        .select('user_id')
-        .limit(1);
+      const { error: rlsErr } = await supabase.rpc('get_my_growth_partner');
 
       rlsTested = true;
       if (rlsErr) {

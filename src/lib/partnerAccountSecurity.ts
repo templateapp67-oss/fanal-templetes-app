@@ -101,13 +101,14 @@ async function tryFallbackSecurityOverview(client: SecurityOverviewClient): Prom
     const userId = userRes?.user?.id;
 
     if (userId) {
-      const { data: partnerRow } = await (client as any)
-        .from('growth_partners')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle();
+      let partnerId: string | undefined;
+      try {
+        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+        partnerId = partnerRow?.id;
+      } catch {
+        // Fallback for mock/test environments
+      }
 
-      const partnerId = partnerRow?.id;
       if (partnerId) {
         if (!twoFactorEnabled) {
           const { data: settings } = await (client as any)
@@ -423,14 +424,10 @@ export async function confirmPartnerTwoFactor(client: SecurityOverviewClient, fa
   if (error) {
     if (typeof (client as any).from === 'function') {
       try {
-        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-        const userId = userRes?.user?.id;
-        if (userId) {
-          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-          if (partnerRow?.id) {
-            await (client as any).from('partner_account_settings').upsert({ partner_id: partnerRow.id, two_factor_enabled: true });
-            return;
-          }
+        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+        if (partnerRow?.id) {
+          await (client as any).from('partner_account_settings').upsert({ partner_id: partnerRow.id, two_factor_enabled: true });
+          return;
         }
       } catch { /* fallback ignore */ }
     }
@@ -449,14 +446,10 @@ export async function disablePartnerTwoFactor(client: SecurityOverviewClient, fa
   if (mirrorError) {
     if (typeof (client as any).from === 'function') {
       try {
-        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-        const userId = userRes?.user?.id;
-        if (userId) {
-          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-          if (partnerRow?.id) {
-            await (client as any).from('partner_account_settings').upsert({ partner_id: partnerRow.id, two_factor_enabled: false });
-            return;
-          }
+        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+        if (partnerRow?.id) {
+          await (client as any).from('partner_account_settings').upsert({ partner_id: partnerRow.id, two_factor_enabled: false });
+          return;
         }
       } catch { /* fallback ignore */ }
     }
@@ -517,17 +510,13 @@ export async function requestPartnerEmailChange(input: {
         p_detail: 'Verification link requested for a new email address.',
       });
       if (error && typeof (client as any).from === 'function') {
-        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-        const userId = userRes?.user?.id;
-        if (userId) {
-          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-          if (partnerRow?.id) {
-            await (client as any).from('partner_security_events').insert({
-              partner_id: partnerRow.id,
-              event_type: 'email_change_requested',
-              detail: 'Verification link requested for a new email address.',
-            });
-          }
+        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+        if (partnerRow?.id) {
+          await (client as any).from('partner_security_events').insert({
+            partner_id: partnerRow.id,
+            event_type: 'email_change_requested',
+            detail: 'Verification link requested for a new email address.',
+          });
         }
       }
     } catch { /* the log is advisory */ }
@@ -545,24 +534,20 @@ export async function requestPartnerAccountDeactivation(reason: string, client: 
     if (/already pending/i.test(error.message || '')) throw new Error('A deactivation request is already pending review.');
     if (typeof (client as any).from === 'function') {
       try {
-        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-        const userId = userRes?.user?.id;
-        if (userId) {
-          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-          if (partnerRow?.id) {
-            const { data: inserted, error: insErr } = await (client as any)
-              .from('partner_deactivation_requests')
-              .insert({ partner_id: partnerRow.id, reason: trimmed || null, status: 'pending' })
-              .select('id, reason, status, requested_at')
-              .single();
-            if (!insErr && inserted) {
-              return {
-                id: String(inserted.id),
-                reason: inserted.reason ?? trimmed ?? null,
-                status: 'pending',
-                requested_at: String(inserted.requested_at || new Date().toISOString()),
-              };
-            }
+        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+        if (partnerRow?.id) {
+          const { data: inserted, error: insErr } = await (client as any)
+            .from('partner_deactivation_requests')
+            .insert({ partner_id: partnerRow.id, reason: trimmed || null, status: 'pending' })
+            .select('id, reason, status, requested_at')
+            .single();
+          if (!insErr && inserted) {
+            return {
+              id: String(inserted.id),
+              reason: inserted.reason ?? trimmed ?? null,
+              status: 'pending',
+              requested_at: String(inserted.requested_at || new Date().toISOString()),
+            };
           }
         }
       } catch { /* ignore fallback error */ }
@@ -583,18 +568,14 @@ export async function cancelPartnerAccountDeactivation(client: SecurityOverviewC
     if (/no pending/i.test(error.message || '')) throw new Error('There is no pending deactivation request to cancel.');
     if (typeof (client as any).from === 'function') {
       try {
-        const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-        const userId = userRes?.user?.id;
-        if (userId) {
-          const { data: partnerRow } = await (client as any).from('growth_partners').select('id').eq('user_id', userId).maybeSingle();
-          if (partnerRow?.id) {
-            await (client as any)
-              .from('partner_deactivation_requests')
-              .update({ status: 'cancelled' })
-              .eq('partner_id', partnerRow.id)
-              .eq('status', 'pending');
-            return;
-          }
+        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
+        if (partnerRow?.id) {
+          await (client as any)
+            .from('partner_deactivation_requests')
+            .update({ status: 'cancelled' })
+            .eq('partner_id', partnerRow.id)
+            .eq('status', 'pending');
+          return;
         }
       } catch { /* ignore fallback error */ }
     }
