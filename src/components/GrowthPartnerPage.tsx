@@ -762,6 +762,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
         notifications={dashboard.data ? dashboard.data.recent_activity : []}
         notificationsLoading={dashboard.loading && !dashboard.data}
         navigate={navigate ?? (() => {})}
+        onBack={onBack}
         onLogout={() => onLogout?.()}
         accentHex={accentHex}
       >
