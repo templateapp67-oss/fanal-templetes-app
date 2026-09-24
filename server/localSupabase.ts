@@ -40,6 +40,12 @@ export const LOCAL_DEV_ADMIN_PASSWORD = 'Admin#12345';
 
 /** The migrations this gateway applies, in the order GROWTH_PARTNER_SETUP.md gives. */
 export const LOCAL_GROWTH_CHAIN = [
+  // Partner profile settings (get_partner_profile / save_partner_profile) —
+  // the /partner profile screen's own read, and the prerequisite of
+  // save_partner_profile_details below. Not part of the area's first wave, but
+  // it is the RPC that screen calls, so leaving it out made the profile form
+  // answer PGRST202 locally while working in production.
+  '20260909035237_partner_profile_settings.sql',
   '20260911094853_growth_partner_signup_approval.sql',
   '20260911101201_growth_partner_kyc_approval.sql',
   '20260912_growth_partner_onboarding.sql',
@@ -96,6 +102,14 @@ export const LOCAL_GROWTH_CHAIN = [
   // ensure_owner_workspace() the Template App entry gate calls, so the
   // handoff → workspace → save → completion chain is exercisable locally.
   '20261002_owner_workspace_provisioning.sql',
+  // Contact/profile wiring: save_partner_profile_details + the durable editor
+  // state. AFTER 20261002 because it grants column-level UPDATE on public.salons,
+  // which that migration creates.
+  '20260909045308_contact_profile_wiring.sql',
+  // The attribution prerequisites (shop_attributions, partner_reward_milestones,
+  // user_preferences) — the relations committed migrations read and write but
+  // none created. AFTER 20261002 because shop_attributions FKs public.salons.
+  '2026100500_growth_partner_attribution_prerequisites.sql',
   // Signup profile fields (PHASE 2). Replaces handle_new_user() so the local
   // gateway persists full_name / phone_number exactly the way the production
   // trigger does. It deliberately does not seed owner_role - see the header
@@ -155,7 +169,27 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
     if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
     if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
   end $$;
+  -- Supabase creates service_role with BYPASSRLS; an admin-claimed request maps
+  -- onto that role here, so the attribute has to match or "admin sees the same
+  -- rows the dashboard shows" would only hold for the caller's own row.
+  do $$ begin alter role service_role bypassrls; end $$;
   alter default privileges in schema public grant execute on functions to service_role;
+  -- Supabase's service_role owns the whole public schema's data plane: it is the
+  -- role an admin-claimed request runs as here (see roleFor()). Without the
+  -- table/sequence grants it is not just "less privileged" - it is *differently*
+  -- privileged, and two real failures followed from that:
+  --   1. 42501 on every admin table read (e.g. GET /rest/v1/growth_partners),
+  --   2. 42703 from get_my_growth_partner() for an admin. That function probes
+  --      information_schema.columns for the is_active flag - and information_schema
+  --      only shows the columns the *current role* may read. With no grant the
+  --      probe answered false, the legacy gp.status branch was chosen, and the
+  --      area answered 400 instead of the caller's row.
+  -- Production never had this gap (Supabase grants service_role everything), so
+  -- mirroring it here is what keeps the local admin path honest.
+  alter default privileges in schema public grant all on tables to service_role;
+  alter default privileges in schema public grant all on sequences to service_role;
+  grant all on all tables in schema public to service_role;
+  grant all on all sequences in schema public to service_role;
 
   create schema if not exists auth;
   create table if not exists auth.users (
@@ -173,7 +207,11 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
     -- instead of silently skipping it.
     banned_until timestamptz
   );
-  grant usage on schema auth to authenticated, anon;
+  -- service_role is included for the same reason it gets the table grants above:
+  -- every RPC that resolves auth.uid() runs as this role for an admin-claimed
+  -- request, and without schema USAGE that call is answered with
+  -- "permission denied for schema auth" instead of the caller's data.
+  grant usage on schema auth to authenticated, anon, service_role;
 
   -- GoTrue's session table, modelled with the columns the partner security
   -- page renders. Hosted Supabase owns the real one; here the gateway keeps
@@ -230,15 +268,39 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
     subdomain text,
     salon_name text
   );
+  -- The columns the committed profile RPCs actually WRITE
+  -- (20260909035237 save_partner_profile / 20260909045308 sync_owner_contact).
+  -- They are part of the ~50-column production profile; without them the save
+  -- path answered 42703 locally while working in production.
+  alter table public.profiles add column if not exists whatsapp text;
+  alter table public.profiles add column if not exists pincode text;
+  alter table public.profiles add column if not exists postal_code text;
+  alter table public.profiles add column if not exists city text;
+  alter table public.profiles add column if not exists preferred_city text;
+  alter table public.profiles add column if not exists area text;
+  alter table public.profiles add column if not exists preferred_area text;
+  alter table public.profiles add column if not exists date_of_birth date;
+  alter table public.profiles add column if not exists avatar_url text;
+  alter table public.profiles add column if not exists photo_url text;
+  alter table public.profiles add column if not exists owner_photo_url text;
   -- Same access shape production has (00001_init): RLS on, and the signed-in
   -- owner reads their own row. Without this the gateway served the profiles
   -- table with no table privileges at all, so an owner could not read back
   -- the row their own signup created.
   alter table public.profiles enable row level security;
-  grant select on public.profiles to authenticated;
+  grant select, insert, update on public.profiles to authenticated;
   drop policy if exists profiles_select_owner on public.profiles;
   create policy profiles_select_owner on public.profiles
     for select using (id = auth.uid());
+  -- Production grants the owner the same insert/update rights on their own row
+  -- (00001_init.sql:71-73). Without them the sign-up flow's own profile write
+  -- was refused and the app only logged "Profile creation error".
+  drop policy if exists profiles_insert_owner on public.profiles;
+  create policy profiles_insert_owner on public.profiles
+    for insert with check (id = auth.uid());
+  drop policy if exists profiles_update_owner on public.profiles;
+  create policy profiles_update_owner on public.profiles
+    for update using (id = auth.uid()) with check (id = auth.uid());
   create table if not exists public.services (id uuid primary key, owner_id uuid);
 
   -- Same trigger production uses (00001_init): every auth user gets a profile.
@@ -1157,6 +1219,86 @@ export async function registerLocalSupabaseGateway(
       });
     }
   });
+
+  // --------------------------------------------------------------------------
+  // The one table the sign-up flow writes itself: public.profiles, own row.
+  //
+  // Production grants exactly that (00001_init.sql:71-73 — insert/update with
+  // `id = auth.uid()`), and the RLS policy is what makes it safe. The gateway
+  // used to answer 501 here, so the owner sign-up path logged
+  // "Profile creation error" and carried on with only the browser-local profile.
+  // Every other table write stays refused: the Growth Partner area writes
+  // through RPCs, and the rest of the normalized schema is not served locally.
+  // --------------------------------------------------------------------------
+  const profileWrite = (mode: 'insert' | 'update') => async (req: Request, res: Response) => {
+    const claims = await authenticate(req);
+    if (!claims?.sub) {
+      return res.status(401).json({ code: 'PGRST301', message: 'Sign in required' });
+    }
+
+    const columns = await local.ownerQuery(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'profiles'`
+    );
+    const known = new Set(columns.rows.map((row: any) => String(row.column_name)));
+    const isColumn = (value: string) => known.has(value) && /^[a-z_][a-z0-9_]*$/i.test(value);
+
+    const prefer = String(req.headers.prefer || '');
+    const wantsRows = prefer.includes('return=representation');
+    const merge = prefer.includes('merge-duplicates');
+    const body: unknown = req.body;
+    const rows: Record<string, unknown>[] = Array.isArray(body)
+      ? (body as Record<string, unknown>[])
+      : body && typeof body === 'object'
+        ? [body as Record<string, unknown>]
+        : [];
+
+    const reject = (message: string) => Object.assign(new Error(message), { code: 'PGRST204' });
+
+    try {
+      const written = await local.asRequest(
+        { sub: claims.sub, isAdmin: claims.isAdmin ?? false, sessionId: claims.sessionId ?? null },
+        async (db) => {
+          const out: any[] = [];
+          for (const row of rows) {
+            const keys = Object.keys(row || {}).filter((key) => isColumn(key) && row[key] !== undefined);
+            if (mode === 'insert') {
+              if (keys.length === 0) throw reject('No known profiles columns in the request body');
+              const updates = keys.filter((key) => key !== 'id').map((key) => `${key} = excluded.${key}`);
+              const sql =
+                `insert into public.profiles (${keys.join(', ')}) ` +
+                `values (${keys.map((_, index) => `$${index + 1}`).join(', ')})` +
+                (merge && updates.length ? ` on conflict (id) do update set ${updates.join(', ')}` : '') +
+                ' returning *';
+              out.push(...(await db.query(sql, keys.map((key) => row[key]))).rows);
+            } else {
+              const updates = keys.filter((key) => key !== 'id');
+              if (updates.length === 0) throw reject('No updatable profiles columns in the request body');
+              // Deliberately no WHERE: the update policy restricts the change to
+              // the caller's own row (`id = auth.uid()`), exactly as production
+              // does, so a forged filter cannot reach another account.
+              const sql = `update public.profiles set ${updates
+                .map((key, index) => `${key} = $${index + 1}`)
+                .join(', ')} returning *`;
+              out.push(...(await db.query(sql, updates.map((key) => row[key]))).rows);
+            }
+          }
+          return out;
+        }
+      );
+
+      if (!wantsRows) return res.status(201).end();
+      return res.status(201).json(mode === 'insert' && rows.length === 1 ? written[0] ?? null : written);
+    } catch (error: any) {
+      const code = String(error?.code || 'XX000');
+      return res
+        .status(code === '42501' ? 403 : 400)
+        .json({ code, message: safeGatewayFailure(error) });
+    }
+  };
+
+  app.post('/rest/v1/profiles', profileWrite('insert'));
+  app.patch('/rest/v1/profiles', profileWrite('update'));
 
   app.all('/rest/v1/:table', (req: Request, res: Response) => tableReadUnavailable(req, res));
 

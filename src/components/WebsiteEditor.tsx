@@ -106,8 +106,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
       setProfileCompletion(isCompleteLocally ? 'complete' : 'incomplete');
       return;
     }
-    readPartnerProfile(profile.ownerId).then(({ data, error }) => {
-      if (active) setProfileCompletion(error ? 'error' : isPartnerProfileComplete(data) ? 'complete' : 'incomplete');
+    readPartnerProfile(profile.ownerId).then((read) => {
+      // An unreadable profile is the badge's degraded state; the real cause is
+      // logged by readPartnerProfile(). A missing/late record is "incomplete",
+      // never an error screen.
+      if (active) setProfileCompletion(read.ok === false ? 'error' : isPartnerProfileComplete(read.data) ? 'complete' : 'incomplete');
     }).catch(() => { if (active) setProfileCompletion('error'); });
     return () => { active = false; };
   }, [profile.ownerId, profile.dob, profile.ownerPhotoUrl, completionRetry]);

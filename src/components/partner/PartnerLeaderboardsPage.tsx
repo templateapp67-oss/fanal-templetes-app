@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Crown, RefreshCw, Trophy } from 'lucide-react';
-import { getPartnerLeaderboard } from '../../lib/partnerPortalOperations';
-import { usePartnerQuery } from '../../lib/partnerPortalQueries';
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import { formatPartnerMoney } from '../../lib/partnerPresentation';
 import { shortPartnerId } from '../PartnerPortalShell';
 import {
@@ -41,11 +41,13 @@ export const PartnerLeaderboardsPage: React.FC<{
   partnerId?: string;
 }> = ({ accentHex, partnerId }) => {
   const [limit, setLimit] = useState(25);
-  const query = usePartnerQuery(() => getPartnerLeaderboard({ limit }), [limit]);
+  const query = usePartnerServiceQuery(() => growthPartnerService.getLeaderboard({ limit }), [limit]);
   const { data, loading, error } = query;
 
   if (loading && !data) return <PartnerSectionLoading label="Loading the partner leaderboard…" kind="table" module="leaderboards" />;
-  if (error && !data) return <PartnerSectionError error={error} onRetry={query.reload} title="The leaderboard could not load" module="leaderboards" />;
+  if (error && !data) {
+    return <PartnerSectionError error={error} failure={query.failure} onRetry={query.reload} title="The leaderboard could not load" module="leaderboards" />;
+  }
 
   const rows = data?.items ?? [];
   const myRank = data?.my_rank ?? null;

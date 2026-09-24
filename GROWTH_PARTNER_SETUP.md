@@ -73,6 +73,15 @@ $$;
 
 `private` is not exposed by PostgREST, so the admin list is not readable over
 the API.
+* **The reward/attribution tables** — `shop_attributions`, `partner_reward_milestones` and
+  `user_preferences` are created by `2026100500_growth_partner_attribution_prerequisites.sql` (see §3,
+  row 15) because six committed migrations referenced them while no migration created them. The three
+  reward RPCs additionally read four **legacy production** tables that no migration in this repository
+  creates — `partner_reward_claims`, `partner_reward_shop_qualifications`, `qualifying_transactions`,
+  `shop_onboarding_applications` — because they are part of the production ledger. A project that has
+  applied `20261007/08/09` already has them; on a fresh project, export them from the production project
+  rather than re-inventing their shape. `GROWTH_PARTNER_DATABASE_AUDIT.md` §3 lists every column the
+  reward migrations use.
 * `private.is_trusted_server_or_admin()` — the ledger half of the portal gates on
   it (`release_partner_earnings()` makes cleared commission withdrawable,
   `admin_mark_partner_payout_paid()` pays a request out), and no migration in this
@@ -103,6 +112,8 @@ file is idempotent:
 | 12 | `20260922085236_enable_growth_partner_open_enrollment.sql` | open enrollment: a signed-in account that submits its own validated application is approved immediately (the `/partner/login` "Become a Growth Partner" form) |
 | 13 | `20260922091000_direct_growth_partner_dashboard_access.sql` | **`ensure_my_growth_partner()`** — direct self-enrollment for `auth.uid()`. Required by `/partner/dashboard`: without it every denial screen's "Instantly Approve & Access" action and the login page's automatic activation cannot run (see 7.4) |
 | 14 | `20260919120000_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
+| 15 | `2026100500_growth_partner_attribution_prerequisites.sql` | **required by 20261007+** — `shop_attributions`, `partner_reward_milestones` and `user_preferences`: the three relations committed migrations read/write but no migration created. `create table if not exists`, so a project that already carries them (the legacy production generation) is untouched. Apply **after** `20261002` (the FK target `public.salons` is created there) and **before** `20261007` |
+| 16 | `20261013_reload_postgrest_schema_growth_partner.sql` | one `notify pgrst, 'reload schema'` for the Growth Partner migrations that cannot flush the cache themselves (`20260909035237`, `20260918070000`, `20260918100100`, `20260920`, `20260921`, `20260930`, `20261001`, `2026100500`, `20261007`, `20261008`). Without it those RPCs answer `PGRST202 … not in the schema cache` — the "database setup is missing" notice — on a project where they were applied while PostgREST was running |
 
 The two portal migrations sort earlier than they apply:
 `partner_earnings.partner_id` and the referral joins FK to
@@ -523,6 +534,46 @@ Notes:
   review-first, because a pending application is no longer a hard stop — the
   denial screen offers "Become a Growth Partner" instead.
 
+### 7.5 "/partner/dashboard" cannot load — the screen now names the cause
+
+The area gate (`/partner/dashboard`, and the legacy `/growth-partner` sections)
+used to answer every failure with one sentence — *"Could not load the Growth
+Partner area. Could not load this section. Please try again."* — which is a dead
+end for the two causes it most often is: a migration that was never applied, and
+a grant refused for that account. Both need an administrator, not a refresh, and
+the report of "hard refresh and incognito did not help" is exactly what that
+sentence produces.
+
+The failure screen now classifies the error and states **who can fix it**:
+
+| What the screen shows | Cause | Who fixes it |
+| --- | --- | --- |
+| "The Growth Partner database setup is missing on this project" | `PGRST202`/`PGRST205`, or schema drift (`relation/column … does not exist`) | administrator — step 3, then `notify pgrst, 'reload schema';` |
+| "You are signed in, but the database refused this read" | `42501` — missing/inactive partner row or a missing grant | administrator / support — step 4 |
+| "This account is not an active Growth Partner" | signed in, no approved+active `growth_partners` row | support — step 4 |
+| "Your session expired" | `401` / `PGRST301` | the user — sign in again |
+| "Could not reach the Growth Partner service" | transport failure (offline, VPN, ad blocker, DNS) | the user — connection |
+| "The Growth Partner service returned an error" | `5xx` | the platform — retry shortly |
+
+Every one of those screens also offers **Run diagnostic**, which probes the live
+service from the signed-in session (browser connection → session → partner table
+→ `get_my_growth_partner` → `get_my_partner_dashboard`) and prints a per-call
+result plus a **Copy report for support** button. The report carries the cause,
+the error code, the route, the project host, the masked account and the check
+list — never a key, token or address. `ensure_my_growth_partner()` is
+deliberately *not* probed (it can create the partner row), and the screen says so
+instead of pretending it was checked.
+
+To reproduce the same sequence from a terminal, with the project's env file:
+
+```bash
+npm run diagnose:partner-dashboard -- .env
+PARTNER_DIAG_PASSWORD='…' npm run diagnose:partner-dashboard -- .env --email you@example.com
+```
+
+Step-by-step triage, the SQL checks for the account and the full migration list:
+**`GROWTH_PARTNER_DASHBOARD_ACCESS_FIX.md`**.
+
 ## Troubleshooting
 
 | What you see | Cause | Fix |
@@ -536,7 +587,10 @@ Notes:
 | `PGRST202` / "function … not found" in the verifier | a migration was never applied | step 3, in order |
 | Every operational section says "These records need the partner portal migrations" | `20260918035349_partner_portal_operations.sql` (and the 20260919120000 follow-up) are missing, or they were applied before `20260928`/`20260929` | step 3, in order — see 7.3 for the dependency |
 | Marketing download says storage is not configured (503) | no `partner-marketing-assets` bucket / no service-role storage credentials | apply the portal migration and set `SUPABASE_SERVICE_ROLE_KEY`; locally this refusal is expected |
-| "Could not load the Growth Partner area" | RPC error (see the message) | check the verifier output for the failing function |
+| "Could not load the Growth Partner area" | the gate read threw — the screen now names which of the six causes it is (see 7.5) | read the cause off the screen, press **Run diagnostic**, or run `npm run diagnose:partner-dashboard -- .env` |
+| "The Growth Partner database setup is missing on this project" | `PGRST202`/`PGRST205` or schema drift — the migration was never applied (or the schema cache is stale) | 7.5: apply the migrations in step 3, then `notify pgrst, 'reload schema';` |
+| "You are signed in, but the database refused this read" | `42501` — no/inactive `growth_partners` row for that account, or a missing grant | 7.5 + `GROWTH_PARTNER_DASHBOARD_ACCESS_FIX.md` §5 |
+| "The Growth Partner service returned an error" | the API answered `5xx` | retry shortly; it is not an account or cache problem |
 
 ## Known, intentional gaps
 

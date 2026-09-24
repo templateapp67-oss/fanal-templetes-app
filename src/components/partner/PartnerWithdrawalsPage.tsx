@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import { Banknote, Landmark, RefreshCw, ShieldCheck, Wallet, X } from 'lucide-react';
 import {
   PARTNER_MINIMUM_PAYOUT_PAISE,
-  cancelPartnerPayoutRequest,
-  getPartnerEarnings,
-  getPartnerPayoutRequests,
-  requestPartnerPayout,
   type PartnerPayoutMethod,
 } from '../../lib/partnerPortalOperations';
-import { usePartnerAction, usePartnerQuery } from '../../lib/partnerPortalQueries';
+// The ledger's floor is still the SQL check; the amounts travel to the service
+// in paise and the wallet reads come back as result objects.
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceAction, usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import {
   formatPartnerDate,
   formatPartnerDateTime,
@@ -66,16 +65,16 @@ export const PartnerWithdrawalsPage: React.FC<{ accentHex?: string }> = ({ accen
   const [cancelError, setCancelError] = useState('');
 
   // One row is enough here: the page wants the totals, not the transaction list.
-  const balance = usePartnerQuery(() => getPartnerEarnings({ limit: 1, offset: 0 }), []);
-  const requests = usePartnerQuery(
-    () => getPartnerPayoutRequests({ limit: REQUESTS_PAGE_SIZE, offset: page * REQUESTS_PAGE_SIZE }),
+  const balance = usePartnerServiceQuery(() => growthPartnerService.getEarnings({ limit: 1, offset: 0 }), []);
+  const requests = usePartnerServiceQuery(
+    () => growthPartnerService.getPayoutRequests({ limit: REQUESTS_PAGE_SIZE, offset: page * REQUESTS_PAGE_SIZE }),
     [page]
   );
 
-  const request = usePartnerAction((paise: number, payoutMethod: PartnerPayoutMethod, label: string) =>
-    requestPartnerPayout(paise, payoutMethod, label)
+  const request = usePartnerServiceAction((paise: number, payoutMethod: PartnerPayoutMethod, label: string) =>
+    growthPartnerService.requestPayout({ amountPaise: paise, payoutMethod, destinationLabel: label })
   );
-  const cancel = usePartnerAction((requestId: string) => cancelPartnerPayoutRequest(requestId));
+  const cancel = usePartnerServiceAction((requestId: string) => growthPartnerService.cancelPayoutRequest(requestId));
 
   // `available_paise` is ALREADY net of every payout request the desk has not
   // refused — open ones and paid ones (20260919120000 redefined the read that
@@ -133,10 +132,10 @@ export const PartnerWithdrawalsPage: React.FC<{ accentHex?: string }> = ({ accen
 
   if (balance.loading && !balance.data) return <PartnerSectionLoading label="Loading your payout balance…" kind="dashboard" module="withdrawals" />;
   if (balance.error && !balance.data) {
-    return <PartnerSectionError error={balance.error} onRetry={balance.reload} title="Your balance could not load" module="withdrawals" />;
+    return <PartnerSectionError error={balance.error} failure={balance.failure} onRetry={balance.reload} title="Your balance could not load" module="withdrawals" />;
   }
   if (requests.error && !requests.data && !requests.loading) {
-    return <PartnerSectionError error={requests.error} onRetry={requests.reload} title="Your payout requests could not load" module="withdrawals" />;
+    return <PartnerSectionError error={requests.error} failure={requests.failure} onRetry={requests.reload} title="Your payout requests could not load" module="withdrawals" />;
   }
 
   return (

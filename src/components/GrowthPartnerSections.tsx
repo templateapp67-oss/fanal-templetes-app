@@ -9,6 +9,8 @@ import { usePartnerClipboard } from '../lib/usePartnerClipboard';
 import { PartnerReferralActivity } from './PartnerReferralActivity';
 import { PartnerToast } from './PartnerToast';
 import { PartnerLoading } from './PartnerLoading';
+import { PartnerAreaFailurePanel } from './PartnerAreaFailurePanel';
+import { classifyPartnerAreaFailure, type PartnerAreaFailure } from '../lib/partnerAreaFailure';
 import { ReferralEmptyState } from './ReferralEmptyState';
 import { ReferralSearchControls } from './ReferralSearchControls';
 import { ReferralDetailsDrawer } from './ReferralDetailsDrawer';
@@ -103,23 +105,62 @@ export function SectionLoading({ label }: { label: string }) {
   return <PartnerLoading label={label} kind={label.includes('dashboard') ? 'dashboard' : 'table'} />;
 }
 
-export function SectionError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+/**
+ * Section failure card.
+ *
+ * The heading and the sentence stay the familiar ones for a failure the app
+ * cannot name, but a failure it CAN name (missing migration, refused grant,
+ * expired session, outage) is named here — plus the panel that says who has to
+ * act and reports what the live service answers. "Please try again" is only
+ * shown when trying again can actually help.
+ */
+export function SectionError({
+  message,
+  onRetry,
+  error,
+  route,
+  failure: classified,
+}: {
+  message: string;
+  onRetry?: () => void;
+  /** The raw failure, when the caller still has it — unlocks the real cause. */
+  error?: unknown;
+  route?: string | null;
+  /**
+   * The cause as already classified by the service layer. Preferred over
+   * `error` because a classified failure survives a code that carries no HTTP
+   * status (a `PGRST202` mapped to "schema missing", say).
+   */
+  failure?: PartnerAreaFailure | null;
+}) {
+  const failure = classified ?? classifyPartnerAreaFailure(error ?? message);
+  const unnamed = failure.kind === 'unknown';
   return (
-    <div className="text-center bg-white rounded-3xl border border-slate-200 shadow-sm px-6 py-14">
-      <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto mb-4">
-        <AlertCircle className="w-8 h-8 text-rose-500" />
+    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm px-6 py-12">
+      <div className="text-center">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto mb-4">
+          <AlertCircle className="w-8 h-8 text-rose-500" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">{unnamed ? 'Something went wrong' : failure.title}</h2>
+        <p className="text-sm text-slate-600 mt-1.5">{unnamed ? message : failure.body}</p>
       </div>
-      <h2 className="text-lg font-bold text-slate-900">Something went wrong</h2>
-      <p className="text-sm text-slate-600 mt-1.5">{message}</p>
+      <PartnerAreaFailurePanel
+        error={error ?? message}
+        failure={failure}
+        route={route}
+        className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+      />
       {onRetry && (
-        <button
-          type="button"
-          onClick={() => onRetry()}
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Retry
-        </button>
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => onRetry()}
+            className="mt-6 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
       )}
     </div>
   );
@@ -418,6 +459,8 @@ export interface PartnerListSectionProps {
   list: PartnerReferralList | null;
   loading: boolean;
   error: string | null;
+  /** Classified cause from the service layer (drives the failure panel). */
+  failure?: PartnerAreaFailure | null;
   filter: PartnerReferralFilter;
   onFilterChange: (next: PartnerReferralFilter) => void;
   onPage: (nextOffset: number) => void;
@@ -467,7 +510,7 @@ export const GrowthPartnerReferrals: React.FC<
     statusTab?: ReferralStatusTab;
     onStatusTabChange?: (next: ReferralStatusTab) => void;
   }
-> = ({ list, loading, error, onPage, onRetry, statusTab = 'all' as ReferralStatusTab, onStatusTabChange, filtersActive = false, onApplyFilters, referralCode }) => {
+> = ({ list, loading, error, failure, onPage, onRetry, statusTab = 'all' as ReferralStatusTab, onStatusTabChange, filtersActive = false, onApplyFilters, referralCode }) => {
   const [filtersResetKey, setFiltersResetKey] = useState(0);
   const [selectedReferral, setSelectedReferral] = useState<string | null>(null);
   const closeDetails = useCallback(() => setSelectedReferral(null), []);
@@ -497,7 +540,7 @@ export const GrowthPartnerReferrals: React.FC<
       {loading ? (
         <SectionLoading label="Loading referred users…" />
       ) : error ? (
-        <div role="alert"><SectionError message={error} onRetry={onRetry} /></div>
+        <div role="alert"><SectionError message={error} onRetry={onRetry} failure={failure} /></div>
       ) : !view ? (
         <SectionLoading label="Loading referred users…" />
       ) : view.total === 0 ? (
@@ -529,9 +572,9 @@ export const GrowthPartnerCustomers: React.FC<
     onSearchChange: (next: string) => void;
     onSearchSubmit: () => void;
   }
-> = ({ list, loading, error, filter, onFilterChange, onPage, onRetry, search, onSearchChange, onSearchSubmit }) => {
+> = ({ list, loading, error, failure, filter, onFilterChange, onPage, onRetry, search, onSearchChange, onSearchSubmit }) => {
   if (loading && !list) return <SectionLoading label="Loading your customers…" />;
-  if (error && !list) return <SectionError message={error} onRetry={onRetry} />;
+  if (error && !list) return <SectionError message={error} onRetry={onRetry} failure={failure} />;
   // Same normalization as the referrals section (identical backend rows).
   const view = list ? normalizePartnerReferralList(list) : null;
   if (view && view.total === 0 && filter === 'all' && !search.trim()) {
@@ -604,9 +647,10 @@ export const GrowthPartnerPerformance: React.FC<{
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-}> = ({ performance, loading, error, onRetry }) => {
+  failure?: PartnerAreaFailure | null;
+}> = ({ performance, loading, error, onRetry, failure }) => {
   if (loading && !performance) return <SectionLoading label="Loading your performance…" />;
-  if (error && !performance) return <SectionError message={error} onRetry={onRetry} />;
+  if (error && !performance) return <SectionError message={error} onRetry={onRetry} failure={failure} />;
   if (!performance) {
     return (
       <SectionEmpty title={GROWTH_PARTNER_NO_PERFORMANCE_TITLE} body={GROWTH_PARTNER_NO_PERFORMANCE_BODY} />

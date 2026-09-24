@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { resolveGrowthPartnerGate, toSafePartnerSectionError, isMissingPartnerSchemaError, GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE, type GrowthPartnerGate } from '../lib/growthPartner';
+import type { PartnerAreaFailure } from '../lib/partnerAreaFailure';
 import { PartnerLoading } from './PartnerLoading';
 import {
   PartnerStatusScreen, GrowthPartnerLoading, GrowthPartnerUnauthorized,
   GrowthPartnerInactive, GrowthPartnerMockNotice, GrowthPartnerLoadError,
-  GROWTH_PARTNER_SESSION_TITLE, GROWTH_PARTNER_SESSION_BODY, GROWTH_PARTNER_ERROR_TITLE,
+  GROWTH_PARTNER_SESSION_TITLE, GROWTH_PARTNER_SESSION_BODY,
 } from './PartnerStatusScreen';
 
 type GuardInput = Parameters<typeof resolveGrowthPartnerGate>[0] & {
@@ -33,13 +34,17 @@ export function usePartnerRouteGuard(input: GuardInput): GrowthPartnerGate {
 }
 
 /** Never mounts protected children for a loading or denied account. */
-export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,unauthorizedBody,loadingReferralLink}: {
+export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,failure,route,unauthorizedBody,loadingReferralLink}: {
   gate: GrowthPartnerGate;
   children?: React.ReactNode;
   onBack?: () => void;
   onRetry?: () => void;
   onSignIn?: () => void;
   error?: unknown;
+  /** The same failure, already classified by the service layer. */
+  failure?: PartnerAreaFailure | null;
+  /** Path shown in the failure report, e.g. `/partner/dashboard`. */
+  route?: string | null;
   unauthorizedBody?: string;
   loadingReferralLink?: boolean;
 }) {
@@ -99,5 +104,18 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
     </PartnerStatusScreen>
   </main>;
   if (gate === 'session-expired') return <GrowthPartnerLoadError title={GROWTH_PARTNER_SESSION_TITLE} body={GROWTH_PARTNER_SESSION_BODY} actionLabel="Sign in again" onAction={onSignIn} />;
-  return <GrowthPartnerLoadError title={GROWTH_PARTNER_ERROR_TITLE} body={toSafePartnerSectionError(error).message} actionLabel="Retry" onAction={onRetry} />;
+  // `error` (not its flattened message): the screen classifies the real failure
+  // and shows who can fix it. `toSafePartnerSectionError` stays the fallback
+  // body for a failure the classifier cannot name.
+  return (
+    <GrowthPartnerLoadError
+      error={error}
+      failure={failure}
+      body={toSafePartnerSectionError(error).message}
+      actionLabel="Retry"
+      onAction={onRetry}
+      onSignIn={onSignIn}
+      route={route}
+    />
+  );
 }

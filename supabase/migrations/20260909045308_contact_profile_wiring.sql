@@ -1,19 +1,45 @@
 -- Durable editor state: the deployed schema stores salons/services separately,
 -- so legacy upserts into profiles/stylists must not be used as an editor backup.
-create table public.owner_editor_state (
+create table if not exists public.owner_editor_state (
   owner_id uuid primary key references auth.users(id) on delete cascade,
   state jsonb not null check(jsonb_typeof(state)='object'),
   updated_at timestamptz not null default now()
 );
 alter table public.owner_editor_state enable row level security;
 grant select,insert,update on public.owner_editor_state to authenticated;
+drop policy if exists editor_owner on public.owner_editor_state;
 create policy editor_owner on public.owner_editor_state for all to authenticated
 using(owner_id=(select auth.uid())) with check(owner_id=(select auth.uid()));
 
-grant update(phone,mobile,whatsapp,pincode,city,preferred_city,area,preferred_area,full_name,avatar_url,photo_url) on public.profiles to authenticated;
-grant update(phone,mobile,whatsapp,email,address,city,area,state,pincode,latitude,longitude,landmark,data) on public.salons to authenticated;
+-- Column-level grants need the columns to exist. Production's profiles/salons
+-- are ~50 columns wide, but a project (or the PGlite gateway) built from these
+-- migrations may carry a narrower pair, and an unguarded GRANT aborts the whole
+-- file there. Grant exactly the columns the table actually has, the same
+-- "probe information_schema first" idiom 20260919 uses for the two
+-- growth_partners generations.
+do $$
+declare cols text;
+begin
+  select string_agg(quote_ident(column_name), ',') into cols
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'profiles'
+     and column_name in ('phone','mobile','whatsapp','pincode','city','preferred_city',
+                         'area','preferred_area','full_name','avatar_url','photo_url');
+  if cols is not null then
+    execute format('grant update(%s) on public.profiles to authenticated', cols);
+  end if;
 
-create function public.sync_owner_contact(p_profile jsonb)
+  select string_agg(quote_ident(column_name), ',') into cols
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'salons'
+     and column_name in ('phone','mobile','whatsapp','email','address','city','area','state',
+                         'pincode','latitude','longitude','landmark','data');
+  if cols is not null then
+    execute format('grant update(%s) on public.salons to authenticated', cols);
+  end if;
+end $$;
+
+create or replace function public.sync_owner_contact(p_profile jsonb)
 returns void language plpgsql security invoker set search_path=public as $$
 declare actor uuid := auth.uid(); changed integer; patch jsonb;
 begin
@@ -57,7 +83,7 @@ begin
 end;
 $$;
 
-create function public.save_owner_editor_state(p_state jsonb)
+create or replace function public.save_owner_editor_state(p_state jsonb)
 returns void language plpgsql security invoker set search_path=public as $$
 begin
   if auth.uid() is null then raise exception 'Please sign in again'; end if;
@@ -69,12 +95,12 @@ begin
 end;
 $$;
 
-create function public.get_owner_editor_state()
+create or replace function public.get_owner_editor_state()
 returns jsonb language sql stable security invoker set search_path=public as $$
   select state from public.owner_editor_state where owner_id=auth.uid();
 $$;
 
-create function public.save_partner_profile_details(p_details jsonb)
+create or replace function public.save_partner_profile_details(p_details jsonb)
 returns void language plpgsql security invoker set search_path=public as $$
 begin
   perform public.save_partner_profile(p_details->>'ownerName',p_details->>'whatsapp',p_details->>'postalCode',p_details->>'city',p_details->>'ownerPhotoUrl',(p_details->>'dob')::date,p_details->>'areaLocality',(p_details->>'notifications')::boolean);

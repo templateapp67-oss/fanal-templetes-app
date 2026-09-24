@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, LifeBuoy, MessageCircle, RefreshCw, Search, Send, Ticket } from 'lucide-react';
-import { getPartnerSupportTickets, submitPartnerSupportTicket, type PartnerTicketPriority } from '../../lib/partnerPortalOperations';
-import { usePartnerAction, usePartnerQuery } from '../../lib/partnerPortalQueries';
+import type { PartnerTicketPriority } from '../../lib/partnerPortalOperations';
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceAction, usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import { formatPartnerDate, formatPartnerDateTime, partnerStatusLabel } from '../../lib/partnerPresentation';
 import { PartnerToast } from '../PartnerToast';
 import {
@@ -102,8 +103,8 @@ export const PartnerSupportPage: React.FC<{ accentHex?: string }> = ({ accentHex
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [notice, setNotice] = useState({ id: 0, message: '' });
 
-  const tickets = usePartnerQuery(() => getPartnerSupportTickets({ limit: 10, status }), [status]);
-  const create = usePartnerAction(() => submitPartnerSupportTicket(subject.trim(), message.trim(), priority));
+  const tickets = usePartnerServiceQuery(() => growthPartnerService.getSupportTickets({ limit: 10, status }), [status]);
+  const create = usePartnerServiceAction(() => growthPartnerService.submitSupportTicket(subject.trim(), message.trim(), priority));
 
   const filteredFaqs = useMemo(
     () => (query.trim() ? FAQS.filter((faq) => matchesQuery(`${faq.question} ${faq.answer} ${faq.tags}`, query)) : FAQS),
@@ -140,7 +141,7 @@ export const PartnerSupportPage: React.FC<{ accentHex?: string }> = ({ accentHex
 
   if (tickets.loading && !tickets.data) return <PartnerSectionLoading label="Loading your support tickets…" kind="table" module="support" />;
   if (tickets.error && !tickets.data) {
-    return <PartnerSectionError error={tickets.error} onRetry={tickets.reload} title="Your tickets could not load" module="support" />;
+    return <PartnerSectionError error={tickets.error} failure={tickets.failure} onRetry={tickets.reload} title="Your tickets could not load" module="support" />;
   }
 
   return (

@@ -227,7 +227,13 @@ async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // The host decides the port. Hard-coding 3000 means every platform that
+  // injects one (Railway/Render/Heroku/Replit/Fly do, and their healthcheck
+  // probes THAT port) reports "connection refused" while the app is running
+  // fine on 3000 — a crash loop with no crash. `server/localSupabase.ts` already
+  // read `process.env.PORT`; this is the same rule for the listener.
+  const parsedPort = Number.parseInt(String(process.env.PORT ?? ''), 10);
+  const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 3000;
 
   // `verify` stashes the RAW bytes of every JSON body. The Razorpay webhook
   // signature is an HMAC over exactly those bytes — re-serializing req.body
@@ -586,7 +592,7 @@ async function startServer() {
   // ==========================================================================
   app.get("/api/growth-partner/me", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     const authResult = await authenticateBookingRequest(req, res.locals?.requestDeadlineAt, allowMockBookingAuth);
-    if (!authResult.ok) {
+    if (authResult.ok === false) {
       return res.status(authResult.status).json({ success: false, code: authResult.code, error: authResult.error });
     }
     const userId = authResult.user.id;
@@ -603,7 +609,7 @@ async function startServer() {
 
   app.post("/api/growth-partner/ensure", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     const authResult = await authenticateBookingRequest(req, res.locals?.requestDeadlineAt, allowMockBookingAuth);
-    if (!authResult.ok) {
+    if (authResult.ok === false) {
       return res.status(authResult.status).json({ success: false, code: authResult.code, error: authResult.error });
     }
     const userId = authResult.user.id;
@@ -1094,6 +1100,38 @@ Return strictly JSON with the following keys:
     });
   }
 
+  // --------------------------------------------------------------------------
+  // RUNTIME CLIENT CONFIGURATION (/env.js).
+  //
+  // A Vite bundle only sees the VITE_* values that existed at BUILD time. A
+  // deployment that set the server-side names instead — SUPABASE_URL /
+  // SUPABASE_ANON_KEY, which is what hosts and the Vercel dashboard call them —
+  // therefore shipped a browser with no Supabase at all: every sign-in screen
+  // answered "Accounts are not connected to a database in this deployment"
+  // while /api/health reported a live connection. Those two values are public
+  // by design (they ship in every Supabase browser bundle), so the server hands
+  // them to the browser at runtime rather than demanding a rebuild.
+  //
+  // The service-role key is NEVER part of this payload, and the local gateway
+  // (whose browser config comes from its own flags) is never overridden.
+  // --------------------------------------------------------------------------
+  const publicClientUrl =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publicClientAnonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const runtimeClientConfig: Record<string, string> = {};
+  if (!localSupabaseEnabled && publicClientUrl) runtimeClientConfig.SUPABASE_URL = publicClientUrl;
+  if (!localSupabaseEnabled && publicClientAnonKey) runtimeClientConfig.SUPABASE_ANON_KEY = publicClientAnonKey;
+
+  app.get("/env.js", (_req, res) => {
+    res.type("application/javascript");
+    res.set("Cache-Control", "no-store");
+    res.send(`window.__NEXORA_ENV__=${JSON.stringify(runtimeClientConfig)};`);
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1108,8 +1146,12 @@ Return strictly JSON with the following keys:
     });
   }
 
+  // 0.0.0.0, not 127.0.0.1: a platform proxy reaches the container from
+  // outside, and a loopback-only bind is unreachable however healthy the
+  // process is.
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Nexora Salon OS running on http://0.0.0.0:${PORT}`);
+    const source = process.env.PORT ? 'from $PORT' : 'default';
+    console.log(`Nexora Salon OS running on http://0.0.0.0:${PORT} (${source})`);
   });
 }
 

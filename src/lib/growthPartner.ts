@@ -1,6 +1,46 @@
 import type { ReferralStatus, ReferralStatusCounts } from './referralStatus';
 import { supabase } from './supabaseClient';
+import { isPartnerAreaErrorLogged, logPartnerAreaFailure, partnerContractMismatch } from './partnerAreaFailure';
+
+/**
+ * The LOG vocabulary for the throw-based reads.
+ *
+ * The `context` strings below stay human sentences — they are part of the
+ * messages this module throws and existing behaviour depends on them. What an
+ * operator greps is this table instead: one stable operation label and the
+ * backend call it maps to, shared with `src/services/growthPartner.ts` (the
+ * facade labels every one of these identically, so both layers of one failure
+ * produce the SAME line).
+ */
+const PARTNER_READ_LOG: Record<string, { operation: string; call: string }> = {
+  'Growth Partner lookup failed': { operation: 'gate.read-partner-row', call: 'get_my_growth_partner' },
+  'Growth Partner activation failed': { operation: 'gate.provision-partner-row', call: 'ensure_my_growth_partner' },
+  'Partner dashboard lookup failed': { operation: 'dashboard.load', call: 'get_my_partner_dashboard' },
+  'Partner referral lookup failed': { operation: 'referrals.load', call: 'get_my_partner_referrals_filtered' },
+  'Partner performance lookup failed': { operation: 'performance.load', call: 'get_my_partner_performance' },
+  'Referral detail lookup failed': { operation: 'referral-detail.load', call: 'get_my_partner_referral_detail' },
+  'Onboarding status lookup failed': { operation: 'onboarding.read-status', call: 'get_my_onboarding_status' },
+  'Onboarding update failed': { operation: 'onboarding.update-progress', call: 'update_my_onboarding_progress' },
+  'Template completion update failed': { operation: 'onboarding.record-template-completion', call: 'complete_template_onboarding' },
+};
 import { projectReferralRelationship, projectValidationResponse } from './safePartnerResponse';
+// The failure predicates and the operator-facing setup copy live in ONE module
+// (`partnerAreaFailure.ts`) so the browser screen, the live diagnostic and the
+// operator script can never disagree about what a failure means. Re-exported
+// here because this module is the area's public front door.
+import {
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
+  isMissingPartnerSchemaError,
+  isPartnerSuspendedError,
+  isSessionExpiredError,
+} from './partnerAreaFailure';
+
+export {
+  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
+  isMissingPartnerSchemaError,
+  isPartnerSuspendedError,
+  isSessionExpiredError,
+};
 
 // ============================================================================
 // Growth Partner + shared Onboarding — typed client for the Phase 1 backend
@@ -108,10 +148,24 @@ export function isGrowthReferralCodeFormat(code: unknown): boolean {
   return GROWTH_CODE_RE.test(normalizeGrowthReferralCode(code));
 }
 
-function rpcError(context: string, error: { message?: string; code?: string; status?: number } | null): Error {
+function rpcError(
+  context: string,
+  error: { message?: string; code?: string; status?: number; details?: string; hint?: string } | null
+): Error {
   const detail = error?.message || 'Unknown database error';
   const code = error?.code ? ` (${error.code})` : '';
-  return Object.assign(new Error(`${context}${code}: ${detail}`), { code: error?.code, status: error?.status });
+  // `code`/`status` are read by the existing classifiers; `call` plus the raw
+  // fields are what make the failure diagnosable in a log without putting
+  // database text on a screen.
+  return Object.assign(new Error(`${context}${code}: ${detail}`), {
+    code: error?.code,
+    status: error?.status,
+    rawCode: error?.code ?? null,
+    rawMessage: error?.message ?? null,
+    rawStatus: error?.status ?? null,
+    details: (error as { details?: string } | null)?.details,
+    hint: (error as { hint?: string } | null)?.hint,
+  });
 }
 
 /**
@@ -235,30 +289,6 @@ export async function fetchMyGrowthPartnerRow(): Promise<GrowthPartner | null> {
 }
 
 /**
- * Classify "this project has not had the migration applied" — PostgREST answers
- * PGRST202 (function/table not in the schema cache) or, on older gateways, an
- * HTTP 404 with "Could not find the function ... in the schema cache".
- *
- * It is worth its own classifier because the fix is an operator action
- * (apply the migration), not a retry: telling a partner "Please try again"
- * forever is exactly the dead end this distinguishes.
- */
-export function isMissingPartnerSchemaError(error: unknown): boolean {
-  if (!error) return false;
-  const anyErr = error as { code?: string; status?: number };
-  if (anyErr.code === 'PGRST202' || anyErr.code === 'PGRST205' || anyErr.code === 'PGRST204') return true;
-  if (anyErr.status === 404) return true;
-  return /could not find the (function|table|.* in the schema cache)|function .* does not exist|schema cache/i.test(
-    String((error as Error)?.message || anyErr || '')
-  );
-}
-
-/** Operator-facing copy when the Growth Partner RPCs are not on this project. */
-export const GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE =
-  'The Growth Partner database setup is missing on this project, so access cannot be verified. ' +
-  'An administrator must apply the Growth Partner migrations (see GROWTH_PARTNER_SETUP.md).';
-
-/**
  * Ensure the authenticated caller has a partner row, then return that row.
  * The RPC accepts no user id: the database provisions auth.uid() only and
  * preserves an existing suspended partner instead of reactivating it.
@@ -269,8 +299,35 @@ export const GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE =
  */
 export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
   const { data, error } = await supabase.rpc('ensure_my_growth_partner');
-  if (error) throw rpcError('Growth Partner activation failed', error);
-  return data as GrowthPartner;
+  if (error) {
+    const raised = rpcError('Growth Partner activation failed', error);
+    // The provisioning call is the one most likely to fail on a project that has
+    // not applied a migration, and the screen hides the reason by design.
+    logPartnerAreaFailure(raised, {
+      operation: 'gate.provision-partner-row',
+      call: 'ensure_my_growth_partner',
+    });
+    throw raised;
+  }
+
+  // A ROW MISSING AFTER ENSURE IS AN ERROR, never a silent null. The previous
+  // `return data as GrowthPartner` cast handed back whatever the RPC resolved
+  // with — including `null` — typed as a partner row; the gate then read it as
+  // "signed in, not a partner" and quietly rendered the sign-up surface, which
+  // is the silent-failure class this area exists to remove. An older or
+  // half-applied definition of `ensure_my_growth_partner()` is the realistic
+  // cause, so the answer is validated instead of trusted (the provisioning rule
+  // is pinned by tests/growthPartnerProvisioningContract.test.ts).
+  const row = normalizeGrowthPartnerRow(data);
+  if (!row || !row.user_id) {
+    const raised = partnerContractMismatch('user_id');
+    logPartnerAreaFailure(raised, {
+      operation: 'gate.provision-partner-row',
+      call: 'ensure_my_growth_partner',
+    });
+    throw raised;
+  }
+  return row;
 }
 
 /**
@@ -340,19 +397,8 @@ export async function copyReferralCodeToClipboard(
 }
 
 
-/** True when a Supabase/PostgREST failure means the session must be renewed. */
-export function isSessionExpiredError(error: unknown): boolean {
-  if (!error) return false;
-  const anyErr = error as { status?: number; code?: string; message?: string };
-  if (anyErr.status === 401 || anyErr.code === 'PGRST301') return true;
-  const message = String((error as Error)?.message || anyErr || '');
-  return /jwt expired|invalid jwt|session.*expired|not authenticated|auth.*required|sign in required/i.test(message);
-}
-
-/** Includes mid-request revocation, not just the initial partner gate read. */
-export function isPartnerSuspendedError(error: unknown): boolean {
-  return /(?:partner|account|access).*(?:inactive|paused|suspended)/i.test(String((error as Error)?.message || ''));
-}
+// `isSessionExpiredError` / `isPartnerSuspendedError` are re-exported at the
+// top of this file from `partnerAreaFailure.ts` (one definition per predicate).
 
 /** Page-level gate states for the Growth Partner area. */
 export type GrowthPartnerGate =
@@ -971,7 +1017,13 @@ async function readPartnerPayload<T>(
   }
   if (settled.error) {
     const failure = settled.error as { message?: string; code?: string; status?: number };
-    throw rpcError(context, failure);
+    const raised = rpcError(context, failure);
+    // The failures that used to vanish: this read is called by the gate, the
+    // login screens and the referral surfaces, all of which render safe copy
+    // only. Log the backend's own answer here, where it still exists.
+    const label = PARTNER_READ_LOG[context] ?? { operation: 'partner.read', call: context };
+    logPartnerAreaFailure(raised, { operation: label.operation, call: label.call });
+    throw raised;
   }
   return normalize(settled.data);
 }
@@ -1047,6 +1099,12 @@ export const PARTNER_SECTION_ERROR_MESSAGE = 'Could not load this section. Pleas
  * so raw SQL/database errors are never displayed.
  */
 export function toSafePartnerSectionError(error: unknown): Error {
+  // Safety net: anything that arrives here unlogged is a failure about to be
+  // replaced by generic copy, which is exactly how the original bug stayed
+  // undiagnosable. Already-logged errors are left alone (one line per failure).
+  if (error !== null && error !== undefined && !isPartnerAreaErrorLogged(error)) {
+    logPartnerAreaFailure(error, { operation: 'section.read' });
+  }
   const message = String((error as Error)?.message || error || '');
   if (isPartnerSuspendedError(error)) return new Error('Your Growth Partner access is paused. Contact support to reactivate it.');
   if (/network|failed to fetch|fetch failed|connection|timeout/i.test(message)) return new Error('Network error. Check your connection and try again.');

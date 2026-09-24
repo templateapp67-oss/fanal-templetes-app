@@ -86,6 +86,19 @@ test('6.1. the referral domain reuses the canonical tables; no parallel schema e
     // phases added (earnings, payouts, tickets, account settings, security
     // log, deactivation requests) — they are the operational model the portal
     // consumes, never a second referral store.
+    //
+    // Two names joined the chain in the full-schema audit, both explained where
+    // they are created:
+    //   * `partner_settings` — the partner PROFILE row (date of birth, area,
+    //     notification flag) behind get_partner_profile()/save_partner_profile()
+    //     in 20260909035237. It holds no referral or attribution state.
+    //   * `partner_reward_milestones` — the premium-reward CATALOGUE (code,
+    //     shop thresholds, maximum value in paise) that 20261007 seeds and
+    //     20261007/20261008 read. It is a price list, not an attribution store;
+    //     its creator is 2026100500_growth_partner_attribution_prerequisites.sql,
+    //     which had to exist because six committed migrations reference
+    //     `shop_attributions`/`partner_reward_milestones` and no migration ever
+    //     created them.
     assert.deepEqual(tables, [
       'growth_onboarding',
       'growth_partner_applications',
@@ -103,7 +116,9 @@ test('6.1. the referral domain reuses the canonical tables; no parallel schema e
       'partner_payout_requests',
       'partner_referral_events',
       'partner_referrals',
+      'partner_reward_milestones',
       'partner_security_events',
+      'partner_settings',
       'partner_support_attachments',
       'partner_support_tickets',
     ]);
@@ -132,8 +147,8 @@ test('6.1. the referral domain reuses the canonical tables; no parallel schema e
     const columns = async (sql: string) => (await ctx.db.query(sql)).rows.map((row: any) => row.table_name);
     assert.deepEqual(
       await columns(`select table_name from information_schema.columns where table_schema='public' and column_name='growth_partner_id' order by table_name`),
-      ['growth_onboarding', 'template_handoffs'],
-      'growth_onboarding is the ONE owner→partner attribution edge (template_handoffs only snapshots it for a single-use grant)'
+      ['growth_onboarding', 'shop_attributions', 'template_handoffs'],
+      'growth_onboarding is the ONE owner→partner attribution edge (template_handoffs only snapshots it for a single-use grant); shop_attributions is the partner→SALON edge created by 2026100500, a different concern that never attributes an OWNER'
     );
     assert.deepEqual(
       await columns(`select table_name from information_schema.columns where table_schema='public' and column_name='referred_user_id' order by table_name`),
@@ -201,8 +216,9 @@ test('6.1. no committed migration creates a parallel referral table (this phase 
     }
   }
   const referralDomain = [...created].filter((name) => /referral|partner|growth/.test(name)).sort();
-  // Canonical Growth Partner attribution + the two unrelated look-alikes that
-  // must NOT be mistaken for it: `partner_settings` (partner profile) and
+  // Canonical Growth Partner attribution + the unrelated look-alikes that must
+  // NOT be mistaken for it: `partner_settings` (partner profile),
+  // `partner_reward_milestones` (the reward price list seeded by 20261007) and
   // `referrals` (the per-salon customer loyalty ledger).
   assert.deepEqual(referralDomain, [
     'growth_onboarding',
@@ -221,6 +237,7 @@ test('6.1. no committed migration creates a parallel referral table (this phase 
     'partner_payout_requests',
     'partner_referral_events',
     'partner_referrals',
+    'partner_reward_milestones',
     'partner_security_events',
     'partner_settings',
     'partner_shop_daily_qualification',

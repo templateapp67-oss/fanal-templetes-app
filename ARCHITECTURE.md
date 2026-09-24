@@ -113,6 +113,36 @@ function as `schema_not_applied` so the page can say what to apply.
 `src/lib/partnerPresentation.ts` is the only formatter allowed to turn paise,
 ISO dates or ledger statuses into text on screen.
 
+Every section now meets those data layers through one facade:
+`src/services/growthPartner.ts` (`growthPartnerService`). It takes no partner id
+— identity is the session JWT — keeps every monetary value in whole paise
+(validating the raw answer instead of coercing a missing field to `0`), and
+answers either `{ ok: true, data }` or `{ ok: false, error }`. That is what
+makes a fake zero impossible to render: a missing or malformed money/count field
+is a classified `contract-mismatch` failure owned by an administrator, never
+`₹0.00`, while a genuinely empty wallet is a success with real zeros. Failures
+are classified by `src/lib/partnerAreaFailure.ts` — the same classifier behind
+the in-page failure panel and `npm run diagnose:partner-dashboard` — so a
+screen, a copied support report and a terminal diagnosis cannot disagree.
+`src/lib/partnerServiceQueries.ts` exposes the same four states over those
+result objects (`usePartnerServiceQuery` / `usePartnerServiceAction`).
+
+Two entry points advertise that layer without owning any logic of their own:
+
+* **`src/types/growthPartner.ts`** — the area's public type surface (identity,
+  read models, the paise payloads, `GrowthPartnerResult` and the classified
+  `PartnerAreaFailure`). It re-exports and defines nothing, so there is exactly
+  one definition of every shape; the file's closing note maps the names other
+  Growth Partner codebases use (`TransformedReferral`, `partner.email`,
+  `partner.tier`, `fetchPartner(partnerId)`) onto these ones and says why they
+  are not aliased.
+* **`src/components/GrowthPartner/index.ts`** — the UI entry point, re-exporting
+  the page, the dashboard sections, the seven operational modules, the guard and
+  the failure panel. Components stay next to the rest of the app's components;
+  `tests/growthPartnerPublicSurface.test.ts` proves every export is the identical
+  module object (a fork would fail), that neither surface defines anything, and
+  that no partner-data component reaches around the facade for data.
+
 The header (PART 2.3) shows the page title, the partner's name and Partner ID
 (their own auth id, display-only), the notifications dropdown (the real
 recent-activity feed from `get_my_partner_dashboard` — the portal reads that

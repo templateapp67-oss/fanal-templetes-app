@@ -473,6 +473,51 @@ test('concurrent role-scoped and Auth reads cannot share another request context
 });
 
 
+test('the sign-up profile write lands, and RLS keeps it to the caller\'s own row', async () => {
+  const gateway = await startGateway();
+  try {
+    const owner = await signUp(gateway.origin, 'profile-write@example.com', 'Str0ngPass!1', 'Profile Writer');
+    const write = (body: unknown, token?: string) =>
+      fetch(`${gateway.origin}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          apikey: 'local-dev-key',
+          prefer: 'resolution=merge-duplicates',
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+    // The write AuthModal performs right after signup.
+    const first = await write({ id: owner.user.id, full_name: 'Profile Writer', salon_name: 'Preview Salon', city: 'Jaipur' }, owner.access_token);
+    assert.equal(first.status, 201, `profile write refused: ${await first.text()}`);
+
+    // A second upsert updates rather than duplicating (merge-duplicates).
+    const again = await write({ id: owner.user.id, full_name: 'Profile Writer', salon_name: 'Renamed Salon' }, owner.access_token);
+    assert.equal(again.status, 201);
+
+    const read = await fetch(`${gateway.origin}/rest/v1/profiles?select=*`, {
+      headers: { apikey: 'local-dev-key', authorization: `Bearer ${owner.access_token}` },
+    });
+    const rows: any[] = await read.json();
+    assert.equal(rows.length, 1, 'one profile row, updated in place');
+    assert.equal(rows[0].salon_name, 'Renamed Salon');
+
+    // Another account's row is not writable from this session: the policy, not
+    // the request body, decides. (With check violation → 42501 → 403.)
+    const other = await signUp(gateway.origin, 'profile-other@example.com', 'Str0ngPass!1', 'Other');
+    const forged = await write({ id: other.user.id, full_name: 'Forged' }, owner.access_token);
+    assert.equal(forged.status, 403, 'a forged id must be refused by RLS');
+
+    // Anonymous writes are refused before RLS is even consulted.
+    const anon = await write({ id: owner.user.id, full_name: 'Anon' });
+    assert.equal(anon.status, 401);
+  } finally {
+    await gateway.close();
+  }
+});
+
 test('development Auth gateway refuses production before opening a database', async () => {
   const previous=process.env.NODE_ENV;
   process.env.NODE_ENV='production';

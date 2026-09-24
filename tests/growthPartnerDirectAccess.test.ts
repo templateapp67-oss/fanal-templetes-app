@@ -26,6 +26,17 @@ for (const source of [
 ]) {
   test(`${source} auto-activates a signed-in account before rendering a denial`, () => {
     const code = readFileSync(new URL(source, import.meta.url), 'utf8');
-    assert.match(code, /ensureMyGrowthPartner\(\)/);
+    // The page reaches provisioning through the service facade
+    // (`growthPartnerService.ensureMyPartner()`), the login screens call the
+    // helper directly. Either way the audited `ensureMyGrowthPartner()` is what
+    // actually runs — asserted below, so the boundary may move but not vanish.
+    assert.match(code, /(ensureMyGrowthPartner\(\)|growthPartnerService\.ensureMyPartner\()/);
   });
 }
+
+test('the service facade is the page’s single path to provisioning', () => {
+  const service = readFileSync(new URL('../src/services/growthPartner.ts', import.meta.url), 'utf8');
+  assert.match(service, /ensureMyGrowthPartner\(\)/, 'the facade delegates to the audited helper');
+  const page = readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /from '\.\.\/lib\/growthPartner'[\s\S]*ensureMyGrowthPartner/, 'the page never calls it directly');
+});

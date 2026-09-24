@@ -9,8 +9,11 @@ create table if not exists public.partner_settings (
 );
 alter table public.partner_settings enable row level security;
 grant select, insert, update on public.partner_settings to authenticated;
+drop policy if exists partner_settings_read on public.partner_settings;
 create policy partner_settings_read on public.partner_settings for select to authenticated using (owner_id = (select auth.uid()));
+drop policy if exists partner_settings_insert on public.partner_settings;
 create policy partner_settings_insert on public.partner_settings for insert to authenticated with check (owner_id = (select auth.uid()));
+drop policy if exists partner_settings_update on public.partner_settings;
 create policy partner_settings_update on public.partner_settings for update to authenticated using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
 
 create or replace function public.save_partner_profile(p_name text, p_whatsapp text, p_postal text, p_city text, p_avatar text, p_dob date, p_area text, p_notifications boolean)
@@ -50,15 +53,28 @@ $$;
 revoke all on function public.save_partner_profile(text,text,text,text,text,date,text,boolean) from public, anon;
 grant execute on function public.save_partner_profile(text,text,text,text,text,date,text,boolean) to authenticated;
 
-insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
-values('partner-avatars','partner-avatars',true,5242880,array['image/jpeg','image/png','image/webp'])
-on conflict(id) do nothing;
-create policy partner_avatar_insert on storage.objects for insert to authenticated
-with check(bucket_id='partner-avatars' and (storage.foldername(name))[1]=(select auth.uid())::text);
-create policy partner_avatar_read on storage.objects for select to authenticated
-using(bucket_id='partner-avatars' and (storage.foldername(name))[1]=(select auth.uid())::text);
-create policy partner_avatar_delete on storage.objects for delete to authenticated
-using(bucket_id='partner-avatars' and (storage.foldername(name))[1]=(select auth.uid())::text);
+-- Storage half, guarded exactly the way 20260919120000 guards its bucket: a bare
+-- Postgres (the PGlite gateway, a project without the storage schema) has nothing
+-- to attach these policies to, and everything above still applies.
+do $$ begin
+  if to_regclass('storage.buckets') is null then
+    return;
+  end if;
+  execute $ma$
+    insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+    values('partner-avatars','partner-avatars',true,5242880,array['image/jpeg','image/png','image/webp'])
+    on conflict(id) do nothing
+  $ma$;
+  execute $ma$drop policy if exists partner_avatar_insert on storage.objects$ma$;
+  execute $ma$create policy partner_avatar_insert on storage.objects for insert to authenticated
+    with check(bucket_id='partner-avatars' and (storage.foldername(name))[1]=(select auth.uid())::text)$ma$;
+  execute $ma$drop policy if exists partner_avatar_read on storage.objects$ma$;
+  execute $ma$create policy partner_avatar_read on storage.objects for select to authenticated
+    using(bucket_id='partner-avatars' and (storage.foldername(name))[1]=(select auth.uid())::text)$ma$;
+  execute $ma$drop policy if exists partner_avatar_delete on storage.objects$ma$;
+  execute $ma$create policy partner_avatar_delete on storage.objects for delete to authenticated
+    using(bucket_id='partner-avatars' and (storage.foldername(name))[1]=(select auth.uid())::text)$ma$;
+end $$;
 
 create or replace function public.get_partner_profile()
 returns jsonb language plpgsql security invoker set search_path=public as $$

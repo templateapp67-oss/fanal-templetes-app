@@ -190,8 +190,19 @@ export type PartnerOperationErrorCode =
   | 'unknown';
 
 export interface PartnerOperationError extends Error {
+  /** Semantic code the UI classifies on (schema_not_applied, partner_only, …). */
   code: PartnerOperationErrorCode;
   retryable: boolean;
+  /**
+   * Behind every semantic `code` sits a real PostgREST/Postgres answer. These
+   * carry it unchanged (e.g. `PGRST202`, `42501`, `23505`) along with the call
+   * that produced it, so a failure can be logged and diagnosed. The user-facing
+   * `message` stays the sanitized copy above — nothing here is rendered.
+   */
+  call?: string;
+  rawCode?: string | null;
+  rawMessage?: string | null;
+  rawStatus?: number | null;
 }
 
 /** Set on every error this classifier produced (see idempotence note below). */
@@ -213,6 +224,13 @@ export function partnerOperationError(
   const message = String(raw?.message || '').trim();
   const code = String(raw?.code || '').trim();
   const error = new Error(message || `${context} failed`) as PartnerOperationError;
+  // Record the backend's own answer BEFORE any of it is rewritten below. This is
+  // the evidence a diagnosis needs (`42501` is not `partner_only` in a log, and
+  // "Minimum withdrawal is ₹500" is not `validation`), and it is never rendered.
+  error.call = context;
+  error.rawCode = code || null;
+  error.rawMessage = message || null;
+  error.rawStatus = raw?.status ?? null;
   // PostgREST answers PGRST202 for "no function matches"; a missing schema is
   // the single most common reason a promoted section cannot load, and naming
   // the two migrations is the only actionable thing the page can say.

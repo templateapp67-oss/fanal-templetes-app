@@ -7,7 +7,9 @@ import {
   isMissingPartnerSchemaError,
   toSafePartnerSectionError,
 } from '../lib/growthPartner';
+import { classifyPartnerAreaFailure, type PartnerAreaFailure } from '../lib/partnerAreaFailure';
 import { supabaseConfig } from '../lib/supabaseClient';
+import { PartnerAreaFailurePanel } from './PartnerAreaFailurePanel';
 
 export const GROWTH_PARTNER_SIGNIN_TITLE = 'Sign in to open the Growth Partner area';
 export const GROWTH_PARTNER_SIGNIN_BODY =
@@ -138,25 +140,71 @@ export const GrowthPartnerInactive: React.FC<{ onBack?: () => void }> = ({ onBac
   </main>
 );
 
+/**
+ * The area's failure screen.
+ *
+ * Two shapes, on purpose:
+ *   • explicit `title`/`body`/`actionLabel` — used by the states whose copy is
+ *     already exact (session expired, mock mode, …);
+ *   • `error` — the raw failure: the screen then classifies it, names the cause
+ *     and renders `PartnerAreaFailurePanel`, so a failure that a retry cannot
+ *     fix (missing migration, refused grant) says so instead of looping the
+ *     user through "Please try again".
+ */
 export const GrowthPartnerLoadError: React.FC<{
-  title: string;
-  body: string;
-  actionLabel: string;
+  title?: string;
+  body?: string;
+  actionLabel?: string;
   onAction?: () => void;
-}> = ({ title, body, actionLabel, onAction }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
-    <PartnerStatusScreen icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
-      <button
-        type="button"
-        onClick={() => onAction?.()}
-        className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-slate-900"
-      >
-        <RefreshCw className="w-4 h-4" />
-        {actionLabel}
-      </button>
-    </PartnerStatusScreen>
-  </main>
-);
+  /** The failure to explain. When present, it wins over the generic copy. */
+  error?: unknown;
+  /**
+   * The cause, already classified by the layer that saw the raw answer (the
+   * service facade). Preferred over re-classifying `error`: a sanitised wrapper
+   * would otherwise classify as `unknown`.
+   */
+  failure?: PartnerAreaFailure | null;
+  /** Route shown in the diagnostic report, e.g. `/partner/dashboard`. */
+  route?: string | null;
+  onSignIn?: () => void;
+}> = ({ title, body, actionLabel, onAction, error, failure: classified, route, onSignIn }) => {
+  const failure =
+    classified ?? (error !== undefined && error !== null ? classifyPartnerAreaFailure(error) : null);
+  // A classified failure outranks the caller's generic fallback copy. The gate
+  // passes `title`/`body` for the states it can already describe, so without
+  // this the screen would be headed by the real cause ("…database setup is
+  // missing…") and explained by the very sentence this work removes
+  // ("Could not load this section. Please try again.").
+  const named = !!failure && failure.kind !== 'unknown';
+  const heading = named ? failure.title : title ?? failure?.title ?? GROWTH_PARTNER_ERROR_TITLE;
+  const explanation = named ? failure.body : body ?? failure?.body ?? '';
+
+  return (
+    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+      <PartnerStatusScreen icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={heading} body={explanation}>
+        {failure ? (
+          <PartnerAreaFailurePanel
+            error={error}
+            failure={failure}
+            route={route}
+            onRetry={onAction}
+            onSignIn={onSignIn}
+            className="mt-6"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => onAction?.()}
+            className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-slate-900"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {actionLabel ?? 'Retry'}
+          </button>
+        )}
+      </PartnerStatusScreen>
+    </main>
+  );
+};
 
 export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void; issues?: string[] }> = ({
   onBack,

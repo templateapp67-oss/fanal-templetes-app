@@ -3,6 +3,8 @@ import { AlertCircle, ChevronLeft, ChevronRight, Inbox, RefreshCw } from 'lucide
 import { PartnerLoading } from '../PartnerLoading';
 import { PartnerStatCard } from '../PartnerStatCard';
 import { partnerQueryErrorMessage } from '../../lib/partnerPortalQueries';
+import { PartnerAreaFailurePanel } from '../PartnerAreaFailurePanel';
+import type { PartnerAreaFailure } from '../../lib/partnerAreaFailure';
 
 // ============================================================================
 // Shared building blocks for the Growth Partner portal's operational sections.
@@ -239,13 +241,22 @@ export const PartnerSectionEmpty: React.FC<{
   </div>
 );
 
-/** Failure state with retry. `note` carries the schema/hint text when known. */
+/**
+ * Failure state with retry. `note` carries the schema/hint text when known.
+ *
+ * On top of the message, a section that failed through the Growth Partner
+ * service gets the classified cause (`failure`): who has to act, what the next
+ * step is, and a live diagnostic — so a refused grant or a missing migration
+ * never reads as "try again".
+ */
 export const PartnerSectionError: React.FC<{
   error: unknown;
   onRetry: () => void;
   title?: string;
   module?: string;
-}> = ({ error, onRetry, title = 'This section could not load', module }) => {
+  /** Classified cause from the service layer (see `usePartnerServiceQuery`). */
+  failure?: PartnerAreaFailure | null;
+}> = ({ error, onRetry, title = 'This section could not load', module, failure = null }) => {
   const message = partnerQueryErrorMessage(error);
   return (
     <PartnerModuleFrame module={module}>
@@ -255,6 +266,12 @@ export const PartnerSectionError: React.FC<{
         </span>
         <p className="mt-3 text-base font-black text-rose-900">{title}</p>
         <p className="mx-auto mt-1.5 max-w-xl whitespace-pre-line text-sm text-rose-800">{message}</p>
+        <PartnerAreaFailurePanel
+          error={error}
+          failure={failure}
+          onRetry={onRetry}
+          className="mx-auto mt-5 max-w-xl rounded-2xl border border-rose-200 bg-white p-4 text-left"
+        />
         <button
           type="button"
           data-partner-retry

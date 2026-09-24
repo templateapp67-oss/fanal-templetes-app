@@ -77,6 +77,16 @@ test('partner gate database errors never render driver messages and remain retry
     await act(async () => root.render(React.createElement(GrowthPartnerPage,{path:'/partner/dashboard',user:{id:'partner'},navigate(){}} as any)));
     await wait(() => !!host.textContent?.includes('Retry'));
     assert.doesNotMatch(host.textContent!,/SECRET|42P01|SQL|relation/);
-    assert.match(host.textContent!,/Please try again/);
+    // This assertion used to read /Please try again/. The screen answered EVERY
+    // failure with that sentence — including the ones a retry cannot fix, which
+    // is the dead end `/partner/dashboard` was reported for. A driver message
+    // that names a missing relation is a setup problem, so the screen now names
+    // it; the safety properties of this test (no driver text, a Retry
+    // affordance, nothing driver-shaped rendered) are asserted here and below.
+    assert.match(host.textContent!,/database setup is missing/);
+    assert.ok(
+      [...host.querySelectorAll('button')].some((button) => /Retry/.test(button.textContent ?? '')),
+      'retry stays available even when it cannot fix the cause alone'
+    );
   } finally {await act(async () => root.unmount());host.remove();globalThis.fetch=oldFetch;}
 });

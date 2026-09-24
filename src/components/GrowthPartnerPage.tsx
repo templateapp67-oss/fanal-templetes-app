@@ -11,14 +11,8 @@ import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, LogOut } from 'lucide-react';
 import {
-  fetchMyGrowthPartnerRow,
-  ensureMyGrowthPartner,
-  fetchMyGrowthPartnerApplication,
-  fetchMyPartnerDashboard,
-  fetchMyPartnerPerformance,
-  fetchMyPartnerReferrals,
-  isSessionExpiredError,
   isPartnerSuspendedError,
+  isSessionExpiredError,
   toSafePartnerSectionError,
   type GrowthPartner,
   type PartnerDashboardData,
@@ -42,6 +36,15 @@ import {
   type PartnerPortalSection,
 } from '../lib/router';
 import { PARTNER_PORTAL_UNAUTHORIZED_BODY } from '../lib/partnerPortalAuth';
+// This page talks to the Growth Partner service facade (result objects, paise,
+// identity from the JWT) rather than to the individual backend wrappers.
+import {
+  GrowthPartnerServiceError,
+  growthPartnerService,
+  isServiceFailure,
+  unwrapPartnerResult,
+} from '../services/growthPartner';
+import type { PartnerAreaFailure } from '../lib/partnerAreaFailure';
 import { GrowthPartnerLogin } from './GrowthPartnerLogin';
 import { PartnerPortalLogin } from './PartnerPortalLogin';
 import {
@@ -206,11 +209,14 @@ const LIST_PAGE_SIZE = 20;
 interface SectionState<T> {
   data: T | null;
   loading: boolean;
+  /** Safe copy for the failure (null while healthy). */
   error: string | null;
+  /** Classified cause behind `error`; the section card explains it. */
+  failure: GrowthPartnerServiceError | null;
 }
 
 function initialSectionState<T>(): SectionState<T> {
-  return { data: null, loading: true, error: null };
+  return { data: null, loading: true, error: null, failure: null };
 }
 
 export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
@@ -254,6 +260,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const [verifiedFor, setVerifiedFor] = useState<string | null>(null);
   const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  // The cause the service already classified. The raw error cannot be
+  // re-classified downstream — the service replaced the driver text with safe
+  // copy — so the gate hands the classification to the failure screen.
+  const [gateFailure, setGateFailure] = useState<PartnerAreaFailure | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   // Synchronize partner profile avatar and name immediately on mount so the shell header matches the Profile page
@@ -318,19 +328,23 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     }
     setGateLoading(true);
     setLoadError(null);
+    setGateFailure(null);
     (async () => {
       try {
-        let row = await fetchMyGrowthPartnerRow();
+        // `unwrapPartnerResult` rethrows the service's classified error, which is
+        // what the gate below (and the failure panel) expects.
+        let row = unwrapPartnerResult(await growthPartnerService.getMyPartner());
         if (!row) {
-          await ensureMyGrowthPartner();
-          row = await fetchMyGrowthPartnerRow();
+          unwrapPartnerResult(await growthPartnerService.ensureMyPartner());
+          row = unwrapPartnerResult(await growthPartnerService.getMyPartner());
         }
         if (cancelled) return;
-        const application = row ? null : await fetchMyGrowthPartnerApplication();
+        const application = row ? null : unwrapPartnerResult(await growthPartnerService.getMyApplication());
         if (cancelled) return;
         setPartner(row);
         setApplicationStatus(application?.status ?? null);
         setLoadError(null);
+        setGateFailure(null);
 
         // Fetch partner profile so header avatar and display name are populated
         // immediately without requiring the user to navigate to /partner/profile first.
@@ -374,7 +388,9 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       } catch (err) {
         if (cancelled) return;
         setPartner(null);
-        setLoadError(err);
+        const serviceError = err instanceof GrowthPartnerServiceError ? err : GrowthPartnerServiceError.from(err);
+        setLoadError(serviceError);
+        setGateFailure(serviceError.failure ?? null);
       } finally {
         if (!cancelled) { setVerifiedFor(userId); setGateLoading(false); }
       }
@@ -402,17 +418,19 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
 
   // A session dying mid-section returns to the page-level session gate instead
   // of stranding the section on an error card.
-  const noteSectionFailure = (error: unknown): string | null => {
-    if (isPartnerSuspendedError(error)) {
+  const noteSectionFailure = (error: GrowthPartnerServiceError): string | null => {
+    // The service already classified the cause; the text matchers stay as a
+    // belt-and-braces check for the legacy call sites.
+    if (error.kind === 'suspended' || isPartnerSuspendedError(error)) {
       setLoadError(error);
       return null;
     }
-    if (isSessionExpiredError(error)) {
+    if (error.kind === 'session-expired' || isSessionExpiredError(error)) {
       setPartner(null);
       setLoadError(error);
       return null;
     }
-    return toSafePartnerSectionError(error).message;
+    return error.message || toSafePartnerSectionError(error).message;
   };
 
   // In the /partner/* portal the dashboard RPC is read on every section: it
@@ -427,17 +445,22 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     if (!ready || !wantsDashboardData) return;
     let cancelled = false;
     setDashboardOwner(userId);
-    setDashboard((prev) => ({ data: dashboardOwner === userId ? prev.data : null, loading: true, error: null }));
+    setDashboard((prev) => ({ data: dashboardOwner === userId ? prev.data : null, loading: true, error: null, failure: null }));
     (async () => {
-      try {
-        const data = await fetchMyPartnerDashboard();
-        if (!cancelled) setDashboard({ data, loading: false, error: null });
-      } catch (err) {
-        if (cancelled) return;
-        const message = noteSectionFailure(err);
-        if (message !== null) setDashboard((prev) => ({ ...prev, loading: false, error: message }));
-        else setDashboard((prev) => ({ ...prev, loading: false }));
+      const result = await growthPartnerService.getDashboard();
+      if (cancelled) return;
+      if (!isServiceFailure(result)) {
+        setDashboard({ data: result.data, loading: false, error: null, failure: null });
+        return;
       }
+      // Bound OUTSIDE the updater: the updater is a closure, and this project
+      // compiles with `strictNullChecks: false`, where a guard's narrowing does
+      // not reach into one.
+      const serviceError = result.error;
+      const message = noteSectionFailure(serviceError);
+      // A section that hands the gate a session/suspension failure renders no
+      // card at all (the page-level gate takes over), so it also clears its own.
+      setDashboard((prev) => ({ ...prev, loading: false, error: message, failure: message === null ? null : serviceError }));
     })();
     return () => {
       cancelled = true;
@@ -449,30 +472,30 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     let cancelled = false;
     setReferralOwner(userId);
     // Preserve the last successful counts across filters/pages, never across owners.
-    setReferrals(prev => ({ data: referralOwner === userId ? prev.data : null, loading: true, error: null }));
+    setReferrals(prev => ({ data: referralOwner === userId ? prev.data : null, loading: true, error: null, failure: null }));
     (async () => {
-      try {
-        const data = await fetchMyPartnerReferrals({
-          search: referralFilters.search || undefined,
-          conversion: referralFilters.conversion, sort: referralFilters.sort,
-          ...referralDateBounds(referralFilters),
-          status: referralStatusTab === 'active' ? 'in_progress' : referralStatusTab === 'converted' ? 'completed' : referralStatusTab,
-          limit: LIST_PAGE_SIZE,
-          offset: referralOffset,
-        });
-        if (cancelled) return;
+      const result = await growthPartnerService.getReferrals({
+        search: referralFilters.search || undefined,
+        conversion: referralFilters.conversion, sort: referralFilters.sort,
+        ...referralDateBounds(referralFilters),
+        status: referralStatusTab === 'active' ? 'in_progress' : referralStatusTab === 'converted' ? 'completed' : referralStatusTab,
+        limit: LIST_PAGE_SIZE,
+        offset: referralOffset,
+      });
+      if (cancelled) return;
+      if (!isServiceFailure(result)) {
+        const data = result.data;
         // A refresh may remove the last row on the current page.
         if (referralOffset > 0 && referralOffset >= data.total) {
           setReferralOffset(Math.max(0, Math.ceil(data.total / data.limit) - 1) * data.limit);
           return;
         }
-        setReferrals({ data, loading: false, error: null });
-      } catch (err) {
-        if (cancelled) return;
-        const message = noteSectionFailure(err);
-        if (message !== null) setReferrals((prev) => ({ ...prev, loading: false, error: message }));
-        else setReferrals((prev) => ({ ...prev, loading: false }));
+        setReferrals({ data, loading: false, error: null, failure: null });
+        return;
       }
+      const serviceError = result.error;
+      const message = noteSectionFailure(serviceError);
+      setReferrals((prev) => ({ ...prev, loading: false, error: message, failure: message === null ? null : serviceError }));
     })();
     return () => {
       cancelled = true;
@@ -482,22 +505,22 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   useEffect(() => {
     if (!ready || contentSection !== 'customers') return;
     let cancelled = false;
-    setCustomers((prev) => ({ ...prev, loading: true, error: null }));
+    setCustomers((prev) => ({ ...prev, loading: true, error: null, failure: null }));
     (async () => {
-      try {
-        const data = await fetchMyPartnerReferrals({
-          status: customerFilter,
-          search: customerSearch || undefined,
-          limit: LIST_PAGE_SIZE,
-          offset: customerOffset,
-        });
-        if (!cancelled) setCustomers({ data, loading: false, error: null });
-      } catch (err) {
-        if (cancelled) return;
-        const message = noteSectionFailure(err);
-        if (message !== null) setCustomers((prev) => ({ ...prev, loading: false, error: message }));
-        else setCustomers((prev) => ({ ...prev, loading: false }));
+      const result = await growthPartnerService.getCustomers({
+        status: customerFilter,
+        search: customerSearch || undefined,
+        limit: LIST_PAGE_SIZE,
+        offset: customerOffset,
+      });
+      if (cancelled) return;
+      if (!isServiceFailure(result)) {
+        setCustomers({ data: result.data, loading: false, error: null, failure: null });
+        return;
       }
+      const serviceError = result.error;
+      const message = noteSectionFailure(serviceError);
+      setCustomers((prev) => ({ ...prev, loading: false, error: message, failure: message === null ? null : serviceError }));
     })();
     return () => {
       cancelled = true;
@@ -507,17 +530,17 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   useEffect(() => {
     if (!ready || contentSection !== 'performance') return;
     let cancelled = false;
-    setPerformance((prev) => ({ ...prev, loading: true, error: null }));
+    setPerformance((prev) => ({ ...prev, loading: true, error: null, failure: null }));
     (async () => {
-      try {
-        const data = await fetchMyPartnerPerformance();
-        if (!cancelled) setPerformance({ data, loading: false, error: null });
-      } catch (err) {
-        if (cancelled) return;
-        const message = noteSectionFailure(err);
-        if (message !== null) setPerformance((prev) => ({ ...prev, loading: false, error: message }));
-        else setPerformance((prev) => ({ ...prev, loading: false }));
+      const result = await growthPartnerService.getPerformance();
+      if (cancelled) return;
+      if (!isServiceFailure(result)) {
+        setPerformance({ data: result.data, loading: false, error: null, failure: null });
+        return;
       }
+      const serviceError = result.error;
+      const message = noteSectionFailure(serviceError);
+      setPerformance((prev) => ({ ...prev, loading: false, error: message, failure: message === null ? null : serviceError }));
     })();
     return () => {
       cancelled = true;
@@ -570,7 +593,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   if (gate !== 'ready') return <PartnerRouteGuard
     gate={gate} loadingReferralLink={contentSection === 'referral-code'}
     onBack={onBack} onRetry={() => setReloadKey(key => key + 1)}
-    onSignIn={() => navigate?.(loginRoute)} error={loadError}
+    onSignIn={() => navigate?.(loginRoute)} error={loadError} failure={gateFailure} route={path}
     unauthorizedBody={isPartnerNamespace ? PARTNER_PORTAL_UNAUTHORIZED_BODY : undefined}
   />;
 
@@ -594,7 +617,8 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'dashboard':
         if (dashboard.loading && !dashboard.data) return <SectionLoading label="Loading your dashboard…" />;
         if (dashboard.error && !dashboard.data)
-          return <SectionError message={dashboard.error} onRetry={retrySection} />;
+          // `route` travels into the failure report, so support sees the page.
+          return <SectionError message={dashboard.error} onRetry={retrySection} route={path} failure={dashboard.failure?.toFailure() ?? null} />;
         return dashboard.data ? (
           <GrowthPartnerDashboard
             dashboard={dashboard.data}
@@ -620,6 +644,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             list={referralOwner === userId ? referrals.data : null}
             loading={referralOwner !== userId || referrals.loading}
             error={referralOwner === userId ? referrals.error : null}
+            failure={referralOwner === userId ? referrals.failure?.toFailure() ?? null : null}
             statusTab={referralStatusTab}
             onStatusTabChange={next => {
               if (next === referralStatusTab) return;
@@ -645,6 +670,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             list={customers.data}
             loading={customers.loading}
             error={customers.error}
+            failure={customers.failure?.toFailure() ?? null}
             filter={customerFilter}
             onFilterChange={(next) => {
               setCustomerFilter(next);
@@ -679,6 +705,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             performance={performance.data}
             loading={performance.loading}
             error={performance.error}
+            failure={performance.failure?.toFailure() ?? null}
             onRetry={retrySection}
           />
         );

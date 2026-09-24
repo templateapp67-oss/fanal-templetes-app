@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Banknote, Clock, Download, RefreshCw, Wallet } from 'lucide-react';
-import { getPartnerEarnings, type PartnerEarningRow } from '../../lib/partnerPortalOperations';
-import { usePartnerQuery } from '../../lib/partnerPortalQueries';
+import type { PartnerEarningRow } from '../../lib/partnerPortalOperations';
+// Data access goes through the service facade: result objects, paise-only money,
+// identity from the session JWT (no partner id is ever passed).
+import { growthPartnerService } from '../../services/growthPartner';
+import { usePartnerServiceQuery } from '../../lib/partnerServiceQueries';
 import {
   formatPartnerDate,
   formatPartnerMoney,
@@ -66,8 +69,8 @@ export const PartnerEarningsPage: React.FC<{
 }> = ({ accentHex, navigate }) => {
   const [page, setPage] = useState(0);
   const [exportError, setExportError] = useState('');
-  const query = usePartnerQuery(
-    () => getPartnerEarnings({ limit: EARNINGS_PAGE_SIZE, offset: page * EARNINGS_PAGE_SIZE }),
+  const query = usePartnerServiceQuery(
+    () => growthPartnerService.getEarnings({ limit: EARNINGS_PAGE_SIZE, offset: page * EARNINGS_PAGE_SIZE }),
     [page]
   );
   const { data, loading, refreshing, error } = query;
@@ -109,9 +112,15 @@ export const PartnerEarningsPage: React.FC<{
   };
 
   if (loading && !data) return <PartnerSectionLoading label="Loading your earnings…" kind="dashboard" module="earnings" />;
-  if (error && !data) return <PartnerSectionError error={error} onRetry={query.reload} title="Your earnings could not load" module="earnings" />;
+  if (error && !data) {
+    return <PartnerSectionError error={error} failure={query.failure} onRetry={query.reload} title="Your earnings could not load" module="earnings" />;
+  }
+  // No answer yet and no failure either: still loading. Never fall back to a
+  // zeroed wallet — `₹0` is a figure the partner would have to believe, and the
+  // service already refuses a malformed `totals` instead of defaulting it.
+  if (!data) return <PartnerSectionLoading label="Loading your earnings…" kind="dashboard" module="earnings" />;
 
-  const totals = data?.totals ?? { lifetime_paise: 0, pending_paise: 0, available_paise: 0 };
+  const totals = data.totals;
 
   return (
     <div data-partner-module="earnings" className="space-y-5">

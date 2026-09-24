@@ -233,9 +233,11 @@ test('7.1 a partner referral code is generated in one canonical store, in the ca
         where table_schema='public' and column_name in ('referral_code','partner_code','referral_slug','code') order by table_name`)
     ).rows.map((row: any) => row.table_name);
     // partner_level_definitions is the levels catalog (its `code` column is a
-    // level key, not a partner referral code) — the one-store property is
-    // about the partner-code columns, which still live in growth_partners.
-    assert.deepEqual(codeColumns, ['growth_onboarding', 'growth_partners', 'growth_referral_attributions', 'partner_level_definitions', 'partner_referral_attribution', 'partner_referrals']);
+    // level key, not a partner referral code) and partner_reward_milestones is
+    // the reward price list (its `code` is a milestone key, e.g. 'WELCOME_25',
+    // seeded by 20261007) — the one-store property is about the partner-code
+    // columns, which still live in growth_partners.
+    assert.deepEqual(codeColumns, ['growth_onboarding', 'growth_partners', 'growth_referral_attributions', 'partner_level_definitions', 'partner_referral_attribution', 'partner_referrals', 'partner_reward_milestones']);
     const partners = (await db.query('select referral_code, is_active from public.growth_partners order by referral_code')).rows;
     assert.equal(partners.length, 3, 'one row per partner, created by the two admin paths only');
   } finally {
@@ -451,6 +453,13 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
     // local gateway and caused "Your tickets could not load..." — they are NOT
     // a second referral model, they are the operational model that PART 3
     // consumes but does not write to.
+    //
+    // The full-schema audit added two more names to the chain, neither of them
+    // an attribution store: `partner_settings` (the partner PROFILE row behind
+    // get_partner_profile()) and `partner_reward_milestones` (the premium-reward
+    // price list seeded by 20261007, created by
+    // 2026100500_growth_partner_attribution_prerequisites.sql because six
+    // committed migrations referenced it while no migration created it).
     assert.deepEqual(referralTables, [
       'growth_onboarding',
       'growth_partner_applications',
@@ -468,17 +477,22 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
       'partner_payout_requests',
       'partner_referral_events',
       'partner_referrals',
+      'partner_reward_milestones',
       'partner_security_events',
+      'partner_settings',
       'partner_support_attachments',
       'partner_support_tickets',
     ]);
-    // (c) exactly one place stores the attribution edge, plus the single-use
-    //     grant snapshot that the handoff already had.
+    // (c) exactly one place stores the OWNER→PARTNER attribution edge, plus the
+    //     single-use grant snapshot that the handoff already had, plus the
+    //     PARTNER→SALON edge the shop-onboarding path writes (shop_attributions,
+    //     created by 2026100500). An owner is still attributed in exactly one
+    //     table.
     const edgeColumns = (
       await db.query(`select table_name from information_schema.columns
         where table_schema='public' and column_name='growth_partner_id' order by table_name`)
     ).rows.map((row: any) => row.table_name);
-    assert.deepEqual(edgeColumns, ['growth_onboarding', 'template_handoffs']);
+    assert.deepEqual(edgeColumns, ['growth_onboarding', 'shop_attributions', 'template_handoffs']);
     // (d) PART 3 writes no growth/partner row of any kind.
     assert.equal((await db.query('select count(*)::int n from public.growth_partners')).rows[0].n, 1);
     assert.equal((await db.query('select count(*)::int n from public.growth_onboarding')).rows[0].n, 1);
