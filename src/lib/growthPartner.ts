@@ -1,6 +1,6 @@
 import type { ReferralStatus, ReferralStatusCounts } from './referralStatus';
 import { supabase } from './supabaseClient';
-import { isPartnerAreaErrorLogged, logPartnerAreaFailure } from './partnerAreaFailure';
+import { isPartnerAreaErrorLogged, logPartnerAreaFailure, partnerContractMismatch } from './partnerAreaFailure';
 
 /**
  * The LOG vocabulary for the throw-based reads.
@@ -309,7 +309,25 @@ export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
     });
     throw raised;
   }
-  return data as GrowthPartner;
+
+  // A ROW MISSING AFTER ENSURE IS AN ERROR, never a silent null. The previous
+  // `return data as GrowthPartner` cast handed back whatever the RPC resolved
+  // with — including `null` — typed as a partner row; the gate then read it as
+  // "signed in, not a partner" and quietly rendered the sign-up surface, which
+  // is the silent-failure class this area exists to remove. An older or
+  // half-applied definition of `ensure_my_growth_partner()` is the realistic
+  // cause, so the answer is validated instead of trusted (the provisioning rule
+  // is pinned by tests/growthPartnerProvisioningContract.test.ts).
+  const row = normalizeGrowthPartnerRow(data);
+  if (!row || !row.user_id) {
+    const raised = partnerContractMismatch('user_id');
+    logPartnerAreaFailure(raised, {
+      operation: 'gate.provision-partner-row',
+      call: 'ensure_my_growth_partner',
+    });
+    throw raised;
+  }
+  return row;
 }
 
 /**

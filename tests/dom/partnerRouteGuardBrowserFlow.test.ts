@@ -55,6 +55,11 @@ test('pending approval retries the same shared gate before loading the dashboard
     if(fn==='get_my_growth_partner')return Response.json(approved?{user_id:'partner',is_active:true,referral_code:'NEXORA-APPROVED'}:null);
     if(fn==='growth_partner_applications')return Response.json([{status:'pending'}]);
     if(fn==='get_my_partner_dashboard'){metrics++;return Response.json({partner:{is_active:true,referral_code:'NEXORA-APPROVED'},kpis:{total_referrals:7},recent_activity:[]});}
+    // The real ensure RPC answers with a partner row (jsonb: user_id, referral_code,
+    // is_active) or raises — it never resolves with an empty payload. The old
+    // catch-all here returned {}, which the client now classifies as a contract
+    // mismatch instead of silently accepting it as a row.
+    if(fn==='ensure_my_growth_partner')return Response.json({user_id:'partner',is_active:true,referral_code:'NEXORA-APPROVED'});
     return Response.json({});
   };
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
