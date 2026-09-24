@@ -67,52 +67,59 @@ export async function resolveOwnerSalon(): Promise<
     return { ok: false, error: { code: 'rpc_unavailable', message: STAFF_PERFORMANCE_ERROR_COPY.rpc_unavailable, retryable: true } };
   }
 
+  // getSession is used only to obtain the authenticated user id. Ownership is
+  // re-checked by a database RPC; no browser role or user metadata is trusted.
   const { data: sessionData, error: sessionError } = await withRpcTimeout(supabase.auth.getSession());
-  if (sessionError) {
-    return { ok: false, error: rpcError(sessionError) };
-  }
+  if (sessionError) return { ok: false, error: rpcError(sessionError) };
   const user = sessionData?.session?.user;
   if (!user?.id) {
-    return {
-      ok: false,
-      error: { code: 'session_expired', message: STAFF_PERFORMANCE_ERROR_COPY.session_expired, retryable: false },
-    };
+    return { ok: false, error: { code: 'session_expired', message: STAFF_PERFORMANCE_ERROR_COPY.session_expired, retryable: false } };
   }
 
-  const { data: profile, error: profileError } = await withRpcTimeout(
-    supabase.from('profiles').select('id').eq('id', user.id).maybeSingle()
+  // Multi-tenant workspaces have a salon UUID different from profile.id.
+  // Resolve the caller's own workspace server-side first. Databases without
+  // that RPC retain the legacy profile lookup as a compatibility fallback.
+  const { data: workspace, error: workspaceError } = await withRpcTimeout(
+    supabase.rpc('get_my_owner_workspace')
   );
-
-  if (profileError) {
-    const classified = rpcError(profileError);
-    if (classified.code === 'owner_access_denied') {
-      return { ok: false, error: classified };
-    }
-    return { ok: false, error: classified.code === 'unknown' ? { code: 'database_error', message: STAFF_PERFORMANCE_ERROR_COPY.database_error, retryable: true } : classified };
+  let salonId = '';
+  if (!workspaceError && workspace && typeof workspace === 'object' && workspace.resolved === true) {
+    salonId = typeof workspace.salon_id === 'string' ? workspace.salon_id : '';
+  } else if (!workspaceError && workspace && typeof workspace === 'object' && workspace.resolved === false) {
+    return { ok: false, error: { code: 'salon_not_found', message: STAFF_PERFORMANCE_ERROR_COPY.salon_not_found, retryable: false } };
   }
-  if (!profile?.id) {
-    return {
-      ok: false,
-      error: { code: 'salon_not_found', message: STAFF_PERFORMANCE_ERROR_COPY.salon_not_found, retryable: false },
-    };
+
+  if (!salonId) {
+    const missingWorkspaceRpc = /could not find the function|schema cache|PGRST202/i.test(
+      String((workspaceError as { message?: string } | null)?.message || '')
+    );
+    if (workspaceError && !missingWorkspaceRpc) {
+      const classified = rpcError(workspaceError);
+      return { ok: false, error: classified.code === 'unknown' ? { code: 'database_error', message: STAFF_PERFORMANCE_ERROR_COPY.database_error, retryable: true } : classified };
+    }
+    const { data: profile, error: profileError } = await withRpcTimeout(
+      supabase.from('profiles').select('id').eq('id', user.id).maybeSingle()
+    );
+    if (profileError) {
+      const classified = rpcError(profileError);
+      return { ok: false, error: classified.code === 'unknown' ? { code: 'database_error', message: STAFF_PERFORMANCE_ERROR_COPY.database_error, retryable: true } : classified };
+    }
+    salonId = typeof profile?.id === 'string' ? profile.id : '';
+  }
+
+  if (!salonId) {
+    return { ok: false, error: { code: 'salon_not_found', message: STAFF_PERFORMANCE_ERROR_COPY.salon_not_found, retryable: false } };
   }
 
   const { data: isOwner, error: ownerError } = await withRpcTimeout(
-    supabase.rpc('is_staff_dashboard_owner', {
-      target_salon_id: profile.id,
-    })
+    supabase.rpc('is_staff_dashboard_owner', { target_salon_id: salonId })
   );
-  if (ownerError) {
-    return { ok: false, error: rpcError(ownerError) };
-  }
+  if (ownerError) return { ok: false, error: rpcError(ownerError) };
   if (isOwner !== true) {
-    return {
-      ok: false,
-      error: { code: 'owner_access_denied', message: STAFF_PERFORMANCE_ERROR_COPY.owner_access_denied, retryable: false },
-    };
+    return { ok: false, error: { code: 'owner_access_denied', message: STAFF_PERFORMANCE_ERROR_COPY.owner_access_denied, retryable: false } };
   }
 
-  return { ok: true, context: { salonId: String(profile.id), userId: user.id } };
+  return { ok: true, context: { salonId, userId: user.id } };
 }
 
 export async function fetchStaffPerformance(
