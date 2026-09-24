@@ -82,8 +82,12 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   onNavigateToStaffCommission,
 }) => {
   const live = useOwnerDashboard(ownerId, profile.subdomain);
-  const appointments = live.appointments;
-  const clients = live.clients;
+  // Keep the dashboard panels mounted while the authenticated owner read is
+  // loading or temporarily unavailable. Supplied editor state is a safe UI
+  // fallback; live data replaces it as soon as the server responds.
+  const hasLiveSnapshot = Boolean(live.loadedAt);
+  const appointments = hasLiveSnapshot ? live.appointments : suppliedAppointments;
+  const clients = hasLiveSnapshot ? live.clients : suppliedClients;
   const [actionError, setActionError] = useState('');
   const [internalLoyaltyConfig, setInternalLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const loyaltyConfig = externalLoyaltyConfig || internalLoyaltyConfig;
@@ -460,7 +464,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           {actionError && <p role="alert">{actionError}</p>}
         </div>
         {/* TAB CONTENT: OVERVIEW */}
-        {activeTab === 'overview' && live.loadedAt && (
+        {activeTab === 'overview' && (
           <div className="flex flex-col gap-6">
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1146,8 +1150,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
-            {live.loadedAt && <SalonOpeningHours hours={live.hours || []} onSave={live.saveHours} saving={live.saving} />}
-            {appointmentsSubTab === 'calendar' ? (live.loadedAt ? (
+            {hasLiveSnapshot && <SalonOpeningHours hours={live.hours || []} onSave={live.saveHours} saving={live.saving} />}
+            {appointmentsSubTab === 'calendar' ? (
               <AppointmentsCalendarView
                 onCreate={live.create}
                 onUpdate={live.update}
@@ -1158,7 +1162,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 stylists={live.stylists || []}
                 primaryAccentColor={currentPrimaryColor}
               />
-            ) : <p>Calendar will appear when live bookings finish loading successfully.</p>) : (
+            ) : (
               <BookingManager
                 primaryAccentColor={currentPrimaryColor}
                 ownerId={profile.ownerId}
