@@ -239,7 +239,7 @@ export async function lookupSalon(
     if (!salonRes.data) return { found: false, salon: null };
     const salonRow = salonRes.data;
     const [servicesRes, staffRes, hoursRes] = await Promise.all([
-      runDb(() => deps.db.from('services').select('*').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_bookable_online', true).order('display_order'),
+      runDb(() => deps.db.from('services').select('*').eq('salon_id', salonRow.id).eq('is_active', true).or('is_bookable_online.is.true,is_bookable_online.is.null').order('display_order'),
         { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_public', true),
         { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),

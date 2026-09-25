@@ -219,7 +219,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (mode === 'signup') logSignupFailure('owner modal signup', err);
       // Mapped, never raw: GoTrue and Postgres text is not shown to the
       // customer. Same contract as the onboarding funnel's screens.
-      setError(toSafeAuthError(err, mode === 'signup' ? 'signup' : 'login').message);
+      const mapped = toSafeAuthError(err, mode === 'signup' ? 'signup' : 'login');
+      // A duplicate email is not a retryable sign-up error. Keep the address
+      // and referral attribution, then send the owner to the only valid next
+      // step: authenticate with the existing account.
+      if (mode === 'signup' && mapped.code === 'email-in-use') {
+        setMode('login');
+        setError('This email already has an account. Enter your password and log in to continue.');
+        return;
+      }
+      setError(mapped.message);
     } finally {
       setLoading(false);
     }
