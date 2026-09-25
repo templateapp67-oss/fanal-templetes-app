@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Users, CheckCircle2, TrendingUp, Award, Copy, Check, Share2, Filter } from 'lucide-react';
+import { partnerReferralShareLink } from '../../lib/partnerReferralLink';
 
 export interface ReferralDataPoint {
   period: string;
@@ -50,9 +51,10 @@ export const ReferralDashboard: React.FC<{
   const totalConversions = chartData.reduce((acc, curr) => acc + curr.conversions, 0);
   const conversionRate = totalSignups > 0 ? ((totalConversions / totalSignups) * 100).toFixed(1) : '0';
 
-  const shareUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/signup?ref=${code}`
-    : `https://nexora.app/signup?ref=${code}`;
+  const shareUrl = partnerReferralShareLink(
+    code,
+    typeof window !== 'undefined' ? window.location.origin : undefined
+  );
 
   const handleCopyLink = () => {
     void navigator.clipboard?.writeText(shareUrl);
