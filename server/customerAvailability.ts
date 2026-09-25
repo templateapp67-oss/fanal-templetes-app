@@ -8,7 +8,10 @@ export async function customerAvailability(db: any, input: any) {
   const slug = String(input.subdomain || '').trim().toLowerCase();
   if (!slug) throw new BackendError(400, 'Choose a salon.');
   const salon = await readDatabase(() => db.from('salons').select('id,timezone,verified,accepts_online_bookings').eq('slug',slug).eq('is_active',true).is('deleted_at',null).maybeSingle());
-  if (!salon || !salon.verified || !salon.accepts_online_bookings) throw new BackendError(409,'This salon is not accepting online bookings. Contact the salon to book.','online_booking_disabled');
+  // Older salon rows predate this column. Only an explicit `false` disables
+  // online booking; a missing value must retain the product default of `true`.
+  const acceptsOnlineBookings = salon?.accepts_online_bookings ?? true;
+  if (!salon || !salon.verified || !acceptsOnlineBookings) throw new BackendError(409,'This salon is not accepting online bookings. Contact the salon to book.','online_booking_disabled');
   const requested = Array.isArray(input.service_ids) ? input.service_ids : String(input.service_ids || '').split(',').filter(Boolean);
   if (!requested.length || requested.length > 20) throw new BackendError(400,'Choose between 1 and 20 services.');
   const ids = [...new Set<string>(requested.map((id: any)=>catalogId(salon.id,'service',String(id))))];

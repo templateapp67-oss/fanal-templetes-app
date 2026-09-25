@@ -56,6 +56,10 @@ test('canonical salon contact overrides stale editor snapshot without supplying 
   assert.equal(profile.city,'Jaipur'); assert.equal(profile.phone,'new'); assert.equal(profile.areaLocality,'Jhotwara');
   assert.equal(profile.email,''); assert.equal(profile.ownerId,undefined);
 });
+test('site payload includes online booking state and defaults legacy rows to enabled', () => {
+  assert.equal(mapProfileRow({ name:'Mine', accepts_online_bookings:false }).acceptsOnlineBookings,false);
+  assert.equal(mapProfileRow({ name:'Mine', accepts_online_bookings:null }).acceptsOnlineBookings,true);
+});
 test('booking lookup requires customer or verified organization membership and rejects cross-tenant ids', async () => {
   const db = database(c => result(c.table==='organization_members' ? [{organization_id:'org-mine'}] : c.table==='salons' ? [{id:salonId}] : null));
   await assert.rejects(findAuthorizedBooking(db,actor,bookingId), /Booking not found/);

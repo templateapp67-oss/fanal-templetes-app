@@ -5,6 +5,8 @@ import { clearAllLocalUserState, setStoredAuthenticatedProfile } from '../lib/sa
 import { getStoredReferralCode, storeReferralCode, NEXORA_REFERRAL_EVENT } from '../lib/useReferralTracker';
 import {
   createSingleFlight,
+  buildSafeSignupMetadata,
+  logSignupFailure,
   MAX_PASSWORD_LENGTH,
   toSafeAuthError,
 } from '../onboarding/lib/flow';
@@ -108,7 +110,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             ...(isCustomer ? {} : { salon_name: salonName || 'My Salon' }),
             ...(isCustomer ? {} : { phone_number: phoneNumber || '' }),
             ...(isCustomer ? {} : { city: city || '' }),
-            ...(activeReferralCode ? { referral_code: activeReferralCode } : {}),
           }
         };
         if (!isCustomer) {
@@ -136,12 +137,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           password,
           options: {
             data: {
-              full_name: fullName,
-              salon_name: salonName,
-              phone_number: phoneNumber,
-              city: city,
+              ...buildSafeSignupMetadata({
+                fullName,
+                salonName,
+                phone: phoneNumber,
+                city,
+              }),
               account_type: purpose,
-              referral_code: activeReferralCode || null,
             },
           },
         });
@@ -180,7 +182,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 phone_number: phoneNumber,
                 email: email,
                 city: city,
-                referral_code: activeReferralCode || null,
                 updated_at: new Date().toISOString(),
               });
 
@@ -215,6 +216,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
     } catch (err: any) {
+      if (mode === 'signup') logSignupFailure('owner modal signup', err);
       // Mapped, never raw: GoTrue and Postgres text is not shown to the
       // customer. Same contract as the onboarding funnel's screens.
       setError(toSafeAuthError(err, mode === 'signup' ? 'signup' : 'login').message);

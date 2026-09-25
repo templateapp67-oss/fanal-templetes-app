@@ -1884,8 +1884,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {availability.loading && <p role="status">Loading available times…</p>}
-              {availability.error && <p role="alert">{availability.error} <button onClick={availability.refresh} className="underline">Retry availability</button></p>}
-              {!availability.loading && !availability.error && !availableTimes.length && <p>No available appointments for these services and this date. Choose another date or specialist.</p>}
+              {availability.error && <p role="alert">{availability.error} <button type="button" onClick={availability.refetchSlots} className="underline">Retry availability</button></p>}
+              {!availability.loading && !availability.error && !availableTimes.length && <p>No available time slots for this date. Choose another date or specialist.</p>}
               {/* Time Slot Availability Grid */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">

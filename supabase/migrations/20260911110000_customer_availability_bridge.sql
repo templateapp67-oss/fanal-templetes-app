@@ -7,7 +7,7 @@ declare salon public.salons%rowtype; hours public.salon_hours%rowtype; specialis
 begin
  if p_date is null or p_date < current_date-1 or p_date > current_date+366 then raise exception 'Select a date within the next year' using errcode='22023'; end if;
  if cardinality(p_service_ids) is null or cardinality(p_service_ids)<1 or cardinality(p_service_ids)>20 then raise exception 'Select between 1 and 20 services' using errcode='22023'; end if;
- select * into salon from public.salons where id=p_salon_id and is_active and verified and accepts_online_bookings and deleted_at is null;
+ select * into salon from public.salons where id=p_salon_id and is_active and verified and coalesce(accepts_online_bookings,true) and deleted_at is null;
  if not found then raise exception 'This salon is not accepting online bookings' using errcode='22023'; end if;
  select * into hours from public.salon_hours where salon_id=p_salon_id and day_of_week=extract(dow from p_date)::integer and not is_closed;
  if not found or hours.opens_at is null or hours.closes_at is null then return; end if;

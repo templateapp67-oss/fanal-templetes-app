@@ -1,8 +1,9 @@
 import { supabase } from '../../lib/supabaseClient';
 import { normalizeGrowthReferralCode } from '../../lib/growthPartner';
 import {
+  buildSafeSignupMetadata,
   isValidEmail,
-  normalizePhone,
+  logSignupFailure,
   OnboardingError,
   phaseFromOnboardingState,
   toSafeAuthError,
@@ -112,17 +113,17 @@ export async function signUpWithEmail(
     password: input.password,
     options: {
       ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
-      // `full_name` + `phone_number` are read straight out of
-      // `raw_user_meta_data` by the `handle_new_user()` trigger, so the new
-      // owner's `profiles` row is complete without a second client write.
-      data: {
-        full_name: input.fullName.trim(),
-        phone_number: normalizePhone(input.phone),
-        ...(input.attributionToken ? { growth_referral_token: input.attributionToken } : {}),
-      },
+      data: buildSafeSignupMetadata({
+        fullName: input.fullName,
+        phone: input.phone,
+        attributionToken: input.attributionToken,
+      }),
     },
   });
-  if (error) throw toSafeAuthError(error, 'signup');
+  if (error) {
+    logSignupFailure('onboarding auth.signUp', error);
+    throw toSafeAuthError(error, 'signup');
+  }
   if (!data?.user) throw toSafeAuthError(new Error('signup failed'), 'signup');
   return { viewer: viewerFromUser(data.user), confirmationRequired: !data.session };
 }
