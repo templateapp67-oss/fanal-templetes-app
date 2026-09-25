@@ -85,8 +85,9 @@ import {
 
 test('onboarding routes resolve per the existing router conventions', () => {
   assert.equal(ONBOARDING_PATH, '/onboarding');
-  // The shop-owner wizard joined the funnel as a real section (PHASE: shop onboarding).
-  assert.deepEqual([...ONBOARDING_SECTIONS], ['login', 'signup', 'forgot-password', 'referral', 'status', 'shop']);
+  // The guarded Template App setup and the shop-owner wizard are both real
+  // funnel sections.
+  assert.deepEqual([...ONBOARDING_SECTIONS], ['login', 'signup', 'forgot-password', 'referral', 'status', 'website', 'shop']);
   assert.equal(isOnboardingPath('/onboarding'), true);
   assert.equal(isOnboardingPath('/onboarding/referral'), true);
   assert.equal(isOnboardingPath('/onboarding/'), true);
@@ -203,16 +204,16 @@ test('authenticated users with no referral are routed to the referral step', () 
 });
 
 test('authenticated users with a referral never see the referral screen', () => {
-  // Linked shop owners continue in the single guided setup flow (the shop
-  // wizard replaced the old status/template handoff) — the property that
-  // matters is unchanged: nobody is forced through referral/login again.
+  // Linked owners return to their verified status / handoff gate. The
+  // property that matters is unchanged: nobody is forced through
+  // referral/login again.
   for (const phase of ['referral_added', 'template_started', 'completed'] as const) {
     const route = (requested: any) => resolveOnboardingRoute({ hasSession: true, phase, requested });
-    assert.equal(route('status'), 'shop');
-    assert.equal(route('referral'), 'shop');
-    assert.equal(route('login'), 'shop');
-    assert.equal(route('signup'), 'shop');
-    assert.equal(route('forgot-password'), 'shop');
+    assert.equal(route('status'), 'status');
+    assert.equal(route('referral'), 'status');
+    assert.equal(route('login'), 'status');
+    assert.equal(route('signup'), 'status');
+    assert.equal(route('forgot-password'), 'status');
   }
 });
 
@@ -653,10 +654,11 @@ test('the status screen confirms verification and stays read-only without a hand
   assert.match(html, /Partner Anita/);
   assert.match(html, /Sign out/);
   assert.match(html, new RegExp(STATUS_VERIFIED_TITLE));
-  // No handoff handler → no handoff affordance at all: no button, no link to
-  // another deployment, and no hardcoded host anywhere in the markup.
+  // No handoff handler → no handoff affordance. The status surface can still
+  // render partner QR/share widgets, but must never expose an AI Studio
+  // preview host as a public referral destination.
   assert.doesNotMatch(html, /Continue to Template App/);
-  assert.doesNotMatch(html, /vercel\.app|fanal-templetes|https?:\/\//i);
+  assert.doesNotMatch(html, /\.run\.app|accounts\.google\.com/i);
   // The waiting copy only appears when there is no call to action; showing it
   // next to the handoff button would contradict it.
   assert.match(html, new RegExp(STATUS_VERIFIED_WAITING_BODY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));

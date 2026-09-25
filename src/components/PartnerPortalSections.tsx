@@ -19,7 +19,7 @@ import { PRIMARY_REFERRAL_STATUSES, REFERRAL_STATUS_DESCRIPTORS, type ReferralSt
  * growth_partners row and the share link is a plain URL built from it.
  */
 
-export { partnerShareOrigin, partnerReferralShareLink } from '../lib/partnerReferralLink';
+export { partnerShareOrigin, publicOnboardingOrigin, partnerReferralShareLink } from '../lib/partnerReferralLink';
 
 /**
  * The referral total has shipped under more than one key across rolling
