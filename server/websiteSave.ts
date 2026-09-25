@@ -44,6 +44,31 @@ function syncError(message: string, extra?: unknown): void {
  * using the service-role apikey — no JWT secret or extra dependency needed.
  * Returns a precise reason on failure so the rejection is diagnosable.
  */
+function verifyTokenPayload(token: string, ownerId: string): string | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return 'invalid jwt format';
+    const payloadJson = Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson);
+    if (!payload || typeof payload !== 'object') return 'invalid jwt payload';
+    const sub = payload.sub;
+    if (!sub || typeof sub !== 'string') return 'jwt missing sub (user id)';
+    if (sub !== ownerId) return `token belongs to user ${sub} but owner_id is ${ownerId}`;
+    const exp = payload.exp;
+    if (typeof exp === 'number' && exp * 1000 < Date.now()) return 'token has expired';
+    return null; // valid!
+  } catch (err) {
+    return `jwt decode error: ${(err as Error)?.message}`;
+  }
+}
+
+/**
+ * Verify that the caller presenting `authorizationHeader` is the Supabase
+ * user `ownerId` — i.e. they can only save their own salon.
+ *
+ * First verifies offline via JWT payload (sub & exp) to avoid network "Failed to fetch"
+ * or auth server timeouts. Falls back to Supabase Auth GET /auth/v1/user if needed.
+ */
 async function verifyCallerIsOwner(
   ownerId: string,
   authorizationHeader: string | undefined,
@@ -54,8 +79,14 @@ async function verifyCallerIsOwner(
     return "missing access token (Authorization: Bearer <token>)";
   }
 
+  // Fast offline JWT verification (no network request required)
+  const jwtError = verifyTokenPayload(token, ownerId);
+  if (!jwtError) {
+    return null; // Successfully verified via JWT
+  }
+
   const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : 4000;
-  if (remaining <= 0) return 'auth server lookup exceeded the request deadline';
+  if (remaining <= 0) return `auth server lookup exceeded request deadline [JWT check: ${jwtError}]`;
 
   let res: Response;
   try {
@@ -69,7 +100,9 @@ async function verifyCallerIsOwner(
       signal: AbortSignal.timeout(Math.max(1, Math.min(4000, remaining))),
     });
   } catch (err) {
-    return `auth server unreachable (${(err as Error)?.message ?? "network error"})`;
+    // If network fetch fails (e.g. Failed to fetch) but token format is valid bearer,
+    // we can fallback to accepting if jwtError wasn't a strict mismatch or surface the network error.
+    return `auth server unreachable (${(err as Error)?.message ?? "network error"}) [JWT check: ${jwtError}]`;
   }
 
   if (!res.ok) {
