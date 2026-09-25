@@ -109,151 +109,27 @@ export const DEFAULT_GROWTH_PARTNER_PROFILE: GrowthPartnerProfileData = {
 };
 
 export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClient = defaultClient): Promise<GrowthPartnerProfileData> {
-  try {
-    const { data, error } = await client.rpc('get_my_growth_partner_profile');
-    if (!error && data && typeof data === 'object') {
-      return data as GrowthPartnerProfileData;
-    }
-  } catch {
-    // Continue to fallback reconstruction
+  const { data, error } = await client.rpc('get_my_growth_partner_profile');
+  if (error || !data || typeof data !== 'object') {
+    throw new Error(safePartnerErrorMessage(error, 'Could not load your partner profile. Please retry.'));
   }
-
-  // Graceful fallback: construct profile from auth user, localStorage, or partner session
-  let userEmail = '';
-  let userName = '';
-  let userId = 'ptr-active-partner';
-  let userPhone: string | null = null;
-  let referralCode = 'NEXORA-GROWTH';
-  let avatarPath: string | null = null;
-
-  try {
-    const authRes = await client.auth?.getUser?.();
-    if (authRes?.data?.user) {
-      const u = authRes.data.user;
-      userId = u.id || userId;
-      userEmail = u.email || userEmail;
-      userName = u.user_metadata?.full_name || u.user_metadata?.name || '';
-      userPhone = u.user_metadata?.phone || u.phone || null;
-      avatarPath = u.user_metadata?.avatar_url || u.user_metadata?.photo_path || null;
-    }
-  } catch {}
-
-  try {
-    const partnerRes = await client.rpc('get_my_growth_partner');
-    if (partnerRes?.data?.referral_code) {
-      referralCode = partnerRes.data.referral_code;
-    }
-    if (partnerRes?.data?.user_id) {
-      userId = partnerRes.data.user_id;
-    }
-  } catch {}
-
-  return {
-    full_name: userName,
-    email: userEmail,
-    phone: userPhone,
-    photo_path: avatarPath,
-    partner_id: userId,
-    referral_code: referralCode,
-    account_status: 'Active',
-    partner_role: 'Growth Partner',
-    approval_status: 'Approved',
-    joined_at: new Date().toISOString(),
-  };
+  return data as GrowthPartnerProfileData;
 }
 
 export async function fetchPartnerAccountSettings(client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
-  try {
-    const { data, error } = await client.rpc('get_my_partner_account_settings');
-    if (!error && data) {
-      return data as PartnerAccountSettings;
-    }
-  } catch {}
-
-  if (typeof client.rpc === 'function') {
-    try {
-      const { data: partnerRow } = await client.rpc('get_my_growth_partner');
-      if (partnerRow?.id && typeof (client as any).from === 'function') {
-        const { data: row } = await (client as any).from('partner_account_settings').select('*').eq('partner_id', partnerRow.id).maybeSingle();
-        if (row) return row as PartnerAccountSettings;
-      }
-    } catch { /* ignore fallback error */ }
+  const { data, error } = await client.rpc('get_my_partner_account_settings');
+  if (error || !data || typeof data !== 'object') {
+    throw new Error(safePartnerErrorMessage(error, 'Could not load account settings. Please retry.'));
   }
-
-  return {
-    agency_name: '',
-    whatsapp_phone: null,
-    city: '',
-    state: '',
-    public_bio: '',
-    full_address: '',
-    alternate_phone: null,
-    website_url: null,
-    social_handles: '',
-    social_links: { instagram: '', linkedin: '', facebook: '', twitter: '' },
-    payout_method: null,
-    payout_account_name: null,
-    payout_account_number: null,
-    payout_ifsc: null,
-    payout_upi_id: null,
-    bank_name: null,
-    bank_branch: null,
-    swift_code: null,
-    pan_number: null,
-    notify_email: true,
-    notify_whatsapp: true,
-    notify_sms: false,
-  };
+  return data as PartnerAccountSettings;
 }
 
 export async function savePartnerAccountSettings(patch: Partial<PartnerAccountSettings>, client: GrowthPartnerProfileClient = defaultClient): Promise<PartnerAccountSettings> {
-  try {
-    const { data, error } = await client.rpc('save_my_partner_account_settings', { p_patch: patch });
-    if (!error && data) {
-      return data as PartnerAccountSettings;
-    }
-  } catch {}
-
-  if (typeof client.rpc === 'function') {
-    try {
-      const { data: partnerRow } = await client.rpc('get_my_growth_partner');
-      if (partnerRow?.id && typeof (client as any).from === 'function') {
-        const { data: updated, error: upsertErr } = await (client as any)
-          .from('partner_account_settings')
-          .upsert({ partner_id: partnerRow.id, ...patch, updated_at: new Date().toISOString() })
-          .select()
-          .single();
-        if (!upsertErr && updated) return updated as PartnerAccountSettings;
-      }
-    } catch { /* ignore fallback error */ }
+  const { data, error } = await client.rpc('save_my_partner_account_settings', { p_patch: patch });
+  if (error || !data || typeof data !== 'object') {
+    throw new Error(safePartnerErrorMessage(error, 'Could not save account settings. Please retry.'));
   }
-
-  // Gracefully return patched settings when backend RPC is unreachable
-  return {
-    agency_name: '',
-    whatsapp_phone: null,
-    city: '',
-    state: '',
-    public_bio: '',
-    full_address: '',
-    alternate_phone: null,
-    website_url: null,
-    social_handles: '',
-    social_links: { instagram: '', linkedin: '', facebook: '', twitter: '' },
-    payout_method: 'upi',
-    payout_account_name: 'Partner Account',
-    payout_account_number: null,
-    payout_ifsc: null,
-    payout_upi_id: 'partner@upi',
-    bank_name: null,
-    bank_branch: null,
-    swift_code: null,
-    pan_number: null,
-    notify_email: true,
-    notify_whatsapp: true,
-    notify_sms: false,
-    ...patch,
-  };
+  return data as PartnerAccountSettings;
 }
 export function growthPartnerPhotoUrl(path: string | null | undefined, client: GrowthPartnerProfileClient = defaultClient): string {
   if (!path || typeof path !== 'string') return '';
@@ -349,12 +225,9 @@ export async function saveGrowthPartnerProfile(input: {
     const userId = data.user?.id as string | undefined;
     if (error || !userId) throw new Error('Sign in again before saving your partner profile.');
 
-    // A loaded profile can temporarily contain the offline/demo placeholder.
-    // Treat only a real UUID as a stale-session guard; the authenticated
-    // Supabase user is always the authority for the write.
+    // Only the known legacy placeholder is exempt from the stale-session guard.
     const expected = String(input.expectedUserId || '').trim();
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(expected);
-    if (isUuid && userId !== expected) throw new Error('Your session changed. Reload your profile before saving.');
+    if (expected && expected !== 'ptr-active-partner' && userId !== expected) throw new Error('Your session changed. Reload your profile before saving.');
     return userId;
   };
   const id = await verifyViewer();

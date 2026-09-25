@@ -110,7 +110,7 @@ const db = admin ?? supabase;
 // missing; it should answer with a clear 503 instead.
 const isVercelRuntime =
   process.env.VERCEL === '1' || process.env.VERCEL === 'true' || Boolean(process.env.VERCEL_ENV);
-const allowMockBookingAuth = isMockSupabase && !isVercelRuntime;
+const allowMockBookingAuth = isMockSupabase && !isVercelRuntime && process.env.NODE_ENV !== 'production';
 const bookingHandlerIsMock = allowMockBookingAuth;
 
 if (!isMockSupabase && !admin) {

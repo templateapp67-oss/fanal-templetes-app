@@ -331,7 +331,11 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     setLoadError(null);
     (async () => {
       try {
-        const row = await fetchMyGrowthPartnerRow();
+        let row = await fetchMyGrowthPartnerRow();
+        if (!row && !cancelled) {
+          await ensureMyGrowthPartner();
+          row = await fetchMyGrowthPartnerRow();
+        }
         if (cancelled) return;
         const application = row ? null : await fetchMyGrowthPartnerApplication().catch(() => null);
         if (cancelled) return;

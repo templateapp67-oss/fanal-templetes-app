@@ -20,6 +20,7 @@ function database(answer: (call: Call) => any) {
         select(fields: any) { call.fields = fields; return q; },
         eq(k: string,v: any) { call.filters[k] = v; return q; },
         in(k: string,v: any) { call.filters[k] = v; return q; },
+        or(expression: string) { call.filters.or = expression; return q; },
         is(k: string,v: any) { call.filters[k] = v; return q; },
         order() { return q; }, limit() { return q; }, maybeSingle() { return q; },
         update(payload: any) { call.operation = 'update'; call.payload = payload; return q; },
@@ -100,8 +101,11 @@ test('normalized create uses server catalogue, caller RPC and stable idempotency
   assert.equal(args.p_customer_name,'Riya Sharma');
   assert.equal(args.p_customer_phone,'9876543210');
   const key = args.p_idempotency_key;
+  (body.booking as any).staff_id = 'any_available';
   await createNormalizedBooking(db,{headers:{authorization:'Bearer customer-token'}},actor,body,null,integrations);
   assert.equal(args.p_idempotency_key,key);
+  assert.equal(args.p_staff_id, null, 'any available specialist is allocated by the database');
+  assert.ok(!db.calls.some(c => c.table === 'staff'));
 });
 test('customer booking projection removes internal notes and retains saved review', () => {
   const value = presentBooking({...row(),internal_note:'private',created_by:'employee',idempotency_key:'secret',review:{rating:4,review_text:'Good',updated_at:'2026-10-10'}});
