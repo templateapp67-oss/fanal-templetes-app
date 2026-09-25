@@ -15,7 +15,7 @@ import { ReferralSearchControls } from './ReferralSearchControls';
 import { ReferralDetailsDrawer } from './ReferralDetailsDrawer';
 import { DEFAULT_REFERRAL_FILTERS, type ReferralFilters } from '../lib/referralFilters';
 import { referralStatusDescriptor, REFERRAL_STATUS_TABS, type ReferralStatusTab, type ReferralStatusCounts } from '../lib/referralStatus';
-import React, { useCallback, useState, useId } from 'react';
+import React, { useCallback, useState, useEffect, useId } from 'react';
 import { motion } from 'motion/react';
 import {
   AlertCircle,
@@ -377,6 +377,85 @@ function ActivityList({ activity }: { activity?: PartnerActivityEntry[] | null }
   );
 }
 
+function GpHoldCommissionSummaryCard({ accentHex }: { accentHex: string }) {
+  const [earnings, setEarnings] = useState<{ currency: string; totals: { lifetime_paise: number; pending_paise: number; available_paise: number } } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPartnerEarnings({ limit: 1 })
+      .then((res) => {
+        if (!cancelled && res) {
+          setEarnings({
+            currency: res.currency || 'INR',
+            totals: res.totals || { lifetime_paise: 0, pending_paise: 0, available_paise: 0 },
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currency = earnings?.currency || 'INR';
+  const totals = earnings?.totals || { lifetime_paise: 0, pending_paise: 0, available_paise: 0 };
+  const lifetime = totals.lifetime_paise ?? 0;
+  const pending = totals.pending_paise ?? 0;
+  const available = totals.available_paise ?? 0;
+
+  return (
+    <section aria-label="GP Hold & Commission Summary" className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <Clock className="w-5 h-5" style={{ color: accentHex }} />
+            GP Hold & Commission Summary
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">7-Day Clearance Holding Period & Earnings Ledger Status</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wide uppercase bg-pink-50 text-pink-700 border border-pink-200">
+          7-Day Hold Active
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Available to Withdraw</p>
+          <p className="mt-1.5 text-2xl font-black text-slate-900">
+            {loading ? '…' : formatPartnerMoney(available, currency)}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-1">Cleared after 7-day hold</p>
+        </div>
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4">
+          <p className="text-[11px] font-black uppercase tracking-wider text-amber-800">In 7-Day GP Hold</p>
+          <p className="mt-1.5 text-2xl font-black text-amber-950">
+            {loading ? '…' : formatPartnerMoney(pending, currency)}
+          </p>
+          <p className="text-[11px] text-amber-700 mt-1">Pending clearance window</p>
+        </div>
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Lifetime Earnings</p>
+          <p className="mt-1.5 text-2xl font-black text-slate-900">
+            {loading ? '…' : formatPartnerMoney(lifetime, currency)}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-1">Total accumulated commission</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-600 leading-relaxed border border-slate-200 space-y-1">
+        <p className="font-bold text-slate-800">🔒 About GP Hold & Payouts:</p>
+        <p>• All new referral commission earnings remain in a strict <strong>7-Day GP Hold</strong> clearance period for security and fraud prevention.</p>
+        <p>• Once cleared past 7 days, funds move automatically to your withdrawable balance.</p>
+        <p>• Owner & Partner payouts process daily at 10 PM IST.</p>
+      </div>
+    </section>
+  );
+}
+
 /**
  * Dashboard section. The payload is normalized on entry, so a partial or empty
  * answer (rolling schema upgrade, a backend that answered `{}`) renders the
@@ -422,6 +501,8 @@ export const GrowthPartnerDashboard: React.FC<{
       <PartnerProfileCard dashboard={data} displayName={displayName} email={email} accentHex={accentHex} />
       <ReferralCodeCard code={data.partner.referral_code} />
     </div>
+
+    <GpHoldCommissionSummaryCard accentHex={accentHex} />
 
     <section aria-label="Referral summary" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       <KpiCard label="Total Referrals" value={countLabel(data.totalReferrals ?? data.kpis.total_referrals)} />

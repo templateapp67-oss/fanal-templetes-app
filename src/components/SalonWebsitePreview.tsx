@@ -94,6 +94,7 @@ interface SalonWebsitePreviewProps {
    * `at` de-duplicates repeat taps on the same booking.
    */
   rebookRequest?: { serviceName: string; at: number } | null;
+  isLoading?: boolean;
 }
 
 interface SalonOfferCardProps {
@@ -214,6 +215,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   user,
   onRequireAuth,
   rebookRequest,
+  isLoading = false,
 }) => {
   // Fallback internal state if setters not passed
   const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
@@ -253,6 +255,24 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     const dest = hasCoordinates ? `${lat},${lng}` : fullAddr;
     return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest || 'Salon')}`;
   }, [activeProfile.latitude, activeProfile.longitude, activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode]);
+
+  const minPrice = React.useMemo(() => {
+    if (!activeServices || !Array.isArray(activeServices) || activeServices.length === 0) return null;
+    const validPrices = activeServices.map(s => Number(s.price)).filter(p => !isNaN(p) && p > 0);
+    return validPrices.length > 0 ? Math.min(...validPrices) : null;
+  }, [activeServices]);
+
+  const formattedAddress = React.useMemo(() => {
+    return [activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode]
+      .filter((item): item is string => Boolean(item && String(item).trim().length > 0))
+      .join(', ');
+  }, [activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode]);
+
+  const displayOwnerName = React.useMemo(() => {
+    const name = activeProfile.ownerName;
+    if (name && name.trim() && name !== 'Template App') return name;
+    return activeProfile.businessName || 'Salon Founder';
+  }, [activeProfile.ownerName, activeProfile.businessName]);
 
   // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
@@ -1461,7 +1481,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             <div className="relative z-10 px-4 sm:px-6 md:px-12 py-10 md:py-16 max-w-4xl w-full mx-auto my-auto">
               <div className={`${heroAIStyling.cardBackingClass} transition-all duration-500`}>
                 {/* Category badge & highlight tags */}
-                <div className="flex flex-wrap justify-center gap-1 sm:gap-2 max-w-full mb-4">
+                <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2 max-w-full mb-4 min-h-[2rem]">
                   <span 
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs transition-colors"
                     style={{ 
@@ -1528,33 +1548,49 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 {/* Quick Metrics Bar */}
                 {sectionVisibility.metrics && (
                   <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t ${heroAIStyling.metricsBorderColor} text-xs transition-colors`}>
-                    <div>
+                    <div className="min-h-[3rem] flex flex-col justify-center">
                       <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Services from</div>
-                      <div className={`text-xl font-bold font-mono ${heroAIStyling.metricsValueColor}`}>
-                        ₹{Math.min(...activeServices.map((s) => s.price))}
-                      </div>
+                      {isLoading ? (
+                        <div className="h-6 w-16 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
+                      ) : (
+                        <div className={`text-xl font-bold font-mono ${heroAIStyling.metricsValueColor}`}>
+                          {minPrice !== null ? `₹${minPrice}` : '₹—'}
+                        </div>
+                      )}
                     </div>
-                    <div>
+                    <div className="min-h-[3rem] flex flex-col justify-center">
                       <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Lead Specialist</div>
-                      <div className="text-sm font-bold truncate">
-                        <InlineEditable
-                          value={activeProfile.ownerName}
-                          onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
-                          isEditingActive={isEditMode}
-                          label="Lead Specialist Name"
-                        />
-                      </div>
+                      {isLoading ? (
+                        <div className="h-5 w-24 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
+                      ) : (
+                        <div className="text-sm font-bold truncate">
+                          <InlineEditable
+                            value={activeProfile.ownerName}
+                            onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
+                            isEditingActive={isEditMode}
+                            label="Lead Specialist Name"
+                          />
+                        </div>
+                      )}
                     </div>
-                    <div>
+                    <div className="min-h-[3rem] flex flex-col justify-center">
                       <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Specialty</div>
-                      <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0] || 'Artistry'}</div>
+                      {isLoading ? (
+                        <div className="h-5 w-20 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
+                      ) : (
+                        <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0] || 'Artistry'}</div>
+                      )}
                     </div>
-                    <div>
+                    <div className="min-h-[3rem] flex flex-col justify-center">
                       <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Client Rating</div>
-                      <div className="text-sm font-bold flex items-center gap-1 text-amber-400">
-                        <Star className="w-3.5 h-3.5 fill-amber-400" />
-                        <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
-                      </div>
+                      {isLoading ? (
+                        <div className="h-5 w-28 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
+                      ) : (
+                        <div className="text-sm font-bold flex items-center gap-1 text-amber-400">
+                          <Star className="w-3.5 h-3.5 fill-amber-400" />
+                          <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1590,7 +1626,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* Location Banner Bar with Live Hours */}
-        <div className={`px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs border-b ${
+        <div className={`px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs border-b min-h-[3.25rem] ${
           isDarkCanvas ? 'bg-[#15151c] border-neutral-800 text-neutral-300' : 'bg-slate-50 border-slate-200 text-slate-700'
         }`}>
           <a
@@ -1605,12 +1641,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </span>
             <span>
               <strong>Salon Location:</strong>{' '}
-              <span className="group-hover:underline underline-offset-2 decoration-emerald-500/60">
-                {activeProfile.address}, {activeProfile.city} - <span className="font-mono">{activeProfile.postalCode}</span>
-              </span>
-              <span className="ml-2 text-[10px] text-emerald-600 font-bold inline-flex items-center gap-0.5">
-                (View on Google Maps ↗)
-              </span>
+              {isLoading ? (
+                <span className="inline-block h-3 w-40 bg-slate-200/50 animate-pulse rounded-md align-middle" />
+              ) : (
+                <span className="group-hover:underline underline-offset-2 decoration-emerald-500/60">
+                  {formattedAddress || 'Salon Location'}
+                </span>
+              )}
+              {!isLoading && (
+                <span className="ml-2 text-[10px] text-emerald-600 font-bold inline-flex items-center gap-0.5">
+                  (View on Google Maps ↗)
+                </span>
+              )}
             </span>
           </a>
 
@@ -1683,7 +1725,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 shadow-sm" style={{ borderColor: activeAccent.primaryHex }}>
                     <img
                       src={activeProfile.ownerPhotoUrl || '/nexora-salonos-logo.png'}
-                      alt={activeProfile.ownerName}
+                      alt={displayOwnerName}
                       className="w-full h-full object-cover bg-slate-950"
                     />
                   </div>
@@ -1698,7 +1740,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <div className="mt-2">
                     <span className="font-bold text-sm block">
                       <InlineEditable
-                        value={activeProfile.ownerName}
+                        value={displayOwnerName}
                         onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
                         isEditingActive={isEditMode}
                         label="Founder Name"

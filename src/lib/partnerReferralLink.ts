@@ -11,16 +11,48 @@ export function partnerShareOrigin(): string {
 }
 
 /**
- * The onboarding link a partner shares: /signup?ref=CODE.
- *
- * The code goes out in its canonical form (trim + uppercase), so the recipient
- * sees exactly what will be stored, and a link generated from a lowercase or
- * padded code is identical to one generated from the clean code.
+ * Create a unified link combining the domain, the site (tenant ID) and the referral code.
+ * Format: https://[domain]/signup?site=mysalon&ref=NEXORA-89A5C88E
  */
-export function partnerReferralShareLink(code: string, origin?: string): string {
+export function getShareableLink(site: string | null | undefined, ref: string | null | undefined, origin?: string): string {
   const base = (origin ?? partnerShareOrigin()).replace(/\/+$/, '');
-  const value = normalizeGrowthReferralCode(code);
-  if (!base || !value) return '';
-  return `${base}/signup?ref=${encodeURIComponent(value)}`;
+  const cleanRef = ref ? normalizeGrowthReferralCode(ref) : '';
+  const cleanSite = (site || '').trim();
+
+  const queryParts: string[] = [];
+  if (cleanSite) {
+    queryParts.push(`site=${encodeURIComponent(cleanSite)}`);
+  }
+  if (cleanRef) {
+    queryParts.push(`ref=${encodeURIComponent(cleanRef)}`);
+  }
+
+  const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  return `${base}/signup${query}`;
 }
 
+/**
+ * The onboarding link a partner shares.
+ * Utilizes the unified getShareableLink layout combining both active site and referral code.
+ */
+export function partnerReferralShareLink(code: string, origin?: string): string {
+  let currentSite = '';
+  try {
+    if (typeof window !== 'undefined' && window.location) {
+      const params = new URLSearchParams(window.location.search);
+      currentSite = params.get('site') || params.get('subdomain') || params.get('tenant') || '';
+    }
+  } catch {
+    // ignore
+  }
+
+  if (!currentSite) {
+    try {
+      currentSite = localStorage.getItem('nexora_active_site') || localStorage.getItem('nexora_site') || '';
+    } catch {
+      // ignore
+    }
+  }
+
+  return getShareableLink(currentSite, code, origin);
+}
