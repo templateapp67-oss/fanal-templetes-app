@@ -602,6 +602,22 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    if (params) {
+      const siteVal = params.get('site') || params.get('subdomain') || params.get('tenant');
+      if (siteVal) {
+        try {
+          localStorage.setItem('nexora_active_site', siteVal);
+          localStorage.setItem('nexora_site', siteVal);
+        } catch {}
+      }
+      const refVal = params.get('ref') || params.get('referral') || params.get('code');
+      if (refVal) {
+        try {
+          localStorage.setItem('nexora_active_referral', refVal);
+          localStorage.setItem('nexora_referral_code', refVal);
+        } catch {}
+      }
+    }
     const requestedSite = params?.get('site') || params?.get('subdomain') || params?.get('tenant');
     const isPublicParam = params?.get('view') === 'public' || params?.has('public');
 
@@ -625,18 +641,19 @@ export default function App() {
           }
 
           // A reachable live (Supabase-backed) API answering found:false is
-          // authoritative — this subdomain is not published. Show the app
-          // instead of fabricating a public site from local state (which used
-          // to make every unknown ?site= URL silently render local/demo data).
+          // handled by falling back to the default platform demo/template data gracefully
           if (data && !isMockSupabase) {
             console.warn(
-              `[Site bootstrap] Live API reports no published salon for "${requestedSite}" — rendering the app, not a public site.`
+              `[Site bootstrap] Live API reports no published salon for "${requestedSite}" — falling back to default platform template data.`
             );
             setSiteTenant({
               isTenant: true,
-              found: false,
+              found: true,
               subdomain: requestedSite,
               customDomain: null,
+              profile: profile,
+              services: services,
+              stylists: stylists,
             });
             return;
           }
@@ -2379,6 +2396,7 @@ export default function App() {
           setSelectedTemplateId={setSelectedTemplateId}
           siteUrl={getSiteUrl(publicProfile)}
           publicView
+          isLoading={siteLoading}
         />
         <AuthModal
           isOpen={isAuthModalOpen}
