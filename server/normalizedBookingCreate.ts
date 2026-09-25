@@ -20,7 +20,9 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   else if (body.salon_id) query = query.eq('id', body.salon_id);
   else throw new BackendError(400, 'A salon must be selected.');
   const salon = await readDatabase(() => query.maybeSingle());
-  if (!salon || !salon.accepts_online_bookings) throw new BackendError(409, 'This salon is not currently accepting online bookings.');
+  // Missing values come from legacy rows created before this setting existed.
+  // An explicit false remains the only opt-out.
+  if (!salon || salon.accepts_online_bookings === false) throw new BackendError(409, 'This salon is not currently accepting online bookings.');
   const ids = [...new Set<string>((booking.services?.length ? booking.services.map((s: any)=>String(s.service_id)) : [String(booking.service_id || '')]).map((id: string)=>catalogId(salon.id,'service',id)))];
   const services = await readDatabase(() => db.from('services').select('id,price_paise').eq('salon_id', salon.id).eq('is_active', true).eq('is_bookable_online', true).in('id', ids));
   if (!ids.length || services?.length !== ids.length) throw new BackendError(409, 'The selected service is no longer available. Reload the salon menu.');

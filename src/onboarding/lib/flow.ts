@@ -108,6 +108,53 @@ export function normalizePhone(value: string): string {
   return String(value || '').trim().replace(/[\s().-]/g, '');
 }
 
+function signupText(value: unknown, maxLength: number): string {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+/**
+ * Auth metadata is copied to `auth.users.raw_user_meta_data`; treat it as
+ * untrusted input. Referral attribution deliberately uses the one-use
+ * `growth_referral_token` instead of a raw referral code, so an invalid code
+ * can never become a foreign-key lookup during the Auth insert trigger.
+ */
+export function buildSafeSignupMetadata(input: {
+  fullName?: unknown;
+  salonName?: unknown;
+  phone?: unknown;
+  city?: unknown;
+  attributionToken?: unknown;
+}): Record<string, string | null> {
+  const token = typeof input.attributionToken === 'string' && /^[a-f0-9]{64}$/.test(input.attributionToken)
+    ? input.attributionToken
+    : null;
+  const phone = normalizePhone(signupText(input.phone, 32));
+  return {
+    full_name: signupText(input.fullName, MAX_FULL_NAME_LENGTH),
+    salon_name: signupText(input.salonName, 160),
+    // Keep the legacy spelling as well as the current trigger spelling.
+    phone,
+    phone_number: phone,
+    city: signupText(input.city, 120),
+    // Raw referral codes are never an Auth-trigger input. The referral token
+    // above is validated against an active partner in a separate trigger.
+    referral_code: null,
+    ...(token ? { growth_referral_token: token } : {}),
+  };
+}
+
+/** Log actionable signup diagnostics without logging credentials or metadata. */
+export function logSignupFailure(context: string, error: unknown): void {
+  const value = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown; status?: unknown } | null;
+  console.error(`[Nexora signup] ${context}`, {
+    message: typeof value?.message === 'string' ? value.message : String(error || 'Unknown error'),
+    details: value?.details ?? null,
+    hint: value?.hint ?? null,
+    code: value?.code ?? null,
+    status: value?.status ?? null,
+  });
+}
+
 export interface SignupValidation {
   ok: boolean;
   errors: {
@@ -243,6 +290,9 @@ export function toSafeAuthError(
   }
   if (/user already registered|already exists|already been registered/i.test(text)) {
     return new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
+  }
+  if (/database error saving new user|error.*saving.*new user|failed.*create.*user/i.test(text)) {
+    return new OnboardingError('unknown', 'We could not prepare your account. Please try again or contact support.');
   }
   if (/password.*(too long|maximum length|exceed)/i.test(text)) {
     return new OnboardingError('validation', `Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);

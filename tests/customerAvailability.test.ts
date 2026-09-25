@@ -18,8 +18,14 @@ test('empty availability stays empty; permission failure is not reported as sold
  await assert.rejects(customerAvailability(database({failure:true}),input));
 });
 test('disabled salons and invalid dates never call the slot RPC',async()=>{
- const db=database({enabled:false});await assert.rejects(customerAvailability(db,input),/not accepting/);assert.ok(!db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
- await assert.rejects(customerAvailability(database(),{...input,date:'2026-02-30'}));
+  const db=database({enabled:false});await assert.rejects(customerAvailability(db,input),/not accepting/);assert.ok(!db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
+  await assert.rejects(customerAvailability(database(),{...input,date:'2026-02-30'}));
+});
+test('legacy salons with no online-booking value remain bookable',async()=>{
+ const db=database({enabled:null});
+ const result=await customerAvailability(db,input);
+ assert.equal(result.success,true);
+ assert.ok(db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
 });
 test('checkout rejects anonymous callers, stale slots and changed prices before gateway',async()=>{
  const run=async(headers:any,body:any)=>{let status=200,result:any;const res:any={status(n:number){status=n;return res;},json(v:any){result=v;return res;}};await customerPaymentOrderHandler(database(),false)({headers,body},res);return {status,result};};
@@ -31,5 +37,8 @@ test('UI does not advertise invented held slots or fixed scarcity',()=>{
  const source=readFileSync('src/components/BookingModal.tsx','utf8');assert.doesNotMatch(source,/const TIME_SLOTS|Temporary reservation slot held|2 slots left/);assert.match(source,/extraOrderBody/);assert.match(source,/getBookingAccessToken\(user\)/);
 });
 test('bridge preserves canonical booking validation and restricts public write access',()=>{
- const sql=readFileSync('supabase/migrations/20260911110000_customer_availability_bridge.sql','utf8');assert.match(sql,/private.booking_slot_validation_error/);assert.match(sql,/saved:=public.create_customer_booking/);assert.match(sql,/p_customer_user_id is distinct from actor/);assert.match(sql,/from public,anon/);
+  const sql=readFileSync('supabase/migrations/20260911110000_customer_availability_bridge.sql','utf8');assert.match(sql,/private.booking_slot_validation_error/);assert.match(sql,/saved:=public.create_customer_booking/);assert.match(sql,/p_customer_user_id is distinct from actor/);assert.match(sql,/from public,anon/);
+  assert.match(sql,/coalesce\(accepts_online_bookings,true\)/);
+  const defaults=readFileSync('supabase/migrations/20261013_online_booking_defaults.sql','utf8');
+  assert.match(defaults,/set default true/);assert.match(defaults,/set accepts_online_bookings = true/);assert.match(defaults,/set not null/);
 });

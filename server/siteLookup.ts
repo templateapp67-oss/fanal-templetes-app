@@ -166,6 +166,9 @@ export function mapProfileRow(row: any): SalonProfile {
     requireDeposit: row.require_deposit ?? data.require_deposit ?? false,
     depositPercentage: row.deposit_percentage ?? data.deposit_percentage ?? 20,
     themeAccentKey: row.theme_accent_key || data.theme_accent_key || 'slate',
+    // The public site payload must carry this setting. Legacy rows with no
+    // value retain the database/product default instead of being treated as off.
+    acceptsOnlineBookings: row.accepts_online_bookings ?? true,
     customAccentColor: row.custom_accent_color || data.custom_accent_color || undefined,
     landmark: row.landmark || row.location_landmark || undefined,
     foundingYear: row.founding_year || data.founding_year || undefined,

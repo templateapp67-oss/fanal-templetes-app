@@ -21,6 +21,10 @@ const MIGRATION = await readFile(
   new URL('../supabase/migrations/20261003_signup_profile_fields.sql', import.meta.url),
   'utf8'
 );
+const HARDENED_MIGRATION = await readFile(
+  new URL('../supabase/migrations/20261015_safe_owner_signup_trigger.sql', import.meta.url),
+  'utf8'
+);
 
 /** The original 00001_init trigger, verbatim, so replacement is observable. */
 const ORIGINAL_HANDLE_NEW_USER = `
@@ -217,6 +221,24 @@ test('the column probe is not callable by anon or authenticated', async () => {
     const row = res.rows[0] as any;
     assert.equal(row.anon_ok, false, 'revoked from anon');
     assert.equal(row.auth_ok, false, 'revoked from authenticated');
+  } finally {
+    await close();
+  }
+});
+
+test('the hardened trigger keeps Auth creation alive when the optional profile write fails', async () => {
+  const { db, close } = await setup();
+  try {
+    await db.exec(HARDENED_MIGRATION);
+    // Simulate a production-only profile constraint drift. Auth still gets its
+    // user row; the trigger logs a warning rather than aborting signup.
+    await db.exec(`alter table public.profiles add constraint profiles_reject_all check (false);`);
+    await db.query(
+      `insert into auth.users(email, raw_user_meta_data) values ($1, $2::jsonb)`,
+      ['trigger-safe@example.com', JSON.stringify({ full_name: 'Safe Owner', referral_code: 'NEXORA-3E038732' })]
+    );
+    const user = await db.query(`select email from auth.users where email = 'trigger-safe@example.com'`);
+    assert.equal((user.rows[0] as any).email, 'trigger-safe@example.com');
   } finally {
     await close();
   }

@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   loadViewer,
+  signUpWithEmail,
   signInWithEmail,
   signOutViewer,
   type OnboardingSupabaseClient,
 } from '../src/onboarding/lib/auth';
-import { OnboardingError, toSafeAuthError } from '../src/onboarding/lib/flow';
+import { buildSafeSignupMetadata, OnboardingError, toSafeAuthError } from '../src/onboarding/lib/flow';
 import { observeAuthSession } from '../src/lib/restoreAuthSession';
 
 // ============================================================================
@@ -82,6 +83,26 @@ function makeClient(overrides: Record<string, any> = {}) {
 }
 
 const CREDENTIALS = { email: 'owner@example.com', password: 'Secret123!' };
+
+test('owner signup sends sanitized metadata and never passes a raw referral code to Auth', async () => {
+  const client = makeClient();
+  await signUpWithEmail(client, {
+    fullName: ' Uma Rao ', email: 'uma@example.com', phone: '+91 98450 77654',
+    password: 'Secret123!', confirm: 'Secret123!', attributionToken: 'a'.repeat(64),
+  });
+  const metadata = client.calls.find((call) => call.kind === 'signUp')!.args.options.data;
+  assert.equal(metadata.full_name, 'Uma Rao');
+  assert.equal(metadata.phone, '+919845077654');
+  assert.equal(metadata.phone_number, '+919845077654');
+  assert.equal(metadata.referral_code, null);
+  assert.equal(metadata.growth_referral_token, 'a'.repeat(64));
+});
+
+test('raw referral text and malformed attribution tokens are never persisted in Auth metadata', () => {
+  const metadata = buildSafeSignupMetadata({ fullName: 'Uma', phone: '98450 77654', attributionToken: 'NEXORA-3E038732' });
+  assert.equal(metadata.referral_code, null);
+  assert.equal(metadata.growth_referral_token, undefined);
+});
 
 // ---------------------------------------------------------------------------
 // 1. email/password login + session creation

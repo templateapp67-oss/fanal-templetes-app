@@ -254,6 +254,8 @@ export interface SalonProfile {
   requireDeposit: boolean;
   depositPercentage: number;
   themeAccentKey?: string;
+  /** True unless the salon has explicitly paused online bookings. */
+  acceptsOnlineBookings?: boolean;
   customAccentColor?: string;
   landmark?: string;
   foundingYear?: string;
@@ -625,5 +627,4 @@ export interface StaffPayoutHistoryItem {
   notes?: string;
   createdAt: string;
 }
-
 
