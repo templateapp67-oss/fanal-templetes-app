@@ -31,37 +31,49 @@ export function partnerShareOrigin(): string {
   }
 }
 
-/**
- * Resolve the origin that is safe to share publicly.  A configured public
- * origin always wins.  In particular, never copy the current AI Studio
- * `*.run.app` preview origin because visitors would be asked to sign in to
- * Google before they can see the Nexora signup form.
- */
+/** Resolve the only public onboarding origin that may be shared. */
 export function publicOnboardingOrigin(origin = partnerShareOrigin()): string {
   const configured = configuredOnboardingOrigin();
   if (configured) return configured;
-
   const candidate = String(origin || '').trim().replace(/\/+$/, '');
   if (!candidate) return '';
   try {
-    const host = new URL(candidate).hostname.toLowerCase();
-    if (host.endsWith('.run.app')) return DEFAULT_PUBLIC_ONBOARDING_ORIGIN;
+    if (new URL(candidate).hostname.toLowerCase().endsWith('.run.app')) return DEFAULT_PUBLIC_ONBOARDING_ORIGIN;
   } catch {
     return '';
   }
   return candidate;
 }
 
-/**
- * The onboarding link a partner shares: /signup?ref=CODE.
- *
- * The code goes out in its canonical form (trim + uppercase), so the recipient
- * sees exactly what will be stored, and a link generated from a lowercase or
- * padded code is identical to one generated from the clean code.
- */
-export function partnerReferralShareLink(code: string, origin?: string): string {
+/** Build a public signup link retaining the optional tenant and referral code. */
+export function getShareableLink(site: string | null | undefined, ref: string | null | undefined, origin?: string): string {
   const base = publicOnboardingOrigin(origin ?? partnerShareOrigin());
-  const value = normalizeGrowthReferralCode(code);
-  if (!base || !value) return '';
-  return `${base}/signup?ref=${encodeURIComponent(value)}`;
+  const cleanRef = ref ? normalizeGrowthReferralCode(ref) : '';
+  const cleanSite = String(site || '').trim();
+  if (!base) return '';
+  // Keep URL encoding stable for copied links (`%20`, not form-style `+`).
+  const parts: string[] = [];
+  if (cleanSite) parts.push(`site=${encodeURIComponent(cleanSite)}`);
+  if (cleanRef) parts.push(`ref=${encodeURIComponent(cleanRef)}`);
+  const query = parts.join('&');
+  return `${base}/signup${query ? `?${query}` : ''}`;
+}
+
+/** A partner referral link must always contain a valid referral code. */
+export function partnerReferralShareLink(code: string, origin?: string): string {
+  const cleanCode = normalizeGrowthReferralCode(code);
+  if (!cleanCode) return '';
+  let currentSite = '';
+  try {
+    if (typeof window !== 'undefined' && window.location) {
+      const params = new URLSearchParams(window.location.search);
+      currentSite = params.get('site') || params.get('subdomain') || params.get('tenant') || '';
+    }
+  } catch {}
+  if (!currentSite) {
+    try {
+      currentSite = localStorage.getItem('nexora_active_site') || localStorage.getItem('nexora_site') || '';
+    } catch {}
+  }
+  return getShareableLink(currentSite, cleanCode, origin);
 }
