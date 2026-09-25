@@ -1,15 +1,22 @@
 import './jsdomSetup';
-import { after, test } from 'node:test';
+import { after, afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { readSharedReferralCode } from '../../src/onboarding/OnboardingApp';
+import { clearReferralIntent } from '../../src/onboarding/lib/referralPersistence';
 import { ReferralScreen } from '../../src/onboarding/screens/ReferralScreen';
 
 after(() => {
   /* jsdomSetup owns the window lifetime */
 });
+
+// Referral intent deliberately survives redirects so a shared code reaches
+// signup. Reset it between independent test cases; otherwise one test's
+// referral correctly becomes the next test's persisted fallback and makes a
+// direct visit look as though it carried a query code.
+afterEach(() => clearReferralIntent());
 
 // ============================================================================
 // PHASE 4.1 — REFERRAL INPUT, in a real browser environment.
@@ -58,6 +65,7 @@ test('4.1 — every recognised arrival route pre-fills the single referral input
   assert.equal(viaReferral.read, CODE, '?referral= is captured as an alias');
   assert.equal(viaReferral.fieldValue, CODE, 'and pre-fills the SAME field — no second UI');
 
+  clearReferralIntent();
   const typed = await prefillFor('');
   assert.equal(typed.read, '', 'a direct visit carries no code');
   assert.equal(typed.fieldValue, '', 'and the field is empty, ready for manual input');
