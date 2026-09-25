@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import { partnerReferralShareLink } from '../../lib/partnerReferralLink';
 import { QrCode, Copy, Check, Download, Share2, Sparkles, Smartphone } from 'lucide-react';
 
 export interface ShareReferralQRProps {
@@ -16,10 +17,10 @@ export const ShareReferralQR: React.FC<ShareReferralQRProps> = ({
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
 
-  const shareUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/signup?ref=${encodeURIComponent(code)}`
-      : `https://nexora.app/signup?ref=${encodeURIComponent(code)}`;
+  const shareUrl = partnerReferralShareLink(
+    code,
+    typeof window !== 'undefined' ? window.location.origin : undefined
+  );
 
   useEffect(() => {
     let active = true;
