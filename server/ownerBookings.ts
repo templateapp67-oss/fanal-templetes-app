@@ -1,5 +1,4 @@
 import { runDb, DEFAULT_DB_TIMEOUT_MS } from './dbGuard.js';
-import { isMockSupabase } from '../src/lib/supabaseClient.js';
 
 export function mapOwnerBooking(row: any) {
   const customer = row.customer || {};
@@ -21,9 +20,6 @@ export function mapOwnerBooking(row: any) {
 export async function loadOwnerBookings(db: any, req: any, deadlineAt?: number) {
   const token = String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '');
   if (!token) return { status: 401, error: 'Please sign in to load your bookings.' };
-  if (isMockSupabase || token.startsWith('mock-') || token.startsWith('demo-')) {
-    return { status: 200, data: [] };
-  }
   const read = async (query: () => any) => {
     const result = await runDb(query, { label: 'owner bookings', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt });
     if (result.error) throw result.error;

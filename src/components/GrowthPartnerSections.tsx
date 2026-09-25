@@ -485,7 +485,7 @@ export const GrowthPartnerDashboard: React.FC<{
           className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RefreshCw className="w-4 h-4" />
-          Refresh
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       )}
     </div>

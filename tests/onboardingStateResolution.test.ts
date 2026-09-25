@@ -606,11 +606,11 @@ test('8.7 "onboarding completed" is the funnel row: template_completed + server 
 
   // The two client derivations already in the codebase agree with the row.
   assert.equal(phaseFromOnboardingState({ status: first.status, linked: first.linked }), 'completed');
-  // Linked shop owners continue in the guided shop wizard (it replaced the
-  // status/template handoff as the post-link destination).
+  // Linked owners return to the status screen; website entry still requires
+  // the secure handoff rather than reviving the retired shop route.
   assert.equal(
     resolveOnboardingRoute({ hasSession: true, phase: 'completed', requested: 'referral' }),
-    'shop'
+    'status'
   );
 
   // The Onboarding App's phase mapper is referral-centric on purpose ("linked

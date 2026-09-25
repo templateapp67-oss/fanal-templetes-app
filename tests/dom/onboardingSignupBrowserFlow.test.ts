@@ -199,6 +199,10 @@ test('a user with no session lands on the inbox screen, not a login', async () =
     assert.deepEqual(signUpCall.args.options.data, {
       full_name: 'Uma Rao',
       phone_number: '+919845077654',
+      phone: '+919845077654',
+      salon_name: '',
+      city: '',
+      referral_code: null,
     });
   } finally {
     await close();

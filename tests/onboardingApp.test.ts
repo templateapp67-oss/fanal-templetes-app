@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PGlite } from '@electric-sql/pglite';
@@ -326,7 +327,7 @@ test('sign up succeeds with valid credentials and flags email confirmation', asy
   assert.deepEqual(calls[0].args[0], {
     email: 'you@example.com',
     password: 'secret1',
-    options: { data: { full_name: 'Uma Rao', phone_number: '+919845077654' } },
+    options: { data: { full_name: 'Uma Rao', phone_number: '+919845077654', phone: '+919845077654', salon_name: '', city: '', referral_code: null } },
   });
 
   // User object without a session means "verify your email", not a login.
@@ -795,17 +796,17 @@ test('the referral owner cannot be altered through frontend-style manipulation',
 // ---------------------------------------------------------------------------
 
 function onboardingSources(): string[] {
-  const root = new URL('../src/onboarding', import.meta.url);
+  const root = fileURLToPath(new URL('../src/onboarding', import.meta.url));
   const files: string[] = [];
   const walk = (dir: string) => {
-    for (const entry of readdirSync(new URL(dir, import.meta.url))) {
+    for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
       if (entry.endsWith('.ts') || entry.endsWith('.tsx')) files.push(full);
     }
   };
-  walk(root.pathname);
-  walk(join(root.pathname, 'lib'));
-  walk(join(root.pathname, 'screens'));
+  walk(root);
+  walk(join(root, 'lib'));
+  walk(join(root, 'screens'));
   return files;
 }
 

@@ -32,7 +32,7 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   const idempotencyKey = createHash('sha256').update(`${actor}:${reference}`).digest('hex');
   let staffId: string | null = null;
   const selectedStaff = booking.staff_id || booking.metadata?.stylist_id;
-  if (selectedStaff && selectedStaff !== 'any') {
+  if (selectedStaff && !['any', 'any_available'].includes(selectedStaff)) {
     staffId = catalogId(salon.id,'staff',String(selectedStaff));
     const staff = await readDatabase(() => db.from('staff').select('id').eq('id',staffId).eq('salon_id',salon.id).eq('is_active',true).maybeSingle());
     if (!staff) throw new BackendError(409,'The selected specialist is unavailable.');

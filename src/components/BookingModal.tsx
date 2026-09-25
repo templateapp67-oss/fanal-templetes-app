@@ -1537,7 +1537,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                 {filteredServices.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[11px] text-slate-500">
-                    No services found in category &quot;{selectedCategory}&quot;.
+                    {services.length === 0
+                      ? 'No services are available to book online yet. Please contact the salon.'
+                      : <>No services found in category &quot;{selectedCategory}&quot;.</>}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1" role="group" aria-label="Available services">

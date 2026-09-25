@@ -115,9 +115,16 @@ export function matchCustomerRoute(pathname: string): CustomerRoute {
   const head = String(raw[0] || '').toLowerCase();
   const section = CUSTOMER_SECTIONS[head] ?? 'home';
   // Salon/booking routes carry an id; `salon` also carries a tab.
-  const id = section === 'salon' || section === 'book' || section === 'booking' ? decodeURIComponent(raw[1] || '') : '';
-  const tab = section === 'salon' ? decodeURIComponent(raw[2] || '') : '';
+  const id = section === 'salon' || section === 'book' || section === 'booking' ? decodeRouteSegment(raw[1] || '') : '';
+  const tab = section === 'salon' ? decodeRouteSegment(raw[2] || '') : '';
+  if (id === null || tab === null) return { section: 'home', id: '', tab: '' };
   return { section, id, tab };
+}
+
+/** A damaged shared link must not throw during the application's first render. */
+function decodeRouteSegment(value: string): string | null {
+  try { return decodeURIComponent(value); }
+  catch { return null; }
 }
 
 export function customerPath(section: CustomerSection, id = '', tab = ''): string {
@@ -489,7 +496,7 @@ export function matchBookingDetailPath(pathname: string): string | null {
   if (segments[0].toLowerCase() !== 'customer') return null;
   if (segments[1].toLowerCase() !== 'booking') return null;
   const id = segments[2];
-  return id ? decodeURIComponent(id) : null;
+  return id ? decodeRouteSegment(id) : null;
 }
 
 // ---------------------------------------------------------------------------

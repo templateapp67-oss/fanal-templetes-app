@@ -128,7 +128,8 @@ test('the summary bar and Continue button agree that booking needs a service', (
   );
   assert.match(emptyHtml, /0 Services Selected/);
   assert.match(emptyHtml, /Select at least one service to continue booking/);
-  assert.match(emptyHtml, /The service menu is still loading/);
+  assert.match(emptyHtml, /No services are available to book online yet/);
+  assert.doesNotMatch(emptyHtml, /No services found in category/);
   assert.match(html, /data-testid="booking-summary-bar"/);
 });
 
