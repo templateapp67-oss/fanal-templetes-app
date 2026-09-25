@@ -9,7 +9,7 @@ import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, Partne
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
 import type { ReferralStatusTab } from '../lib/referralStatus';
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, LogOut } from 'lucide-react';
+import { ArrowLeft, Home, LogOut } from 'lucide-react';
 import {
   fetchMyGrowthPartnerRow,
   ensureMyGrowthPartner,
@@ -182,17 +182,28 @@ export const GrowthPartnerShell: React.FC<{
             <span>Signed in as <span className="font-semibold text-slate-900">{displayName}</span></span>
           </div>
         </div>
-        {onLogout && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onLogout()}
-            title="Log out"
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition-colors cursor-pointer"
+            onClick={() => navigate?.('/')}
+            title="Go to Home"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 hover:border-slate-300 transition-colors cursor-pointer"
           >
-            <LogOut className="w-4 h-4" />
-            Log out
+            <Home className="w-4 h-4" />
+            Home
           </button>
-        )}
+          {onLogout && (
+            <button
+              type="button"
+              onClick={() => onLogout()}
+              title="Log out"
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              Log out
+            </button>
+          )}
+        </div>
       </div>
       <GrowthPartnerSectionTabs section={section} navigate={navigate} accentHex={accentHex} pathFor={pathFor} />
     </header>
