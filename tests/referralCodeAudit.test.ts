@@ -30,7 +30,7 @@ import {
   isGrowthReferralCodeFormat,
 } from '../src/lib/growthPartner';
 import { normalizeReferralCode, isReferralCode } from '../src/lib/customer/schema';
-import { partnerReferralShareLink } from '../src/lib/partnerReferralLink';
+import { DEFAULT_PUBLIC_ONBOARDING_ORIGIN, partnerReferralShareLink, publicOnboardingOrigin } from '../src/lib/partnerReferralLink';
 import {
   referralCodeFromQuery,
   REFERRAL_QUERY_PARAMS,
@@ -395,6 +395,15 @@ test('a generated share link carries the canonical code form', () => {
   assert.equal(partnerReferralShareLink('', 'https://app.example'), '', 'no code, no link');
   assert.equal(partnerReferralShareLink('   ', 'https://app.example'), '', 'a blank code is not a code');
   assert.equal(partnerReferralShareLink('ALPHA01', ''), '', 'no origin, no link');
+});
+
+test('AI Studio preview hosts never leak into public referral links', () => {
+  const preview = 'https://ais-dev-wjwddzam65uesfat5wh54a-616909335986.asia-southeast1.run.app';
+  assert.equal(publicOnboardingOrigin(preview), DEFAULT_PUBLIC_ONBOARDING_ORIGIN);
+  assert.equal(
+    partnerReferralShareLink('NEXORA-3E038732', preview),
+    `${DEFAULT_PUBLIC_ONBOARDING_ORIGIN}/signup?ref=NEXORA-3E038732`
+  );
 });
 
 
