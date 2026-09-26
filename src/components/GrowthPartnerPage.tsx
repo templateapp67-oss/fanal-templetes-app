@@ -27,6 +27,7 @@ import {
   type PartnerReferralList,
 } from '../lib/growthPartner';
 import { isMockSupabase, supabase } from '../lib/supabaseClient';
+import { useReferralCode } from '../lib/hooks/useReferralCode';
 import {
   GROWTH_PARTNER_SECTIONS,
   growthPartnerLoginPath,
@@ -256,6 +257,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   /** Section URLs for the legacy namespace's section tabs. */
   const sectionPathFor = growthPartnerPath;
   const userId = user?.id || null;
+  const { code: referralCode, loading: referralCodeLoading } = useReferralCode();
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
   const [savedProfileName, setSavedProfileName] = useState<{ owner: string; name: string } | null>(null);
@@ -615,13 +617,15 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
             onRetry={retrySection}
             refreshing={dashboard.loading}
             refreshError={dashboard.error}
+            referralCode={referralCode}
+            referralCodeLoading={referralCodeLoading}
           />
         ) : null;
       case 'referral-code':
         return (
           <PartnerReferralCodeSection
-            loading={gateLoading}
-            code={partner ? partner.referral_code : null}
+            loading={gateLoading || referralCodeLoading}
+            code={referralCode}
             isActive={partner ? partner.is_active : true}
           />
         );
@@ -638,7 +642,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
               setReferralStatusTab(next);
               setReferralOffset(0);
             }}
-            referralCode={partner?.referral_code}
+            referralCode={referralCode}
             filtersActive={!!referralFilters.search || referralFilters.datePreset !== 'all' || referralFilters.conversion !== 'all'}
             onApplyFilters={(next, clearStatus) => {
               setReferrals(prev => ({ ...prev, loading: true, error: null }));
@@ -707,7 +711,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
       case 'withdrawals':
         return <PartnerWithdrawalsPage accentHex={accentHex} />;
       case 'marketing-materials':
-        return <PartnerMarketingMaterialsPage accentHex={accentHex} referralCode={partner?.referral_code ?? null} />;
+        return <PartnerMarketingMaterialsPage accentHex={accentHex} referralCode={referralCode} />;
       case 'partner-levels':
         return <PartnerLevelsPage accentHex={accentHex} />;
       case 'leaderboards':

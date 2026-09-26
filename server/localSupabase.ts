@@ -123,6 +123,9 @@ export const LOCAL_GROWTH_CHAIN = [
   // admin review). Loading it here would silently rewrite those expectations.
   // Its SQL is still validated directly by tests/growthPartnerOpenEnrollment.test.ts.
   '20260922091000_direct_growth_partner_dashboard_access.sql',
+  // Canonical Growth Partner referral source: stored growth_partners.referral_code
+  // plus the authenticated get_my_referral_code() read used by the UI hook.
+  '20261011000000_growth_partner_referral_source.sql',
 ];
 
 /**
