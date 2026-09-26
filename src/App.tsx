@@ -2355,7 +2355,7 @@ export default function App() {
   // -------------------------------------------------------------------------
   if (isPartnerPortal) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="min-h-dvh bg-slate-50 text-slate-900">
         <GrowthPartnerPage
           user={user}
           onRequireAuth={() => navigate(PARTNER_LOGIN_PATH)}
@@ -2384,7 +2384,7 @@ export default function App() {
   // -------------------------------------------------------------------------
   if (isPublicSite) {
     return (
-      <div className="min-h-screen bg-surface text-on-surface">
+      <div className="min-h-dvh bg-surface text-on-surface">
         <SalonWebsitePreview
           profile={publicProfile}
           services={publicServices}
@@ -2410,7 +2410,7 @@ export default function App() {
   }
 
   if (!isMockSupabase && !user && authStatus !== 'ready') {
-    return <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+    return <div className="min-h-dvh flex items-center justify-center bg-surface p-6">
       <div role="status" className="max-w-md rounded-2xl bg-white border border-slate-200 p-6">
         <h1 className="text-lg font-bold">{authStatus === 'restoring' ? 'Restoring your session…' : 'Could not restore your login yet'}</h1>
         <p className="my-3 text-sm">{authStatus === 'restoring' ? 'Loading your saved sign-in.' : 'Check your connection, then retry. Your saved profile has not been cleared.'}</p>
@@ -2420,7 +2420,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-surface text-on-surface">
+    <div className="min-h-dvh bg-surface text-on-surface">
       <Header
         currentView={currentView}
         setCurrentView={setCurrentView}

@@ -108,7 +108,7 @@ export const GrowthPartnerLoginForm: React.FC<{
   onSubmit: (event: React.FormEvent) => void;
   onSwitchToSignup: () => void;
 }> = ({ email, password, fieldErrors, formError, busy, accentHex = '#C20E5A', onEmailChange, onPasswordChange, onSubmit, onSwitchToSignup }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -279,7 +279,7 @@ export const GrowthPartnerSignupForm: React.FC<{
   };
 
   return (
-    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+    <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -395,7 +395,7 @@ export const GrowthPartnerSignupForm: React.FC<{
 };
 
 export const GrowthPartnerLoginVerifying: React.FC = () => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <div
       role="status"
       aria-label={GROWTH_PARTNER_LOGIN_VERIFYING_LABEL}
@@ -408,7 +408,7 @@ export const GrowthPartnerLoginVerifying: React.FC = () => (
 );
 
 export const GrowthPartnerLoginMockNotice: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <StateCard
       icon={<AlertCircle className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_LOGIN_MOCK_TITLE}
@@ -429,7 +429,7 @@ export const GrowthPartnerLoginUnauthorized: React.FC<{
   onBack?: () => void;
   onSwitchAccount?: () => void;
 }> = ({ onBack, onSwitchAccount }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_LOGIN_UNAUTHORIZED_TITLE}
@@ -482,7 +482,7 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
     onCheckAgain?.();
   };
   return (
-    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+    <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
       <StateCard
         icon={<Hourglass className="w-7 h-7 text-slate-400" />}
         title={GROWTH_PARTNER_LOGIN_PENDING_TITLE}
@@ -614,7 +614,7 @@ export const GrowthPartnerAdminReviewPanel: React.FC<{
 );
 
 export const GrowthPartnerLoginInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_INACTIVE_TITLE}
@@ -637,7 +637,7 @@ export const GrowthPartnerLoginFailure: React.FC<{
   actionLabel: string;
   onAction?: () => void;
 }> = ({ title, body, actionLabel, onAction }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <StateCard icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
       <button
         type="button"

@@ -718,7 +718,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden text-gray-800"
+              className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-lg max-h-[92dvh] flex flex-col overflow-hidden text-gray-800"
             >
               {/* Modal Header */}
               <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between shrink-0 bg-gray-50/70">
@@ -749,7 +749,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
               </div>
 
               {/* Modal Body / Form */}
-              <form onSubmit={handleSaveService} className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh]">
+              <form onSubmit={handleSaveService} className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75dvh]">
                 {formError && (
                   <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />

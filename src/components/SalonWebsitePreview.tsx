@@ -841,7 +841,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   return (
     <div 
-      className={`min-h-screen w-full max-w-full overflow-x-clip flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
+      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': primaryAccentColor,
         '--theme-primary': primaryAccentColor,
@@ -863,7 +863,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed right-3 top-24 z-50 flex max-w-[calc(100vw-1.5rem)] items-center gap-2.5 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs font-medium text-white shadow-2xl sm:right-5"
+            className="layout-stable-fixed fixed right-3 top-24 z-50 flex max-w-[calc(100vw-1.5rem)] items-center gap-2.5 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs font-medium text-white shadow-2xl sm:right-5"
           >
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{notificationToast}</span>
@@ -1626,7 +1626,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* Location Banner Bar with Live Hours */}
-        <div className={`px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs border-b min-h-[3.25rem] ${
+        <div data-layout-stable-location className={`px-6 py-3 flex min-h-[4.75rem] flex-wrap items-center justify-between gap-3 text-xs border-b [contain:layout] ${
           isDarkCanvas ? 'bg-[#15151c] border-neutral-800 text-neutral-300' : 'bg-slate-50 border-slate-200 text-slate-700'
         }`}>
           <a
@@ -2418,7 +2418,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
         {/* 7.5 Social Proof & Reels Showcase */}
         {sectionVisibility.gallery && (
-          <section className={`p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
+          <section data-layout-stable-media className={`layout-stable-media min-h-[42rem] p-6 md:min-h-[46rem] md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
             <div className="max-w-7xl mx-auto">
                 <h2 className={`text-2xl md:text-3xl font-extrabold mb-2 ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>Featured Videos &amp; Reels</h2>
                 <p className={`text-sm mb-8 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>Client transformations and salon showcases from YouTube.</p>
@@ -2431,7 +2431,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length || 0} / 14
                     </span>
                   </h3>
-                  <div className="overflow-x-auto pb-4 -mx-2 px-2">
+                  <div className="min-h-[352px] overflow-x-auto pb-4 -mx-2 px-2 [contain:layout]">
                     <div className="flex gap-3 min-w-max sm:min-w-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                       {(activeProfile.socialVideos || [])
                         .filter((video) => video.categoryTag === 'SHORT')
@@ -2449,7 +2449,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           return (
                           <div
                             key={video.id}
-                            className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer w-[220px] sm:w-auto shrink-0 sm:shrink hover:shadow-md transition-all"
+                            className="relative min-h-[320px] aspect-[9/16] rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer w-[220px] sm:w-auto shrink-0 sm:shrink hover:shadow-md transition-all [contain:layout_paint]"
                             onMouseEnter={(e) => {
                               const iframe = e.currentTarget.querySelector('iframe');
                               if (iframe && iframe.src) {
@@ -2483,7 +2483,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             {embedSrc ? (
                               <iframe
                                 src={embedSrc}
-                                className="w-full aspect-[9/16]"
+                                className="block h-full min-h-[320px] w-full aspect-[9/16]"
                                 title={video.title}
                                 allow={YOUTUBE_IFRAME_ALLOW}
                                 allowFullScreen
@@ -2562,7 +2562,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         );
                       })}
                     {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length === 0 && (
-                      <div className="col-span-full text-center text-xs text-slate-400 py-8 border border-dashed border-slate-200 rounded-2xl">
+                      <div className="col-span-full flex min-h-[220px] items-center justify-center text-center text-xs text-slate-400 py-8 border border-dashed border-slate-200 rounded-2xl [contain:layout]">
                         No showcase videos added yet. Add transformation reels from the editor.
                       </div>
                     )}
@@ -2835,7 +2835,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20book%20an%20appointment.`}
           target="_blank"
           rel="noreferrer"
-          className="fixed bottom-6 right-6 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+          className="layout-stable-fixed fixed bottom-6 right-6 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
           title="Chat on WhatsApp"
         >
           <MessageSquare className="w-5 h-5 fill-white" />
@@ -2903,7 +2903,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
         return (
           <div 
-            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-8"
+            className="layout-stable-fixed fixed inset-0 z-50 min-h-dvh bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-8"
             onClick={() => setSelectedGalleryPhoto(null)}
           >
             {/* Top Toolbar */}
@@ -2951,7 +2951,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 <img 
                   src={selectedGalleryPhoto} 
                   alt={currentPhoto?.title || 'Gallery Zoom'} 
-                  className="max-h-[60vh] md:max-h-[68vh] object-contain w-full rounded-2xl"
+                  className="max-h-[60dvh] md:max-h-[68dvh] object-contain w-full rounded-2xl"
                 />
               </div>
 
@@ -3001,7 +3001,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
       {/* Booking Confirmation Toast */}
       {toastMessage && (
-        <div className="fixed bottom-6 left-6 z-50 max-w-sm w-full bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex flex-col gap-2.5 animate-in slide-in-from-bottom">
+        <div className="layout-stable-fixed fixed bottom-6 left-6 z-50 max-w-sm w-full bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex flex-col gap-2.5 animate-in slide-in-from-bottom">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
               <CheckCircle2 className="w-4 h-4" />

@@ -17,7 +17,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView, onSele
   };
 
   return (
-    <div className="bg-surface text-on-surface font-body-md min-h-screen flex flex-col antialiased">
+    <div className="bg-surface text-on-surface font-body-md min-h-dvh flex flex-col antialiased">
       {/* Main Hero Banner */}
       <main className="flex-grow pt-28 pb-12 px-4 md:px-8 max-w-7xl mx-auto w-full flex flex-col gap-12">
         

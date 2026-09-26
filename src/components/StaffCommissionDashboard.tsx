@@ -70,7 +70,7 @@ function AccessDenied({
 }) {
   const needsSignIn = error.code === 'session_expired';
   return (
-    <div className="min-h-[60vh] flex items-center justify-center px-4" data-testid="staff-commission-access-denied">
+    <div className="min-h-[60dvh] flex items-center justify-center px-4" data-testid="staff-commission-access-denied">
       <div className="max-w-md w-full bg-white border border-gray-200 rounded-2xl p-8 shadow-xs text-center">
         <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto mb-4">
           <span className="material-symbols-outlined text-2xl">lock</span>
@@ -415,7 +415,7 @@ export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> =
 
   if (fatal) {
     return (
-      <div className="min-h-screen pt-24 pb-16 bg-[#f9f9ff]">
+      <div className="min-h-dvh pt-24 pb-16 bg-[#f9f9ff]">
         <AccessDenied error={fatal} onRequireAuth={onRequireAuth} onBack={onBackToDashboard} />
       </div>
     );
@@ -424,7 +424,7 @@ export const StaffCommissionDashboard: React.FC<StaffCommissionDashboardProps> =
   const pendingRows = summary.filter((row) => row.payout_status !== 'paid' && row.payout_status !== 'cancelled');
 
   return (
-    <div className="min-h-screen pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
+    <div className="min-h-dvh pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
       <div className="max-w-[1240px] w-full px-4 sm:px-6 flex flex-col gap-6">
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs flex flex-col gap-4">
           <div className="flex flex-col lg:flex-row justify-between gap-4">

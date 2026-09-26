@@ -533,7 +533,7 @@ export const PartnerPortalShell: React.FC<{
   }, []);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-slate-50">
+    <div className="min-h-dvh overflow-x-hidden bg-slate-50">
       {/* Desktop sidebar (fixed; lg+). */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">

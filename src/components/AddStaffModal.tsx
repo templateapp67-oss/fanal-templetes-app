@@ -278,7 +278,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 15 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-[680px] max-h-[90vh] flex flex-col overflow-hidden relative"
+        className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-[680px] max-h-[90dvh] flex flex-col overflow-hidden relative"
       >
         {/* ========================================================= */}
         {/* 1. HEADER */}

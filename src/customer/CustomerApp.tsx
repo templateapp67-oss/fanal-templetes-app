@@ -404,7 +404,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
   })();
 
   return (
-    <div className="min-h-screen bg-slate-50" style={{ backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${hexToRgba(accentHex, 0.1)}, transparent)` }}>
+    <div className="min-h-dvh bg-slate-50" style={{ backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${hexToRgba(accentHex, 0.1)}, transparent)` }}>
       <div className="max-w-2xl mx-auto px-4 pt-5 pb-28">
         <header className="flex items-center justify-between gap-3 mb-5">
           <button id="customer-header-brand-btn" type="button" onClick={() => go('home')} className="flex items-center gap-2.5 min-w-0 text-left min-h-[44px] cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-300">
@@ -453,7 +453,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
         {body}
       </div>
 
-      <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur" aria-label="Customer app sections">
+      <nav className="layout-stable-fixed fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur" aria-label="Customer app sections">
         <div className="max-w-3xl mx-auto grid grid-cols-6">
           {NAV.map((item) => {
             const active =

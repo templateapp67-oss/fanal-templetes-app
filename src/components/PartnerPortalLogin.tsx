@@ -242,7 +242,7 @@ export const PartnerPortalLoginForm: React.FC<{
   onForgotPassword,
   onSwitchToSignup,
 }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -345,7 +345,7 @@ export const PartnerForgotPasswordForm: React.FC<{
   onSubmit: (event: React.FormEvent) => void;
   onBack: () => void;
 }> = ({ email, busy, error, success, accentHex = '#C20E5A', logoSrc, onEmailChange, onSubmit, onBack }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -430,7 +430,7 @@ export const PartnerSetPasswordForm: React.FC<{
   onSubmit,
   onSkip,
 }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -501,7 +501,7 @@ export const PartnerSetPasswordForm: React.FC<{
 );
 
 export const PartnerPortalVerifying: React.FC<{ logoSrc?: string }> = ({ logoSrc }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <div
       role="status"
       aria-label={PARTNER_PORTAL_LOGIN_VERIFYING_LABEL}
@@ -515,7 +515,7 @@ export const PartnerPortalVerifying: React.FC<{ logoSrc?: string }> = ({ logoSrc
 );
 
 export const PartnerPortalMockNotice: React.FC<{ onBack?: () => void; logoSrc?: string }> = ({ onBack, logoSrc }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<AlertCircle className="w-7 h-7 text-slate-400" />}
       title={PARTNER_PORTAL_LOGIN_MOCK_TITLE}
@@ -550,7 +550,7 @@ export const PartnerPortalUnauthorized: React.FC<{
    */
   notice?: string | null;
 }> = ({ onBack, onSwitchAccount, onApply, notice }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={PARTNER_PORTAL_UNAUTHORIZED_TITLE}
@@ -606,7 +606,7 @@ export const PartnerPortalPendingReview: React.FC<{
     return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
   })();
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+    <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
       <StateCard
         icon={<Hourglass className="w-7 h-7 text-slate-400" />}
         title={PARTNER_PORTAL_PENDING_TITLE}
@@ -658,7 +658,7 @@ export const PartnerPortalRejected: React.FC<{
   onBack?: () => void;
   onSwitchAccount?: () => void;
 }> = ({ onBack, onSwitchAccount }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={PARTNER_PORTAL_REJECTED_TITLE}
@@ -683,7 +683,7 @@ export const PartnerPortalRejected: React.FC<{
 );
 
 export const PartnerPortalInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_INACTIVE_TITLE}
@@ -706,7 +706,7 @@ export const PartnerPortalFailure: React.FC<{
   actionLabel: string;
   onAction?: () => void;
 }> = ({ title, body, actionLabel, onAction }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
       <button
         type="button"
@@ -733,7 +733,7 @@ const ExistingUserApplicationForm: React.FC<{
   const [kycDocumentType, setKycDocumentType] = useState('');
   const [kycDocumentReference, setKycDocumentReference] = useState('');
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+    <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
       <form className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4" onSubmit={(event) => {
         event.preventDefault();
         onSubmit({ fullName, phone, kycDocumentType, kycDocumentReference });

@@ -278,7 +278,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   };
 
   return (
-    <div className="min-h-screen pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
+    <div className="min-h-dvh pt-24 pb-16 flex flex-col items-center bg-[#f9f9ff] text-[#151c27]">
       <div className="max-w-[1240px] w-full px-4 sm:px-6">
 
         {/* DASHBOARD HEADER */}

@@ -51,7 +51,7 @@ export const GrowthPartnerSignInPrompt: React.FC<{
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
   accentHex?: string;
 }> = ({ onRequireAuth, accentHex = '#C20E5A' }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen
       icon={<LogIn className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_SIGNIN_TITLE}
@@ -94,7 +94,7 @@ export const GrowthPartnerUnauthorized: React.FC<{
     }
   };
   return (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_UNAUTHORIZED_TITLE}
@@ -121,7 +121,7 @@ export const GrowthPartnerUnauthorized: React.FC<{
 };
 
 export const GrowthPartnerInactive: React.FC<{ onBack?: () => void }> = ({ onBack }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_INACTIVE_TITLE}
@@ -156,7 +156,7 @@ export const GrowthPartnerLoadError: React.FC<{
   };
 
   return (
-    <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+    <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
       <PartnerStatusScreen icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
         <button
           type="button"
@@ -184,7 +184,7 @@ export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void; issues?: s
   onBack,
   issues = supabaseConfig.issues,
 }) => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen
       icon={<AlertCircle className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_MOCK_TITLE}
@@ -231,7 +231,7 @@ export const GrowthPartnerMockNotice: React.FC<{ onBack?: () => void; issues?: s
 );
 
 export const GrowthPartnerLoading: React.FC = () => (
-  <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <div
       role="status"
       aria-label="Loading Growth Partner area"

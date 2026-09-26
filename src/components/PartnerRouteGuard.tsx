@@ -76,7 +76,7 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
   if (gate === 'unauthorized') return <GrowthPartnerUnauthorized onBack={onBack} body={unauthorizedBody} />;
   if (gate === 'inactive') return <GrowthPartnerInactive onBack={onBack} />;
   if (gate === 'mock-mode') return <GrowthPartnerMockNotice onBack={onBack} />;
-  if (gate === 'pending' || gate === 'rejected') return <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+  if (gate === 'pending' || gate === 'rejected') return <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen icon={<ShieldAlert className="h-7 w-7 text-slate-400" />} title={gate === 'pending' ? 'Approval pending' : 'Application not approved'}
       body={gate === 'pending' ? 'Your Growth Partner application is under review.' : 'Your Growth Partner application was not approved.'}>
       <button type="button" onClick={handleRetryWithAutoApprove} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer">Check status</button>

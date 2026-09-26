@@ -244,7 +244,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative border border-gray-100 max-h-[90vh] flex flex-col overflow-hidden"
+              className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative border border-gray-100 max-h-[90dvh] flex flex-col overflow-hidden"
             >
             <button
               onClick={onClose}

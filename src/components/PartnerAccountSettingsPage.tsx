@@ -100,7 +100,7 @@ const AccountModal: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative max-h-[92vh] w-full ${wide ? 'sm:max-w-lg' : 'sm:max-w-md'} overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6`}
+        className={`relative max-h-[92dvh] w-full ${wide ? 'sm:max-w-lg' : 'sm:max-w-md'} overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6`}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <h3 className="text-lg font-black text-slate-900">{title}</h3>

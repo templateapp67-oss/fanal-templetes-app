@@ -307,7 +307,7 @@ export const BackupManagerModal: React.FC<BackupManagerModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in" id="backup-manager-modal">
       <div 
-        className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-up"
+        className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90dvh] animate-scale-up"
         onClick={(e) => e.stopPropagation()}
       >
         {/* MODAL HEADER */}

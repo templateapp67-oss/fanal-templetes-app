@@ -430,7 +430,7 @@ export const OffersManagement: React.FC<OffersManagementProps> = ({
       {/* Pop-up Edit Form Modal */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl p-6 flex flex-col gap-5">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-4xl w-full max-h-[95dvh] overflow-y-auto shadow-2xl p-6 flex flex-col gap-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h4 className="font-display font-black text-lg text-slate-900 flex items-center gap-1.5">
                 <Tag className="w-5 h-5 text-indigo-600" />

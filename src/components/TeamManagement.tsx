@@ -688,7 +688,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
       {/* EDIT STYLIST MODAL */}
       {editingStylist && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full border border-gray-200 shadow-2xl flex flex-col gap-4 my-8 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full border border-gray-200 shadow-2xl flex flex-col gap-4 my-8 max-h-[90dvh] overflow-y-auto">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">

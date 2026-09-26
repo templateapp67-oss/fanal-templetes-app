@@ -1500,7 +1500,7 @@ We look forward to pampering you soon! 💆‍♀️💇‍♂️`;
       {/* ========================================================================= */}
       {historyClient && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 animate-scale-in max-h-[85vh] overflow-hidden">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 animate-scale-in max-h-[85dvh] overflow-hidden">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
                 <h3 className="font-display font-bold text-base text-gray-900">

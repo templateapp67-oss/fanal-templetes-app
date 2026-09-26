@@ -330,3 +330,18 @@ test('no editor or preview source file declares a desktop-fixed container', asyn
     assert.deepEqual(offenders, [], `${relative} must not declare fixed wide containers`);
   }
 });
+
+test('the public salon layout reserves dynamic content and uses stable viewport primitives', async () => {
+  const preview = await readFile(new URL('../../src/components/SalonWebsitePreview.tsx', import.meta.url), 'utf8');
+  const globalCss = await readFile(new URL('../../src/index.css', import.meta.url), 'utf8');
+
+  assert.match(globalCss, /overflow-y:\s*scroll/, 'the vertical scrollbar gutter must always be reserved');
+  assert.match(globalCss, /scrollbar-gutter:\s*stable/, 'supported browsers should use a stable scrollbar gutter');
+  assert.match(globalCss, /html[\s\S]*body,[\s\S]*#root[\s\S]*overflow-x:\s*hidden/, 'document roots must prevent horizontal overflow');
+  assert.doesNotMatch(preview, /min-h-screen|max-h-\[[0-9]+vh\]/, 'the salon preview must use dynamic viewport units');
+  assert.match(preview, /data-layout-stable-location/, 'the changing location strip must reserve a stable footprint');
+  assert.match(preview, /min-h-\[4\.75rem\]/, 'the location strip must fit both short and wrapped addresses');
+  assert.match(preview, /data-layout-stable-media/, 'the videos and reels section must reserve space while media loads');
+  assert.match(preview, /min-h-\[320px\][^"\n]*aspect-\[9\/16\]/, 'Shorts cards must keep a fixed 9:16 footprint');
+  assert.match(preview, /layout-stable-fixed fixed bottom-6 right-6/, 'the floating WhatsApp action must be layout-contained');
+});

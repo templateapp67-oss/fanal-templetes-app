@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<any, any> {
     if (this.state.hasError) {
       console.warn('[ErrorBoundary] Rendering error fallback UI due to:', this.state.error);
       return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-800">
+        <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-6 text-slate-800">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-200 text-center">
             <h2 className="text-xl font-black text-rose-600 mb-2">Something went wrong</h2>
             <p className="text-xs text-slate-500 mb-6 font-mono break-all">

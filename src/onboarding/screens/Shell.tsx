@@ -16,7 +16,7 @@ export const GatewayShell: React.FC<{
   children: React.ReactNode;
   footer?: React.ReactNode;
 }> = ({ title, subtitle, children, footer }) => (
-  <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+  <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}

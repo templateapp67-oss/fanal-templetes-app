@@ -212,7 +212,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
   // -------------------------------------------------------------------------
   if (!signedIn) {
     return (
-      <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+      <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
         <div className="max-w-md w-full text-center bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
           <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
             <CalendarX className="w-7 h-7 text-slate-400" />

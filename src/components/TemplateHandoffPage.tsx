@@ -79,7 +79,7 @@ export const TemplateHandoffScreen: React.FC<{
 }> = ({ status, message, showRetry, onRetry, onBackToOnboarding }) => {
   const busy = status === 'verifying' || status === 'success';
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50">
+    <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

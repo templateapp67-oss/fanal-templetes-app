@@ -373,7 +373,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const saveLabel = saveUi.label;
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-clip pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
+    <div className="min-h-dvh w-full max-w-full overflow-x-clip pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
       <div className="w-full max-w-full sm:max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-6 min-w-0">
 
         {/* Session expired / permission-safe notice. Shown only when the save
