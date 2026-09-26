@@ -118,19 +118,8 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
       })
       .catch(err => {
         if (!cancelled) {
-          const fallback = {
-            full_name: '',
-            email: '',
-            phone: '',
-            photo_path: null,
-            partner_id: 'ptr-active-partner',
-            referral_code: 'NEXORA-GROWTH',
-            account_status: 'Active',
-            partner_role: 'Growth Partner',
-            approval_status: 'Approved',
-            joined_at: new Date().toISOString(),
-          };
-          setProfile(fallback);
+          setProfile(null);
+          setError(safePartnerErrorMessage(err, 'Could not load your partner profile. Please retry.'));
           setLoading(false);
         }
       });
@@ -142,7 +131,8 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
     return () => URL.revokeObjectURL(url);
   }, [photo]);
   if (loading) return <div className="min-w-0"><PartnerLoading label="Loading your profile…" kind="profile" /><PartnerToastCenter /></div>;
-  if (!profile) return null;
+  if (!profile) return <div role="alert" className="p-6 text-rose-700">{error || 'Partner access required.'}
+    <button type="button" onClick={() => setRetry(value => value + 1)}>Retry</button></div>;
   const avatar = preview || (!removePhoto && growthPartnerPhotoUrl(profile.photo_path, client)) || '';
   const inputClass = 'mt-1 min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-2 focus:outline-slate-900';
   const errInput = 'border-rose-300 focus:outline-rose-500';

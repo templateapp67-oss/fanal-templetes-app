@@ -7,33 +7,11 @@ export interface DailyGrowthPoint {
   signups: number;
 }
 
-// Generate realistic 30-day referral sign-up data
-function generate30DayGrowthData(): DailyGrowthPoint[] {
-  const data: DailyGrowthPoint[] = [];
-  const today = new Date();
-
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    // Random realistic sign-ups per day with growth curve
-    const base = Math.floor((30 - i) / 5) + 1;
-    const variation = Math.floor(Math.sin(i * 0.8) * 2) + 1;
-    const count = Math.max(0, base + variation);
-
-    data.push({
-      date: dateStr,
-      signups: count,
-    });
-  }
-  return data;
-}
-
 export const ReferralGrowthChart: React.FC<{
   referralCode?: string | null;
   data?: DailyGrowthPoint[];
 }> = ({ referralCode, data }) => {
-  const chartData = data && data.length > 0 ? data : generate30DayGrowthData();
+  const chartData = data ?? [];
 
   const total30DaySignups = chartData.reduce((acc, item) => acc + item.signups, 0);
   const peakDailySignups = Math.max(...chartData.map((item) => item.signups), 0);
@@ -51,7 +29,7 @@ export const ReferralGrowthChart: React.FC<{
           <p className="text-xs text-slate-500">
             Attributed sign-ups for code:{' '}
             <code className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
-              {referralCode || 'NEXORA-REF'}
+              {referralCode || '—'}
             </code>
           </p>
         </div>

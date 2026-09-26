@@ -44,6 +44,7 @@ const ROW_ACTIVE = {
   user_id: PARTNER_A,
   referral_code: CODE_A,
   is_active: true,
+  status: 'approved',
   created_at: '2026-09-01T00:00:00.000Z',
   updated_at: '2026-09-01T00:00:00.000Z',
 };

@@ -12,7 +12,7 @@ import { supabaseConfig } from '../lib/supabaseClient';
 export const GROWTH_PARTNER_SIGNIN_TITLE = 'Sign in to open the Growth Partner area';
 export const GROWTH_PARTNER_SIGNIN_BODY =
   'Growth Partner tools are tied to your account, so we can only show them once you are signed in.';
-export const GROWTH_PARTNER_UNAUTHORIZED_TITLE = 'Growth Partners only';
+export const GROWTH_PARTNER_UNAUTHORIZED_TITLE = 'Partner access required';
 export const GROWTH_PARTNER_UNAUTHORIZED_BODY =
   'This account is not registered as a Growth Partner. If you were invited as one, sign in with that account.';
 export const GROWTH_PARTNER_ERROR_TITLE = 'Could not load the Growth Partner area';
@@ -102,14 +102,6 @@ export const GrowthPartnerUnauthorized: React.FC<{
     >
       <button
         type="button"
-        onClick={() => void enrollSelf()}
-        className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
-      >
-        Instantly Enable & Open Partner Portal
-      </button>
-      {notice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{notice}</p> : null}
-      <button
-        type="button"
         onClick={() => onBack?.()}
         className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
       >
@@ -158,15 +150,6 @@ export const GrowthPartnerLoadError: React.FC<{
   return (
     <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
       <PartnerStatusScreen icon={<AlertCircle className="w-7 h-7 text-rose-500" />} title={title} body={body}>
-        <button
-          type="button"
-          onClick={handleInstantApprove}
-          disabled={enrolling}
-          className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {enrolling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          <span>Instantly Approve & Access Partner Portal</span>
-        </button>
         <button
           type="button"
           onClick={() => onAction?.()}

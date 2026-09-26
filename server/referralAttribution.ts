@@ -174,23 +174,10 @@ export function registerReferralAttributionRoutes(
       }
       data = rpcResult.data;
     } catch (rpcError: any) {
-      const errMsg = String(rpcError?.message || rpcError);
-      const isPermissionDenied = errMsg.includes('permission denied') || rpcError?.code === '42501';
-      if (!isPermissionDenied) {
-        console.info('[Referral Attribution] RPC error, using fallback response:', {
-          error: rpcError?.message || rpcError,
-          code,
-          clientIp,
-          timestamp: new Date().toISOString()
-        });
-      }
-      const fallbackToken = token || 'a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890';
-      data = {
-        valid: true,
-        referral_code: code || 'NEXORA-REF',
-        token: fallbackToken,
-        expires_at: new Date(Date.now() + 7 * 86400 * 1000).toISOString(),
-      };
+      const requestId = logPartnerFailure(req.method === 'GET' ? 'referral.prepare' : 'referral.capture', rpcError);
+      res.set('X-Request-ID', requestId);
+      // Never invent a valid code/capability when the database is unavailable.
+      return void res.status(503).json({ error: 'Referral verification is temporarily unavailable. Please retry.' });
     }
 
     try {

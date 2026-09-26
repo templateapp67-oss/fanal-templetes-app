@@ -156,9 +156,9 @@ export const SignupScreen: React.FC<{
         </div>
       )}
       {displayedReferralState === 'invalid' && (
-        <FormAlert tone="error">This referral code is unavailable. Update or remove it to continue without a referral.</FormAlert>
+        <FormAlert tone="error">This referral code is unavailable. Update or remove it to continue.</FormAlert>
       )}
-      {(referralCode || referralInput) && (
+      {
         <Field
           id="onboarding-signup-referral-code"
           label="Referral code"
@@ -171,7 +171,7 @@ export const SignupScreen: React.FC<{
             onReferralCodeChange?.(value);
           }}
         />
-      )}
+      }
       <form
         className="space-y-4"
         onSubmit={(event) => {
@@ -202,7 +202,7 @@ export const SignupScreen: React.FC<{
             .run(async () => {
               setBusy(true);
               try {
-                const attributionToken = await prepareAttribution?.(referralInput.trim());
+                const attributionToken = await prepareAttribution?.(referralInput.trim().toUpperCase());
                 return await signUpWithEmail(client as OnboardingSupabaseClient, {
                   ...submitted,
                   attributionToken,

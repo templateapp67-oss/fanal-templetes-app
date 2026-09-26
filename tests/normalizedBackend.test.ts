@@ -135,3 +135,18 @@ test('normalized check-in verifies salon membership and persists today’s arriv
   assert.equal(write.filters.salon_id,salonId); assert.equal(write.filters.status,'confirmed');
   assert.equal(db.calls.find(c=>c.table==='organization_members')?.filters.user_id,actor);
 });
+
+test('public site response projects only the requested tenant and excludes editor-private fields', async () => {
+  const db = database(c => result(c.table === 'salons'
+    ? { id: salonId, slug: 'arts-by-uma', name: 'Uma', owner_id: actor,
+        data: { editor_profile: { ownerId: actor, businessName: 'Uma',
+          privateNotes: 'SECRET', partnerCommission: 999, internalToken: 'SECRET' } } }
+    : []));
+  const response = await lookupSalon({ db: db as any, isMockSupabase: false, mockSalons: {} }, 'arts-by-uma');
+  assert.equal(response.found, true);
+  const json = JSON.stringify(response.salon);
+  assert.ok(!json.includes('SECRET'));
+  assert.ok(!json.includes('partnerCommission'));
+  assert.ok(!json.includes(actor));
+  assert.equal(db.calls.find(c => c.table === 'salons')?.filters.slug, 'arts-by-uma');
+});

@@ -10,7 +10,7 @@ export const FLASH_TOAST_STORAGE_KEY = 'nexora_flash_toast';
 
 function storage(): Storage | null {
   if (typeof window === 'undefined') return null;
-  try { return window.localStorage; } catch { return null; }
+  try { return window.sessionStorage; } catch { return null; }
 }
 
 function canonical(value: unknown): string {

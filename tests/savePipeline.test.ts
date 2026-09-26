@@ -457,7 +457,7 @@ test('live mode: /api/website/save uses one caller-authorized workspace transact
   }
 });
 
-test('live mode: a failed workspace transaction returns retryable failure without success', async () => {
+test('live mode: a denied workspace transaction returns access denial without success', async () => {
   const originalFetch = (globalThis as any).fetch;
   (globalThis as any).fetch = (async (url: string) => {
     if (String(url).includes('/auth/v1/user')) {
@@ -476,9 +476,9 @@ test('live mode: a failed workspace transaction returns retryable failure withou
     const handler = handleWebsiteSave({ mockSalons: {} });
     const res = fakeRes();
     await handler({ body: { salonData: PAYLOAD }, headers: OWNER_AUTH_HEADERS }, res);
-    assert.equal(res.statusCode, 503);
+    assert.equal(res.statusCode, 403);
     assert.equal(res.body.success, false);
-    assert.equal(res.body.code, 'workspace_save_failed');
+    assert.equal(res.body.code, 'DATA_ACCESS_DENIED');
   } finally {
     (globalThis as any).fetch = originalFetch;
   }

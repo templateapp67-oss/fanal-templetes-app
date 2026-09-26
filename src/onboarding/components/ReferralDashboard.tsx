@@ -18,31 +18,16 @@ export interface ReferralRecord {
   date: string;
 }
 
-const DEFAULT_ATTRIBUTION_DATA: ReferralDataPoint[] = [
-  { period: 'May', signups: 12, conversions: 8 },
-  { period: 'Jun', signups: 19, conversions: 14 },
-  { period: 'Jul', signups: 28, conversions: 22 },
-  { period: 'Aug', signups: 35, conversions: 29 },
-  { period: 'Sep', signups: 42, conversions: 36 },
-];
-
-const DEFAULT_REFERRAL_RECORDS: ReferralRecord[] = [
-  { id: '1', code: 'NEXORA-ALPHA01', userEmail: 'john.d@example.com', partnerName: 'Growth Alpha', status: 'completed', date: '2026-09-22' },
-  { id: '2', code: 'NEXORA-ALPHA01', userEmail: 'sarah.m@example.com', partnerName: 'Growth Alpha', status: 'verified', date: '2026-09-21' },
-  { id: '3', code: 'NEXORA-BETA02', userEmail: 'alex.k@example.com', partnerName: 'Beta Growth', status: 'completed', date: '2026-09-18' },
-  { id: '4', code: 'NEXORA-PROMO99', userEmail: 'clara.t@example.com', partnerName: 'Promo Partner', status: 'pending', date: '2026-09-15' },
-];
-
 export const ReferralDashboard: React.FC<{
   code?: string;
   partnerName?: string;
   chartData?: ReferralDataPoint[];
   records?: ReferralRecord[];
 }> = ({
-  code = 'NEXORA-ALPHA01',
+  code = '',
   partnerName = 'Growth Partner',
-  chartData = DEFAULT_ATTRIBUTION_DATA,
-  records = DEFAULT_REFERRAL_RECORDS,
+  chartData = [],
+  records = [],
 }) => {
   const [timeframe, setTimeframe] = useState<'monthly' | 'weekly'>('monthly');
   const [copied, setCopied] = useState(false);

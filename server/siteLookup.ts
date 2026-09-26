@@ -129,7 +129,6 @@ export function mapProfileRow(row: any): SalonProfile {
   const state = row.state ?? '';
 
   return {
-    ...config,
     workingHoursMonFri: workingHours.monFri || (row.opening_time ? `${row.opening_time} - ${row.closing_time}` : ''),
     workingHoursSat: workingHours.saturday || '',
     workingHoursSun: workingHours.sunday || '',
@@ -249,7 +248,7 @@ export async function lookupSalon(
     if (hoursRes.error) return { found: false, salon: null, error: hoursRes.error };
     if (servicesRes.error || staffRes.error) return { found: false, salon: null, error: servicesRes.error || staffRes.error };
     return { found: true, salon: {
-      profile: { ...mapProfileRow(salonRow), ...publicHours(hoursRes.data || []) },
+      profile: { ...mapProfileRow(salonRow), ownerId: undefined, ...publicHours(hoursRes.data || []) },
       services: (servicesRes.data || []).map(mapServiceRow),
       stylists: (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
         assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) })),

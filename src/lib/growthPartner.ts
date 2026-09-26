@@ -34,6 +34,7 @@ export interface GrowthPartner {
   user_id: string;
   referral_code: string;
   is_active: boolean;
+  status?: string;
   created_at: string;
   updated_at: string;
 }
@@ -258,10 +259,7 @@ export const GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE =
  * "this project never had the migration applied".
  */
 export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
-  const row = await readPartnerPayload('Growth Partner activation failed', normalizeGrowthPartnerRow,
-    () => supabase.rpc('ensure_my_growth_partner'));
-  if (!row) throw new Error('Growth Partner activation failed: no partner row returned.');
-  return row;
+  throw new Error('Partner access required: approval must be granted by an administrator.');
 }
 
 /**
@@ -381,6 +379,7 @@ export function resolveGrowthPartnerGate(input: {
     return 'unauthorized';
   }
   if (input.partnerRow.is_active === false) return 'inactive';
+  if (input.partnerRow.user_id !== input.userId || input.partnerRow.status !== 'approved') return 'unauthorized';
   return 'ready';
 }
 
@@ -929,7 +928,8 @@ export function normalizeGrowthPartnerRow(raw: unknown): GrowthPartner | null {
   return safely('partner row', () => ({
     user_id: text(row.user_id),
     referral_code: text(row.referral_code).trim(),
-    is_active: nullableFlag(row.is_active) !== false,
+    is_active: row.is_active === true,
+    status: text(row.status),
     created_at: text(row.created_at),
     updated_at: text(row.updated_at),
   }), null);

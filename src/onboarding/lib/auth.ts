@@ -129,7 +129,7 @@ export async function signUpWithEmail(
   }
   if (!data?.user) throw toSafeAuthError(new Error('signup failed'), 'signup');
   if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-    throw new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
+    throw new OnboardingError('email-in-use', 'An account already exists with this email. Please log in.');
   }
   return { viewer: viewerFromUser(data.user), confirmationRequired: !data.session };
 }

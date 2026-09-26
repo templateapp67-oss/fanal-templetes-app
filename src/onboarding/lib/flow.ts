@@ -186,8 +186,7 @@ export function validateSignup(input: {
     errors.fullName = `Full name must be ${MAX_FULL_NAME_LENGTH} characters or fewer.`;
   if (!isValidEmail(input.email)) errors.email = 'Enter a valid email address.';
   const phone = typeof input.phone === 'string' ? input.phone.trim() : '';
-  if (!phone) errors.phone = 'Enter a phone number.';
-  else if (!isValidPhone(phone)) errors.phone = 'Enter a valid phone number (7–15 digits).';
+  if (phone && !isValidPhone(phone)) errors.phone = 'Enter a valid phone number (7–15 digits).';
   const password = typeof input.password === 'string' ? input.password : '';
   if (!password) errors.password = 'Enter a password.';
   else if (password.length < MIN_PASSWORD_LENGTH)
@@ -299,7 +298,7 @@ export function toSafeAuthError(
     (error as { code?: string })?.code === 'user_already_exists' ||
     /email exists|user already registered|already exists|already been registered/i.test(text)
   ) {
-    return new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
+    return new OnboardingError('email-in-use', 'An account already exists with this email. Please log in.');
   }
   if (/database error saving new user|error.*saving.*new user|failed.*create.*user/i.test(text)) {
     return new OnboardingError('unknown', 'We could not prepare your account. Please try again or contact support.');
@@ -321,7 +320,7 @@ export function toSafeAuthError(
   }
   const fallback =
     action === 'signup'
-      ? 'Account creation failed. Please try again.'
+      ? 'Account creation could not be completed. Check your connection or contact support if this continues.'
       : action === 'reset'
         ? 'Password reset failed. Please try again.'
         : action === 'resend'

@@ -29,10 +29,11 @@ let fakeSupabase: Server;
 let fakeSupabaseUrl: string;
 const restCalls: Array<{ path: string; apikey: string | null; prefer: string | null }> = [];
 const authCalls: Array<{ authorization: string | null; apikey: string | null }> = [];
+const savedEditorStates = new Map<string, any>();
 
 function startFakeSupabase(): Promise<string> {
   return new Promise((resolve) => {
-    fakeSupabase = createServer((req: IncomingMessage, res: ServerResponse) => {
+    fakeSupabase = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? '/', 'http://fake');
 
       if (req.method === 'GET' && url.pathname === '/auth/v1/user') {
@@ -65,8 +66,14 @@ function startFakeSupabase(): Promise<string> {
         });
         if (url.pathname === '/rest/v1/rpc/get_owner_editor_state') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ profile: { businessName: req.headers.authorization === 'Bearer owner-a-token' ? 'Salon A' : 'Salon B' } }));
+          res.end(JSON.stringify(savedEditorStates.get(String(req.headers.authorization)) || { profile: { businessName: req.headers.authorization === 'Bearer owner-a-token' ? 'Salon A' : 'Salon B' } }));
           return;
+        }
+        if (url.pathname === '/rest/v1/rpc/save_owner_editor_state') {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(Buffer.from(chunk));
+          const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          savedEditorStates.set(String(req.headers.authorization), parsed.p_state);
         }
         res.writeHead(204);
         res.end();
@@ -196,7 +203,7 @@ test('production salon state route restores only the verified caller, ignoring s
   const response = await fetch(baseUrl+'/api/salon/state?owner_id='+OWNER_B,{headers:{Authorization:'Bearer owner-a-token'}});
   assert.equal(response.status,200);
   const body:any=await response.json();
-  assert.equal(body.data.profile.businessName,'Salon A');
+  assert.equal(body.data.profile.name,'Auth Test Salon');
 });
 
 test('production salon save alias uses the same authenticated transaction as website save', async () => {
@@ -205,4 +212,44 @@ test('production salon save alias uses the same authenticated transaction as web
   assert.equal(response.status,200);
   assert.equal(restCalls.length,1);
   assert.equal(restCalls[0].path,'/rest/v1/rpc/save_owner_editor_state');
+});
+
+test('forged JWT with Account A subject is rejected despite matching owner id', async () => {
+  restCalls.length = 0;
+  const forged = [
+    Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ sub: OWNER_A, exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url'),
+    Buffer.from('unverified-signature').toString('base64url'),
+  ].join('.');
+  const response = await postSave(savePayload(OWNER_A), { Authorization: `Bearer ${forged}` });
+  assert.equal(response.status, 401);
+  assert.equal(restCalls.length, 0);
+});
+
+test('saved template, services and contact persist through a fresh workspace read for A only', async () => {
+  const payload = savePayload(OWNER_A);
+  (payload.salonData.profile as any).businessName = 'A private salon';
+  (payload.salonData as any).selectedTemplateId = 'hair_salon';
+  const saved = await postSave(payload, { Authorization: 'Bearer owner-a-token' });
+  assert.equal(saved.status, 200);
+  const a = await fetch(`${baseUrl}/api/salon/state`, { headers: { Authorization: 'Bearer owner-a-token' } });
+  const b = await fetch(`${baseUrl}/api/salon/state`, { headers: { Authorization: 'Bearer owner-b-token' } });
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  const own = (await a.json() as any).data;
+  const other = (await b.json() as any).data;
+  assert.equal(own.profile.businessName, 'A private salon');
+  assert.equal(own.selectedTemplateId, 'hair_salon');
+  assert.equal(own.services[0].name, 'Haircut');
+  assert.notEqual(other.profile.businessName, own.profile.businessName);
+});
+
+test('Account A cannot save a profile carrying Account B ownership', async () => {
+  restCalls.length = 0;
+  const payload = savePayload(OWNER_A);
+  (payload.salonData.profile as any).ownerId = OWNER_B;
+  const response = await postSave(payload, { Authorization: 'Bearer owner-a-token' });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json() as any).code, 'DATA_ACCESS_DENIED');
+  assert.equal(restCalls.length, 0);
 });
