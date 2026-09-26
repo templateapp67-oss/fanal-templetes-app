@@ -244,8 +244,14 @@ export class OnboardingError extends Error {
 function messageOf(error: unknown): string {
   if (!error) return '';
   if (typeof error === 'string') return error;
-  const message = (error as { message?: unknown })?.message;
-  return typeof message === 'string' ? message : '';
+  const value = error as { message?: unknown; error_description?: unknown; details?: unknown; code?: unknown };
+  // GoTrue is not fully consistent across its endpoints: some failures use
+  // `message`, while others only carry `error_description` or a code such as
+  // `email_exists`. Keeping all safe, non-secret fields here ensures the
+  // signup screen never hides a recoverable state behind its generic fallback.
+  return [value.message, value.error_description, value.details, value.code]
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join(' ');
 }
 
 /**
@@ -288,7 +294,11 @@ export function toSafeAuthError(
   if (/email not confirmed/i.test(text)) {
     return new OnboardingError('email-not-confirmed', 'Please verify your email, then log in.');
   }
-  if (/user already registered|already exists|already been registered/i.test(text)) {
+  if (
+    (error as { code?: string })?.code === 'email_exists' ||
+    (error as { code?: string })?.code === 'user_already_exists' ||
+    /email exists|user already registered|already exists|already been registered/i.test(text)
+  ) {
     return new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
   }
   if (/database error saving new user|error.*saving.*new user|failed.*create.*user/i.test(text)) {

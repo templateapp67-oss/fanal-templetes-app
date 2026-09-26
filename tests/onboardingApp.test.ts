@@ -255,6 +255,11 @@ test('auth failures map to safe messages and never leak internals', () => {
   assert.equal(toSafeAuthError(new Error('Invalid login credentials')).code, 'invalid-credentials');
   assert.equal(toSafeAuthError(new Error('Email not confirmed')).code, 'email-not-confirmed');
   assert.equal(toSafeAuthError(new Error('User already registered')).code, 'email-in-use');
+  assert.equal(toSafeAuthError({ code: 'email_exists' }, 'signup').code, 'email-in-use');
+  assert.equal(
+    toSafeAuthError({ error_description: 'User already registered' }, 'signup').message,
+    'An account with this email already exists. Try logging in.'
+  );
   assert.equal(toSafeAuthError(new Error('Password should be at least 6 characters')).code, 'validation');
   assert.match(toSafeAuthError(new Error('over request rate limit')).message, /Too many attempts/);
   assert.equal(toSafeAuthError(new Error('Failed to fetch')).code, 'network');
