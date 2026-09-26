@@ -43,17 +43,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
     setError('');
     setNotice('');
 
+    // Password managers can update the DOM without dispatching React change.
+    // Read submitted controls so a visible 6+ character password is not
+    // validated as a stale shorter state value.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const submittedEmail = String(form.get('customer-email') ?? email);
+    const submittedPassword = String(form.get('customer-password') ?? password);
+    const submittedFullName = String(form.get('customer-full-name') ?? fullName);
+    const submittedPhone = String(form.get('customer-phone') ?? phone);
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
+    setFullName(submittedFullName);
+    setPhone(submittedPhone);
+
     if (isMockSupabase) {
       setError(
         'Sign-in needs the connected Supabase project. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY — accounts are real database users, so there is no demo login here.'
       );
       return;
     }
-    if (!email.trim() || !password) {
+    if (!submittedEmail.trim() || !submittedPassword) {
       setError('Enter your email and password.');
       return;
     }
-    if (mode === 'signup' && password.length < 6) {
+    if (mode === 'signup' && submittedPassword.length < 6) {
       setError('Use at least 6 characters for your password.');
       return;
     }
@@ -62,14 +75,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
     try {
       if (mode === 'signup') {
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
+          email: submittedEmail.trim(),
+          password: submittedPassword,
           options: {
             data: {
-              full_name: fullName.trim(),
+              full_name: submittedFullName.trim(),
               // The phone is stored as auth metadata as well as on the profile,
               // so a booking can be pre-filled before the profile row exists.
-              phone: phone.trim(),
+              phone: submittedPhone.trim(),
             },
           },
         });
@@ -81,16 +94,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
           return;
         }
         // Write the profile fields the trigger cannot know about.
-        if (data.user?.id && (phone.trim() || fullName.trim())) {
+        if (data.user?.id && (submittedPhone.trim() || submittedFullName.trim())) {
           await fetch('/api/customer/me/profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
-            body: JSON.stringify({ fullName: fullName.trim(), phone: phone.trim() }),
+            body: JSON.stringify({ fullName: submittedFullName.trim(), phone: submittedPhone.trim() }),
           }).catch(() => undefined);
         }
         onAuthenticated({ id: String(data.user?.id ?? ''), email: data.user?.email ?? undefined });
       } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: submittedEmail.trim(), password: submittedPassword });
         if (signInError) throw signInError;
         onAuthenticated({ id: String(data.user?.id ?? ''), email: data.user?.email ?? undefined });
       }
@@ -120,6 +133,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
             <>
               <Labeled icon={<User className="w-4 h-4" />}>
                 <input
+                  name="customer-full-name"
                   value={fullName}
                   onChange={(event) => setFullName(event.target.value)}
                   placeholder="Your name"
@@ -129,6 +143,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
               </Labeled>
               <Labeled icon={<Phone className="w-4 h-4" />}>
                 <input
+                  name="customer-phone"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   placeholder="Mobile number"
@@ -142,6 +157,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
 
           <Labeled icon={<Mail className="w-4 h-4" />}>
             <input
+              name="customer-email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="you@example.com"
@@ -153,6 +169,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
 
           <Labeled icon={<Lock className="w-4 h-4" />}>
             <input
+              name="customer-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder={mode === 'signup' ? 'Create a password (6+ characters)' : 'Your password'}
