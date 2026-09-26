@@ -5,6 +5,7 @@ import { NotificationBell } from './NotificationBell';
 import { AuthModal } from './AuthModal';
 import { supabase } from '../lib/supabaseClient';
 import { clearAllLocalUserState } from '../lib/salonStore';
+import { useReferralCode } from '../lib/hooks/useReferralCode';
 
 interface HeaderProps {
   currentView: AppView;
@@ -17,6 +18,83 @@ interface HeaderProps {
   onProfileSaved: (patch: Partial<SalonProfile>) => void;
   openAuth: (mode: 'login' | 'signup') => void;
 }
+
+const HeaderReferralWidget: React.FC = () => {
+  const { code: referralCode, loading: referralLoading } = useReferralCode();
+  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(null), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  if (referralLoading) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 animate-pulse">
+        <div className="w-2 h-2 rounded-full bg-slate-300" />
+        <div className="w-20 h-3 rounded bg-slate-200" />
+      </div>
+    );
+  }
+
+  if (!referralCode) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+        <span className="material-symbols-outlined text-xs leading-none">warning</span>
+        <span>Referral code unavailable</span>
+      </div>
+    );
+  }
+
+  const referralUrl = `${window.location.origin}/signup?ref=${encodeURIComponent(referralCode)}`;
+
+  const handleCopyCode = () => {
+    if (!referralCode) return;
+    navigator.clipboard.writeText(referralCode).then(() => {
+      setCopied('code');
+    }).catch(() => {});
+  };
+
+  const handleCopyLink = () => {
+    if (!referralCode) return;
+    navigator.clipboard.writeText(referralUrl).then(() => {
+      setCopied('link');
+    }).catch(() => {});
+  };
+
+  return (
+    <div className="flex items-center gap-2 border border-pink-100 bg-rose-50/50 px-3 py-1.5 rounded-full shadow-2xs">
+      <button
+        type="button"
+        onClick={handleCopyCode}
+        className="flex items-center gap-1 text-[11px] font-bold text-[#C20E5A] hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none outline-none"
+        title="Click to copy your referral code"
+      >
+        <span className="material-symbols-outlined text-[14px]">confirmation_number</span>
+        <span className="font-mono tracking-tight">{referralCode}</span>
+        <span className="material-symbols-outlined text-[12px] text-[#C20E5A]/60">
+          {copied === 'code' ? 'check' : 'content_copy'}
+        </span>
+      </button>
+
+      <div className="w-px h-3 bg-pink-200" />
+
+      <button
+        type="button"
+        onClick={handleCopyLink}
+        className="flex items-center gap-1 text-[11px] font-bold text-[#A30B4A] hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none outline-none"
+        title="Copy shareable referral URL"
+      >
+        <span className="material-symbols-outlined text-[14px]">share</span>
+        <span>{copied === 'link' ? 'Copied Link!' : 'Share'}</span>
+        {copied !== 'link' && (
+          <span className="material-symbols-outlined text-[12px] text-[#A30B4A]/60">link</span>
+        )}
+      </button>
+    </div>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // The view switcher.
@@ -161,6 +239,11 @@ export const Header: React.FC<HeaderProps> = ({
           
           {user ? (
             <div className="flex items-center gap-4">
+              {/* Desktop Referral Tool */}
+              <div className="hidden sm:block">
+                <HeaderReferralWidget />
+              </div>
+
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Nexora Partner</span>
                 <span className="text-sm font-bold text-[#C20E5A]">
@@ -226,6 +309,11 @@ export const Header: React.FC<HeaderProps> = ({
           mobileNavOpen ? 'block' : 'hidden'
         }`}
       >
+        {user && (
+          <div className="px-4 pt-4 pb-2 border-b border-outline-variant/20 flex justify-center sm:hidden">
+            <HeaderReferralWidget />
+          </div>
+        )}
         <nav className="flex flex-col gap-1 p-4" aria-label="Main navigation">
           {HEADER_NAV_ENTRIES.map((entry) => {
             const active = isHeaderNavEntryActive(entry, currentView);

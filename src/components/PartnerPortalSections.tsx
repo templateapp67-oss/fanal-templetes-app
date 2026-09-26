@@ -51,10 +51,29 @@ export const PartnerReferralCodeSection: React.FC<{
   const copiedCode = copied === 'code', copiedLink = copied === 'link';
   const value = typeof code === 'string' ? code.trim() : '';
   const shareLink = value ? partnerReferralShareLink(value, origin) : '';
-  const copyCode = () => copy(value, 'code');
-  const copyLink = () => copy(shareLink, 'link');
+
+  const copyCode = async () => {
+    if (!value) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      }
+    } catch {}
+    copy(value, 'code');
+  };
+
+  const copyLink = async () => {
+    if (!value || !shareLink) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareLink);
+      }
+    } catch {}
+    copy(shareLink, 'link');
+  };
 
   const share = async () => {
+    if (!value || !shareLink) return;
     if (typeof navigator === 'undefined' || !navigator.share) {
       await copyLink();
       return;
@@ -78,11 +97,17 @@ export const PartnerReferralCodeSection: React.FC<{
           Your referral code
         </h2>
         <p className="mt-3 text-sm font-bold text-slate-700">
-          {GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE}
+          Referral code unavailable
         </p>
         <p className="mt-3 text-xs text-slate-500">
           Your code is managed by the platform and cannot be changed here.
         </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" disabled className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400 opacity-50 cursor-not-allowed">Copy Code</button>
+          <button type="button" disabled className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400 opacity-50 cursor-not-allowed">Copy Referral Link</button>
+          <button type="button" disabled className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400 opacity-50 cursor-not-allowed">WhatsApp</button>
+          <button type="button" disabled className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400 opacity-50 cursor-not-allowed">Share</button>
+        </div>
       </section>
     );
   }
@@ -119,14 +144,24 @@ export const PartnerReferralCodeSection: React.FC<{
           </code>
           <button
             type="button"
+            disabled={!value || loading}
             onClick={() => void copyCode()}
-            className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 transition-opacity hover:opacity-90"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {copiedCode ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             {copiedCode ? 'Copied' : 'Copy Code'}
           </button>
         </div>
-        {shareLink && <button type="button" onClick={() => void copyLink()} className="mt-4 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold">Copy Referral Link</button>}
+        {shareLink && (
+          <button
+            type="button"
+            disabled={!value || loading || !shareLink}
+            onClick={() => void copyLink()}
+            className="mt-4 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Copy Referral Link
+          </button>
+        )}
         <p className="mt-4 text-xs text-slate-500">
           New users who join with this code are linked to you. Your code is managed by the platform
           and cannot be changed here.
@@ -158,17 +193,59 @@ export const PartnerReferralCodeSection: React.FC<{
             </div>
             <button
               type="button"
+              disabled={!value || loading || !shareLink}
               onClick={() => void copyLink()}
-              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
+              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {copiedLink ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               {copiedLink ? 'Copied' : 'Copy Link'}
             </button>
           </div>
           <div className="mt-4 flex flex-wrap gap-3">
-            <a className="rounded-xl bg-green-50 px-4 py-2.5 text-sm font-bold text-green-800" href={`https://wa.me/?text=${encodeURIComponent(`Join using my referral code ${value}: ${shareLink}`)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-            <a className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold" href={`mailto:?subject=${encodeURIComponent('Join Nexora')}&body=${encodeURIComponent(`Join using my referral code ${value}: ${shareLink}`)}`}>Email</a>
-            <button type="button" onClick={() => void share()} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold">Share</button>
+            {value && shareLink ? (
+              <a
+                className="rounded-xl bg-green-50 px-4 py-2.5 text-sm font-bold text-green-800 transition-opacity hover:opacity-90"
+                href={`https://wa.me/?text=${encodeURIComponent(`Join using my referral code ${value}: ${shareLink}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                WhatsApp
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400 opacity-50 cursor-not-allowed"
+              >
+                WhatsApp
+              </button>
+            )}
+
+            {value && shareLink ? (
+              <a
+                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 transition-opacity hover:opacity-90"
+                href={`mailto:?subject=${encodeURIComponent('Join Nexora')}&body=${encodeURIComponent(`Join using my referral code ${value}: ${shareLink}`)}`}
+              >
+                Email
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400 opacity-50 cursor-not-allowed"
+              >
+                Email
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={!value || loading || !shareLink}
+              onClick={() => void share()}
+              className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Share
+            </button>
           </div>
           <p role={copyError ? "alert" : undefined} className="mt-3 text-sm text-slate-600">{copyError || notice.message}</p>
         </section>

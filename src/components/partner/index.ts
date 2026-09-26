@@ -8,4 +8,5 @@ export { PartnerLevelsPage } from './PartnerLevelsPage';
 export { PartnerLeaderboardsPage } from './PartnerLeaderboardsPage';
 export { PartnerNotificationsPage } from './PartnerNotificationsPage';
 export { PartnerSupportPage } from './PartnerSupportPage';
+export { PartnerReferralQRCode } from './PartnerReferralQRCode';
 export { PartnerModuleHeader, PartnerModuleCard, PartnerModuleButton, PartnerStatGrid } from './PartnerModuleKit';
