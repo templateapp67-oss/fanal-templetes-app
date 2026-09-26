@@ -595,7 +595,7 @@ async function startServer() {
     }
     const userId = authResult.user.id;
     if (isMockSupabase) {
-      return res.json({ success: true, data: { user_id: userId, referral_code: 'MOCK' + userId.slice(0, 6).toUpperCase(), is_active: true } });
+      return res.json({ success: true, data: { user_id: userId, referral_code: null, is_active: true } });
     }
     const { data, error } = await db.rpc('get_my_growth_partner');
     if (error) {
@@ -612,7 +612,7 @@ async function startServer() {
     }
     const userId = authResult.user.id;
     if (isMockSupabase) {
-      return res.json({ success: true, data: { user_id: userId, referral_code: 'MOCK' + userId.slice(0, 6).toUpperCase(), is_active: true } });
+      return res.json({ success: true, data: { user_id: userId, referral_code: null, is_active: true } });
     }
     const { data, error } = await db.rpc('ensure_my_growth_partner');
     if (error) {
