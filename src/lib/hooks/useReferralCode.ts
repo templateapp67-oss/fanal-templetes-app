@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { isMockSupabase, supabase } from '../supabaseClient';
 
 export type UseReferralCodeResult = {
   code: string | null;
@@ -21,6 +21,15 @@ export function useReferralCode(): UseReferralCodeResult {
 
   useEffect(() => {
     let mounted = true;
+
+    if (isMockSupabase) {
+      setCode(null);
+      setLoading(false);
+      return () => {
+        mounted = false;
+        requestVersion.current += 1;
+      };
+    }
 
     const clear = (nextLoading: boolean) => {
       if (!mounted) return;
