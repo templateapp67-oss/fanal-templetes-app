@@ -45,7 +45,14 @@ export function publicOnboardingOrigin(origin = partnerShareOrigin()): string {
   return candidate;
 }
 
-/** Build a public signup link retaining the optional tenant and referral code. */
+/**
+ * Build a public onboarding-signup link.
+ *
+ * `/signup` remains a legacy alias, but it also collides with the white-label
+ * customer booking surface when a `site` query is present. New share links use
+ * the explicit onboarding namespace so they cannot open the booking-account
+ * modal by mistake.
+ */
 export function getShareableLink(site: string | null | undefined, ref: string | null | undefined, origin?: string): string {
   const base = publicOnboardingOrigin(origin ?? partnerShareOrigin());
   const cleanRef = ref ? normalizeGrowthReferralCode(ref) : '';
@@ -56,24 +63,16 @@ export function getShareableLink(site: string | null | undefined, ref: string | 
   if (cleanSite) parts.push(`site=${encodeURIComponent(cleanSite)}`);
   if (cleanRef) parts.push(`ref=${encodeURIComponent(cleanRef)}`);
   const query = parts.join('&');
-  return `${base}/signup${query ? `?${query}` : ''}`;
+  return `${base}/onboarding/signup${query ? `?${query}` : ''}`;
 }
 
 /** A partner referral link must always contain a valid referral code. */
 export function partnerReferralShareLink(code: string, origin?: string): string {
   const cleanCode = normalizeGrowthReferralCode(code);
   if (!cleanCode) return '';
-  let currentSite = '';
-  try {
-    if (typeof window !== 'undefined' && window.location) {
-      const params = new URLSearchParams(window.location.search);
-      currentSite = params.get('site') || params.get('subdomain') || params.get('tenant') || '';
-    }
-  } catch {}
-  if (!currentSite) {
-    try {
-      currentSite = localStorage.getItem('nexora_active_site') || localStorage.getItem('nexora_site') || '';
-    } catch {}
-  }
-  return getShareableLink(currentSite, cleanCode, origin);
+  // Partner referrals belong to the platform onboarding funnel, not to the
+  // salon site the partner happened to be viewing when they copied the link.
+  // Carrying `site=...` here opened the customer booking signup modal and sent
+  // the new account down the wrong product flow.
+  return getShareableLink(null, cleanCode, origin);
 }

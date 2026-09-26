@@ -130,7 +130,7 @@ test('Section 40: all fifteen acceptance steps through React, real HTTP/Auth/RPC
     await click(host.querySelector('[data-partner-nav="referral-code"]'));
     await wait(()=>!!host.querySelector('[aria-label="Your referral link"]'),'referral-link screen');
     await click(button('Copy Link'));
-    await wait(()=>clipboard.includes('/signup?ref='),'clipboard referral URL');
+    await wait(()=>clipboard.includes('/onboarding/signup?ref='),'clipboard referral URL');
     assert.equal(new URL(clipboard).searchParams.get('ref'),code);
     assert.equal(host.querySelector('[role="status"]')?.textContent,'Referral link copied');passed(5);
 

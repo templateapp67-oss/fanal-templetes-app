@@ -300,7 +300,7 @@ test('sidebar navigation drives the SPA: My Referral Code shows the code and the
     assert.ok(byText('h1', 'My Referral Code'), 'the header follows the section');
     const shareInput = document.querySelector('input[aria-label="Your referral link"]') as HTMLInputElement | null;
     assert.ok(shareInput, 'the share link input renders');
-    assert.equal(shareInput!.value, 'http://localhost:3000/signup?ref=ALPHA01');
+    assert.equal(shareInput!.value, 'http://localhost:3000/onboarding/signup?ref=ALPHA01');
 
     // Referred Users renders the real roll (rpc get_my_partner_referrals).
     await click(byData('partner-nav', 'referred-users')[0], 'the Referred Users nav item');

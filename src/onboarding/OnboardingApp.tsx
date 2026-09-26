@@ -74,7 +74,7 @@ export const ONBOARDING_MOCK_BODY =
 
 /**
  * Read the referral code of a partner's share link
- * (`/signup?ref=CODE`, `?referral=CODE` accepted as an alias). The code is
+ * (`/onboarding/signup?ref=CODE`; the legacy `/signup` alias is accepted). The code is
  * captured ONCE on mount (the router may redirect through the login screen,
  * which drops the query) and the backend re-validates it on submit.
  *
@@ -384,11 +384,11 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
             const code = persistReferralIntent(sharedReferralCode);
             clearAllLocalUserState();
             void signOutViewer(sb).finally(() => {
-              const destination = code ? `/signup?ref=${encodeURIComponent(code)}` : '/signup';
+              const destination = code ? `/onboarding/signup?ref=${encodeURIComponent(code)}` : '/onboarding/signup';
               if (typeof window !== 'undefined' && window.location) {
                 window.location.assign(destination);
               } else {
-                navigate('/signup');
+                navigate('/onboarding/signup');
               }
             });
           }}

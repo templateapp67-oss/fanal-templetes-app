@@ -119,12 +119,12 @@ export const PartnerMarketingMaterialsPage: React.FC<{
         {code ? (
           <div className="flex flex-wrap items-center gap-3">
             <output className="min-w-0 flex-1 truncate rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
-              {shareLink || `/signup?ref=${encodeURIComponent(code)}`}
+              {shareLink || `/onboarding/signup?ref=${encodeURIComponent(code)}`}
             </output>
             <PartnerModuleButton
               variant="accent"
               accentHex={accentHex}
-              onClick={() => void clipboard.copy(shareLink || `/signup?ref=${encodeURIComponent(code)}`, 'link')}
+              onClick={() => void clipboard.copy(shareLink || `/onboarding/signup?ref=${encodeURIComponent(code)}`, 'link')}
               data-partner-action="copy-marketing-link"
             >
               {clipboard.copied === 'link' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

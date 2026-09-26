@@ -586,7 +586,7 @@ test('Levels, Leaderboards and Marketing Materials render their real data', asyn
     const library = moduleRoot('marketing-materials')!;
     assert.ok(library.textContent!.includes('Launch week story'), 'the published asset renders');
     assert.ok(library.textContent!.includes('2.3 MB'), 'with a human size');
-    assert.ok(library.textContent!.includes('/signup?ref=ALPHA01'), 'and the partner’s own share link');
+    assert.ok(library.textContent!.includes('/onboarding/signup?ref=ALPHA01'), 'and the partner’s own share link');
     const download = byData('partner-action', 'download-m1')[0] as HTMLButtonElement;
     assert.ok(download, 'each asset has a download action');
     await click(download, 'the download button');

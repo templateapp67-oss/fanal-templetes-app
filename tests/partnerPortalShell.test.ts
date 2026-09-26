@@ -462,7 +462,7 @@ test('the referral code page shows the real code big, copy actions and the funne
   assert.match(html, /Copy Code/);
   assert.match(html, /Copy Link/);
   // The share link is a plain URL built from the partner's own code.
-  assert.match(html, /https:\/\/app\.example\/signup\?ref=ALPHA01/);
+  assert.match(html, /https:\/\/app\.example\/onboarding\/signup\?ref=ALPHA01/);
   // Honest copy: the code is platform-managed.
   assert.match(html, /cannot be changed here/);
   // The funnel explanation.
@@ -489,18 +489,18 @@ test('the referral code page adapts to paused partners and missing codes honestl
 });
 
 test('the share link helper builds a clean onboarding URL and degrades safely', () => {
-  assert.equal(partnerReferralShareLink('ALPHA01', 'https://app.example'), 'https://app.example/signup?ref=ALPHA01');
+  assert.equal(partnerReferralShareLink('ALPHA01', 'https://app.example'), 'https://app.example/onboarding/signup?ref=ALPHA01');
   assert.equal(
     partnerReferralShareLink('ALPHA01', 'https://app.example/'),
-    'https://app.example/signup?ref=ALPHA01',
+    'https://app.example/onboarding/signup?ref=ALPHA01',
     'trailing slashes on the origin are normalized'
   );
-  assert.equal(partnerReferralShareLink('  ALPHA01  ', 'https://app.example'), 'https://app.example/signup?ref=ALPHA01');
+  assert.equal(partnerReferralShareLink('  ALPHA01  ', 'https://app.example'), 'https://app.example/onboarding/signup?ref=ALPHA01');
   // No origin (SSR/no browser) or no code → no link, never a broken one.
   assert.equal(partnerReferralShareLink('ALPHA01', ''), '');
   assert.equal(partnerReferralShareLink('', 'https://app.example'), '');
   // Codes with unusual characters are URL-encoded, not interpolated raw.
-  assert.equal(partnerReferralShareLink('A B/01', 'https://app.example'), 'https://app.example/signup?ref=A%20B%2F01');
+  assert.equal(partnerReferralShareLink('A B/01', 'https://app.example'), 'https://app.example/onboarding/signup?ref=A%20B%2F01');
 });
 
 test('without a browser origin the code page omits the link block instead of faking one', () => {

@@ -77,10 +77,10 @@ test('empty referrals copy the real link; unmatched searches clear both criteria
     await act(async()=>root.render(React.createElement(GrowthPartnerPage,{user:{id:'partner',email:'partner@example.com'},path:'/partner/referrals',navigate(){},onLogout(){}} as any)));
     await wait(()=>!!button('Copy Referral Link'));
     assert.match(host.textContent!,/No referrals yet\./);assert.match(host.textContent!,/Start sharing your referral link to grow your network\./);
-    await click(button('Copy Referral Link'));assert.deepEqual(copies,['http://localhost:3000/signup?ref=NEXORA-RAHUL25']);
+    await click(button('Copy Referral Link'));assert.deepEqual(copies,['http://localhost:3000/onboarding/signup?ref=NEXORA-RAHUL25']);
     assert.match(host.textContent!,/Referral link copied/);
     denyCopy=true;await click(button('Copy Referral Link'));
-    assert.equal(host.querySelector<HTMLInputElement>('[aria-label="Referral link to copy manually"]')?.value,'http://localhost:3000/signup?ref=NEXORA-RAHUL25');
+    assert.equal(host.querySelector<HTMLInputElement>('[aria-label="Referral link to copy manually"]')?.value,'http://localhost:3000/onboarding/signup?ref=NEXORA-RAHUL25');
     const search=host.querySelector<HTMLInputElement>('input[type="search"]')!;
     await change(search,'nobody');await click(button('Apply filters'));
     await wait(()=>host.textContent!.includes('No matching referrals found.'));

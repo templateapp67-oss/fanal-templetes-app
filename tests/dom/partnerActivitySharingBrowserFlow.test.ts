@@ -23,7 +23,7 @@ test('copy code/link use exact snackbars, repeat after dismiss, last action wins
   try {
     await act(async()=>root.render(React.createElement(PartnerReferralCodeSection,{code:'NEXORA-ABC123'})));
     await click('Copy Code');assert.equal(toast(),'Referral code copied');assert.equal(writes.at(-1),'NEXORA-ABC123');
-    await click('Copy Link');assert.equal(toast(),'Referral link copied');assert.match(writes.at(-1)!,/\/signup\?ref=NEXORA-ABC123$/);
+    await click('Copy Link');assert.equal(toast(),'Referral link copied');assert.match(writes.at(-1)!,/\/onboarding\/signup\?ref=NEXORA-ABC123$/);
     await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Dismiss notification"]')!.click());
     assert.equal(toast(),undefined);
     await click('Copy Code');assert.equal(toast(),'Referral code copied');

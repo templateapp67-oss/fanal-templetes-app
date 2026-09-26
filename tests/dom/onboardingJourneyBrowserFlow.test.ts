@@ -167,7 +167,7 @@ test('PART 3 journey: share link → sign up → referral link → handoff → T
 
     // --- 1. the visitor lands on the partner's share link -------------------
     visitor = client();
-    const sharePath = `/signup?ref=${encodeURIComponent(code)}`;
+    const sharePath = `/onboarding/signup?ref=${encodeURIComponent(code)}`;
     dom.reconfigure({ url: `${origin}${sharePath}` });
     window.history.replaceState(null, '', sharePath);
     await render(React.createElement(VisitorBrowser, { initialPath: '/signup' }));

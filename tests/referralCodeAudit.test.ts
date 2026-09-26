@@ -381,16 +381,16 @@ test('the customer referral code has its own format and its own normalizer', () 
 test('a generated share link carries the canonical code form', () => {
   assert.equal(
     partnerReferralShareLink('ALPHA01', 'https://app.example'),
-    'https://app.example/signup?ref=ALPHA01'
+    'https://app.example/onboarding/signup?ref=ALPHA01'
   );
   assert.equal(
     partnerReferralShareLink('  alpha01  ', 'https://app.example'),
-    'https://app.example/signup?ref=ALPHA01',
+    'https://app.example/onboarding/signup?ref=ALPHA01',
     'a lowercase code is emitted in canonical form, so the recipient sees what will be stored'
   );
   assert.equal(
     partnerReferralShareLink('NEXORA-abc123', 'https://app.example'),
-    'https://app.example/signup?ref=NEXORA-ABC123'
+    'https://app.example/onboarding/signup?ref=NEXORA-ABC123'
   );
   assert.equal(partnerReferralShareLink('', 'https://app.example'), '', 'no code, no link');
   assert.equal(partnerReferralShareLink('   ', 'https://app.example'), '', 'a blank code is not a code');
@@ -402,7 +402,7 @@ test('AI Studio preview hosts never leak into public referral links', () => {
   assert.equal(publicOnboardingOrigin(preview), DEFAULT_PUBLIC_ONBOARDING_ORIGIN);
   assert.equal(
     partnerReferralShareLink('NEXORA-3E038732', preview),
-    `${DEFAULT_PUBLIC_ONBOARDING_ORIGIN}/signup?ref=NEXORA-3E038732`
+    `${DEFAULT_PUBLIC_ONBOARDING_ORIGIN}/onboarding/signup?ref=NEXORA-3E038732`
   );
 });
 
