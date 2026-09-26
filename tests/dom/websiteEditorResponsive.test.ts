@@ -333,6 +333,7 @@ test('no editor or preview source file declares a desktop-fixed container', asyn
 
 test('the public salon layout reserves dynamic content and uses stable viewport primitives', async () => {
   const preview = await readFile(new URL('../../src/components/SalonWebsitePreview.tsx', import.meta.url), 'utf8');
+  const mapsView = await readFile(new URL('../../src/components/GoogleMapsView.tsx', import.meta.url), 'utf8');
   const globalCss = await readFile(new URL('../../src/index.css', import.meta.url), 'utf8');
 
   assert.match(globalCss, /overflow-y:\s*scroll/, 'the vertical scrollbar gutter must always be reserved');
@@ -341,6 +342,9 @@ test('the public salon layout reserves dynamic content and uses stable viewport 
   assert.doesNotMatch(preview, /min-h-screen|max-h-\[[0-9]+vh\]/, 'the salon preview must use dynamic viewport units');
   assert.match(preview, /data-layout-stable-location/, 'the changing location strip must reserve a stable footprint');
   assert.match(preview, /min-h-\[4\.75rem\]/, 'the location strip must fit both short and wrapped addresses');
+  assert.match(preview, /data-layout-stable-contact[^>]*lg:min-h-\[36rem\]/, 'the contact and map row must not resize when profile address snapshots change');
+  assert.match(preview, /className="flex min-h-20 items-start gap-3 group/, 'the studio address details must reserve their wrapped-address footprint');
+  assert.match(mapsView, /\[contain:layout\]/, 'the map fallback must contain its changing address layout');
   assert.match(preview, /data-layout-stable-media/, 'the videos and reels section must reserve space while media loads');
   assert.match(preview, /min-h-\[320px\][^"\n]*aspect-\[9\/16\]/, 'Shorts cards must keep a fixed 9:16 footprint');
   assert.match(preview, /layout-stable-fixed fixed bottom-6 right-6/, 'the floating WhatsApp action must be layout-contained');

@@ -1626,14 +1626,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* Location Banner Bar with Live Hours */}
-        <div data-layout-stable-location className={`px-6 py-3 flex min-h-[4.75rem] flex-wrap items-center justify-between gap-3 text-xs border-b [contain:layout] ${
+        <div data-layout-stable-location className={`px-6 py-3 flex min-h-[4.75rem] flex-wrap md:flex-nowrap items-center justify-between gap-3 text-xs border-b [contain:layout] ${
           isDarkCanvas ? 'bg-[#15151c] border-neutral-800 text-neutral-300' : 'bg-slate-50 border-slate-200 text-slate-700'
         }`}>
           <a
             href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
+            className="flex min-h-8 min-w-0 flex-1 items-center gap-2 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
             title="Click to show location on Google Maps"
           >
             <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
@@ -2577,7 +2577,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* ============================================================ */}
         {sectionVisibility.location && (
           <section className="p-6 md:p-12 bg-slate-50 border-t border-slate-100">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div data-layout-stable-contact className="grid grid-cols-1 lg:min-h-[36rem] lg:grid-cols-2 gap-6 [contain:layout]">
               {/* Location details */}
               <div className="flex flex-col justify-between gap-4">
                 <div>
@@ -2606,7 +2606,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     href={googleMapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-start gap-3 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
+                    className="flex min-h-20 items-start gap-3 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
                     title="Click to view studio location on Google Maps"
                   >
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">

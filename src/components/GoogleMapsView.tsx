@@ -90,7 +90,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     return (
       <div
         style={{ minHeight: height }}
-        className="group relative flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center transition-all hover:bg-slate-100/70 hover:border-slate-300"
+        className="group relative flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center transition-all hover:bg-slate-100/70 hover:border-slate-300 [contain:layout]"
       >
         <a
           href={mapsUrl}
