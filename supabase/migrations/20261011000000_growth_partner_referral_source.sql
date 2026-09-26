@@ -1,4 +1,6 @@
 -- Canonical Growth Partner referral-code source of truth.
+-- Earlier partner schemas may lack the optional partner_code identifier.
+alter table public.growth_partners add column if not exists partner_code text;
 -- Existing referral codes are preserved. New codes are random and are never
 -- derived from auth.users.id. Browser reads stay RLS-scoped to auth.uid().
 

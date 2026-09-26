@@ -79,11 +79,9 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
   if (gate === 'pending' || gate === 'rejected') return <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen icon={<ShieldAlert className="h-7 w-7 text-slate-400" />} title={gate === 'pending' ? 'Approval pending' : 'Application not approved'}
       body={gate === 'pending' ? 'Your Growth Partner application is under review.' : 'Your Growth Partner application was not approved.'}>
-      <button type="button" onClick={handleRetryWithAutoApprove} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer">Check status</button>
+      <button type="button" onClick={onRetry} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer">Check status</button>
 
-      <button type="button" onClick={() => void enrollSelf()} className="mt-3 min-h-11 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition-colors cursor-pointer flex items-center justify-center gap-2">
-        <span>Instantly Approve & Access Partner Portal</span>
-      </button>
+
       {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
 
       <button type="button" onClick={() => {

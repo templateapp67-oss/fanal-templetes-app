@@ -2,9 +2,6 @@ import React from 'react';
 import { FormAlert, GatewayShell } from './Shell';
 import type { OnboardingPhase } from '../lib/flow';
 import { templateAppBaseUrl } from '../lib/handoff';
-import { ReferralDashboard } from '../components/ReferralDashboard';
-import { ReferralGrowthChart } from '../components/ReferralGrowthChart';
-import { ShareReferralQR } from '../components/ShareReferralQR';
 
 // ============================================================================
 // Post-referral status. Two variants, both read-only views of the BACKEND
@@ -160,14 +157,7 @@ export const StatusScreen: React.FC<{
       </div>
     </GatewayShell>
 
-    {/* Share Referral QR Code Card */}
-    <ShareReferralQR referralCode={referralCode || 'NEXORA-ALPHA01'} partnerName={partnerName || 'Growth Partner'} />
 
-    {/* 30-Day Referral Growth Bar Chart */}
-    <ReferralGrowthChart referralCode={referralCode || 'NEXORA-ALPHA01'} />
-
-    {/* Referral Dashboard with Bar Chart Visualization */}
-    <ReferralDashboard code={referralCode || 'NEXORA-ALPHA01'} partnerName={partnerName || 'Growth Partner'} />
   </div>
 );
 

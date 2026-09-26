@@ -58,14 +58,16 @@ export async function captureSignupReferral(code: string): Promise<string> {
  */
 export async function prepareSignupAttribution(referralCode?: string): Promise<string | undefined> {
   const code = String(referralCode || '').trim();
+  if (!code) return undefined; // An old cookie must not attribute an organic signup.
   if (code) {
     // POST deliberately does not return the capability token: it is stored in
     // the HttpOnly cookie so referral attribution cannot be copied from page
     // state. Refresh the code first, then make the cookie-backed GET that is
     // explicitly allowed to return the short-lived token for Auth metadata.
     const captured = await requestAttribution(code);
-    if (!captured.valid) return undefined;
+    if (!captured.valid) throw new OnboardingError('invalid-code', 'This referral code is unavailable. Update or remove it to continue.');
   }
   const prepared = await requestAttribution();
-  return prepared.valid ? prepared.token : undefined;
+  if (!prepared.valid || !prepared.token) throw new OnboardingError('invalid-code', 'This referral code is unavailable. Update or remove it to continue.');
+  return prepared.token;
 }

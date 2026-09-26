@@ -9,10 +9,11 @@ export interface ShareReferralQRProps {
 }
 
 export const ShareReferralQR: React.FC<ShareReferralQRProps> = ({
-  referralCode = 'NEXORA-ALPHA01',
+  referralCode = null,
   partnerName = 'Growth Partner',
 }) => {
-  const code = referralCode || 'NEXORA-ALPHA01';
+  const code = referralCode?.trim() || '';
+
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -24,6 +25,7 @@ export const ShareReferralQR: React.FC<ShareReferralQRProps> = ({
 
   useEffect(() => {
     let active = true;
+    if (!code) { setQrDataUrl(''); return () => { active = false; }; }
     QRCode.toDataURL(shareUrl, {
       width: 320,
       margin: 2,
@@ -43,7 +45,7 @@ export const ShareReferralQR: React.FC<ShareReferralQRProps> = ({
     return () => {
       active = false;
     };
-  }, [shareUrl]);
+  }, [shareUrl, code]);
 
   const handleCopyLink = () => {
     void navigator.clipboard?.writeText(shareUrl);
@@ -82,6 +84,7 @@ export const ShareReferralQR: React.FC<ShareReferralQRProps> = ({
 
   const canNativeShare = typeof navigator !== 'undefined' && Boolean(navigator.share);
 
+  if (!code) return null;
   return (
     <div className="w-full bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-xs space-y-6">
       {/* Header */}

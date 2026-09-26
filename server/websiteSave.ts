@@ -44,79 +44,25 @@ function syncError(message: string, extra?: unknown): void {
  * using the service-role apikey — no JWT secret or extra dependency needed.
  * Returns a precise reason on failure so the rejection is diagnosable.
  */
-function verifyTokenPayload(token: string, ownerId: string): string | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return 'invalid jwt format';
-    const payloadJson = Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-    const payload = JSON.parse(payloadJson);
-    if (!payload || typeof payload !== 'object') return 'invalid jwt payload';
-    const sub = payload.sub;
-    if (!sub || typeof sub !== 'string') return 'jwt missing sub (user id)';
-    if (sub !== ownerId) return `token belongs to user ${sub} but owner_id is ${ownerId}`;
-    const exp = payload.exp;
-    if (typeof exp === 'number' && exp * 1000 < Date.now()) return 'token has expired';
-    return null; // valid!
-  } catch (err) {
-    return `jwt decode error: ${(err as Error)?.message}`;
-  }
-}
-
-/**
- * Verify that the caller presenting `authorizationHeader` is the Supabase
- * user `ownerId` — i.e. they can only save their own salon.
- *
- * First verifies offline via JWT payload (sub & exp) to avoid network "Failed to fetch"
- * or auth server timeouts. Falls back to Supabase Auth GET /auth/v1/user if needed.
- */
+// JWT payloads are untrusted until Supabase Auth verifies their signature and
+// revocation state. Never accept a decoded `sub` as authentication.
 async function verifyCallerIsOwner(
   ownerId: string,
   authorizationHeader: string | undefined,
-  deadlineAt?: number
+  _deadlineAt?: number
 ): Promise<string | null> {
-  const token = (authorizationHeader || "").replace(/^Bearer\s+/i, "").trim();
-  if (!token) {
-    return "missing access token (Authorization: Bearer <token>)";
-  }
-
-  // Fast offline JWT verification (no network request required)
-  const jwtError = verifyTokenPayload(token, ownerId);
-  if (!jwtError) {
-    return null; // Successfully verified via JWT
-  }
-
-  const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : 4000;
-  if (remaining <= 0) return `auth server lookup exceeded request deadline [JWT check: ${jwtError}]`;
-
-  let res: Response;
+  const token = (authorizationHeader || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return 'missing access token';
+  const admin = getSupabaseAdmin();
+  if (!admin) return 'authentication service unavailable';
   try {
-    res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/auth/v1/user`, {
-      method: "GET",
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(Math.max(1, Math.min(4000, remaining))),
-    });
-  } catch (err) {
-    // If network fetch fails (e.g. Failed to fetch) but token format is valid bearer,
-    // we can fallback to accepting if jwtError wasn't a strict mismatch or surface the network error.
-    return `auth server unreachable (${(err as Error)?.message ?? "network error"}) [JWT check: ${jwtError}]`;
+    const { data, error } = await admin.auth.getUser(token);
+    if (error || !data?.user) return 'access token rejected by Supabase Auth';
+    if (data.user.id !== ownerId) return 'authenticated user does not own this request';
+    return null;
+  } catch {
+    return 'authentication service unavailable';
   }
-
-  if (!res.ok) {
-    return `access token rejected by Supabase Auth (HTTP ${res.status})`;
-  }
-
-  const user: any = await res.json().catch(() => null);
-  if (!user || typeof user.id !== "string" || !user.id) {
-    return "auth server returned no user for this token";
-  }
-  if (user.id !== ownerId) {
-    return `token belongs to user ${user.id} but owner_id is ${ownerId} — callers may only save their own salon`;
-  }
-  return null;
 }
 
 /**
@@ -199,6 +145,13 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
       }
 
+      // A client-supplied nested identity or site ID cannot override the
+      // authenticated owner. Do not store another tenant's ID in editor JSON.
+      if (profile?.ownerId && profile.ownerId !== ownerId) {
+        return res.status(403).json({ success: false, code: 'DATA_ACCESS_DENIED',
+          error: 'This account cannot save the requested profile.' });
+      }
+
       // ------------------------------------------------------------------
       // Mock mode (local session / Supabase not configured): persist in the
       // in-memory registry so the demo flow — including the public site —
@@ -267,34 +220,16 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         }
       }
 
-      let fallbackWarnings: string[] | null = null;
       if (result.error) {
-        // Fall back to service role direct admin persistence to guarantee save succeeds without data loss
-        console.info('[Website save] Direct workspace RPC unprovisioned, executing service role admin persistence for owner:', ownerId);
-        const fallbackRes = await persistWithAdminFallback(
-          admin,
-          ownerId,
-          subdomain,
-          profile,
-          services,
-          stylists,
-          loyaltyConfig,
-          extraState
-        );
-        if (!fallbackRes.success) {
-          syncError('Owner workspace transaction and admin fallback failed', {
-            rpcError: result.error,
-            fallbackError: fallbackRes.error,
-          });
-          if (responseAlreadyEnded(res)) return;
-          return res.status(503).json({
-            success: false,
-            code: 'workspace_save_failed',
-            error: 'Your workspace could not be saved. Please retry.',
-            retryable: true,
-          });
-        }
-        fallbackWarnings = fallbackRes.partial ?? null;
+        syncError('Owner workspace transaction failed; refusing service-role fallback', {
+          code: result.error.code ?? null,
+        });
+        if (responseAlreadyEnded(res)) return;
+        return res.status(result.error.code === '42501' ? 403 : 503).json({
+          success: false,
+          code: result.error.code === '42501' ? 'DATA_ACCESS_DENIED' : 'WEBSITE_SAVE_FAILED',
+          error: 'Your workspace could not be saved. Please retry or contact support.',
+        });
       }
       if (responseAlreadyEnded(res)) return;
       // `partial` surfaces degraded-but-not-lost saves instead of pretending
@@ -303,7 +238,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         success: true,
         timestamp: Date.now(),
         mode: 'live',
-        ...(fallbackWarnings ? { partial: true, warnings: fallbackWarnings } : {}),
+
       });
     } catch (err: any) {
       // Unreachable in normal operation (every DB call above is wrapped),

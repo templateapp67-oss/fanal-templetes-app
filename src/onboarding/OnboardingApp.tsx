@@ -261,6 +261,8 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       }
       if (event === 'SIGNED_OUT' || !session?.user) {
         if (event === 'SIGNED_OUT') {
+          clearReferralIntent();
+          setSharedReferralCode('');
           setViewer(null);
           setSnapshot(null);
           setExistingAccountNotice(false);
@@ -269,7 +271,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         return;
       }
       setViewer({ id: String(session.user.id), email: session.user.email || '' });
-      if (event === 'SIGNED_IN') setPasswordRecovery(false);
+      if (event === 'SIGNED_IN') {
+        clearReferralIntent();
+        setPasswordRecovery(false);
+      }
       setRefreshing(true);
       void refreshSnapshot().catch(error => {
         if (mounted.current) { setBootError(toSafeReferralError(error).message); setBoot('error'); }
@@ -424,7 +429,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         referralCode={sharedReferralCode}
         referralState={sharedReferralCode ? (invalidReferral ? 'invalid' : 'valid') : 'none'}
         client={sb}
-        onDone={() => void handleAuthDone()}
+        onDone={() => { clearReferralIntent(); void handleAuthDone(); }}
         onGoLogin={() => navigate(onboardingPath('login'))}
         onReferralCodeChange={(value) => {
           // The field is editable: keep only a canonical complete code as

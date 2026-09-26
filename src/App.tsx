@@ -406,7 +406,7 @@ export default function App() {
   });
 
   // Load the persistent salon state from localStorage on initial mount.
-  const initialSaved = typeof window !== 'undefined' ? loadSalonState() : null;
+  const initialSaved = isMockSupabase && typeof window !== 'undefined' ? loadSalonState() : null;
   const defaultInitialProfile = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
   const previousTemplateIdRef = React.useRef<BusinessTypeId>(
     initialSaved?.selectedTemplateId || defaultInitialProfile.businessType
@@ -602,22 +602,6 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    if (params) {
-      const siteVal = params.get('site') || params.get('subdomain') || params.get('tenant');
-      if (siteVal) {
-        try {
-          localStorage.setItem('nexora_active_site', siteVal);
-          localStorage.setItem('nexora_site', siteVal);
-        } catch {}
-      }
-      const refVal = params.get('ref') || params.get('referral') || params.get('code');
-      if (refVal) {
-        try {
-          localStorage.setItem('nexora_active_referral', refVal);
-          localStorage.setItem('nexora_referral_code', refVal);
-        } catch {}
-      }
-    }
     const requestedSite = params?.get('site') || params?.get('subdomain') || params?.get('tenant');
     const isPublicParam = params?.get('view') === 'public' || params?.has('public');
 
@@ -640,21 +624,11 @@ export default function App() {
             return;
           }
 
-          // A reachable live (Supabase-backed) API answering found:false is
-          // handled by falling back to the default platform demo/template data gracefully
-          if (data && !isMockSupabase) {
-            console.warn(
-              `[Site bootstrap] Live API reports no published salon for "${requestedSite}" — falling back to default platform template data.`
-            );
-            setSiteTenant({
-              isTenant: true,
-              found: true,
-              subdomain: requestedSite,
-              customDomain: null,
-              profile: profile,
-              services: services,
-              stylists: stylists,
-            });
+          // A missing published site is NOT this browser's current editor.
+          // Never substitute a signed-in owner's private state into a public URL.
+          if (!isMockSupabase) {
+            setSiteTenant({ isTenant: true, found: false, subdomain: requestedSite,
+              customDomain: null, profile: null, services: [], stylists: [] });
             return;
           }
 
@@ -705,19 +679,11 @@ export default function App() {
           setSiteTenant({ isTenant: false, found: false });
         }
       } catch (err) {
-        // Unexpected bootstrap error — never crash the app; keep the demo
-        // preview working from local state when a site was explicitly requested.
+        // A failed public lookup must never render this browser's editor data.
         console.error('Could not resolve site tenant:', err);
         if (requestedSite || isPublicParam) {
-          setSiteTenant({
-            isTenant: true,
-            found: true,
-            subdomain: requestedSite || profile.subdomain || slugifySalonName(profile.businessName) || 'salon-studio',
-            customDomain: null,
-            profile: profile,
-            services: services,
-            stylists: stylists,
-          });
+          setSiteTenant({ isTenant: true, found: false, subdomain: requestedSite || '',
+            customDomain: null, profile: null, services: [], stylists: [] });
         } else {
           setSiteTenant({ isTenant: false, found: false });
         }
@@ -836,47 +802,24 @@ export default function App() {
         entryRoutedForRef.current = null;
 
         if (state.user) {
-          const userSaved = loadSalonState(state.user.id);
-          if (userSaved && userSaved.profile) {
-            setProfile(userSaved.profile);
-            setServices(userSaved.services || []);
-            setStylists(userSaved.stylists || []);
-            setAppointments([]);
-            setClients([]);
-            setLoyaltyConfig(userSaved.loyaltyConfig || DEFAULT_LOYALTY_CONFIG);
-            const templateId = (userSaved.selectedTemplateId || userSaved.profile.businessType || 1) as BusinessTypeId;
-            setSelectedTemplateId(templateId);
-            previousTemplateIdRef.current = templateId;
-            salonStateRef.current = {
-              profile: userSaved.profile,
-              services: userSaved.services || [],
-              stylists: userSaved.stylists || [],
-              loyaltyConfig: userSaved.loyaltyConfig || DEFAULT_LOYALTY_CONFIG,
-              selectedTemplateId: templateId,
-              user: state.user,
-            };
-            lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
-          } else {
-            const blank = createBlankSalonProfile(state.user);
-            setProfile(blank);
-            setServices([]);
-            setStylists([]);
-            setAppointments([]);
-            setClients([]);
-            setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
-            const templateId = (blank.businessType || 1) as BusinessTypeId;
-            setSelectedTemplateId(templateId);
-            previousTemplateIdRef.current = templateId;
-            salonStateRef.current = {
-              profile: blank,
-              services: [],
-              stylists: [],
-              loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
-              selectedTemplateId: templateId,
-              user: state.user,
-            };
-            lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
-          }
+          // Cloud RPC is the only authority. Never paint a browser cache while
+          // the authenticated workspace is still being resolved.
+          const blank = createBlankSalonProfile(state.user);
+          setProfile(blank);
+          setServices([]);
+          setStylists([]);
+          setAppointments([]);
+          setClients([]);
+          setLoyaltyConfig(DEFAULT_LOYALTY_CONFIG);
+          const templateId = (blank.businessType || 1) as BusinessTypeId;
+          setSelectedTemplateId(templateId);
+          previousTemplateIdRef.current = templateId;
+          salonStateRef.current = {
+            profile: blank, services: [], stylists: [],
+            loyaltyConfig: DEFAULT_LOYALTY_CONFIG,
+            selectedTemplateId: templateId, user: state.user,
+          };
+          lastPersistedSnapshotRef.current = snapshotOf(salonStateRef.current);
           void startHydrationRef.current(state.user.id);
         } else {
           const blank = isMockSupabase ? INITIAL_SALON_PROFILE : createBlankSalonProfile();
@@ -1002,6 +945,11 @@ export default function App() {
     let cancelled = false;
 
     if (user?.id) {
+      setProfile(getBlankOnboardingProfile(user));
+      setServices([]);
+      setStylists([]);
+      setAppointments([]);
+      setClients([]);
       // Clear legacy/cached localStorage state for logged-in users so localStorage
       // is never the authority for logged-in salon state.
       clearStoredSalonState(user.id);
@@ -1040,6 +988,11 @@ export default function App() {
         }
       })();
     } else {
+      setProfile(createBlankSalonProfile());
+      setServices([]);
+      setStylists([]);
+      setAppointments([]);
+      setClients([]);
       clearStoredSalonState();
     }
 
@@ -2382,6 +2335,11 @@ export default function App() {
   // -------------------------------------------------------------------------
   // PUBLIC LIVE SITE RENDER
   // -------------------------------------------------------------------------
+  if (siteTenant?.isTenant && !siteTenant.found && !siteLoading && !isMockSupabase) {
+    return <main className="min-h-dvh flex items-center justify-center bg-slate-50 p-6" role="alert">
+      <p className="text-slate-800">This website is unavailable. Check the address or try again later.</p>
+    </main>;
+  }
   if (isPublicSite) {
     return (
       <div className="min-h-dvh bg-surface text-on-surface">

@@ -627,13 +627,7 @@ export const PartnerPortalPendingReview: React.FC<{
             Check again
           </span>
         </button>
-        <button
-          type="button"
-          onClick={() => void enrollSelf()}
-          className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
-        >
-          <span>Instantly Approve & Access Partner Portal</span>
-        </button>
+
         {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
         <button
           type="button"
@@ -914,20 +908,6 @@ export const PartnerPortalLogin: React.FC<{
     (async () => {
       try {
         let row = await readPartnerRow();
-        if (!row && enrollPartnerRow) {
-          // Open enrollment is a convenience on top of a successful read: if it
-          // fails (PGRST202 before the migration, a refusal, a dropped socket)
-          // the honest answer is still "no partner row for this account" plus
-          // the reason the shortcut did not run — never a generic verification
-          // error and never a retry loop.
-          try {
-            await enrollPartnerRow();
-            row = await readPartnerRow();
-          } catch (error) {
-            if (cancelled) return;
-            setEnrollmentError(error);
-          }
-        }
         if (cancelled) return;
         setPartnerRow(row);
         setLoadError(null);

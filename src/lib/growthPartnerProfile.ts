@@ -95,18 +95,6 @@ export interface GrowthPartnerProfileClient {
 }
 const defaultClient = supabase as unknown as GrowthPartnerProfileClient;
 
-export const DEFAULT_GROWTH_PARTNER_PROFILE: GrowthPartnerProfileData = {
-  full_name: '',
-  email: '',
-  phone: null,
-  photo_path: null,
-  partner_id: 'ptr-active-partner',
-  referral_code: 'NEXORA-GROWTH',
-  account_status: 'Active',
-  partner_role: 'Growth Partner',
-  approval_status: 'Approved',
-  joined_at: new Date().toISOString(),
-};
 
 export async function fetchGrowthPartnerProfile(client: GrowthPartnerProfileClient = defaultClient): Promise<GrowthPartnerProfileData> {
   const { data, error } = await client.rpc('get_my_growth_partner_profile');
@@ -227,7 +215,7 @@ export async function saveGrowthPartnerProfile(input: {
 
     // Only the known legacy placeholder is exempt from the stale-session guard.
     const expected = String(input.expectedUserId || '').trim();
-    if (expected && expected !== 'ptr-active-partner' && userId !== expected) throw new Error('Your session changed. Reload your profile before saving.');
+    if (expected && userId !== expected) throw new Error('Your session changed. Reload your profile before saving.');
     return userId;
   };
   const id = await verifyViewer();

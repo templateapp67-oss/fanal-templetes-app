@@ -20,50 +20,27 @@ export function usePartnerReferralCode(): UsePartnerReferralCodeResult {
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadCode() {
+    let generation = 0;
+    const load = async () => {
+      const current = ++generation;
+      setReferralCode(null);
+      setLoading(true);
+      setError(null);
       try {
-        setLoading(true);
-        setError(null);
-
-        // Get authenticated user session
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          if (!cancelled) {
-            setReferralCode(null);
-            setLoading(false);
-          }
-          return;
-        }
-
-        // Fetch partner profile directly from the database RPC
+        const { data, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        if (!data.user) return;
         const profile = await fetchGrowthPartnerProfile();
-        if (!cancelled) {
-          if (profile && profile.referral_code) {
-            setReferralCode(profile.referral_code);
-          } else {
-            // Safe single global fallback mechanism - no user.id derived code
-            setReferralCode('NEXORA-722966AF232B');
-          }
-        }
+        if (!cancelled && current === generation) setReferralCode(profile?.referral_code || null);
       } catch (err: any) {
-        if (!cancelled) {
-          setError(err?.message || String(err));
-          // Fall back gracefully to the single global fallback instead of crashing
-          setReferralCode('NEXORA-722966AF232B');
-        }
+        if (!cancelled && current === generation) setError(err?.message || 'Could not load referral code.');
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled && current === generation) setLoading(false);
       }
-    }
-
-    loadCode();
-
-    return () => {
-      cancelled = true;
     };
+    void load();
+    const { data } = supabase.auth.onAuthStateChange(() => { void load(); });
+    return () => { cancelled = true; generation++; data.subscription.unsubscribe(); };
   }, []);
 
   return { referralCode, loading, error };

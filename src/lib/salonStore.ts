@@ -330,6 +330,11 @@ export function clearAllLocalUserState(targetUserId?: string | null): void {
       'pinky_nails_salon_profile_v1',
       ONBOARDING_COMPLETED_KEY,
       'nexora_auth_user_v1',
+      'nexora_active_site',
+      'nexora_site',
+      'nexora_active_referral',
+      'nexora_referral_code',
+      'nexora_ref_code',
       'salonState',
       'profile',
       'currentSalon',
@@ -374,6 +379,14 @@ export function clearAllLocalUserState(targetUserId?: string | null): void {
     for (const k of doomed) {
       localStorage.removeItem(k);
     }
+    // Per-tab referral and handoff intent must not follow an account switch.
+    try {
+      for (const key of ['nexora_referral_code', 'nexora_ref_code',
+        'nexora.onboarding.signup.pendingConfirmation', 'onb_handoff_state']) {
+        sessionStorage.removeItem(key);
+      }
+    } catch { /* storage unavailable */ }
+
   } catch {}
 }
 

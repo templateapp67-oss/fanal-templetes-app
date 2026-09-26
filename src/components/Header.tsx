@@ -3,9 +3,10 @@ import { AppView, SalonProfile } from '../types';
 import { PartnerProfileModal } from './PartnerProfileModal';
 import { NotificationBell } from './NotificationBell';
 import { AuthModal } from './AuthModal';
-import { supabase } from '../lib/supabaseClient';
+import { isMockSupabase, supabase } from '../lib/supabaseClient';
 import { clearAllLocalUserState } from '../lib/salonStore';
 import { useReferralCode } from '../lib/hooks/useReferralCode';
+import { getMyGrowthReferral } from '../lib/growthPartner';
 
 interface HeaderProps {
   currentView: AppView;
@@ -38,14 +39,8 @@ const HeaderReferralWidget: React.FC = () => {
     );
   }
 
-  if (!referralCode) {
-    return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-        <span className="material-symbols-outlined text-xs leading-none">warning</span>
-        <span>Referral code unavailable</span>
-      </div>
-    );
-  }
+  // This widget is for a partner sharing THEIR code, not a referred owner.
+  if (!referralCode) return null;
 
   const referralUrl = `${window.location.origin}/signup?ref=${encodeURIComponent(referralCode)}`;
 
@@ -162,6 +157,20 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Incoming attribution is NOT the partner's own shareable referral code.
+  // Never read the URL or browser storage as evidence of a linked account.
+  const [incomingReferral, setIncomingReferral] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setIncomingReferral(null);
+    if (user?.id && !isMockSupabase) {
+      getMyGrowthReferral().then((relationship) => {
+        if (!cancelled) setIncomingReferral(relationship?.referral_code || null);
+      }).catch((error) => console.error('[Header] Referral relationship lookup failed', error));
+    }
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
 
   // The menu is an overlay on top of the page, so Escape has to close it —
   // there is no backdrop element to click away on.
@@ -241,6 +250,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-4">
               {/* Desktop Referral Tool */}
               <div className="hidden sm:block">
+                {incomingReferral ? <span className="text-xs font-semibold text-emerald-800">Linked with code {incomingReferral}</span> : null}
                 <HeaderReferralWidget />
               </div>
 

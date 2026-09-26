@@ -127,19 +127,10 @@ export function SectionError({ message, onRetry }: { message: string; onRetry?: 
       <h2 className="text-lg font-bold text-slate-900">Something went wrong</h2>
       <p className="text-sm text-slate-600 mt-1.5">{message}</p>
       <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <button
-          type="button"
-          onClick={handleAutoFix}
-          disabled={retrying}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-emerald-600 text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          <span>Instantly Approve & Open Portal</span>
-        </button>
         {onRetry && (
           <button
             type="button"
-            onClick={handleAutoFix}
+            onClick={onRetry}
             disabled={retrying}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90 disabled:opacity-50"
           >
