@@ -212,20 +212,6 @@ export const SignupScreen: React.FC<{
               },
               (error: Error) => {
                 const mapped = toSafeAuthError(error, 'signup');
-                // "Auth user already created" — this address has an account.
-                // Nothing was duplicated: Supabase Auth refused the second
-                // signUp and `handle_new_user()` is `on conflict (id) do
-                // nothing`, so no second row can appear either. But the owner
-                // is now stuck between two screens: they cannot sign in (if
-                // confirmation is required the account has no usable session
-                // yet) and the form keeps rejecting them. Route to the
-                // confirmation screen instead, which offers both a resend and
-                // a "log in" path, so neither retry can dead-end.
-                if (mapped.code === 'email-in-use') {
-                  writePendingConfirmation(email.trim());
-                  setConfirmationSent(email.trim());
-                  return;
-                }
                 setFormError(mapped.message);
               }
             );

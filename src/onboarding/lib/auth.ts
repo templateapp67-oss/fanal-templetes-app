@@ -90,8 +90,11 @@ export function onboardingAuthRedirectTo(): string | undefined {
 /**
  * Register with email + password via Supabase Auth. Returns
  * `confirmationRequired: true` when the project requires email verification
- * (user object but no session) — the UI then shows "check your inbox"
- * instead of treating it as a login.
+ * (a newly-created user object but no session) — the UI then shows "check
+ * your inbox" instead of treating it as a login. Supabase intentionally
+ * returns an obfuscated user with `identities: []` for an existing address in
+ * some configurations; that is an existing-account result, not a request to
+ * verify email.
  */
 export async function signUpWithEmail(
   client: OnboardingSupabaseClient = supabase as unknown as OnboardingSupabaseClient,
@@ -125,6 +128,9 @@ export async function signUpWithEmail(
     throw toSafeAuthError(error, 'signup');
   }
   if (!data?.user) throw toSafeAuthError(new Error('signup failed'), 'signup');
+  if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new OnboardingError('email-in-use', 'An account with this email already exists. Try logging in.');
+  }
   return { viewer: viewerFromUser(data.user), confirmationRequired: !data.session };
 }
 

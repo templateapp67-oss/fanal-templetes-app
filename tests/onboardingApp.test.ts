@@ -346,6 +346,22 @@ test('sign up succeeds with valid credentials and flags email confirmation', asy
   });
   assert.equal(confirmation.confirmationRequired, true);
 
+  // Supabase may deliberately return an obfuscated user for an existing
+  // address. That must not be shown as an email-verification requirement.
+  const existing = fakeAuth({
+    signUp: ok({ user: { id: 'obfuscated', email: 'taken@example.com', identities: [] }, session: null }),
+  });
+  await assert.rejects(
+    signUpWithEmail({ auth: existing.auth, rpc: async () => ok(null) } as any, {
+      fullName: 'Existing Owner',
+      email: 'taken@example.com',
+      phone: '9845077654',
+      password: 'secret1',
+      confirm: 'secret1',
+    }),
+    /already exists/
+  );
+
   // The attribution capability still travels inside the same metadata object,
   // and the redirect target brings a confirmed account back into the funnel.
   const attributed = fakeAuth({ signUp: ok({ user: { id: 'u-3', email: 'a@example.com' }, session: {} }) });
