@@ -252,9 +252,11 @@ function initialsFor(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function ReferralCodeCard({ code }: { code?: string | null }) {
+export function ReferralCodeCard({ code, loading = false }: { code?: string | null; loading?: boolean }) {
   const { copy, copied, error: copyError, notice } = usePartnerClipboard();
   const value = typeof code === 'string' ? code.trim() : '';
+
+  if (loading) return <PartnerLoading label="Loading your referral code…" kind="link" />;
 
   if (!value) {
     return (
@@ -470,7 +472,9 @@ export const GrowthPartnerDashboard: React.FC<{
   onRetry?: () => void;
   refreshing?: boolean;
   refreshError?: string | null;
-}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false, refreshError }) => {
+  referralCode?: string | null;
+  referralCodeLoading?: boolean;
+}> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false, refreshError, referralCode, referralCodeLoading = false }) => {
   const data = normalizePartnerDashboardData(dashboard);
   return (
   <div className="space-y-4">
@@ -499,7 +503,7 @@ export const GrowthPartnerDashboard: React.FC<{
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <PartnerProfileCard dashboard={data} displayName={displayName} email={email} accentHex={accentHex} />
-      <ReferralCodeCard code={data.partner.referral_code} />
+      <ReferralCodeCard code={referralCode} loading={referralCodeLoading} />
     </div>
 
     <GpHoldCommissionSummaryCard accentHex={accentHex} />
