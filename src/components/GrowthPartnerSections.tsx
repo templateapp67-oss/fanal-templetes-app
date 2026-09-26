@@ -476,6 +476,11 @@ export const GrowthPartnerDashboard: React.FC<{
   referralCodeLoading?: boolean;
 }> = ({ dashboard, displayName, email, accentHex = '#C20E5A', onRetry, refreshing = false, refreshError, referralCode, referralCodeLoading = false }) => {
   const data = normalizePartnerDashboardData(dashboard);
+  // The real page always passes the canonical hook value (including explicit
+  // null). Direct/legacy component callers that omit the prop may still render
+  // the backend-stored dashboard value; neither path derives anything from a UUID.
+  const canonicalReferralCode =
+    referralCode === undefined ? data.partner.referral_code : referralCode;
   return (
   <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -503,7 +508,7 @@ export const GrowthPartnerDashboard: React.FC<{
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <PartnerProfileCard dashboard={data} displayName={displayName} email={email} accentHex={accentHex} />
-      <ReferralCodeCard code={referralCode} loading={referralCodeLoading} />
+      <ReferralCodeCard code={canonicalReferralCode} loading={referralCodeLoading} />
     </div>
 
     <GpHoldCommissionSummaryCard accentHex={accentHex} />
