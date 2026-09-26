@@ -176,7 +176,23 @@ export const SignupScreen: React.FC<{
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          const validation = validateSignup({ fullName, email, phone, password, confirm });
+          // Password managers can fill the DOM after React's last change event.
+          // Read the submitted controls, rather than only component state, so a
+          // visibly filled password can never be validated as an empty one.
+          const form = new FormData(event.currentTarget);
+          const submitted = {
+            fullName: String(form.get('onboarding-signup-full-name') ?? ''),
+            email: String(form.get('onboarding-signup-email') ?? ''),
+            phone: String(form.get('onboarding-signup-phone') ?? ''),
+            password: String(form.get('onboarding-signup-password') ?? ''),
+            confirm: String(form.get('onboarding-signup-confirm') ?? ''),
+          };
+          setFullName(submitted.fullName);
+          setEmail(submitted.email);
+          setPhone(submitted.phone);
+          setPassword(submitted.password);
+          setConfirm(submitted.confirm);
+          const validation = validateSignup(submitted);
           setFieldErrors(validation.errors);
           if (!validation.ok) return;
           setFormError('');
@@ -188,11 +204,7 @@ export const SignupScreen: React.FC<{
               try {
                 const attributionToken = await prepareAttribution?.(referralInput.trim());
                 return await signUpWithEmail(client as OnboardingSupabaseClient, {
-                  fullName,
-                  email,
-                  phone,
-                  password,
-                  confirm,
+                  ...submitted,
                   attributionToken,
                 });
               } finally {
@@ -203,8 +215,8 @@ export const SignupScreen: React.FC<{
               (result) => {
                 if (!result) return; // superseded by an in-flight submit
                 if (result.confirmationRequired) {
-                  writePendingConfirmation(email.trim());
-                  setConfirmationSent(email.trim());
+                  writePendingConfirmation(submitted.email.trim());
+                  setConfirmationSent(submitted.email.trim());
                   return;
                 }
                 writePendingConfirmation('');
