@@ -7,11 +7,21 @@ import { handleCreateRazorpayOrder } from './razorpay.js';
 export async function customerAvailability(db: any, input: any) {
   const slug = String(input.subdomain || '').trim().toLowerCase();
   if (!slug) throw new BackendError(400, 'Choose a salon.');
-  const salon = await readDatabase(() => db.from('salons').select('id,timezone,verified,accepts_online_bookings').eq('slug',slug).eq('is_active',true).is('deleted_at',null).maybeSingle());
+  const salon = await readDatabase(() => db.from('salons').select('id,timezone,accepts_online_bookings').eq('slug',slug).eq('is_active',true).is('deleted_at',null).maybeSingle());
+  // Availability must mirror the AUTHORITATIVE booking contract exactly. The
+  // public storefront is served for any active salon regardless of admin
+  // verification, and the booking path (createNormalizedBooking + the
+  // create_customer_booking RPC) gates ONLY on is_active + accepts_online_bookings.
+  // This handler previously ALSO required salons.verified, which nothing in the
+  // product ever sets (complete_shop_onboarding writes verified=false), so every
+  // onboarded salon was trapped behind a permanent "not accepting online
+  // bookings" wall even though its bookings would have succeeded. A missing or
+  // inactive salon is a distinct failure from a salon that switched booking off.
+  if (!salon) throw new BackendError(404, 'This salon could not be found. Check the link and try again.', 'salon_not_found');
   // Older salon rows predate this column. Only an explicit `false` disables
   // online booking; a missing value must retain the product default of `true`.
-  const acceptsOnlineBookings = salon?.accepts_online_bookings ?? true;
-  if (!salon || !salon.verified || !acceptsOnlineBookings) throw new BackendError(409,'This salon is not accepting online bookings. Contact the salon to book.','online_booking_disabled');
+  const acceptsOnlineBookings = salon.accepts_online_bookings ?? true;
+  if (!acceptsOnlineBookings) throw new BackendError(409, 'This salon is not accepting online bookings. Contact the salon to book.', 'online_booking_disabled');
   const requested = Array.isArray(input.service_ids) ? input.service_ids : String(input.service_ids || '').split(',').filter(Boolean);
   if (!requested.length || requested.length > 20) throw new BackendError(400,'Choose between 1 and 20 services.');
   const ids = [...new Set<string>(requested.map((id: any)=>catalogId(salon.id,'service',String(id))))];
