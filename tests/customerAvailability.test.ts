@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {customerAvailability,customerPaymentOrderHandler} from '../server/customerAvailability';
 import {readFileSync} from 'node:fs';
 const salon='10000000-0000-4000-8000-000000000001',staff='20000000-0000-4000-8000-000000000001';
-function database({enabled=true,slots=[{slot_start:'2026-10-10T02:30:00Z',slot_end:'2026-10-10T03:05:00Z',staff_id:staff,total_paise:45000}],failure=false}:any={}){
- const calls:any[]=[];const db:any={calls,auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from(table:string){const q:any={};for(const name of ['select','eq','is','maybeSingle'])q[name]=(...args:any[])=>{calls.push([table,name,...args]);return q;};q.then=(resolve:any)=>resolve({data:{id:salon,timezone:'Asia/Kolkata',verified:true,accepts_online_bookings:enabled}});return q;},rpc(name:string,args:any){calls.push([name,args]);return Promise.resolve(failure?{error:{code:'42501'}}:{data:slots});}};return db;
+function database({enabled=true,verified=true,missing=false,slots=[{slot_start:'2026-10-10T02:30:00Z',slot_end:'2026-10-10T03:05:00Z',staff_id:staff,total_paise:45000}],failure=false}:any={}){
+ const calls:any[]=[];const db:any={calls,auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from(table:string){const q:any={};for(const name of ['select','eq','is','maybeSingle'])q[name]=(...args:any[])=>{calls.push([table,name,...args]);return q;};q.then=(resolve:any)=>resolve(missing?{data:null}:{data:{id:salon,timezone:'Asia/Kolkata',verified,accepts_online_bookings:enabled}});return q;},rpc(name:string,args:any){calls.push([name,args]);return Promise.resolve(failure?{error:{code:'42501'}}:{data:slots});}};return db;
 }
 const input={subdomain:'mine',service_ids:['cut'],staff_id:staff,date:'2026-10-10'};
 test('availability resolves normalized IDs and returns only slot and quote information',async()=>{
@@ -18,8 +18,24 @@ test('empty availability stays empty; permission failure is not reported as sold
  await assert.rejects(customerAvailability(database({failure:true}),input));
 });
 test('disabled salons and invalid dates never call the slot RPC',async()=>{
-  const db=database({enabled:false});await assert.rejects(customerAvailability(db,input),/not accepting/);assert.ok(!db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
+  const db=database({enabled:false});await assert.rejects(customerAvailability(db,input),(e:any)=>{assert.equal(e.status,409);assert.equal(e.code,'online_booking_disabled');return true;});assert.ok(!db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
   await assert.rejects(customerAvailability(database(),{...input,date:'2026-02-30'}));
+});
+
+test('an unverified salon still exposes availability — only accepts_online_bookings gates it',async()=>{
+  // complete_shop_onboarding writes verified=false and nothing ever flips it to
+  // true, yet the booking path (create_customer_booking / createNormalizedBooking)
+  // only checks accepts_online_bookings. Availability must not be stricter than
+  // booking, or every onboarded salon is trapped behind a permanent error.
+  const db=database({verified:false});
+  const result=await customerAvailability(db,input);
+  assert.equal(result.success,true);
+  assert.ok(db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
+});
+
+test('a missing or inactive salon is reported as not found, distinct from booking-disabled',async()=>{
+  await assert.rejects(customerAvailability(database({missing:true}),input),(e:any)=>{assert.equal(e.status,404);assert.equal(e.code,'salon_not_found');return true;});
+  assert.ok(!database({missing:true}).calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));
 });
 test('legacy salons with no online-booking value remain bookable',async()=>{
  const db=database({enabled:null});
@@ -41,4 +57,13 @@ test('bridge preserves canonical booking validation and restricts public write a
   assert.match(sql,/coalesce\(accepts_online_bookings,true\)/);
   const defaults=readFileSync('supabase/migrations/20261013_online_booking_defaults.sql','utf8');
   assert.match(defaults,/set default true/);assert.match(defaults,/set accepts_online_bookings = true/);assert.match(defaults,/set not null/);
+});
+test('availability RPC no longer gates on salons.verified, matching the booking contract',()=>{
+  const aligned=readFileSync('supabase/migrations/20261016_customer_availability_align_verified.sql','utf8');
+  assert.match(aligned,/create or replace function public\.nexora_customer_booking_options/);
+  // The salon guard drops `verified` and keeps the accepts_online_bookings default.
+  assert.match(aligned,/is_active and coalesce\(accepts_online_bookings,true\) and deleted_at is null/);
+  assert.doesNotMatch(aligned,/and verified and coalesce/);
+  // Still restricted to the service role.
+  assert.match(aligned,/grant execute on function public\.nexora_customer_booking_options\(uuid,uuid\[\],uuid,date\) to service_role/);
 });

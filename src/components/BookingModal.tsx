@@ -1886,7 +1886,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {availability.loading && <p role="status">Loading available times…</p>}
-              {availability.error && <p role="alert">{availability.error} <button type="button" onClick={availability.refetchSlots} className="underline">Retry availability</button></p>}
+              {/* A salon that has switched online booking OFF is a permanent state: a retry can never fix it, so we replace the misleading "Retry availability" button with a clear "contact the salon" instruction. */}
+              {availability.error && availability.code==='online_booking_disabled' && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <p className="font-semibold">This salon isn&apos;t accepting online bookings right now.</p>
+                  <p className="mt-1">Please contact the salon directly to book your appointment.</p>
+                </div>
+              )}
+              {availability.error && availability.code==='salon_not_found' && (
+                <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                  <p className="font-semibold">This salon could not be found.</p>
+                  <p className="mt-1">Check the link and try again.</p>
+                </div>
+              )}
+              {availability.error && availability.code!=='online_booking_disabled' && availability.code!=='salon_not_found' && <p role="alert">{availability.error} <button type="button" onClick={availability.refetchSlots} className="underline">Retry availability</button></p>}
               {!availability.loading && !availability.error && !availableTimes.length && <p>No available time slots for this date. Choose another date or specialist.</p>}
               {/* Time Slot Availability Grid */}
               <div>
