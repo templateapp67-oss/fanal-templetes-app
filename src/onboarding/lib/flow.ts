@@ -294,6 +294,9 @@ export function toSafeAuthError(
   if (/database error saving new user|error.*saving.*new user|failed.*create.*user/i.test(text)) {
     return new OnboardingError('unknown', 'We could not prepare your account. Please try again or contact support.');
   }
+  if ((error as {code?: string})?.code === 'unexpected_failure' || /unexpected.*failure|internal.*server.*error/i.test(text)) {
+    return new OnboardingError('unknown', 'Account setup failed on the server. Please try again; if it continues, contact support.');
+  }
   if (/password.*(too long|maximum length|exceed)/i.test(text)) {
     return new OnboardingError('validation', `Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
   }

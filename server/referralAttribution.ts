@@ -141,12 +141,11 @@ export function registerReferralAttributionRoutes(
     }
     const rawCode = req.method === 'POST' ? req.body?.code : '';
     // Do not let URL encoding, copied whitespace or lower-case share links
-    // change the result. Normalize whitespace and case, and accept both
-    // prefixed (NEXORA-3E038732) and raw suffix (3E038732) values.
+    // change the result. Keep the form that was actually shared: the database
+    // resolver accepts both a legacy raw code and its NEXORA-prefixed form and
+    // returns the active partner's stored canonical code. Prefixing here used
+    // to make a valid legacy code impossible to resolve in production.
     let code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
-    if (code && !code.startsWith('NEXORA-') && /^[A-Z0-9]{4,24}$/.test(code)) {
-      code = `NEXORA-${code}`;
-    }
     if ((req.method === 'POST' && !code) || code.length > 64) {
       return void res.status(400).json({ error: 'Enter a valid referral code, or continue without one.' });
     }
@@ -222,7 +221,11 @@ export function registerReferralAttributionRoutes(
         timestamp: new Date().toISOString()
       });
       res.set('X-Request-ID', requestId);
-      res.json({ valid: true, referralCode: code || null });
+      // Never turn an RPC outage into a successful referral. Doing so makes an
+      // arbitrary URL look attributed and then fails later at Auth-trigger
+      // consumption, which is both misleading and impossible to diagnose.
+      // Keep any existing cookie intact so a retry can still prepare it.
+      res.status(503).json({ error: 'Referral verification is temporarily unavailable. Please retry.' });
     }
   };
 

@@ -57,6 +57,15 @@ export async function captureSignupReferral(code: string): Promise<string> {
  * whether that code is valid and linkable.
  */
 export async function prepareSignupAttribution(referralCode?: string): Promise<string | undefined> {
-  const result = await requestAttribution(referralCode || undefined);
-  return result.valid ? result.token : undefined;
+  const code = String(referralCode || '').trim();
+  if (code) {
+    // POST deliberately does not return the capability token: it is stored in
+    // the HttpOnly cookie so referral attribution cannot be copied from page
+    // state. Refresh the code first, then make the cookie-backed GET that is
+    // explicitly allowed to return the short-lived token for Auth metadata.
+    const captured = await requestAttribution(code);
+    if (!captured.valid) return undefined;
+  }
+  const prepared = await requestAttribution();
+  return prepared.valid ? prepared.token : undefined;
 }
