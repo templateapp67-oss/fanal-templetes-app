@@ -26,6 +26,24 @@ export function slugifySalonName(name: string): string {
   return (cleaned.slice(0, 30) || 'mysalon').replace(/^-+$/, 'mysalon');
 }
 
+/** Trim and case-normalize a public site identifier without inventing a slug. */
+export function normalizeSiteIdentifier(identifier: unknown): string {
+  return String(identifier ?? '').trim().toLowerCase();
+}
+
+function isIgnorableLookupSchemaError(error: any): boolean {
+  const code = String(error?.code || '');
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    code === '42P01' ||
+    code === '42703' ||
+    code === 'PGRST204' ||
+    message.includes('does not exist') ||
+    message.includes('could not find') ||
+    message.includes('column') && message.includes('schema cache')
+  );
+}
+
 export const defaultDemoSalon: {
   profile: SalonProfile;
   services: SalonService[];
@@ -122,7 +140,7 @@ export function mapProfileRow(row: any): SalonProfile {
   const businessName = row.salon_name || row.name || '';
   const phone = row.phone_number ?? row.phone ?? row.mobile ?? '';
   const whatsapp = row.whatsapp || phone;
-  const subdomain = row.slug || row.subdomain || slugifySalonName(businessName);
+  const subdomain = row.__resolved_public_slug || row.slug || row.subdomain || data.subdomain || config.subdomain || slugifySalonName(businessName);
   const city = row.city ?? row.location_city ?? '';
   const address = row.full_address ?? row.address ?? row.location_address ?? '';
   const postalCode = row.postal_code ?? row.pincode ?? row.location_pincode ?? '';
@@ -220,7 +238,7 @@ export async function lookupSalon(
   isCustomDomain = false,
   deadlineAt?: number
 ): Promise<{ found: boolean; salon: any; error?: any }> {
-  const sub = identifier.toLowerCase().trim();
+  const sub = normalizeSiteIdentifier(identifier);
   if (!sub) return { found: false, salon: null };
 
   if (deps.isMockSupabase) {
@@ -229,20 +247,76 @@ export async function lookupSalon(
   }
 
   try {
-    const queryCol = isCustomDomain ? 'data->editor_profile->>customDomain' : 'slug';
-    const salonRes = await runDb(
-      () => deps.db.from('salons').select('*').eq(queryCol, sub).eq('is_active', true).maybeSingle(),
-      { label: 'public salon lookup', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+    const runSalonLookup = (column: string, label: string) => runDb(
+      () => {
+        const query: any = deps.db.from('salons').select('*');
+        const filtered = typeof query.ilike === 'function'
+          ? query.ilike(column, sub)
+          : query.eq(column, sub);
+        return filtered
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+      },
+      { label, timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
     );
-    if (salonRes.error) return { found: false, salon: null, error: salonRes.error };
-    if (!salonRes.data) return { found: false, salon: null };
-    const salonRow = salonRes.data;
+
+    const lookupColumns = isCustomDomain
+      ? ['custom_domain', 'data->editor_profile->>customDomain', 'data->editor_profile->>custom_domain']
+      : ['slug', 'data->editor_profile->>subdomain', 'subdomain'];
+
+    let salonRow: any = null;
+    for (const column of lookupColumns) {
+      const salonRes = await runSalonLookup(column, `public salon lookup (${column})`);
+      if (salonRes.error) {
+        if (isIgnorableLookupSchemaError(salonRes.error)) continue;
+        return { found: false, salon: null, error: salonRes.error };
+      }
+      if (salonRes.data) {
+        salonRow = { ...salonRes.data, __resolved_public_slug: sub };
+        break;
+      }
+    }
+
+    if (!salonRow && !isCustomDomain) {
+      const websiteRes = await runDb(
+        () => {
+          const query: any = deps.db.from('websites').select('*');
+          const filtered = typeof query.ilike === 'function'
+            ? query.ilike('slug', sub)
+            : query.eq('slug', sub);
+          return filtered.limit(1).maybeSingle();
+        },
+        { label: 'public website lookup (slug)', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }
+      );
+      if (websiteRes.error) {
+        if (!isIgnorableLookupSchemaError(websiteRes.error)) {
+          return { found: false, salon: null, error: websiteRes.error };
+        }
+      } else if (websiteRes.data) {
+        const websiteRow: any = websiteRes.data;
+        const salonId = websiteRow.salon_id || websiteRow.salonId || websiteRow.salon?.id || websiteRow.id;
+        salonRow = {
+          ...websiteRow.salon,
+          ...websiteRow,
+          id: salonId,
+          name: websiteRow.name || websiteRow.title || websiteRow.salon_name || websiteRow.salon?.name,
+          data: websiteRow.data || websiteRow.config || websiteRow.salon?.data || {},
+          __resolved_public_slug: sub,
+          __catalogue_salon_id: salonId,
+        };
+      }
+    }
+
+    if (!salonRow) return { found: false, salon: null };
+    const catalogueSalonId = salonRow.__catalogue_salon_id || salonRow.id;
+
     const [servicesRes, staffRes, hoursRes] = await Promise.all([
-      runDb(() => deps.db.from('services').select('*').eq('salon_id', salonRow.id).eq('is_active', true).or('is_bookable_online.is.true,is_bookable_online.is.null').order('display_order'),
+      runDb(() => deps.db.from('services').select('*').eq('salon_id', catalogueSalonId).eq('is_active', true).or('is_bookable_online.is.true,is_bookable_online.is.null').order('display_order'),
         { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
-      runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', salonRow.id).eq('is_active', true).eq('is_public', true),
+      runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', catalogueSalonId).eq('is_active', true).eq('is_public', true),
         { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
-      runDb(() => deps.db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',salonRow.id),
+      runDb(() => deps.db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',catalogueSalonId),
         { label: 'public salon hours', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
     ]);
     if (hoursRes.error) return { found: false, salon: null, error: hoursRes.error };

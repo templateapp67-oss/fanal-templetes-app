@@ -135,11 +135,19 @@ export function customerPath(section: CustomerSection, id = '', tab = ''): strin
   return parts.join('/');
 }
 
-/** Strip a trailing slash (keeping the bare "/") so both spellings match. */
+/**
+ * Strip a trailing slash (keeping the bare "/") so both spellings match.
+ *
+ * Callers sometimes pass a full SPA target (`/editor?site=...`) rather than a
+ * bare pathname. Routing decisions must never treat the query string as part
+ * of the path, otherwise an owner editor URL can be misclassified and a public
+ * `?site=slug` link can be overwritten by a route fallback.
+ */
 export function normalizePath(pathname: string): string {
   const value = String(pathname ?? '').trim();
-  if (!value || value === '/') return '/';
-  return value.replace(/\/+$/, '') || '/';
+  const pathOnly = (value.split(/[?#]/, 1)[0] || '/').trim();
+  if (!pathOnly || pathOnly === '/') return '/';
+  return pathOnly.replace(/\/+$/, '') || '/';
 }
 
 
@@ -547,40 +555,64 @@ export function buildSettingsProfileUrl(nextPath?: string | null): string {
   return nextPath ? `${SETTINGS_PROFILE_PATH}?next=${encodeURIComponent(nextPath)}` : SETTINGS_PROFILE_PATH;
 }
 
-function currentPath(): string {
-  if (typeof window === 'undefined' || !window.location) return '/';
-  return normalizePath(window.location.pathname);
+interface PathRouteState {
+  path: string;
+  search: string;
+}
+
+function currentRoute(): PathRouteState {
+  if (typeof window === 'undefined' || !window.location) return { path: '/', search: '' };
+  return {
+    path: normalizePath(window.location.pathname),
+    search: window.location.search || '',
+  };
+}
+
+function parseNavigationTarget(to: string): { href: string; path: string; search: string } {
+  const raw = String(to || '/').trim() || '/';
+  const base = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://nexora.local';
+  try {
+    const parsed = new URL(raw.startsWith('/') ? raw : `/${raw}`, base);
+    return {
+      href: `${parsed.pathname}${parsed.search}${parsed.hash}`,
+      path: normalizePath(parsed.pathname),
+      search: parsed.search || '',
+    };
+  } catch {
+    return { href: '/', path: '/', search: '' };
+  }
 }
 
 /**
- * Track the current path and expose a `navigate` that keeps the URL and the
+ * Track the current path/search and expose a `navigate` that keeps the URL and
  * rendered screen in step. Subscribes to `popstate` so back/forward work.
  */
-export function usePathRoute(): { path: string; navigate: (to: string) => void } {
-  const [path, setPath] = useState<string>(currentPath);
+export function usePathRoute(): { path: string; search: string; navigate: (to: string) => void } {
+  const [route, setRoute] = useState<PathRouteState>(currentRoute);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onPop = () => setPath(currentPath());
+    const onPop = () => setRoute(currentRoute());
     window.addEventListener('popstate', onPop);
     // Another part of the app may have pushed a route before this mounted.
-    setPath(currentPath());
+    setRoute(currentRoute());
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   const navigate = useCallback((to: string) => {
-    const next = normalizePath(to);
+    const next = parseNavigationTarget(to);
     if (typeof window === 'undefined' || !window.history?.pushState) {
-      setPath(next);
+      setRoute({ path: next.path, search: next.search });
       return;
     }
-    if (normalizePath(window.location.pathname) === next) {
-      setPath(next);
-      return;
+    const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (currentHref !== next.href) {
+      window.history.pushState({}, '', next.href);
     }
-    window.history.pushState({}, '', next);
-    setPath(next);
+    setRoute({ path: next.path, search: next.search });
   }, []);
 
-  return { path, navigate };
+  return { path: route.path, search: route.search, navigate };
 }
