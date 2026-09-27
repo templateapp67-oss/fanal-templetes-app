@@ -5,6 +5,8 @@ import {
   isTemplatesPath,
   matchTemplateExplorerRoute,
   templateExplorerPath,
+  buildEditorUrl,
+  editorTemplateId,
 } from '../src/lib/router';
 
 test('template explorer keeps category and search in a shareable URL', () => {
@@ -28,4 +30,9 @@ test('only the templates namespace is recognised as the explorer', () => {
   assert.equal(isTemplatesPath('/templates'), true);
   assert.equal(isTemplatesPath('/templates/barber/preview'), true);
   assert.equal(isTemplatesPath('/editor'), false);
+});
+
+test('template selection enters the existing editor without an onboarding detour', () => {
+  assert.equal(buildEditorUrl(null, 'barber'), '/editor?template=barber');
+  assert.equal(editorTemplateId('?template=barber'), 'barber');
 });
