@@ -44,9 +44,8 @@ import {
   Scissors
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer } from '../types';
-import { CATEGORY_TEMPLATES } from '../categoryTemplates';
+import { TEMPLATE_REGISTRY, getTemplateConfig, getTemplateContent, type Testimonial } from '../data/templates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
-import { CATEGORY_STANDARDIZED_DATA, Testimonial } from '../templateData';
 import { createBlankSalonProfile } from '../lib/ownerSalonResolution';
 import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
@@ -80,10 +79,15 @@ interface SalonWebsitePreviewProps {
   onSelectTemplate?: (categoryId: BusinessTypeId) => void;
   selectedTemplateId?: BusinessTypeId;
   setSelectedTemplateId?: (categoryId: BusinessTypeId) => void;
+  /** Owner template changes must be made in the central /templates explorer. */
+  onOpenTemplateExplorer?: () => void;
   siteUrl?: string;
   /** When true, renders as a read-only public (customer) site — hides all owner
    *  controls (inline edit mode, customizer, AI studio, test booking, etc.). */
   publicView?: boolean;
+  /** Isolated template demo: all actions are simulated and never write data. */
+  previewMode?: boolean;
+  forcedDeviceMode?: DeviceMode;
   /** Authenticated customer account, if one exists. */
   user?: { id?: string; email?: string } | null;
   /** Reuses App's existing login/signup modal. */
@@ -286,8 +290,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   onSelectTemplate,
   selectedTemplateId,
   setSelectedTemplateId,
+  onOpenTemplateExplorer,
   siteUrl,
   publicView = false,
+  previewMode = false,
+  forcedDeviceMode,
   user,
   onRequireAuth,
   rebookRequest,
@@ -352,6 +359,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
+  useEffect(() => {
+    if (forcedDeviceMode) setDeviceMode(forcedDeviceMode);
+  }, [forcedDeviceMode]);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
 
@@ -388,7 +398,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Synchronize client reviews when category selection changes
   useEffect(() => {
-    const data = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
+    const data = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
     setActiveReviews(data.reviews || []);
   }, [selectedCategoryKey]);
 
@@ -410,7 +420,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [sectionVisibility.promoPopup, activeProfile.offers]);
 
   // Active template configuration
-  const activeTemplate = CATEGORY_TEMPLATES[selectedCategoryKey] || CATEGORY_TEMPLATES.hair_salon;
+  const activeTemplate = getTemplateConfig(selectedCategoryKey) || getTemplateConfig('hair_salon')!;
 
   // Active Accent Palette selection
   const [selectedAccentKey, setSelectedAccentKey] = useState<AccentPaletteKey>(
@@ -431,8 +441,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     }
   }, [activeProfile.themeAccentKey, selectedAccentKey]);
 
-  const activeAccent = ACCENT_PALETTES[selectedAccentKey] || ACCENT_PALETTES.slate;
-  const primaryAccentColor = activeProfile.customAccentColor || activeAccent.primaryHex;
+  const selectedAccent = ACCENT_PALETTES[selectedAccentKey] || ACCENT_PALETTES.slate;
+  // Every template reads the same resolved brand palette; no template owns a
+  // separate colour configuration.
+  const activeAccent = {
+    ...selectedAccent,
+    primaryHex: activeProfile.primaryColor || activeProfile.customAccentColor || selectedAccent.primaryHex,
+    secondaryHex: activeProfile.secondaryColor || selectedAccent.secondaryHex,
+  };
+  const primaryAccentColor = activeAccent.primaryHex;
 
   // Dynamically generate and inject favicons in document head
   useSalonFavicon(activeProfile, primaryAccentColor, true);
@@ -466,7 +483,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     return () => { isMounted = false; };
   }, [heroImageSrc, primaryAccentColor]);
 
-  const standardData = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
+  const standardData = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
 
   // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
@@ -483,7 +500,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Dynamic client testimonials state
   const [activeReviews, setActiveReviews] = useState<Testimonial[]>(() => {
-    const data = CATEGORY_STANDARDIZED_DATA[selectedCategoryKey] || CATEGORY_STANDARDIZED_DATA.hair_salon;
+    const data = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
     return data.reviews || [];
   });
   const [testimonialIndex, setTestimonialIndex] = useState(0);
@@ -653,7 +670,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Category template switcher — delegates to the parent's single unified
   // handler (which PRESERVES the owner's input) and only re-themes the canvas.
   const handleCategorySwitch = (catId: BusinessTypeId) => {
-    const tmpl = CATEGORY_TEMPLATES[catId];
+    if (onOpenTemplateExplorer) {
+      onOpenTemplateExplorer();
+      return;
+    }
+    const tmpl = getTemplateConfig(catId);
     if (!tmpl) return;
 
     setIsEditMode(false);
@@ -680,6 +701,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   };
 
   const handleOpenBooking = (srv?: SalonService, stylist?: Stylist) => {
+    if (previewMode) {
+      showNotification('Preview Mode: This action is simulated.');
+      return;
+    }
     const serviceToBook = srv || activeServices[0] || activeTemplate.services[0];
     const stylistToBook = stylist || activeStylists[0] || activeTemplate.stylists[0];
 
@@ -906,23 +931,42 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Device width class
   const deviceWidthClass = {
-    desktop: 'w-full max-w-7xl mx-auto',
+    desktop: 'w-full',
     tablet: 'max-w-[768px] w-full mx-auto shadow-2xl rounded-2xl border-2 border-slate-300',
-    mobile: 'max-w-[375px] w-full mx-auto overflow-hidden shadow-2xl rounded-3xl border-[8px] border-gray-900 bg-white relative'
+    mobile: 'max-w-[390px] w-full mx-auto overflow-hidden shadow-2xl rounded-3xl border-[8px] border-gray-900 bg-white relative'
   }[deviceMode];
 
   const themeStyle = activeTemplate.themeStyle;
-  const contrastTextColor = getContrastTextColor(primaryAccentColor);
-  const accentLuminance = getLuminance(primaryAccentColor);
+  const resolvedPrimaryColor = profile.primaryColor || primaryAccentColor;
+  const resolvedSecondaryColor = profile.secondaryColor || activeAccent.secondaryHex;
+  const contrastTextColor = getContrastTextColor(resolvedPrimaryColor);
+  const accentLuminance = getLuminance(resolvedPrimaryColor);
+  const radius = ({ none: '0px', small: '0.5rem', medium: '1rem', large: '1.5rem' }[profile.borderRadius || 'medium']);
+  const headingStyleClass = profile.headingStyle === 'classic'
+    ? '[&_h1]:font-serif [&_h2]:font-serif [&_h3]:font-serif'
+    : profile.headingStyle === 'editorial'
+      ? '[&_h1]:tracking-tight [&_h2]:tracking-tight [&_h3]:tracking-tight'
+      : profile.headingStyle === 'bold'
+        ? '[&_h1]:font-black [&_h2]:font-extrabold [&_h3]:font-bold'
+        : '';
+  const buttonStyleClass = profile.buttonStyle === 'pill'
+    ? '[&_button]:rounded-full'
+    : profile.buttonStyle === 'square'
+      ? '[&_button]:rounded-none'
+      : profile.buttonStyle === 'soft'
+        ? '[&_button]:shadow-sm'
+        : '';
 
   return (
     <div 
-      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center bg-slate-100 text-slate-900 font-sans relative select-text ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
+      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${profile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
       style={{
-        '--primary-accent': primaryAccentColor,
-        '--theme-primary': primaryAccentColor,
-        '--theme-secondary': activeAccent.secondaryHex,
-        '--color-primary': primaryAccentColor,
+        '--primary-accent': resolvedPrimaryColor,
+        '--theme-primary': resolvedPrimaryColor,
+        '--theme-secondary': resolvedSecondaryColor,
+        '--color-primary': resolvedPrimaryColor,
+        '--brand-background': profile.backgroundColor || (profile.appearance === 'dark' ? '#020617' : '#ffffff'),
+        '--brand-radius': radius,
         '--accent-luminance': accentLuminance.toFixed(4),
         '--accent-text-color': contrastTextColor,
         '--accent-contrast-text': contrastTextColor,
@@ -930,6 +974,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         '--theme-on-accent': contrastTextColor,
         '--heading-text-shadow': '0 1px 3px rgba(0, 0, 0, 0.45)',
       } as React.CSSProperties}
+      onClickCapture={(event) => {
+        if (!previewMode) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('a')) {
+          event.preventDefault();
+          event.stopPropagation();
+          showNotification('Preview Mode: This action is simulated.');
+        }
+      }}
     >
       
       {/* Toast Notifications */}
@@ -1178,7 +1231,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <span className="material-symbols-outlined text-sm">category</span>
               14 Category Templates:
             </span>
-            {Object.values(CATEGORY_TEMPLATES).map((tmpl) => {
+            {TEMPLATE_REGISTRY.map((template) => {
+              const tmpl = template.config;
               const isSelected = tmpl.id === selectedCategoryKey;
               return (
                 <button
@@ -1254,7 +1308,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         }`}
         style={{
           width: '100%',
-          maxWidth: deviceMode === 'mobile' ? '375px' : deviceMode === 'tablet' ? '768px' : '80rem',
+          maxWidth: deviceMode === 'mobile' ? '390px' : deviceMode === 'tablet' ? '768px' : 'none',
           boxSizing: 'border-box',
           overflowX: 'hidden',
         }}

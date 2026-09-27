@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SalonProfile, SalonService } from '../types';
-import { CATEGORY_STANDARDIZED_DATA } from '../templateData';
+import { getTemplateContent } from '../data/templates';
 import { getSiteUrl } from '../lib/salonStore';
 import { copyToClipboard } from '../lib/clipboard';
 
@@ -67,7 +67,7 @@ export const PromoStudio: React.FC<PromoStudioProps> = ({
   };
 
   // Get curated category gallery photos as high-res presets
-  const categoryData = CATEGORY_STANDARDIZED_DATA[profile.businessType || 'hair_salon'] || CATEGORY_STANDARDIZED_DATA.hair_salon;
+  const categoryData = getTemplateContent(profile.businessType || 'hair_salon') || getTemplateContent('hair_salon')!;
   const curatedPhotos = categoryData?.gallery || [];
 
   // Set default curated photo when category/service changes

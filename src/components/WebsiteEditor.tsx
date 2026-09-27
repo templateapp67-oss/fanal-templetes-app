@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { CURATED_GOOGLE_FONTS } from '../utils/fontHelper';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
-import { CATEGORY_TEMPLATES } from '../categoryTemplates';
+import { getTemplateConfig, getTemplateById } from '../data/templates';
 import { getSiteUrl, slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
@@ -62,7 +62,8 @@ interface WebsiteEditorProps {
   /** Timestamp of the last successful (auto or manual) save. */
   lastSavedAt?: number | null;
   onComplete: () => void;
-  onSelectTemplate?: (catId: BusinessTypeId) => void;
+  /** Template browsing/selection is owned by /templates, never this editor. */
+  onChangeTemplate?: () => void;
   selectedTemplateId?: BusinessTypeId;
   siteUrl: string;
   onSave: () => Promise<boolean>;
@@ -79,8 +80,6 @@ interface WebsiteEditorProps {
   sessionExpired?: boolean;
 }
 
-const CATEGORY_OPTIONS = Object.values(CATEGORY_TEMPLATES);
-
 export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   profile,
   setProfile,
@@ -89,7 +88,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   saveStatus,
   lastSavedAt,
   onComplete,
-  onSelectTemplate,
+  onChangeTemplate,
   selectedTemplateId,
   siteUrl,
   onSave,
@@ -201,6 +200,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   // Phase 5: set ONLY when the verified completion RPC rejects as not-ready
   // after a successful cloud save. Never set optimistically, never blocks save.
   const [completionNote, setCompletionNote] = useState<string | null>(null);
+  const [showUnsavedChangesGuard, setShowUnsavedChangesGuard] = useState(false);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
   const socialShareInputRef = useRef<HTMLInputElement | null>(null);
   const faviconUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -296,7 +296,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     const srv: SalonService = {
       id: `srv-${Date.now()}`,
       name: 'New Service',
-      category: CATEGORY_TEMPLATES[selectedTemplateId || profile.businessType]?.subCategories?.[0] || 'General',
+      category: getTemplateConfig(selectedTemplateId || profile.businessType)?.subCategories?.[0] || 'General',
       durationMinutes: 45,
       price: 500,
       description: 'Description coming soon.',
@@ -313,10 +313,6 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const removeService = (id: string) => {
     setServices((prev) => prev.filter((s) => s.id !== id));
     showToast?.('Service removed.');
-  };
-
-  const handleTemplateChange = (catId: BusinessTypeId) => {
-    onSelectTemplate?.(catId);
   };
 
   const handleCopyLink = async () => {
@@ -367,6 +363,28 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     }
   };
 
+  const requestTemplateChange = () => {
+    if (isSavePending || saveStatus === 'pending' || saveStatus === 'saving') {
+      setShowUnsavedChangesGuard(true);
+      return;
+    }
+    onChangeTemplate?.();
+  };
+
+  const saveAndContinueToTemplates = async () => {
+    if (isSavePending) return;
+    setIsSaving(true);
+    try {
+      const saved = await onSave();
+      if (saved) {
+        setShowUnsavedChangesGuard(false);
+        onChangeTemplate?.();
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleOpenSite = async () => {
     if (isSaving || saveStatus === 'saving') return;
     const liveUrl = getSiteUrl(profile);
@@ -401,7 +419,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   };
 
   const subCategories =
-    CATEGORY_TEMPLATES[selectedTemplateId || profile.businessType]?.subCategories || [];
+    getTemplateConfig(selectedTemplateId || profile.businessType)?.subCategories || [];
 
   const saveLabel = saveUi.label;
 
@@ -432,7 +450,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               </h1>
               <div className="flex items-center gap-1.5 text-[11px] text-gray-500 font-medium">
                 <span className="font-mono text-[#C20E5A] font-bold">
-                  {CATEGORY_TEMPLATES[selectedTemplateId || profile.businessType]?.title || 'Salon'}
+                  {getTemplateById(selectedTemplateId || profile.businessType)?.name || 'Salon'}
                 </span>
                 <span className="text-gray-300">•</span>
                 <span className="truncate">{siteUrl}</span>
@@ -1069,6 +1087,53 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
+        {/* ===== UNIVERSAL BRAND SYSTEM — USED BY EVERY TEMPLATE ===== */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-brand-system-section">
+          <div className="flex items-center gap-2 mb-1">
+            <Settings className="w-4 h-4 text-[#059669]" />
+            <h2 className="font-display font-bold text-base">Universal Brand System</h2>
+          </div>
+          <p className="text-[11px] text-gray-500 mb-5">These controls apply to the selected design and every Nexora template without changing your salon data.</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            {([
+              ['Primary color', 'primaryColor', profile.primaryColor || profile.customAccentColor || '#059669'],
+              ['Secondary color', 'secondaryColor', profile.secondaryColor || '#334155'],
+              ['Accent color', 'customAccentColor', profile.customAccentColor || '#059669'],
+              ['Background color', 'backgroundColor', profile.backgroundColor || '#ffffff'],
+            ] as const).map(([label, key, value]) => (
+              <label key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs font-bold text-gray-700">
+                <span className="block mb-2">{label}</span>
+                <span className="flex items-center gap-2">
+                  <input aria-label={label} type="color" value={value} onChange={(e) => upd({ [key]: e.target.value })} className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0" />
+                  <input aria-label={`${label} hex value`} value={value} onChange={(e) => upd({ [key]: e.target.value })} className="min-w-0 flex-1 bg-white rounded-lg border border-gray-200 px-2 py-1.5 font-mono text-[10px] uppercase" />
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <label className="text-xs font-bold text-gray-700">Heading style
+              <select aria-label="Heading style" value={profile.headingStyle || 'modern'} onChange={(e) => upd({ headingStyle: e.target.value as SalonProfile['headingStyle'] })} className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white p-2 text-sm">
+                <option value="modern">Modern</option><option value="classic">Classic</option><option value="editorial">Editorial</option><option value="bold">Bold</option>
+              </select>
+            </label>
+            <label className="text-xs font-bold text-gray-700">Button style
+              <select aria-label="Button style" value={profile.buttonStyle || 'rounded'} onChange={(e) => upd({ buttonStyle: e.target.value as SalonProfile['buttonStyle'] })} className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white p-2 text-sm">
+                <option value="rounded">Rounded</option><option value="pill">Pill</option><option value="square">Square</option><option value="soft">Soft</option>
+              </select>
+            </label>
+            <label className="text-xs font-bold text-gray-700">Border radius
+              <select aria-label="Border radius" value={profile.borderRadius || 'medium'} onChange={(e) => upd({ borderRadius: e.target.value as SalonProfile['borderRadius'] })} className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white p-2 text-sm">
+                <option value="none">Square</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option>
+              </select>
+            </label>
+            <label className="text-xs font-bold text-gray-700">Appearance
+              <select aria-label="Light or dark appearance" value={profile.appearance || 'light'} onChange={(e) => upd({ appearance: e.target.value as SalonProfile['appearance'] })} className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white p-2 text-sm">
+                <option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
         {/* ===== TYPOGRAPHY & GOOGLE FONTS CUSTOMIZER ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-fonts-section">
           <div className="flex items-center justify-between mb-1">
@@ -1324,6 +1389,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </p>
 
           <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="text-xs font-bold font-mono-caps text-gray-700">SEO title
+                <input aria-label="SEO title" value={profile.seoTitle || ''} onChange={(e) => upd({ seoTitle: e.target.value })} maxLength={70} placeholder={`${profile.businessName || 'Salon'} – Professional Services`} className="mt-1.5 w-full rounded-xl border border-gray-300 p-3 text-sm" />
+              </label>
+              <label className="text-xs font-bold font-mono-caps text-gray-700">SEO description
+                <textarea aria-label="SEO description" value={profile.seoDescription || ''} onChange={(e) => upd({ seoDescription: e.target.value })} maxLength={160} rows={2} placeholder="A concise description shown in Google and social results." className="mt-1.5 w-full resize-none rounded-xl border border-gray-300 p-3 text-sm" />
+              </label>
+            </div>
             <div>
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1.5">
                 SEO Keywords (Comma-Separated)
@@ -1625,9 +1698,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <Building2 className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Template &amp; Live Website</h2>
           </div>
-          <p className="text-[11px] text-gray-500 mb-5">
-            Pick a template (your data is preserved) and grab your white-label link.
-          </p>
+          <p className="text-[11px] text-gray-500 mb-5">Your selected template and white-label link are managed here. To change the design, return to the template explorer.</p>
           <div className="mb-5 p-4 rounded-xl border border-amber-100 bg-amber-50/40">
             <div className="flex items-center gap-2 mb-1"><Sparkles className="w-4 h-4 text-amber-600" /><span className="text-xs font-bold text-gray-800">In-Salon Brand Experience</span></div>
             <p className="text-[10px] text-gray-500 mb-3">Make every visit feel consistent with your digital brand.</p>
@@ -1654,20 +1725,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <label className="text-xs font-bold font-mono-caps text-gray-700 block mb-1">
                 Active Template
               </label>
-              <select
-                value={selectedTemplateId || profile.businessType}
-                onChange={(e) => handleTemplateChange(e.target.value as BusinessTypeId)}
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-              >
-                {CATEGORY_OPTIONS.map((tmpl) => (
-                  <option key={tmpl.id} value={tmpl.id}>
-                    {tmpl.title} ({tmpl.paletteLabel.split('(')[0]})
-                  </option>
-                ))}
-              </select>
-              <p className="text-[10px] text-gray-500 mt-1">
-                Switching keeps your salon details, services &amp; pricing.
-              </p>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <img src={getTemplateById(selectedTemplateId || profile.businessType)?.thumbnailUrl} alt="" className="h-12 w-12 rounded-lg object-cover" />
+                <div className="min-w-0 flex-1"><p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Selected Design</p><p className="truncate text-sm font-bold text-gray-900">{getTemplateById(selectedTemplateId || profile.businessType)?.name || 'Selected template'}</p><p className="mt-1 text-[10px] text-gray-500">Your current draft stays unchanged when you choose another design.</p></div>
+                <button type="button" onClick={requestTemplateChange} className="shrink-0 rounded-lg border border-[#C20E5A] px-3 py-2 text-xs font-bold text-[#C20E5A] hover:bg-rose-50">Change Template</button>
+              </div>
             </div>
 
             <div>
@@ -1781,6 +1843,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         />
       )}
 
+      {showUnsavedChangesGuard && <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-title"><div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><h2 id="unsaved-changes-title" className="text-xl font-black text-slate-950">You have unsaved changes.</h2><p className="mt-2 text-sm text-slate-600">Save this draft before returning to templates, or continue without waiting for the save.</p><div className="mt-6 flex flex-col gap-2 sm:flex-row"><button type="button" disabled={isSavePending} onClick={() => void saveAndContinueToTemplates()} className="rounded-xl bg-[#C20E5A] px-4 py-3 text-sm font-black text-white disabled:opacity-60">Save &amp; Continue</button><button type="button" onClick={() => { setShowUnsavedChangesGuard(false); onChangeTemplate?.(); }} className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-black text-slate-700">Switch Without Saving</button><button type="button" onClick={() => setShowUnsavedChangesGuard(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-600">Cancel</button></div></div></div>}
+
       <AIBioModal
         isOpen={isBioModalOpen}
         onClose={() => setIsBioModalOpen(false)}
@@ -1795,4 +1859,3 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     </div>
   );
 };
-

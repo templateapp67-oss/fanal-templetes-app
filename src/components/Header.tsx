@@ -12,7 +12,6 @@ interface HeaderProps {
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
   salonName: string;
-  onBuildWebsiteClick?: () => void;
   user: any;
   setUser: (user: any) => void;
   profile: SalonProfile;
@@ -113,10 +112,10 @@ export interface HeaderNavEntry {
 export const HEADER_NAV_ENTRIES: HeaderNavEntry[] = [
   { view: 'landing', label: 'Home', icon: 'home', activeViews: ['landing'] },
   {
-    view: 'wizard',
+    view: 'templates',
     label: 'Explore Templates',
     icon: 'devices',
-    activeViews: ['preview', 'wizard'],
+    activeViews: ['templates'],
     badge: 'Live',
   },
   {
@@ -148,7 +147,6 @@ export const Header: React.FC<HeaderProps> = ({
   currentView,
   setCurrentView,
   salonName,
-  onBuildWebsiteClick,
   user,
   setUser,
   profile,
@@ -191,10 +189,6 @@ export const Header: React.FC<HeaderProps> = ({
   /** One handler for both layouts; the mobile menu closes after the switch. */
   const openNavEntry = (entry: HeaderNavEntry) => {
     setMobileNavOpen(false);
-    if (entry.view === 'wizard' && onBuildWebsiteClick) {
-      onBuildWebsiteClick();
-      return;
-    }
     setCurrentView(entry.view);
   };
 

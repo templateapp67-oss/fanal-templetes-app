@@ -23,12 +23,12 @@ export function useSalonSEO(profile: SalonProfile | undefined, isActive: boolean
     const phone = profile?.phone?.trim() || (profile as any)?.phone_number?.trim() || '';
 
     // Title mapping: e.g. "Bella Hair Salon – Luxury Styling in New Delhi"
-    const titleText = profile?.businessName 
+    const titleText = profile?.seoTitle?.trim() || (profile?.businessName 
       ? `${businessName} – ${tagline || 'Professional Salon Services'}`
-      : 'Nexora - Salon Website Builder & Platform';
+      : 'Nexora - Salon Website Builder & Platform');
 
     // Description mapping (keep within search engine optimization length guidelines 120-160 characters)
-    let descText = about;
+    let descText = profile?.seoDescription?.trim() || about;
     if (profile?.businessName) {
       descText = about.length > 5 
         ? about 

@@ -5,7 +5,7 @@ import {
   BusinessTypeId,
   LoyaltyConfig,
 } from '../types';
-import { CATEGORY_TEMPLATES } from '../categoryTemplates';
+import { getTemplateConfig } from '../data/templates';
 import { DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey } from '../themeAccents';
 import { DEFAULT_LOYALTY_CONFIG } from '../loyaltyData';
 import { safeWriteLocalStorage, LocalStorageWriteResult } from './autoSave';
@@ -153,10 +153,10 @@ export function mergeTemplatePreservingUserData(
   prevTmplId?: BusinessTypeId,
   authProfileOverride?: Partial<AuthenticatedProfileState> | null
 ): SalonProfile {
-  const tmpl = CATEGORY_TEMPLATES[nextTmplId];
+  const tmpl = getTemplateConfig(nextTmplId);
   if (!tmpl) return prev;
 
-  const prevTmpl = prevTmplId ? CATEGORY_TEMPLATES[prevTmplId] : undefined;
+  const prevTmpl = getTemplateConfig(prevTmplId);
   const auth = authProfileOverride || getStoredAuthenticatedProfile();
 
   // A value is "customised" when the current value is non-empty AND differs
@@ -269,7 +269,7 @@ export function areServicesCustomized(
 ): boolean {
   if (!services.length) return false;
   if (!prevTmplId) return true;
-  const prevDefault = CATEGORY_TEMPLATES[prevTmplId]?.services;
+  const prevDefault = getTemplateConfig(prevTmplId)?.services;
   if (!prevDefault) return true;
   if (services.length !== prevDefault.length) return true;
   // Same ids, same lengths -> effectively the template defaults
@@ -285,7 +285,7 @@ export function areStylistsCustomized(
 ): boolean {
   if (!stylists.length) return false;
   if (!prevTmplId) return true;
-  const prevDefault = CATEGORY_TEMPLATES[prevTmplId]?.stylists;
+  const prevDefault = getTemplateConfig(prevTmplId)?.stylists;
   if (!prevDefault) return true;
   if (stylists.length !== prevDefault.length) return true;
   const prevIds = prevDefault.map((s) => s.id).sort().join(',');
@@ -300,7 +300,7 @@ export function mergeTemplateServices(
   prevTmplId?: BusinessTypeId
 ): SalonService[] {
   if (areServicesCustomized(services, prevTmplId)) return services;
-  return CATEGORY_TEMPLATES[nextTmplId]?.services || services;
+  return getTemplateConfig(nextTmplId)?.services || services;
 }
 
 export function mergeTemplateStylists(
@@ -309,7 +309,7 @@ export function mergeTemplateStylists(
   prevTmplId?: BusinessTypeId
 ): Stylist[] {
   if (areStylistsCustomized(stylists, prevTmplId)) return stylists;
-  return CATEGORY_TEMPLATES[nextTmplId]?.stylists || stylists;
+  return getTemplateConfig(nextTmplId)?.stylists || stylists;
 }
 
 // ============================================================================
@@ -383,6 +383,15 @@ export function clearAllLocalUserState(targetUserId?: string | null): void {
         'nexora.onboarding.signup.pendingConfirmation', 'onb_handoff_state']) {
         sessionStorage.removeItem(key);
       }
+      const sessionDoomed: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith('nexora:template:') || key.startsWith('nexora:draft:anonymous')) {
+          sessionDoomed.push(key);
+        }
+      }
+      for (const key of sessionDoomed) sessionStorage.removeItem(key);
     } catch { /* storage unavailable */ }
 
   } catch {}

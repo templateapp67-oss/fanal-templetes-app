@@ -6,6 +6,7 @@ import type { BookingStatus } from './lib/bookingStatus.js';
  */
 export type AppView =
   | 'landing'
+  | 'templates'
   | 'wizard'
   | 'preview'
   | 'dashboard'
@@ -257,6 +258,14 @@ export interface SalonProfile {
   /** True unless the salon has explicitly paused online bookings. */
   acceptsOnlineBookings?: boolean;
   customAccentColor?: string;
+  /** Universal brand tokens applied by every registered template. */
+  primaryColor?: string;
+  secondaryColor?: string;
+  backgroundColor?: string;
+  headingStyle?: 'classic' | 'modern' | 'editorial' | 'bold';
+  buttonStyle?: 'rounded' | 'pill' | 'square' | 'soft';
+  borderRadius?: 'none' | 'small' | 'medium' | 'large';
+  appearance?: 'light' | 'dark' | 'system';
   landmark?: string;
   foundingYear?: string;
   workingHoursMonFri?: string;
@@ -269,6 +278,8 @@ export interface SalonProfile {
   customFaviconUrl?: string;
   socialShareImageUrl?: string;
   seoKeywords?: string;
+  seoTitle?: string;
+  seoDescription?: string;
   headingFont?: string;
   bodyFont?: string;
 }
@@ -627,4 +638,3 @@ export interface StaffPayoutHistoryItem {
   notes?: string;
   createdAt: string;
 }
-
