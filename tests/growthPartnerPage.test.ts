@@ -66,7 +66,7 @@ test('growth partner routes resolve per the existing router conventions', () => 
   assert.equal(GROWTH_PARTNER_PATH, '/growth-partner');
   assert.deepEqual(
     [...GROWTH_PARTNER_SECTIONS],
-    ['dashboard', 'referrals', 'customers', 'referral-history', 'performance', 'commission', 'profile']
+    ['dashboard', 'referrals', 'customers', 'performance', 'commission', 'profile']
   );
   assert.equal(isGrowthPartnerPath('/growth-partner'), true);
   assert.equal(isGrowthPartnerPath('/growth-partner/referrals'), true);
@@ -103,7 +103,7 @@ const PARTNER_ROW: GrowthPartner = {
 
 const gate = (patch: Record<string, any> = {}) =>
   resolveGrowthPartnerGate({
-    userId: 'user-1',
+    userId: PARTNER_ROW.user_id,
     loading: false,
     isMockMode: false,
     partnerRow: PARTNER_ROW,
@@ -120,6 +120,10 @@ test('the gate maps auth + backend outcome to exactly one page state', () => {
   assert.equal(gate({ partnerRow: null }), 'unauthorized');
   // 3. Active partners reach the dashboard.
   assert.equal(gate(), 'ready');
+  // The active-schema compatibility RPC intentionally omits `status`.
+  // `is_active: true` is the server-verified admission signal in that shape.
+  assert.equal(gate({ partnerRow: { ...PARTNER_ROW, status: '' } }), 'ready');
+  assert.equal(gate({ partnerRow: { ...PARTNER_ROW, status: 'pending' } }), 'unauthorized');
   // 4. An INACTIVE partner is denied entry (account/data left untouched).
   assert.equal(gate({ partnerRow: { ...PARTNER_ROW, is_active: false } }), 'inactive');
   // Errors: session expiry is distinguished from generic failures.
