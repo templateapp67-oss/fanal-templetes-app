@@ -571,7 +571,11 @@ export default function App() {
     stylists?: Stylist[];
     lookupFailed?: boolean;
     error?: string | null;
+    /** The owner's chosen website template, so the public site opens it. */
+    selectedTemplateId?: string | null;
   } | null>(null);
+  /** Bumped by the public-site error screen's "Try again" button. */
+  const [siteLookupNonce, setSiteLookupNonce] = useState(0);
   const [siteLoading, setSiteLoading] = useState<boolean>(true);
   // Computed before the hooks below so the auto-save engine can skip saving
   // when a visitor is viewing a salon's public white-label site.
@@ -595,7 +599,7 @@ export default function App() {
   const isTemplateHandoff = isTemplateHandoffPath(path);
 
   type SiteJsonResult =
-    | { ok: true; data: any }
+    | { ok: true; data: any; status?: number }
     | { ok: false; status?: number; error: string; data?: any };
 
   /**
@@ -649,6 +653,32 @@ export default function App() {
     }
   }, []);
 
+  /**
+   * Public-site lookups retry before they are allowed to fail.
+   *
+   * A cold serverless start, a dropped connection or a database timeout used to
+   * bounce a visitor straight to "Website unavailable" even though the salon
+   * was published. Only transport/5xx failures are retried: a JSON answer —
+   * including `found: false` — is a definitive verdict from the server.
+   */
+  const fetchSiteJsonWithRetry = useCallback(
+    async (url: string, attempts = 3): Promise<SiteJsonResult> => {
+      let last: SiteJsonResult = { ok: false, error: 'The site lookup did not run.' };
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        last = await fetchSiteJson(url);
+        if (last.ok) return last;
+        const status = last.status ?? 0;
+        const isRetryable = status === 0 || status >= 500 || status === 408 || status === 429;
+        if (!isRetryable) return last;
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+        }
+      }
+      return last;
+    },
+    [fetchSiteJson]
+  );
+
   useEffect(() => {
     let cancelled = false;
     const requestedSite = requestedPublicSite.trim();
@@ -658,7 +688,7 @@ export default function App() {
     (async () => {
       try {
         if (requestedSite) {
-          const result = await fetchSiteJson(`/api/site?site=${encodeURIComponent(requestedSite)}`);
+          const result = await fetchSiteJsonWithRetry(`/api/site?site=${encodeURIComponent(requestedSite)}`);
           if (cancelled) return;
 
           if (result.ok && result.data?.found && result.data?.salon) {
@@ -671,6 +701,7 @@ export default function App() {
               profile: data.salon?.profile || profile,
               services: data.salon?.services || services,
               stylists: data.salon?.stylists || stylists,
+              selectedTemplateId: typeof data.salon?.selectedTemplateId === 'string' ? data.salon.selectedTemplateId : null,
             });
             return;
           }
@@ -715,7 +746,7 @@ export default function App() {
           return;
         }
 
-        const result = await fetchSiteJson('/api/site');
+        const result = await fetchSiteJsonWithRetry('/api/site');
         if (cancelled) return;
         const data = result.ok ? result.data : result.data;
         if (result.ok && data?.isTenant) {
@@ -727,6 +758,7 @@ export default function App() {
             profile: data.salon?.profile || profile,
             services: data.salon?.services || services,
             stylists: data.salon?.stylists || stylists,
+            selectedTemplateId: typeof data.salon?.selectedTemplateId === 'string' ? data.salon.selectedTemplateId : null,
           });
         } else if (!result.ok && data?.isTenant) {
           setSiteTenant({
@@ -780,7 +812,7 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchSiteJson, isMockSupabase, requestedPublicSite, publicSiteRequest.isPublicParam]);
+  }, [fetchSiteJsonWithRetry, isMockSupabase, requestedPublicSite, publicSiteRequest.isPublicParam, siteLookupNonce]);
 
   // Global save/update toast so the owner always knows their work is secure.
   const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
@@ -1024,7 +1056,12 @@ export default function App() {
   // Reliance on localStorage for logged-in salon identity determination is removed.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (isMockSupabase) return;
+    // A public salon URL is served from the published tenant, not from this
+    // browser's owner workspace. Pulling the owner's workspace in while a
+    // public site is open only churns owner state (and can blank a profile
+    // whose `needs_onboarding` verdict belongs to the owner surface, not the
+    // visitor's). Read-only public views skip it.
+    if (isMockSupabase || shouldBlockForSiteLookup) return;
     let cancelled = false;
 
     if (user?.id) {
@@ -1082,7 +1119,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, isMockSupabase, fetchOwnerWorkspaceRPC]);
+  }, [user?.id, isMockSupabase, fetchOwnerWorkspaceRPC, shouldBlockForSiteLookup]);
 
   // PHASE 2 — Multi-tenant Isolation & Ownership Resolution:
   // When an authenticated user exists, resolve their salon using:
@@ -1094,6 +1131,12 @@ export default function App() {
   const resolvedOwnerRef = useRef<string | null>(null);
   useEffect(() => {
     if (isMockSupabase || !user?.id) return;
+    // A public salon URL is not an owner surface. This resolution may clear
+    // this browser's salon state and send the owner to the wizard
+    // (`needs_onboarding`), which would replace the public site the visitor
+    // asked for — and `setCurrentView('wizard')` navigates to `/`, silently
+    // dropping `?site=slug`. Skip it entirely while a public site is shown.
+    if (shouldBlockForSiteLookup) return;
     if (resolvedOwnerRef.current === user.id) return;
     resolvedOwnerRef.current = user.id;
 
@@ -1120,7 +1163,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, path, setCurrentView]);
+  }, [user?.id, path, setCurrentView, shouldBlockForSiteLookup]);
 
   // ---------------------------------------------------------------------------
   // OWNER EDITOR GUARD
@@ -1259,6 +1302,10 @@ export default function App() {
 
   // Auto-Fetch Profile Sync
   useEffect(() => {
+    // Same rule as the workspace read above: a public salon URL renders the
+    // published tenant, so the signed-in owner's own profile must not be
+    // pulled into (or blanked inside) the page a visitor is reading.
+    if (shouldBlockForSiteLookup) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1433,7 +1480,7 @@ export default function App() {
       if (retryTimer) clearTimeout(retryTimer);
       window.removeEventListener('online', handleOnline);
     };
-  }, [user]);
+  }, [user, shouldBlockForSiteLookup]);
 
   // Hydrate services / staff / loyalty from Supabase once the owner logs in.
   // The cloud sync only performs *destructive* cleanup (deleting rows removed
@@ -2062,7 +2109,13 @@ export default function App() {
       firstPersistRef.current = false;
       return;
     }
-    if (isPublicSite) return; // visitors on a public salon site never save
+    // A public salon site (`/?site=slug` or a white-label host) is a READ-ONLY
+    // surface: nobody viewing one may write to the salon. The guard covers the
+    // lookup window as well — while the tenant is still resolving `isPublicSite`
+    // is false, so a signed-in owner's pending hydration/autosave could
+    // otherwise write their own editor state (including the slug and an empty
+    // catalogue) over the salon they are only visiting.
+    if (isPublicSite || shouldBlockForSiteLookup) return;
     if (isCustomerApp) return; // …and neither does anyone in the Customer App
     if (isOnboardingApp) return; // …or in the Onboarding App
     if (isPartnerPortal) return; // …or in the standalone Growth Partner portal
@@ -2084,6 +2137,7 @@ export default function App() {
     selectedTemplateId,
     isMockSupabase,
     isPublicSite,
+    shouldBlockForSiteLookup,
     isCustomerApp,
     isOnboardingApp,
     isPartnerPortal,
@@ -2258,7 +2312,7 @@ export default function App() {
     // The customer app must never append to the owner's `appointments`/`clients`
     // either: a customer booking arrives through /api/customer/* and is written
     // against their own rows.
-    if (isMockSupabase || isPublicSite || isCustomerApp || isOnboardingApp || isPartnerPortal) return;
+    if (isMockSupabase || isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isOnboardingApp || isPartnerPortal) return;
 
     const ownerId = user?.id ?? profile.ownerId;
     if (!ownerId) {
@@ -2439,6 +2493,30 @@ export default function App() {
       <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-lg font-bold text-slate-950">Website unavailable</h1>
         <p className="mt-2 text-sm text-slate-700">{message}</p>
+        {siteTenant.subdomain ? (
+          <p className="mt-2 text-xs font-mono text-slate-500">?site={siteTenant.subdomain}</p>
+        ) : null}
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+          <button
+            type="button"
+            onClick={() => setSiteLookupNonce((n) => n + 1)}
+            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+          >
+            Try again
+          </button>
+          <a
+            href={siteTenant.lookupFailed ? window.location.href : '/'}
+            onClick={(event) => {
+              // A hard reload re-runs the lookup with a clean client state.
+              if (!siteTenant.lookupFailed) return;
+              event.preventDefault();
+              window.location.reload();
+            }}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          >
+            {siteTenant.lookupFailed ? 'Reload the page' : 'Go to the home page'}
+          </a>
+        </div>
       </div>
     </main>;
   }
@@ -2452,7 +2530,7 @@ export default function App() {
           onAddAppointment={handleAddAppointment}
           user={user}
           onRequireAuth={openBookingAuth}
-          selectedTemplateId={selectedTemplateId}
+          selectedTemplateId={(siteTenant?.selectedTemplateId || selectedTemplateId) as BusinessTypeId}
           setSelectedTemplateId={setSelectedTemplateId}
           siteUrl={getSiteUrl(publicProfile)}
           publicView

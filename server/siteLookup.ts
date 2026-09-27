@@ -227,6 +227,145 @@ export function mapStylistRow(row: any): Stylist {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Editor-state fallback for the PUBLIC site
+// ---------------------------------------------------------------------------
+// A published salon can exist in `salons` while its catalogue was never
+// mirrored into `services`/`staff` (saves that predate the normalized mirror,
+// or a workspace whose rows live under another salon id). The public site then
+// rendered an empty template, which reads as "the website did not open".
+//
+// The editor draft is therefore consulted as a FALLBACK only:
+//   • the normalized catalogue always wins when it has rows (it is what the
+//     booking engine and every RLS-protected read use);
+//   • the draft only fills EMPTY catalogue slots;
+//   • the draft only fills EMPTY profile text fields — never overwrites
+//     published values.
+// Nothing here can widen access: the read is scoped to the salon's own owner
+// and every failure degrades to "no fallback".
+// ---------------------------------------------------------------------------
+
+const MAX_PUBLIC_FALLBACK_ITEMS = 200;
+
+async function readOwnerEditorState(
+  deps: SiteLookupDeps,
+  ownerId: unknown,
+  deadlineAt?: number
+): Promise<any | null> {
+  const id = String(ownerId ?? '').trim();
+  if (!id || deps.isMockSupabase) return null;
+  try {
+    const res = await runDb(
+      () => deps.db.from('owner_editor_state').select('state').eq('owner_id', id).maybeSingle(),
+      // Best effort only: a public page must not pay for a second round-trip
+      // (or a retry delay) when the draft cannot be read.
+      { label: 'public editor state fallback', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false }
+    );
+    const state = res?.data?.state;
+    return state && typeof state === 'object' ? state : null;
+  } catch {
+    // Unreadable draft (missing table, RLS, timeout) is not a site failure.
+    return null;
+  }
+}
+
+function textOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function publicServicesFromEditorState(raw: unknown): SalonService[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SalonService[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, any>;
+    const name = textOrEmpty(row.name);
+    const id = textOrEmpty(row.id) || `svc-${out.length + 1}`;
+    if (!name) continue;
+    const price = Number(row.price);
+    const duration = Number(row.durationMinutes);
+    out.push({
+      id,
+      name: name.slice(0, 200),
+      category: textOrEmpty(row.category) || 'General',
+      description: typeof row.description === 'string' ? row.description.slice(0, 2000) : '',
+      icon: textOrEmpty(row.icon) || 'sparkles',
+      price: Number.isFinite(price) && price >= 0 ? price : 0,
+      durationMinutes: Number.isFinite(duration) && duration > 0 ? duration : 45,
+      popular: row.popular === true,
+      showDuration: row.showDuration !== false,
+    });
+    if (out.length >= MAX_PUBLIC_FALLBACK_ITEMS) break;
+  }
+  return out;
+}
+
+function publicStylistsFromEditorState(raw: unknown): Stylist[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Stylist[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, any>;
+    const name = textOrEmpty(row.name);
+    if (!name) continue;
+    out.push({
+      id: textOrEmpty(row.id) || `st-${out.length + 1}`,
+      name: name.slice(0, 120),
+      role: textOrEmpty(row.role) || 'Service Provider',
+      avatarUrl: textOrEmpty(row.avatarUrl),
+      bio: typeof row.bio === 'string' ? row.bio.slice(0, 2000) : '',
+      // A public visitor must never see a staff member's private number.
+      phone: '',
+      specialties: Array.isArray(row.specialties) ? row.specialties.filter((s: unknown) => typeof s === 'string').slice(0, 20) : [],
+      assignedServices: Array.isArray(row.assignedServices) ? row.assignedServices.filter((s: unknown) => typeof s === 'string').slice(0, 200) : [],
+      rating: Number.isFinite(Number(row.rating)) ? Number(row.rating) : 5,
+      commissionRate: 0,
+      status: (textOrEmpty(row.status) || 'Available') as Stylist['status'],
+      accessRole: 'Service Provider (Assigned)',
+      hidePhone: true,
+      schedule: [],
+    });
+    if (out.length >= MAX_PUBLIC_FALLBACK_ITEMS) break;
+  }
+  return out;
+}
+
+/**
+ * Fill only the EMPTY public text/media fields from the editor draft.
+ * A published value is never replaced, and identity/contact columns that the
+ * public site renders from the salon row (name, phone, city…) are untouched.
+ */
+function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): SalonProfile {
+  if (!draft || typeof draft !== 'object') return profile;
+  const source = draft as Record<string, any>;
+  const merged: SalonProfile = { ...profile };
+  const fill = (key: keyof SalonProfile, value: unknown) => {
+    const current = (merged as Record<string, any>)[key];
+    if (current !== undefined && current !== null && String(current).trim() !== '') return;
+    const next = typeof value === 'string' ? value.trim() : '';
+    if (next) (merged as Record<string, any>)[key] = next;
+  };
+  fill('tagline', source.tagline);
+  fill('about', source.about);
+  fill('coverImageUrl', source.coverImageUrl);
+  fill('ownerPhotoUrl', source.ownerPhotoUrl);
+  fill('logoUrl', source.logoUrl);
+  fill('instagramHandle', source.instagramHandle);
+  fill('facebookPage', source.facebookPage);
+  fill('youtubeChannel', source.youtubeChannel);
+  fill('landmark', source.landmark);
+  fill('themeAccentKey', source.themeAccentKey);
+  fill('themePreset', source.themePreset);
+  fill('areaLocality', source.areaLocality);
+  if (profile.latitude === undefined && Number.isFinite(Number(source.latitude))) {
+    merged.latitude = Number(source.latitude);
+  }
+  if (profile.longitude === undefined && Number.isFinite(Number(source.longitude))) {
+    merged.longitude = Number(source.longitude);
+  }
+  return merged;
+}
+
 /**
  * Resolve a salon and its catalogue by subdomain or custom domain.
  * Live reads use the normalized salon catalogue and propagate database failures.
@@ -311,21 +450,34 @@ export async function lookupSalon(
     if (!salonRow) return { found: false, salon: null };
     const catalogueSalonId = salonRow.__catalogue_salon_id || salonRow.id;
 
-    const [servicesRes, staffRes, hoursRes] = await Promise.all([
+    const [servicesRes, staffRes, hoursRes, editorState] = await Promise.all([
       runDb(() => deps.db.from('services').select('*').eq('salon_id', catalogueSalonId).eq('is_active', true).or('is_bookable_online.is.true,is_bookable_online.is.null').order('display_order'),
         { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', catalogueSalonId).eq('is_active', true).eq('is_public', true),
         { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       runDb(() => deps.db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',catalogueSalonId),
         { label: 'public salon hours', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
+      readOwnerEditorState(deps, salonRow.owner_id || salonRow.ownerId, deadlineAt),
     ]);
     if (hoursRes.error) return { found: false, salon: null, error: hoursRes.error };
     if (servicesRes.error || staffRes.error) return { found: false, salon: null, error: servicesRes.error || staffRes.error };
+
+    const catalogueServices = (servicesRes.data || []).map(mapServiceRow);
+    const catalogueStylists = (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
+      assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) }));
+    const profile = { ...mapProfileRow(salonRow), ownerId: undefined, ...publicHours(hoursRes.data || []) };
+
     return { found: true, salon: {
-      profile: { ...mapProfileRow(salonRow), ownerId: undefined, ...publicHours(hoursRes.data || []) },
-      services: (servicesRes.data || []).map(mapServiceRow),
-      stylists: (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
-        assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) })),
+      // The editor draft is the fallback, never the primary source: the
+      // normalized catalogue is what the booking engine and RLS-protected
+      // reads use, so it wins whenever it has rows. Only when the public
+      // catalogue is empty — a salon saved before the catalogue mirror
+      // existed, or one whose services were never mirrored — does the owner's
+      // own saved draft fill the site, instead of a template with no content.
+      profile: fillProfileFromEditorState(profile, editorState?.profile),
+      services: catalogueServices.length ? catalogueServices : publicServicesFromEditorState(editorState?.services),
+      stylists: catalogueStylists.length ? catalogueStylists : publicStylistsFromEditorState(editorState?.stylists),
+      selectedTemplateId: typeof editorState?.selectedTemplateId === 'string' ? editorState.selectedTemplateId : null,
     } };
   } catch (error) {
     return { found: false, salon: null, error };
