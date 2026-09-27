@@ -52,7 +52,6 @@ export function useReferralCode(): UseReferralCodeResult {
         if (!mounted || version !== requestVersion.current) return;
 
         if (error) {
-          console.error('[useReferralCode] Could not load referral code:', error);
           setCode(null);
           setLoading(false);
           return;
@@ -61,21 +60,22 @@ export function useReferralCode(): UseReferralCodeResult {
         const value = typeof data === 'string' ? data.trim() : '';
         setCode(value || null);
         setLoading(false);
-      } catch (error) {
+      } catch {
         if (!mounted || version !== requestVersion.current) return;
-        console.error('[useReferralCode] Unexpected referral-code error:', error);
         setCode(null);
         setLoading(false);
       }
     };
 
-    void supabase.auth.getUser().then(({ data, error }) => {
+    void supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!mounted) return;
-      if (error || !data.user) {
+      if (error || !session?.user) {
         clear(false);
         return;
       }
       void load(true);
+    }).catch(() => {
+      if (mounted) clear(false);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {

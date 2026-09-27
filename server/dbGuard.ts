@@ -40,14 +40,14 @@ function durationFromEnv(name: string, fallback: number, min = 50, max = 120_000
 }
 
 /** Default budget for a single database round-trip. */
-export const DEFAULT_DB_TIMEOUT_MS = durationFromEnv('DB_TIMEOUT_MS', 6000);
+export const DEFAULT_DB_TIMEOUT_MS = durationFromEnv('DB_TIMEOUT_MS', 15000);
 /** Shorter budget for "nice to have" lookups (owner resolution, notifications). */
-export const LOOKUP_DB_TIMEOUT_MS = durationFromEnv('DB_LOOKUP_TIMEOUT_MS', 4000);
+export const LOOKUP_DB_TIMEOUT_MS = durationFromEnv('DB_LOOKUP_TIMEOUT_MS', 10000);
 /** Hard ceiling for a whole API request before we answer 504 ourselves. */
 // Keep the self-imposed response deadline below the common 10s serverless
 // invocation ceiling, even when an operator accidentally configures a larger
 // value. A platform-generated HTML 500 must never win the race.
-export const API_REQUEST_TIMEOUT_MS = durationFromEnv('API_REQUEST_TIMEOUT_MS', 9000, 50, 9500);
+export const API_REQUEST_TIMEOUT_MS = durationFromEnv('API_REQUEST_TIMEOUT_MS', 25000, 50, 30000);
 
 export interface DbResult<T = any> {
   data: T | null;

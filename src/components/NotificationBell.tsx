@@ -58,12 +58,12 @@ export const NotificationBell = ({ userEmail }: { userEmail: string }) => {
     setIsOpen(false);
     if (!userEmail) return () => { mountedRef.current = false; generationRef.current++; };
 
-    // 3s while healthy, exponential backoff (max 60s) while failing.
+    // 15s while healthy, exponential backoff (max 60s) while failing.
     let timer: any;
     const schedule = () => {
       const delay = failureCountRef.current > 0
-        ? Math.min(3000 * Math.pow(2, Math.min(failureCountRef.current, 5)), 60000)
-        : 3000;
+        ? Math.min(15000 * Math.pow(2, Math.min(failureCountRef.current, 5)), 60000)
+        : 15000;
       timer = setTimeout(async () => {
         await fetchNotifications();
         if (mountedRef.current && generation === generationRef.current) schedule();

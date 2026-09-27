@@ -1,4 +1,4 @@
-import { isEditorPath, normalizePath } from './router';
+import { isEditorPath, isOnboardingWebsitePath, normalizePath } from './router';
 
 /**
  * Owner setup is a guard for the editor, not for general app navigation.
@@ -6,7 +6,8 @@ import { isEditorPath, normalizePath } from './router';
  * while the first salon is still being created.
  */
 export function requiresOwnerEditorSetup(pathname: string): boolean {
-  return isEditorPath(pathname);
+  const norm = normalizePath(pathname).toLowerCase();
+  return isEditorPath(norm) || isOnboardingWebsitePath(norm) || norm === '/wizard';
 }
 
 /**

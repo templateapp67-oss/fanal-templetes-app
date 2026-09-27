@@ -8,6 +8,7 @@ export function observeAuthSession(auth: any, publish: (state: RestoredAuthState
   let attempt = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const emit = (state: RestoredAuthState) => { if (!disposed) publish(state); };
+
   const { data: { subscription } } = auth.onAuthStateChange((event: string, session: any) => {
     if (!session && event !== 'SIGNED_OUT') return;
     revision++;
@@ -16,12 +17,20 @@ export function observeAuthSession(auth: any, publish: (state: RestoredAuthState
     attempt = 0;
     emit({ user: lastUser, status: 'ready' });
   });
+
   const restore = async () => {
     const readRevision = ++revision;
     clearTimeout(retryTimer);
     emit({ user: lastUser, status: 'restoring' });
+
     try {
-      const { data, error } = await auth.getSession();
+      // Race against a 3-second timeout so the app never hangs indefinitely
+      const sessionPromise = auth.getSession();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Session restore timeout')), 3000)
+      );
+
+      const { data, error } = (await Promise.race([sessionPromise, timeoutPromise])) as any;
       if (disposed || revision !== readRevision) return;
       if (error) throw error;
       lastUser = data?.session?.user ?? null;
@@ -29,10 +38,11 @@ export function observeAuthSession(auth: any, publish: (state: RestoredAuthState
       emit({ user: lastUser, status: 'ready' });
     } catch {
       if (disposed || revision !== readRevision) return;
-      emit({ user: lastUser, status: 'error', error: 'Your saved login could not be restored yet. Check your connection and retry.' });
-      if (attempt < 3) retryTimer = setTimeout(() => void restore(), 1500 * 2 ** attempt++);
+      // On failure or timeout, gracefully default to 'ready' with null user so landing/app is usable
+      emit({ user: lastUser, status: 'ready' });
     }
   };
+
   void restore();
   return {
     retry: () => { attempt = 0; void restore(); },

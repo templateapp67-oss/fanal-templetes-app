@@ -4,6 +4,8 @@ alter table public.growth_partners add column if not exists partner_code text;
 -- Existing referral codes are preserved. New codes are random and are never
 -- derived from auth.users.id. Browser reads stay RLS-scoped to auth.uid().
 
+alter table public.growth_partners add column if not exists partner_code text;
+
 create or replace function public.get_my_referral_code()
 returns text
 language sql
@@ -73,8 +75,8 @@ begin
     );
   end loop;
 
-  insert into public.growth_partners (user_id, partner_code, referral_code, status)
-  values (caller, generated_code, generated_referral, 'applied')
+  insert into public.growth_partners (user_id, partner_code, referral_code, status, is_active)
+  values (caller, generated_code, generated_referral, 'approved', true)
   returning * into existing;
 
   return query
@@ -166,11 +168,12 @@ begin
     user_id, partner_code, referral_code, status, is_active
   )
   values (
-    p_user_id, v_partner_code, v_code, 'applied', v_active
+    p_user_id, v_partner_code, v_code, 'approved', v_active
   )
   on conflict (user_id) do update set
     partner_code = coalesce(nullif(gp.partner_code, ''), excluded.partner_code),
     referral_code = coalesce(nullif(gp.referral_code, ''), excluded.referral_code),
+    status = 'approved',
     is_active = excluded.is_active,
     updated_at = now();
 

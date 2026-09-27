@@ -126,6 +126,12 @@ export const LOCAL_GROWTH_CHAIN = [
   // Canonical Growth Partner referral source: stored growth_partners.referral_code
   // plus the authenticated get_my_referral_code() read used by the UI hook.
   '20261011000000_growth_partner_referral_source.sql',
+  '20261012000000_fix_growth_partner_referral_lookup.sql',
+  '20261014000000_generate_nex_partner_codes.sql',
+  '20261015000000_get_my_partner_referred_salons.sql',
+  '20261016000000_partner_portal_strict_role_check.sql',
+  '20261017000000_profile_completion_rpc.sql',
+  '20261018000000_profile_completion_editor_gate.sql',
 ];
 
 /**
@@ -228,10 +234,17 @@ export const LOCAL_DATABASE_BOOTSTRAP = `
     id uuid primary key references auth.users(id) on delete cascade,
     full_name text,
     email text,
+    phone text,
     phone_number text,
+    whatsapp text,
     owner_role text,
     subdomain text,
-    salon_name text
+    salon_name text,
+    city text,
+    postal_code text,
+    pincode text,
+    address text,
+    full_address text
   );
   -- Same access shape production has (00001_init): RLS on, and the signed-in
   -- owner reads their own row. Without this the gateway served the profiles

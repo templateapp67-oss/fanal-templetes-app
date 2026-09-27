@@ -1684,7 +1684,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         }`}
                       >
                         <img
-                          src={st.avatarUrl}
+                          src={st.avatarUrl || undefined}
                           alt={st.name}
                           className="w-9 h-9 rounded-full object-cover shadow-xs"
                         />

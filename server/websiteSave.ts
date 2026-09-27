@@ -129,6 +129,23 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       }
 
       // ------------------------------------------------------------------
+      // Enforce strict profile completion check server-side for save/publish
+      // ------------------------------------------------------------------
+      const profileOwnerName = String(profile?.ownerName || "").trim();
+      const profileBusinessName = String(profile?.businessName || "").trim();
+      const profilePhone = String(profile?.phone || profile?.whatsapp || "").trim();
+      const profileCity = String(profile?.city || "").trim();
+      const profileBusinessType = String(profile?.businessType || "").trim();
+
+      if (!profileOwnerName || !profileBusinessName || !profilePhone || profilePhone.length < 7 || !profileCity || !profileBusinessType) {
+        return res.status(400).json({
+          success: false,
+          code: "PROFILE_INCOMPLETE",
+          error: "Please complete your profile before editing or publishing your website."
+        });
+      }
+
+      // ------------------------------------------------------------------
       // Live-mode identity check: the service role bypasses RLS, so this
       // endpoint is the authorization boundary. The caller must present
       // their own Supabase access token and it must match owner_id —

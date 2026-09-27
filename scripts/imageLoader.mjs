@@ -1,5 +1,5 @@
 export async function load(url, context, nextLoad) {
-  if (/\.(png|jpe?g|svg|webp|gif|ico|avif)$/i.test(url)) {
+  if (/\.(png|jpe?g|svg|webp|gif|ico|avif|css)$/i.test(url)) {
     return {
       format: 'module',
       shortCircuit: true,

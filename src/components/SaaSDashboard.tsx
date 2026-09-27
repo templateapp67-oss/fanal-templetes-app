@@ -3,6 +3,7 @@ import { useOwnerDashboard, dashboardTotals } from '../lib/useOwnerDashboard';
 import React, { useState } from 'react';
 import { SalonProfile, SalonService, Stylist, Appointment, AppointmentStatus, ClientRecord, LoyaltyConfig } from '../types';
 import { ACCENT_PALETTES, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
+import { CURATED_GOOGLE_FONTS } from '../utils/fontHelper';
 import { compressAndResizeImage } from '../utils/imageUploadHelper';
 import { ImageCompressorWidget } from './ImageCompressorWidget';
 import { TeamManagement } from './TeamManagement';
@@ -26,6 +27,8 @@ import { BackupManagerModal } from './BackupManagerModal';
 import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
 import { TikTokIcon } from './TikTokIcon';
 import type { SalonPersistResult, SalonEditorStatePatch } from '../lib/autoSave';
+import { isSalonProfileComplete, getSalonProfileCompletion } from '../lib/profileCompletion';
+import { ProfileCompletionModal, ProfileCompletionBanner } from './ProfileCompletionModal';
 
 interface SaaSDashboardProps {
   ownerId?: string;
@@ -99,11 +102,20 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   const [appointmentsSubTab, setAppointmentsSubTab] = useState<'calendar' | 'live_bookings'>('calendar');
   const [overviewStatusFilter, setOverviewStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
+  const [isCompletionModalOpen, setIsCompletionModalOpen] = useState<boolean>(false);
   const [dashboardTierClientSearch, setDashboardTierClientSearch] = useState<string>('');
   const [dashboardTierFilter, setDashboardTierFilter] = useState<string>('all');
   const [marketingSms, setMarketingSms] = useState<string>('');
   const [marketingLoading, setMarketingLoading] = useState<boolean>(false);
   const [smsSentNotice, setSmsSentNotice] = useState<string>('');
+
+  const handleOpenEditor = () => {
+    if (!isSalonProfileComplete(profile)) {
+      setIsCompletionModalOpen(true);
+      return;
+    }
+    onNavigateToEditor?.();
+  };
 
   const currentAccentKey: AccentPaletteKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
   const currentPalette = ACCENT_PALETTES[currentAccentKey] || ACCENT_PALETTES.slate;
@@ -161,6 +173,51 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       // this toast — reports whether the cloud took it.
       setAppearanceSuccess(`Hero cover optimized (${result.compressedSizeKb} KB, -${result.compressionRatio}%) & applied to your profile — auto-saving…`);
       setTimeout(() => setAppearanceSuccess(null), 4000);
+    }
+  };
+
+  const handleFaviconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAppearanceError(null);
+    setAppearanceSuccess('Processing favicon...');
+    const result = await compressAndResizeImage(file, { maxWidth: 64, maxHeight: 64 });
+    if (result.isValid && result.dataUrl) {
+      setProfile((prev) => ({ ...prev, customFaviconUrl: result.dataUrl, faviconLetter: undefined }));
+      setAppearanceSuccess('Custom favicon applied!');
+      setTimeout(() => setAppearanceSuccess(null), 4000);
+    } else {
+      setAppearanceError(result.errorMessage || 'Invalid image.');
+    }
+  };
+
+  const handleOwnerPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAppearanceError(null);
+    setAppearanceSuccess('Processing photo...');
+    const result = await compressAndResizeImage(file, { maxWidth: 400, maxHeight: 400 });
+    if (result.isValid && result.dataUrl) {
+      setProfile((prev) => ({ ...prev, ownerPhotoUrl: result.dataUrl }));
+      setAppearanceSuccess('Owner photo updated!');
+      setTimeout(() => setAppearanceSuccess(null), 4000);
+    } else {
+      setAppearanceError(result.errorMessage || 'Invalid image.');
+    }
+  };
+
+  const handleSocialShareUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAppearanceError(null);
+    setAppearanceSuccess('Processing sharing image...');
+    const result = await compressAndResizeImage(file, { maxWidth: 1200, maxHeight: 630 });
+    if (result.isValid && result.dataUrl) {
+      setProfile((prev) => ({ ...prev, socialShareImageUrl: result.dataUrl }));
+      setAppearanceSuccess('Social sharing image updated!');
+      setTimeout(() => setAppearanceSuccess(null), 4000);
+    } else {
+      setAppearanceError(result.errorMessage || 'Invalid image.');
     }
   };
 
@@ -371,6 +428,13 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             </div>
           </div>
         </div>
+
+        {/* PROFILE COMPLETION BANNER GUARD */}
+        <ProfileCompletionBanner
+          profile={profile}
+          onGoToProfileSetup={() => setActiveTab('website')}
+          className="mb-6"
+        />
 
         {/* TAB NAVIGATION */}
         <div className="flex border-b border-gray-200 mb-6 gap-2 overflow-x-auto">
@@ -1687,11 +1751,17 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                     </div>
 
                     <div className="h-24 rounded-lg bg-gray-900 border border-gray-200 flex items-center justify-center relative overflow-hidden">
-                      <img
-                        src={profile.coverImageUrl}
-                        alt="Hero Banner Preview"
-                        className="w-full h-full object-cover opacity-80"
-                      />
+                      {profile.coverImageUrl ? (
+                        <img
+                          src={profile.coverImageUrl}
+                          alt="Hero Banner Preview"
+                          className="w-full h-full object-cover opacity-80"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-slate-800 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-gray-700 text-3xl">image</span>
+                        </div>
+                      )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2">
                         <span className="text-[10px] text-white font-mono font-bold truncate">Active Hero Cover Image</span>
                       </div>
@@ -1713,6 +1783,54 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                       Validated (&lt;5MB), converted to Data URL & saved in localStorage
                     </p>
                   </div>
+                </div>
+
+                {/* 3. Custom Favicon Upload Card */}
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-purple-600">tibet</span>
+                        <span>Favicon Icon</span>
+                      </span>
+                    </div>
+                    <div className="h-24 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden">
+                      {profile.customFaviconUrl ? (
+                        <img src={profile.customFaviconUrl} className="w-8 h-8 object-contain" alt="Favicon" />
+                      ) : (
+                        <span className="text-gray-400 text-[32px] font-bold">{profile.faviconLetter || profile.businessName?.charAt(0) || 'N'}</span>
+                      )}
+                    </div>
+                  </div>
+                  <label className="w-full py-2 px-3 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold rounded-xl text-[10px] flex items-center justify-center gap-2 cursor-pointer transition-colors">
+                    <span className="material-symbols-outlined text-xs">upload</span>
+                    <span>Upload 64x64 PNG/ICO</span>
+                    <input type="file" accept="image/*" onChange={handleFaviconUpload} className="hidden" />
+                  </label>
+                </div>
+
+                {/* 4. Owner Photo Card */}
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold font-mono-caps text-gray-700 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-purple-600">account_circle</span>
+                        <span>Owner Photo</span>
+                      </span>
+                    </div>
+                    <div className="h-24 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden">
+                      {profile.ownerPhotoUrl ? (
+                        <img src={profile.ownerPhotoUrl} className="w-full h-full object-cover" alt="Owner" />
+                      ) : (
+                        <span className="material-symbols-outlined text-gray-300 text-4xl">person</span>
+                      )}
+                    </div>
+                  </div>
+                  <label className="w-full py-2 px-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold rounded-xl text-[10px] flex items-center justify-center gap-2 cursor-pointer transition-colors">
+                    <span className="material-symbols-outlined text-xs">upload</span>
+                    <span>Upload Profile Photo</span>
+                    <input type="file" accept="image/*" onChange={handleOwnerPhotoUpload} className="hidden" />
+                  </label>
                 </div>
               </div>
 
@@ -1831,42 +1949,235 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </div>
             </div>
 
-            {/* Custom Hex Accent Color Picker */}
-            <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <label className="text-xs font-bold font-mono-caps text-gray-700 block">
-                  Custom Hex Accent Color
-                </label>
-                <p className="text-[11px] text-gray-500 mt-0.5">
-                  Enter any custom brand hex code or use the color swatch to update <code className="font-mono text-[10px]">--primary-accent</code>.
+            {/* ADVANCED BRANDING CONTROLS */}
+            <div className="p-6 rounded-2xl border border-gray-200 bg-white flex flex-col gap-8 shadow-sm">
+              <div className="border-b border-gray-100 pb-4">
+                <h3 className="font-display font-bold text-base text-gray-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-purple-600">tune</span>
+                  Advanced Branding & Typography
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Fine-tune your salon's visual identity across all templates.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <input
-                  type="color"
-                  value={customHexInput.startsWith('#') ? customHexInput : `#${customHexInput}`}
-                  onChange={(e) => {
-                    setCustomHexInput(e.target.value);
-                    handleApplyCustomHex(e.target.value);
-                  }}
-                  className="w-10 h-10 rounded-lg cursor-pointer border border-gray-300 p-0.5 bg-white shrink-0"
-                  title="Choose custom color"
-                />
-                <input
-                  type="text"
-                  value={customHexInput}
-                  onChange={(e) => setCustomHexInput(e.target.value)}
-                  placeholder="#9f1239"
-                  className="w-28 p-2 rounded-lg border border-gray-300 font-mono text-xs bg-white text-gray-800 uppercase focus:ring-2 focus:ring-gray-400 outline-none"
-                />
-                <button
-                  onClick={() => handleApplyCustomHex(customHexInput)}
-                  className="px-3.5 py-2 rounded-lg font-bold text-xs text-white cursor-pointer shadow-xs transition-opacity shrink-0"
-                  style={{ backgroundColor: currentPrimaryColor }}
-                >
-                  Apply
-                </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* A. BRAND COLORS */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold font-mono-caps text-gray-400 uppercase tracking-widest">Brand Palette</h4>
+                  
+                  {/* 1. Primary Color */}
+                  <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div>
+                      <label className="text-xs font-bold text-gray-800 block">Primary Brand Color</label>
+                      <p className="text-[10px] text-gray-500">Drives buttons, active states, and icons.</p>
+                    </div>
+                    <input 
+                      type="color" 
+                      value={profile.customAccentColor || '#C20E5A'} 
+                      onChange={(e) => setProfile(prev => ({ ...prev, customAccentColor: e.target.value }))}
+                      className="w-10 h-10 rounded-lg cursor-pointer border-none p-0.5 bg-white shadow-xs"
+                    />
+                  </div>
+
+                  {/* 2. Secondary Color */}
+                  <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div>
+                      <label className="text-xs font-bold text-gray-800 block">Secondary Brand Color</label>
+                      <p className="text-[10px] text-gray-500">Used for secondary buttons and accents.</p>
+                    </div>
+                    <input 
+                      type="color" 
+                      value={profile.secondaryColor || '#64748b'} 
+                      onChange={(e) => setProfile(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                      className="w-10 h-10 rounded-lg cursor-pointer border-none p-0.5 bg-white shadow-xs"
+                    />
+                  </div>
+
+                  {/* 3. Accent Color */}
+                  <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div>
+                      <label className="text-xs font-bold text-gray-800 block">Accent Highlight Color</label>
+                      <p className="text-[10px] text-gray-500">Used for special badges and attention points.</p>
+                    </div>
+                    <input 
+                      type="color" 
+                      value={profile.accentColor || '#fbbf24'} 
+                      onChange={(e) => setProfile(prev => ({ ...prev, accentColor: e.target.value }))}
+                      className="w-10 h-10 rounded-lg cursor-pointer border-none p-0.5 bg-white shadow-xs"
+                    />
+                  </div>
+
+                  {/* 4. Background Color */}
+                  <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div>
+                      <label className="text-xs font-bold text-gray-800 block">Global Background</label>
+                      <p className="text-[10px] text-gray-500">Base background color for the canvas.</p>
+                    </div>
+                    <input 
+                      type="color" 
+                      value={profile.backgroundColor || '#f9f9ff'} 
+                      onChange={(e) => setProfile(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                      className="w-10 h-10 rounded-lg cursor-pointer border-none p-0.5 bg-white shadow-xs"
+                    />
+                  </div>
+
+                  {/* 5. Theme Appearance */}
+                  <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <label className="text-xs font-bold text-gray-800 block mb-2">Theme Mode</label>
+                    <div className="flex gap-2">
+                      {['light', 'dark', 'system'].map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setProfile(prev => ({ ...prev, appearanceMode: mode as any }))}
+                          className={`flex-1 py-2 text-[10px] font-bold rounded-lg border transition-all ${
+                            (profile.appearanceMode || 'light') === mode 
+                              ? 'bg-slate-900 text-white border-slate-900' 
+                              : 'bg-white text-slate-600 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {mode.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* B. TYPOGRAPHY */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold font-mono-caps text-gray-400 uppercase tracking-widest">Typography</h4>
+                  
+                  {/* Heading Font */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-800 block mb-1.5">Heading Font Family</label>
+                    <select 
+                      value={profile.headingFont || 'Manrope'}
+                      onChange={(e) => setProfile(prev => ({ ...prev, headingFont: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white outline-none focus:ring-2 focus:ring-purple-500/20"
+                    >
+                      {CURATED_GOOGLE_FONTS.map(f => (
+                        <option key={f.family} value={f.family}>{f.name} ({f.category})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Body Font */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-800 block mb-1.5">Body Text Font Family</label>
+                    <select 
+                      value={profile.bodyFont || 'Hanken Grotesk'}
+                      onChange={(e) => setProfile(prev => ({ ...prev, bodyFont: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white outline-none focus:ring-2 focus:ring-purple-500/20"
+                    >
+                      {CURATED_GOOGLE_FONTS.map(f => (
+                        <option key={f.family} value={f.family}>{f.name} ({f.category})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Heading Style */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-800 block mb-1.5">Heading Transform</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['normal', 'uppercase', 'capitalize'].map((style) => (
+                        <button
+                          key={style}
+                          onClick={() => setProfile(prev => ({ ...prev, headingStyle: style as any }))}
+                          className={`py-2 text-[10px] font-bold rounded-lg border transition-all ${
+                            (profile.headingStyle || 'normal') === style 
+                              ? 'bg-purple-600 text-white border-purple-600' 
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {style.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-gray-100 pt-8">
+                {/* C. COMPONENT STYLING */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold font-mono-caps text-gray-400 uppercase tracking-widest">Component Style</h4>
+                  
+                  {/* Button Style */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-800 block mb-2">Global Button Style</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['rounded', 'square', 'pill', 'outline'].map((style) => (
+                        <button
+                          key={style}
+                          onClick={() => setProfile(prev => ({ ...prev, buttonStyle: style as any }))}
+                          className={`py-2 text-[10px] font-bold rounded-lg border transition-all ${
+                            (profile.buttonStyle || 'rounded') === style 
+                              ? 'bg-emerald-600 text-white border-emerald-600' 
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {style.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Border Radius */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-xs font-bold text-gray-800 block">Corner Roundness</label>
+                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 rounded">{profile.borderRadius || '12px'}</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="32" 
+                      step="2"
+                      value={parseInt(profile.borderRadius || '12')} 
+                      onChange={(e) => setProfile(prev => ({ ...prev, borderRadius: `${e.target.value}px` }))}
+                      className="w-full accent-emerald-600"
+                    />
+                    <div className="flex justify-between text-[8px] text-gray-400 mt-1 font-bold">
+                      <span>SHARP</span>
+                      <span>ROUNDED</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* D. VISUAL PREVIEW OF SETTINGS */}
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 flex flex-col justify-center items-center gap-4 text-center">
+                   <div 
+                    className="p-4 bg-white rounded-xl shadow-sm border border-gray-100 w-full max-w-[240px]"
+                    style={{ borderRadius: profile.borderRadius || '12px' }}
+                   >
+                      <h5 
+                        className="font-bold mb-2" 
+                        style={{ 
+                          fontFamily: profile.headingFont ? `"${profile.headingFont}"` : 'inherit',
+                          textTransform: profile.headingStyle || 'none'
+                        }}
+                      >
+                        Sample Heading
+                      </h5>
+                      <p className="text-[10px] text-gray-500 mb-4" style={{ fontFamily: profile.bodyFont ? `"${profile.bodyFont}"` : 'inherit' }}>
+                        This is how your body text will look with the selected font.
+                      </p>
+                      <button 
+                        className={`w-full py-2 text-[10px] font-bold transition-all ${
+                          profile.buttonStyle === 'outline' ? 'bg-transparent border' : 'text-white'
+                        }`}
+                        style={{ 
+                          backgroundColor: profile.buttonStyle === 'outline' ? 'transparent' : (profile.customAccentColor || currentPrimaryColor),
+                          borderColor: profile.customAccentColor || currentPrimaryColor,
+                          color: profile.buttonStyle === 'outline' ? (profile.customAccentColor || currentPrimaryColor) : 'white',
+                          borderRadius: profile.buttonStyle === 'pill' ? '9999px' : (profile.buttonStyle === 'square' ? '0px' : (profile.borderRadius || '8px'))
+                        }}
+                      >
+                        Action Button
+                      </button>
+                   </div>
+                   <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest italic">Real-time Setting Preview</p>
+                </div>
               </div>
             </div>
 
@@ -1963,40 +2274,67 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             </div>
 
             {/* Read-only summary + link to the single unified editor */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="rounded-xl bg-gray-50 p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
-                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>storefront</span>
-                  Salon
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 space-y-3">
+                  <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps">
+                    <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>storefront</span>
+                    Essential Identity
+                  </div>
+                  
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Salon Name</label>
+                    <input 
+                      type="text"
+                      value={profile.businessName || ''}
+                      onChange={(e) => setProfile(prev => ({ ...prev, businessName: e.target.value }))}
+                      placeholder="Your Salon Name"
+                      className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-gray-200 bg-white outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Tagline / Slogan</label>
+                    <input 
+                      type="text"
+                      value={profile.tagline || ''}
+                      onChange={(e) => setProfile(prev => ({ ...prev, tagline: e.target.value }))}
+                      placeholder="Best luxury salon in..."
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 bg-white outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
                 </div>
-                <div className="font-bold text-gray-900 truncate">{profile.businessName || '—'}</div>
-                <div className="text-[11px] text-gray-500 mt-1 truncate">{profile.tagline || ''}</div>
+
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                    <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>location_on</span>
+                    Location
+                  </div>
+                  <div className="text-[12px] font-medium text-gray-800">
+                    {profile.address && <span>{profile.address}<br /></span>}
+                    {profile.city && <span>{profile.city}{profile.postalCode ? ` — ${profile.postalCode}` : ''}</span>}
+                    {!profile.address && !profile.city && <span>—</span>}
+                  </div>
+                </div>
               </div>
-              <div className="rounded-xl bg-gray-50 p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
-                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>call</span>
-                  Contact
+
+              <div className="space-y-4">
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                    <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>call</span>
+                    Contact
+                  </div>
+                  <div className="font-bold text-gray-900 font-mono">{profile.phone || '—'}</div>
+                  <div className="text-[11px] text-gray-500 mt-1">WhatsApp: {profile.whatsapp || '—'}</div>
                 </div>
-                <div className="font-bold text-gray-900 font-mono">{profile.phone || '—'}</div>
-                <div className="text-[11px] text-gray-500 mt-1">WhatsApp: {profile.whatsapp || '—'}</div>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
-                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>location_on</span>
-                  Location
+
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
+                    <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>link</span>
+                    Live Website
+                  </div>
+                  <div className="font-mono text-[12px] font-bold text-gray-900 truncate">{siteUrl || '—'}</div>
                 </div>
-                <div className="text-[12px] font-medium text-gray-800">
-                  {profile.address && <span>{profile.address}<br /></span>}
-                  {profile.city && <span>{profile.city}{profile.postalCode ? ` — ${profile.postalCode}` : ''}</span>}
-                  {!profile.address && !profile.city && <span>—</span>}
-                </div>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-[10px] font-bold font-mono-caps mb-1">
-                  <span className="material-symbols-outlined text-base" style={{ color: currentPrimaryColor }}>link</span>
-                  Live Website
-                </div>
-                <div className="font-mono text-[12px] font-bold text-gray-900 truncate">{siteUrl || '—'}</div>
               </div>
             </div>
 
@@ -2100,6 +2438,45 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* 3. TIKTOK */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-slate-800 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-md bg-black text-white flex items-center justify-center text-xs shadow-2xs">
+                        <TikTokIcon className="w-3 h-3" />
+                      </span>
+                      <span>TikTok</span>
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    value={profile.tiktokHandle || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, tiktokHandle: e.target.value }))}
+                    placeholder="e.g. @salon_trends"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-slate-500/20 focus:border-slate-800 outline-none font-mono"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1.5">TikTok handle or link</p>
+                </div>
+
+                {/* 4. YOUTUBE */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-red-500 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-md bg-red-600 text-white flex items-center justify-center text-xs shadow-2xs font-bold">
+                        <Youtube className="w-3 h-3" />
+                      </span>
+                      <span>YouTube</span>
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    value={profile.youtubeChannel || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, youtubeChannel: e.target.value }))}
+                    placeholder="e.g. youtube.com/@salon"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none font-mono"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1.5">Channel URL</p>
+                </div>
               </div>
 
               {/* LIVE WEBSITE HEADER PREVIEW STRIP */}
@@ -2139,6 +2516,14 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                       f
                     </span>
                   ) : null}
+                  {profile.youtubeChannel ? (
+                    <span 
+                      className="w-6 h-6 rounded-md bg-red-600 text-white flex items-center justify-center text-xs shadow-2xs font-bold"
+                      title={`YouTube: ${profile.youtubeChannel}`}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">play_circle</span>
+                    </span>
+                  ) : null}
                   {(profile.tiktokProfile || profile.tiktokHandle || profile.tiktokUrl) ? (
                     <span 
                       className="w-6 h-6 rounded-md bg-slate-950 text-cyan-300 border border-slate-700 flex items-center justify-center text-xs shadow-2xs"
@@ -2149,12 +2534,80 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   ) : null}
                 </div>
               </div>
+
+            {/* SEO & GLOBAL BRANDING SECTION */}
+            <div className="border-t border-gray-100 pt-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xl" style={{ color: currentPrimaryColor }}>search</span>
+                    <h3 className="font-display font-bold text-base text-gray-900">
+                      SEO & Global Branding
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Control how your salon appears in Google searches and when shared on social media.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  {/* SEO Title */}
+                  <div>
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 block mb-1.5">SEO Title (Browser Tab)</label>
+                    <input 
+                      type="text"
+                      value={profile.seoTitle || ''}
+                      onChange={(e) => setProfile(prev => ({ ...prev, seoTitle: e.target.value }))}
+                      placeholder={profile.businessName || 'Salon Name'}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                    <p className="text-[9px] text-gray-400 mt-1">Appears as the page title in search engines and browser tabs.</p>
+                  </div>
+
+                  {/* SEO Description */}
+                  <div>
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 block mb-1.5">SEO Meta Description</label>
+                    <textarea 
+                      value={profile.seoDescription || ''}
+                      onChange={(e) => setProfile(prev => ({ ...prev, seoDescription: e.target.value }))}
+                      placeholder="Best luxury salon in..."
+                      rows={3}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white outline-none focus:ring-2 focus:ring-emerald-500/20 resize-none"
+                    />
+                    <p className="text-[9px] text-gray-400 mt-1">Brief summary (150-160 chars) shown in search result snippets.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Social Sharing Image */}
+                  <div>
+                    <label className="text-xs font-bold font-mono-caps text-gray-800 block mb-1.5">Social Sharing (OG) Image</label>
+                    <div className="relative group aspect-[1200/630] rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
+                      {profile.socialShareImageUrl ? (
+                        <img src={profile.socialShareImageUrl} className="w-full h-full object-cover" alt="Social Share Preview" />
+                      ) : (
+                        <div className="text-center p-4">
+                           <span className="material-symbols-outlined text-gray-300 text-3xl mb-1">share</span>
+                           <p className="text-[10px] text-gray-400">Preview image for WhatsApp/Facebook shares</p>
+                        </div>
+                      )}
+                      <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                         <span className="bg-white px-3 py-1.5 rounded-lg text-[10px] font-bold text-gray-900">Change Image</span>
+                         <input type="file" accept="image/*" onChange={handleSocialShareUpload} className="hidden" />
+                      </label>
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-2">Recommended: 1200x630px. Used when sharing your site link.</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
-                onClick={onNavigateToEditor}
+                onClick={handleOpenEditor}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#C20E5A] hover:bg-[#A30B4A] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
               >
                 <span className="material-symbols-outlined text-lg">edit</span>
@@ -2190,6 +2643,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               </span>
             </div>
           </div>
+        </div>
         )}
 
         {/* BACKUP & SNAPSHOT MANAGER MODAL */}
@@ -2209,6 +2663,17 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           appointments={appointments}
           setAppointments={setAppointments}
           primaryAccentColor={currentPrimaryColor}
+        />
+
+        {/* STRICT PROFILE COMPLETION MODAL */}
+        <ProfileCompletionModal
+          isOpen={isCompletionModalOpen}
+          onClose={() => setIsCompletionModalOpen(false)}
+          profile={profile}
+          onGoToProfileSetup={() => {
+            setIsCompletionModalOpen(false);
+            setActiveTab('website');
+          }}
         />
       </div>
     </div>

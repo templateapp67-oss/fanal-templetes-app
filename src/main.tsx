@@ -1,79 +1,37 @@
-// Ensure window.fetch has both getter and setter in iframe environments
-try {
-  const desc = Object.getOwnPropertyDescriptor(window, 'fetch');
-  if (!desc || !desc.set) {
-    let currentFetch = window.fetch;
-    Object.defineProperty(window, 'fetch', {
-      get() {
-        return currentFetch;
-      },
-      set(fn) {
-        currentFetch = fn;
-      },
-      configurable: true,
-      enumerable: true,
-    });
-  }
-} catch {
-  // Ignore descriptor errors
-}
-
-import {StrictMode, Component, ReactNode} from 'react';
-import {createRoot} from 'react-dom/client';
-
-export class ErrorBoundary extends Component<any, any> {
-  state = { hasError: false, error: null };
-  props: any;
-  static getDerivedStateFromError(error: Error) {
-    console.error('[ErrorBoundary] Caught render error via getDerivedStateFromError:', error);
-    return { hasError: true, error };
-  }
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error('[ErrorBoundary] componentDidCatch details:', error, errorInfo);
-  }
-  render() {
-    if (this.state.hasError) {
-      console.warn('[ErrorBoundary] Rendering error fallback UI due to:', this.state.error);
-      return (
-        <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-6 text-slate-800">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-200 text-center">
-            <h2 className="text-xl font-black text-rose-600 mb-2">Something went wrong</h2>
-            <p className="text-xs text-slate-500 mb-6 font-mono break-all">
-              {this.state.error?.message || 'Unknown error occurred'}
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  localStorage.clear();
-                  window.location.reload();
-                }}
-                className="flex-1 py-2.5 bg-rose-600 text-white font-bold text-xs rounded-xl hover:bg-rose-700 transition-colors cursor-pointer"
-              >
-                Reset Data & Reload
-              </button>
-              <button
-                onClick={() => window.location.reload()}
-                className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                Reload Page
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>,
-);
+export { ErrorBoundary };
 
+const rootEl = document.getElementById('root');
+if (rootEl) {
+  try {
+    const root = createRoot(rootEl);
+    root.render(
+      <StrictMode>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </StrictMode>
+    );
+    (window as any).__NEXORA_MOUNTED__ = true;
+  } catch (err: any) {
+    console.error('[Nexora Main] Fatal error mounting application:', err);
+    rootEl.innerHTML = `
+      <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; padding: 24px; font-family: system-ui, -apple-system, sans-serif; color: #1e293b;">
+        <div style="max-width: 480px; width: 100%; background: #ffffff; border-radius: 20px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; padding: 32px; text-align: center;">
+          <div style="width: 48px; height: 48px; background-color: #fef2f2; color: #dc2626; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-weight: 800; font-size: 20px;">!</div>
+          <h2 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0 0 8px;">Initialization Notice</h2>
+          <p style="font-size: 13px; color: #64748b; margin: 0 0 20px; line-height: 1.5;">${(err && err.message) || 'The application encountered an issue while loading components.'}</p>
+          <div style="display: flex; gap: 10px;">
+            <button onclick="try { localStorage.clear(); sessionStorage.clear(); } catch(e){} window.location.href = '/';" style="flex: 1; padding: 12px; background: #059669; color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer;">Reset & Launch</button>
+            <button onclick="window.location.reload();" style="flex: 1; padding: 12px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer;">Reload Page</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}

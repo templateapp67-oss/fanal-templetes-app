@@ -150,6 +150,38 @@
   }
 }
 
+/* Scoped branding overrides for preview */
+.branding-applied {
+  background-color: var(--bg-color);
+  font-family: var(--font-body);
+}
+
+.branding-applied h1, 
+.branding-applied h2, 
+.branding-applied h3, 
+.branding-applied h4, 
+.branding-applied h5, 
+.branding-applied h6, 
+.branding-applied .font-display {
+  font-family: var(--font-display) !important;
+  text-transform: var(--heading-transform) !important;
+}
+
+.branding-applied button:not(.layout-stable-fixed button) {
+  border-radius: var(--radius-button) !important;
+}
+
+.branding-applied .btn-outline {
+  border: 2px solid var(--primary-accent) !important;
+  background-color: transparent !important;
+  color: var(--primary-accent) !important;
+}
+
+.branding-applied .accent-badge {
+  background-color: var(--accent-color) !important;
+  color: #000000 !important; /* High contrast black for yellow-ish accents */
+}
+
 /* Keep fixed UI on its own paint layer so it cannot invalidate page layout. */
 .layout-stable-fixed {
   contain: layout paint;
@@ -189,7 +221,7 @@
 @keyframes service-card-enter {
   0% {
     opacity: 0;
-    transform: translateY(12px) scale(0.985);
+    transform: translateY(20px) scale(0.97);
   }
   100% {
     opacity: 1;
@@ -198,7 +230,16 @@
 }
 
 .animate-service-enter {
-  animation: service-card-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: service-card-enter 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.template-card-hover {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.template-card-hover:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 /* Material Symbols Styling */

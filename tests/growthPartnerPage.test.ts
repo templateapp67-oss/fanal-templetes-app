@@ -66,7 +66,7 @@ test('growth partner routes resolve per the existing router conventions', () => 
   assert.equal(GROWTH_PARTNER_PATH, '/growth-partner');
   assert.deepEqual(
     [...GROWTH_PARTNER_SECTIONS],
-    ['dashboard', 'referrals', 'customers', 'performance', 'commission', 'profile']
+    ['dashboard', 'referrals', 'customers', 'referral-history', 'performance', 'commission', 'profile']
   );
   assert.equal(isGrowthPartnerPath('/growth-partner'), true);
   assert.equal(isGrowthPartnerPath('/growth-partner/referrals'), true);

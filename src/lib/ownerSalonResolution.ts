@@ -187,12 +187,16 @@ export function checkProfileCompleteness(
 ): ProfileCompletenessResult {
   const missingFields: string[] = [];
   const ownerName = String(profile?.ownerName || user?.user_metadata?.full_name || '').trim();
+  const businessName = String(profile?.businessName || user?.user_metadata?.salon_name || '').trim();
   const phone = String(profile?.phone || profile?.whatsapp || user?.user_metadata?.phone_number || '').trim();
   const city = String(profile?.city || user?.user_metadata?.city || '').trim();
+  const businessType = String(profile?.businessType || 'hair_salon').trim();
 
   if (!ownerName) missingFields.push('ownerName');
-  if (!phone) missingFields.push('phone');
+  if (!businessName) missingFields.push('businessName');
+  if (!phone || phone.length < 7) missingFields.push('phone');
   if (!city) missingFields.push('city');
+  if (!businessType) missingFields.push('businessType');
 
   return {
     isComplete: missingFields.length === 0,

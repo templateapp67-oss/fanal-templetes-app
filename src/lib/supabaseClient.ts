@@ -278,6 +278,26 @@ if (!singletons.publicClient || singletons.publicSignature !== publicSignature) 
 }
 export const supabase: SupabaseClient = singletons.publicClient!;
 
+/**
+ * Force refresh PostgREST schema cache or execute a lightweight query
+ * to ensure newly added columns (like 'dob') are acknowledged immediately.
+ */
+export async function refreshSchemaCache(): Promise<void> {
+  try {
+    if (isMockSupabase) return;
+    await supabase.from('profiles').select('id').limit(1).maybeSingle();
+  } catch (err) {
+    console.warn('[Supabase] Schema cache refresh hint note:', err);
+  }
+}
+
+// Trigger initial background schema cache probe
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    void refreshSchemaCache();
+  }, 500);
+}
+
 // Server-side admin (service role) client — bypasses RLS. Only created in the
 // Node server, never in the browser bundle, so the secret never ships to the
 // client.

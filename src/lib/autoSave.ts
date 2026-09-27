@@ -398,6 +398,9 @@ export function summarizeSaveError(detail: string): string {
   const d = (detail || '').toLowerCase();
 
   // 1) Deterministic domain problems — the exact action the owner must take.
+  if (d.includes('profile_incomplete') || d.includes('profile incomplete')) {
+    return 'Please complete your profile before editing or publishing your website.';
+  }
   if (d.includes('subdomain') && (d.includes('duplicate key') || d.includes('unique constraint'))) {
     return 'This subdomain is already taken — please choose a different one.';
   }
@@ -1074,6 +1077,7 @@ export async function runSalonSavePipeline(
     services: payload.services,
     stylists: payload.stylists,
     loyaltyConfig: payload.loyaltyConfig,
+    selectedTemplateId: payload.selectedTemplateId,
   };
 
   const storeLocalDraft = (): { draftWritten: boolean; error?: string } => {

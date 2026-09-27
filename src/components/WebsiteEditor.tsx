@@ -1,7 +1,8 @@
 import { readPartnerProfile } from '../lib/readPartnerProfile';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
-import { isPartnerProfileComplete } from '../lib/profileCompletion';
+import { isPartnerProfileComplete, isSalonProfileComplete, getSalonProfileCompletion } from '../lib/profileCompletion';
 import { PartnerProfileModal } from './PartnerProfileModal';
+import { ProfileCompletionModal, ProfileCompletionBanner } from './ProfileCompletionModal';
 import { copyToClipboard } from '../lib/clipboard';
 import React, { useRef, useState } from 'react';
 import {
@@ -68,6 +69,7 @@ interface WebsiteEditorProps {
   siteUrl: string;
   onSave: () => Promise<boolean>;
   onBackToDashboard: () => void;
+  onGoToProfileSetup?: () => void;
   showToast?: (message: string, type?: 'success' | 'error') => void;
   isAuthenticated?: boolean;
   onRequireAuth?: (mode?: 'login' | 'signup') => void;
@@ -93,12 +95,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   siteUrl,
   onSave,
   onBackToDashboard,
+  onGoToProfileSetup,
   showToast,
   isAuthenticated = true,
   onRequireAuth,
   sessionExpired = false,
 }) => {
   const [contactDetailsOpen, setContactDetailsOpen] = useState(false);
+  const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
+  const isProfileReady = isSalonProfileComplete(profile);
   const [profileCompletion, setProfileCompletion] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading');
   const [completionRetry, setCompletionRetry] = useState(0);
   const [isSyncingProfile, setIsSyncingProfile] = useState(false);
@@ -143,6 +148,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         const cityVal = profileData?.city || '';
         const postalCodeVal = profileData?.postal_code || profileData?.pincode || profileData?.postalCode || '';
         const areaLocalityVal = profileData?.area_locality || profileData?.areaLocality || profileData?.landmark || '';
+        const ownerNameVal = profileData?.full_name || profileData?.owner_name || '';
+        const businessNameVal = profileData?.salon_name || profileData?.business_name || '';
+        const ownerPhotoUrlVal = profileData?.avatar_url || profileData?.owner_photo_url || '';
+        const aboutVal = profileData?.about || profileData?.bio || '';
 
         return {
           ...prev,
@@ -153,6 +162,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           city: forceSync ? (cityVal || prev.city || '') : (prev.city || cityVal || ''),
           postalCode: forceSync ? (postalCodeVal || prev.postalCode || '') : (prev.postalCode || postalCodeVal || ''),
           areaLocality: forceSync ? (areaLocalityVal || prev.areaLocality || '') : (prev.areaLocality || areaLocalityVal || ''),
+          ownerName: forceSync ? (ownerNameVal || prev.ownerName || '') : (prev.ownerName || ownerNameVal || ''),
+          businessName: forceSync ? (businessNameVal || prev.businessName || '') : (prev.businessName || businessNameVal || ''),
+          ownerPhotoUrl: forceSync ? (ownerPhotoUrlVal || prev.ownerPhotoUrl || '') : (prev.ownerPhotoUrl || ownerPhotoUrlVal || ''),
+          about: forceSync ? (aboutVal || prev.about || '') : (prev.about || aboutVal || ''),
         };
       });
     } catch (err) {
@@ -328,6 +341,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   };
 
   const handleSave = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    if (!isSalonProfileComplete(profile)) {
+      setIsCompletionModalOpen(true);
+      return;
+    }
     if (isSavePending) return;
     // The button handlers pass their event (so focus can be returned to the
     // trigger from the success dialog); the session notice's "Retry Save"
@@ -437,6 +454,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             void handleSave();
           }}
         />
+
+        {/* Profile completion guard banner */}
+        {!isProfileReady && (
+          <ProfileCompletionBanner
+            profile={profile}
+            onGoToProfileSetup={onGoToProfileSetup || onBackToDashboard}
+            className="shadow-sm"
+          />
+        )}
 
         {/* ===== Top sticky save bar ===== */}
         <div className="sticky top-20 z-30 w-full min-w-0 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -1855,6 +1881,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           upd({ about: bio, tagline });
           showToast?.('AI Bio & Tagline generated and applied!');
         }}
+      />
+
+      <ProfileCompletionModal
+        isOpen={isCompletionModalOpen}
+        onClose={() => setIsCompletionModalOpen(false)}
+        profile={profile}
+        onGoToProfileSetup={onGoToProfileSetup || onBackToDashboard}
       />
     </div>
   );

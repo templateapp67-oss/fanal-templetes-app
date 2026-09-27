@@ -30,7 +30,7 @@ export const StylistAvatarUpload: React.FC<StylistAvatarUploadProps> = ({
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
 
-  const preview = value || fallbackUrl || '';
+  const preview = value || fallbackUrl || undefined;
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;

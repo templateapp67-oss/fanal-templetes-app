@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SalonProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import { supabase, isMockSupabase, refreshSchemaCache } from '../lib/supabaseClient';
 
 interface UserProfileSettingsModalProps {
   isOpen: boolean;
@@ -39,7 +39,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Re-sync form state from profile whenever the modal opens or the active profile updates
+  // Re-sync form state from profile whenever the modal opens or the active profile properties update
   React.useEffect(() => {
     if (isOpen) {
       setFormData({
@@ -54,7 +54,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
       setErrors({});
     }
-  }, [isOpen, profile]);
+  }, [isOpen, profile.ownerId, profile.ownerName, profile.whatsapp, profile.dob, profile.postalCode, profile.city, profile.areaLocality]);
 
   if (!isOpen) return null;
 
@@ -203,8 +203,11 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
           throw new Error('No active user session found. Please sign in again.');
         }
 
+        // Force schema cache refresh to ensure newly added columns are acknowledged immediately
+        await refreshSchemaCache();
+
         // Perform upsert query on profiles table matching id = user.id
-        // Handles both column spelling variations (whatsapp_number / whatsapp, date_of_birth / dob, avatar_url / photo_url / owner_photo_url)
+        // Handles column spelling variations and omits non-core schema fields that use RPC synchronization
         const { error: dbError } = await supabase
           .from('profiles')
           .upsert({
@@ -214,8 +217,6 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             whatsapp: cleanWhatsapp || null,
             phone_number: cleanPhone || null,
             phone: cleanPhone || null,
-            date_of_birth: validDateStr,
-            dob: validDateStr,
             avatar_url: formData.ownerPhotoUrl || null,
             owner_photo_url: formData.ownerPhotoUrl || null,
             photo_url: formData.ownerPhotoUrl || null,
@@ -231,6 +232,26 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
         if (dbError) {
           throw dbError;
+        }
+
+        // Synchronize profile updates to corresponding salons and owner_editor_state
+        const { error: syncError } = await supabase.rpc('sync_owner_contact', {
+          p_profile: {
+            ownerName: formData.ownerName.trim(),
+            phone: cleanPhone || '',
+            whatsapp: cleanWhatsapp || '',
+            postalCode: cleanPostal || '',
+            city: formData.city.trim() || '',
+            areaLocality: formData.areaLocality.trim() || '',
+            ownerPhotoUrl: formData.ownerPhotoUrl || '',
+            businessName: profile.businessName || '',
+            subdomain: profile.subdomain || '',
+            email: profile.email || '',
+            address: profile.address || '',
+          }
+        });
+        if (syncError) {
+          console.warn('[UserProfileSettingsModal] sync_owner_contact RPC sync notice:', syncError);
         }
       }
 

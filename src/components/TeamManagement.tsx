@@ -523,7 +523,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
               <div className="flex items-start gap-3.5">
                 <div className="relative shrink-0">
                   <img
-                    src={st.avatarUrl}
+                    src={st.avatarUrl || undefined}
                     alt={st.name}
                     className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shadow-xs"
                     onError={(e) => {

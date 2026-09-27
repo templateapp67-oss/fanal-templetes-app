@@ -18,6 +18,13 @@ export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 export const OWNER_DASHBOARD_PATH = '/owner/dashboard';
 
+export const TEMPLATES_PATH = '/templates';
+
+export function isTemplatesPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === TEMPLATES_PATH || path === '/template' || path === '/explorer';
+}
+
 export function isOwnerDashboardPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   return path === OWNER_DASHBOARD_PATH || path === '/dashboard' || path === '/owner';
@@ -185,6 +192,7 @@ export type GrowthPartnerSection =
   | 'dashboard'
   | 'referrals'
   | 'customers'
+  | 'referral-history'
   | 'performance'
   | 'commission'
   | 'profile';
@@ -193,6 +201,7 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'dashboard',
   'referrals',
   'customers',
+  'referral-history',
   'performance',
   'commission',
   'profile',
@@ -282,6 +291,7 @@ export type PartnerPortalSection =
   | 'referral-code'
   | 'referred-users'
   | 'referral-status'
+  | 'referral-history'
   | 'profile'
   | 'account-settings'
   | 'diagnostics'
@@ -302,6 +312,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
+  'referral-history',
   'rewards',
   'performance',
   'commission',
@@ -323,6 +334,7 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
+  'referral-history',
   'rewards',
   'commission',
   'earnings',
@@ -343,6 +355,7 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   'referral-code': `${PARTNER_PORTAL_ROOT}/referral`,
   'referred-users': `${PARTNER_PORTAL_ROOT}/referrals`,
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
+  'referral-history': `${PARTNER_PORTAL_ROOT}/referral-history`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
   'account-settings': `${PARTNER_PORTAL_ROOT}/account-settings`,
   diagnostics: `${PARTNER_PORTAL_ROOT}/diagnostics`,
@@ -375,6 +388,8 @@ const PARTNER_PORTAL_ALIASES: Record<string, PartnerPortalSection> = {
   referral: 'referral-code',
   referrals: 'referred-users',
   customers: 'referral-status',
+  history: 'referral-history',
+  'referral-history': 'referral-history',
   marketing: 'marketing-materials',
   levels: 'partner-levels',
   leaderboard: 'leaderboards',

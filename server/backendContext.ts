@@ -6,7 +6,7 @@ export class BackendError extends Error {
   constructor(public status: number, message: string, public code = 'invalid_request') { super(message); }
 }
 export async function readDatabase(query: () => any, deadlineAt?: number): Promise<any> {
-  const result = await runDb(query, { label: 'normalized backend', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
+  const result = await runDb(query, { label: 'normalized backend', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: true });
   if (result.error) throw result.error;
   return result.data;
 }

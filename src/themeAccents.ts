@@ -178,6 +178,9 @@ export const DEFAULT_CATEGORY_ACCENTS: Record<BusinessTypeId, AccentPaletteKey> 
   bridal_makeover_studio: 'rose',
   family_salon: 'ocean',
   barber_grooming_club: 'mahogany',
+  barber_classic_gent: 'mahogany',
+  barber_modern_fade: 'mahogany',
+  barber_urban_grooming: 'mahogany',
   nails_lash_brow_bar: 'crimson',
   medispa_aesthetics: 'ocean',
   organic_bio_salon: 'emerald',
@@ -225,26 +228,58 @@ export function getContrastTextColor(hex: string): '#ffffff' | '#1e293b' {
  * and all templates using var(--primary-accent) or var(--theme-primary).
  * Automatically calculates relative luminance and updates dynamic text contrast variables.
  */
-export function applyPrimaryAccentCssVar(primaryHex: string, secondaryHex?: string) {
+export function applyPrimaryAccentCssVar(primaryHex: string, secondaryHex?: string, options?: { borderRadius?: string; backgroundColor?: string; headingStyle?: string; appearanceMode?: 'light' | 'dark' | 'system' }) {
   if (typeof document !== 'undefined' && document.documentElement) {
     const luminance = getLuminance(primaryHex);
     const contrastColor = getContrastTextColor(primaryHex);
 
-    document.documentElement.style.setProperty('--primary-accent', primaryHex);
-    document.documentElement.style.setProperty('--theme-primary', primaryHex);
-    document.documentElement.style.setProperty('--color-primary', primaryHex);
+    const root = document.documentElement;
+
+    root.style.setProperty('--primary-accent', primaryHex);
+    root.style.setProperty('--theme-primary', primaryHex);
+    root.style.setProperty('--color-primary', primaryHex);
 
     // Dynamic contrast & luminance CSS variables
-    document.documentElement.style.setProperty('--accent-luminance', luminance.toFixed(4));
-    document.documentElement.style.setProperty('--accent-text-color', contrastColor);
-    document.documentElement.style.setProperty('--accent-contrast-text', contrastColor);
-    document.documentElement.style.setProperty('--color-on-primary', contrastColor);
-    document.documentElement.style.setProperty('--theme-on-accent', contrastColor);
+    root.style.setProperty('--accent-luminance', luminance.toFixed(4));
+    root.style.setProperty('--accent-text-color', contrastColor);
+    root.style.setProperty('--accent-contrast-text', contrastColor);
+    root.style.setProperty('--color-on-primary', contrastColor);
+    root.style.setProperty('--theme-on-accent', contrastColor);
 
     if (secondaryHex) {
-      document.documentElement.style.setProperty('--theme-secondary', secondaryHex);
+      root.style.setProperty('--theme-secondary', secondaryHex);
       const secContrast = getContrastTextColor(secondaryHex);
-      document.documentElement.style.setProperty('--theme-on-secondary', secContrast);
+      root.style.setProperty('--theme-on-secondary', secContrast);
+    }
+
+    if (options?.borderRadius) {
+      root.style.setProperty('--radius-xl', options.borderRadius);
+      root.style.setProperty('--radius-lg', `calc(${options.borderRadius} * 0.75)`);
+      root.style.setProperty('--radius-md', `calc(${options.borderRadius} * 0.5)`);
+    }
+
+    if (options?.backgroundColor) {
+      root.style.setProperty('--color-background', options.backgroundColor);
+      root.style.setProperty('--color-surface', options.backgroundColor);
+    }
+
+    if (options?.headingStyle) {
+      root.style.setProperty('--heading-transform', options.headingStyle);
+    }
+
+    if (options?.appearanceMode) {
+      const mode = options.appearanceMode;
+      const isDark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      if (isDark) {
+        root.classList.add('dark');
+        root.classList.remove('light');
+        root.style.colorScheme = 'dark';
+      } else {
+        root.classList.add('light');
+        root.classList.remove('dark');
+        root.style.colorScheme = 'light';
+      }
     }
   }
 }

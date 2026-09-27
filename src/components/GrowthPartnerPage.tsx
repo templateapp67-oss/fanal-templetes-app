@@ -5,6 +5,7 @@ import { fetchGrowthPartnerProfile, growthPartnerPhotoUrl } from '../lib/growthP
 import { PartnerAccountSettingsPage } from './PartnerAccountSettingsPage';
 import { PartnerAuditDiagnosticPanel } from './PartnerAuditDiagnosticPanel';
 import { PartnerCommissionPage, PartnerRewardsPage } from './PartnerRewardsCommission';
+import { PartnerReferralHistoryPage } from './PartnerReferralHistoryPage';
 import { PartnerEarningsPage, PartnerLeaderboardsPage, PartnerLevelsPage, PartnerMarketingMaterialsPage, PartnerNotificationsPage, PartnerSupportPage, PartnerWithdrawalsPage } from './partner';
 import { DEFAULT_REFERRAL_FILTERS, referralDateBounds, type ReferralFilters } from '../lib/referralFilters';
 import type { ReferralStatusTab } from '../lib/referralStatus';
@@ -95,6 +96,7 @@ export const GROWTH_PARTNER_SECTION_LABELS: Record<GrowthPartnerSection, string>
   dashboard: 'Dashboard',
   referrals: 'Referrals',
   customers: 'Customers',
+  'referral-history': 'Referral History',
   performance: 'Performance',
   commission: 'Commission',
   profile: 'Profile',
@@ -684,6 +686,15 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
           customersSection
         );
       }
+      case 'referral-history':
+        return (
+          <PartnerReferralHistoryPage
+            partner={partner}
+            accentHex={accentHex}
+            partnerCode={partner?.partner_code || referralCode}
+            referralCode={referralCode}
+          />
+        );
       case 'performance':
         return (
           <GrowthPartnerPerformance

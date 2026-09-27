@@ -9,43 +9,58 @@
     <meta property="og:description" content="AI-powered salon website builder and all-in-one management platform for beauty businesses." />
     <script>
       (function() {
+        // Safe fetch assignment helper for environments where window.fetch has only a getter
         try {
-          var desc = Object.getOwnPropertyDescriptor(window, 'fetch');
-          if (!desc || !desc.set) {
-            var currentFetch = window.fetch;
+          var origFetch = window.fetch;
+          try {
             Object.defineProperty(window, 'fetch', {
-              get: function() {
-                return currentFetch;
-              },
-              set: function(fn) {
-                currentFetch = fn;
-              },
+              get: function() { return origFetch; },
+              set: function(fn) { origFetch = fn; },
               configurable: true,
               enumerable: true
             });
-          }
-        } catch (e) {
-          try {
-            var protoDesc = Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
-            if (protoDesc && !protoDesc.set) {
-              var protoFetch = Window.prototype.fetch;
-              Object.defineProperty(Window.prototype, 'fetch', {
-                get: function() {
-                  return protoFetch;
-                },
-                set: function(fn) {
-                  protoFetch = fn;
-                },
-                configurable: true,
-                enumerable: true
-              });
-            }
-          } catch (e2) {}
+          } catch (e) {}
+        } catch (e) {}
+
+        // Global early error handler before React mounts
+        function renderEarlyError(msg) {
+          if (window.__NEXORA_MOUNTED__) return;
+          var root = document.getElementById('root');
+          if (!root) return;
+          
+          var isRateLimit = msg && (msg.indexOf('429') !== -1 || msg.toLowerCase().indexOf('rate exceeded') !== -1 || msg.toLowerCase().indexOf('resource exhausted') !== -1);
+          var title = isRateLimit ? 'Connection Throttled' : 'Nexora Workspace';
+          var emoji = isRateLimit ? '⏳' : '✨';
+          var displayMsg = isRateLimit 
+            ? 'The development environment is temporarily rate-limited (Rate Exceeded). Please wait 30-60 seconds and refresh the page.' 
+            : (msg ? String(msg).slice(0, 300) : 'The workspace is initializing.');
+
+          root.innerHTML = '<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; padding: 24px; font-family: system-ui, -apple-system, sans-serif; color: #1e293b;">' +
+            '<div style="max-width: 480px; width: 100%; background: #ffffff; border-radius: 20px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; padding: 32px; text-align: center;">' +
+            '<div style="width: 48px; height: 48px; background-color: #ecfdf5; color: #059669; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-weight: 800; font-size: 20px;">' + emoji + '</div>' +
+            '<h2 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0 0 8px;">' + title + '</h2>' +
+            '<p style="font-size: 13px; color: #64748b; margin: 0 0 20px; line-height: 1.5;">' + displayMsg + '</p>' +
+            '<div style="display: flex; gap: 10px;">' +
+            '<button onclick="window.location.reload();" style="flex: 1; padding: 12px; background: #059669; color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer;">Reload Page</button>' +
+            '<button onclick="try { localStorage.clear(); sessionStorage.clear(); } catch(e){} window.location.href = \'/\';" style="flex: 1; padding: 12px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer;">Clear & Home</button>' +
+            '</div></div></div>';
         }
 
-        window.addEventListener('error', function(event) {
-          if (event && event.message && event.message.indexOf('fetch') !== -1 && event.message.indexOf('getter') !== -1) {
-            event.preventDefault();
+        window.addEventListener('error', function(e) {
+          if (e && e.message && e.message.indexOf('fetch') !== -1 && e.message.indexOf('getter') !== -1) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+            return true;
+          }
+          if (!window.__NEXORA_MOUNTED__) {
+            renderEarlyError(e && e.message);
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          if (!window.__NEXORA_MOUNTED__) {
+            var reason = e && (e.reason && (e.reason.message || e.reason));
+            renderEarlyError(reason || 'Network or resource initialization error');
           }
         });
       })();
@@ -58,8 +73,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
   </head>
   <body class="bg-[#f9f9ff] text-[#151c27] antialiased min-h-screen selection:bg-[#d81b60] selection:text-white">
-    <div id="root"></div>
+    <div id="root">
+      <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #f9f9ff; font-family: 'Manrope', system-ui, -apple-system, sans-serif; color: #151c27;">
+        <div style="text-align: center; padding: 24px; max-width: 360px;">
+          <div style="width: 44px; height: 44px; border: 3.5px solid #e2e8f0; border-top-color: #059669; border-radius: 50%; margin: 0 auto 16px; animation: nexora-spin 0.75s cubic-bezier(0.4, 0, 0.2, 1) infinite;"></div>
+          <h2 style="font-size: 16px; font-weight: 800; color: #0f172a; margin: 0 0 6px; letter-spacing: -0.01em;">Nexora Salon OS</h2>
+          <p style="font-size: 13px; color: #64748b; margin: 0;">Launching your templates & workspace…</p>
+        </div>
+      </div>
+      <style>
+        @keyframes nexora-spin { to { transform: rotate(360deg); } }
+      </style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

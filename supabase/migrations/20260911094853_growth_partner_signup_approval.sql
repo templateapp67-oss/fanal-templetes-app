@@ -1,4 +1,15 @@
 -- Growth Partner self-application. Approval is still required before access.
+create table if not exists public.growth_partners (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  referral_code text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.growth_partners add column if not exists partner_code text;
+alter table public.growth_partners add column if not exists status text default 'active';
+
 create table if not exists public.growth_partner_applications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references public.profiles(id) on delete cascade,

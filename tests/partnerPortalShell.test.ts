@@ -63,6 +63,7 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
     'referral-code',
     'referred-users',
     'referral-status',
+    'referral-history',
     'rewards',
     'performance',
     'commission',
@@ -79,13 +80,14 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
     // RLS diagnostics panel (PR #82); the pins below follow it.
     'diagnostics',
   ]);
-  assert.deepEqual(PARTNER_PORTAL_SECTIONS.slice(0, 4), [...PARTNER_PORTAL_MENU_SECTIONS].slice(0, 4));
-  // The sidebar shows sixteen live menu sections (Logout is an action).
+  assert.deepEqual(PARTNER_PORTAL_SECTIONS.slice(0, 5), [...PARTNER_PORTAL_MENU_SECTIONS].slice(0, 5));
+  // The sidebar shows seventeen live menu sections (Logout is an action).
   assert.deepEqual([...PARTNER_PORTAL_MENU_SECTIONS], [
     'dashboard',
     'referral-code',
     'referred-users',
     'referral-status',
+    'referral-history',
     'rewards',
     'commission',
     'earnings',
@@ -114,6 +116,7 @@ test('the portal section model keeps menu, URL and content sections in sync', ()
   assert.equal(partnerPortalContentSection('referral-code'), 'referral-code');
   assert.equal(partnerPortalContentSection('referred-users'), 'referrals');
   assert.equal(partnerPortalContentSection('referral-status'), 'customers');
+  assert.equal(partnerPortalContentSection('referral-history'), 'referral-history');
   assert.equal(partnerPortalContentSection('profile'), 'profile');
   assert.equal(partnerPortalContentSection('account-settings'), 'account-settings');
   assert.equal(partnerPortalContentSection('rewards'), 'rewards');
