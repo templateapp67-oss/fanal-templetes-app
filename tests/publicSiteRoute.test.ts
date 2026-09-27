@@ -94,8 +94,13 @@ test('the unavailable screen offers a way out instead of being a dead end', () =
   assert.match(app, /siteLookupNonce\]\);/, 'the lookup effect re-runs on retry');
 });
 
-test('the public site opens the owner’s own template, not this browser’s default', () => {
+test('the public site opens the salon’s own template, not this browser’s default', () => {
   const render = app.slice(app.indexOf('if (isPublicSite) {'), app.indexOf("if (!isMockSupabase && !user && authStatus !== 'ready')"));
-  assert.match(render, /selectedTemplateId=\{\(siteTenant\?\.selectedTemplateId \|\| selectedTemplateId\)/);
+  // Order: the owner's saved template id, then the published salon's business
+  // category, and only then the browser's own state (the app default).
+  assert.match(
+    render,
+    /selectedTemplateId=\{\s*\(siteTenant\?\.selectedTemplateId \|\| publicProfile\.businessType \|\| selectedTemplateId\) as BusinessTypeId\s*\}/
+  );
   assert.match(app, /selectedTemplateId: typeof data\.salon\?\.selectedTemplateId === 'string'/);
 });

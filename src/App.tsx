@@ -2530,7 +2530,13 @@ export default function App() {
           onAddAppointment={handleAddAppointment}
           user={user}
           onRequireAuth={openBookingAuth}
-          selectedTemplateId={(siteTenant?.selectedTemplateId || selectedTemplateId) as BusinessTypeId}
+          // The published salon's own template wins: the owner's saved choice
+          // first, then the salon's business category. `selectedTemplateId` is
+          // only this browser's state — for a visitor it is the app default,
+          // which rendered a hair-salon site for an Ayurvedic spa.
+          selectedTemplateId={
+            (siteTenant?.selectedTemplateId || publicProfile.businessType || selectedTemplateId) as BusinessTypeId
+          }
           setSelectedTemplateId={setSelectedTemplateId}
           siteUrl={getSiteUrl(publicProfile)}
           publicView
