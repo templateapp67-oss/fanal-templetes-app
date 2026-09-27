@@ -37,6 +37,7 @@ import { createRoot } from 'react-dom/client';
 
 import { SignupScreen } from '../../src/onboarding/screens/SignupScreen';
 import { LoginScreen } from '../../src/onboarding/screens/LoginScreen';
+import { ForgotPasswordScreen, FORGOT_SUCCESS } from '../../src/onboarding/screens/ForgotPasswordScreen';
 import { SetPasswordScreen } from '../../src/onboarding/screens/SetPasswordScreen';
 import {
   signUpWithEmail,
@@ -167,7 +168,10 @@ function fakeOnboardingClient(overrides: Record<string, any> = {}) {
         ? overrides.updateUser(args)
         : { data: { user: { id: 'u-1' } }, error: null };
     },
-    resetPasswordForEmail: async () => ({ data: {}, error: null }),
+    resetPasswordForEmail: async (...args: any[]) => {
+      calls.push({ fn: 'resetPasswordForEmail', args });
+      return { data: {}, error: null };
+    },
     getSession: async () => ({ data: { session: null }, error: null }),
     signOut: async () => ({ error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
@@ -991,6 +995,71 @@ test('partner change-password: autofilled values are validated and sent (stale R
     const verifyCall = client.calls.find((entry: any) => entry.auth === 'signInWithPassword');
     assert.ok(verifyCall, 'the current password was verified first');
     assert.equal(verifyCall.credentials.password, 'OldPass#1');
+  } finally {
+    await close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Forgot-password handlers (no stale-state reset requests)
+// ---------------------------------------------------------------------------
+
+test('onboarding forgot-password: autofilled email is sent (stale React state)', async () => {
+  const { client, calls } = fakeOnboardingClient();
+  const { host, close } = await mount(React.createElement(ForgotPasswordScreen, { client }));
+  try {
+    // DOM-only fill: React state still holds '' while the email is visible.
+    await autofill(host, '#onboarding-forgot-email', 'owner@example.com');
+    await submitForm(host);
+    await wait(() => !!host.textContent?.includes(FORGOT_SUCCESS), 'the sent confirmation');
+    const resetCall = calls.find((c) => c.fn === 'resetPasswordForEmail')!;
+    assert.ok(resetCall, 'resetPasswordForEmail was called');
+    assert.equal(resetCall.args[0], 'owner@example.com', 'the visible email is what was sent');
+  } finally {
+    await close();
+  }
+});
+
+test('onboarding forgot-password: invalid email shows the field error, no reset call', async () => {
+  const { client, calls } = fakeOnboardingClient();
+  const { host, close } = await mount(React.createElement(ForgotPasswordScreen, { client }));
+  try {
+    await type(host, '#onboarding-forgot-email', 'not-an-email');
+    await submitForm(host);
+    await wait(
+      () => !!host.textContent?.includes('Enter a valid email address.'),
+      'the field error'
+    );
+    assert.equal(
+      calls.filter((c) => c.fn === 'resetPasswordForEmail').length,
+      0,
+      'no reset email requested'
+    );
+  } finally {
+    await close();
+  }
+});
+
+test('partner portal forgot-password: autofilled email is sent (stale React state)', async () => {
+  (dom.window as any).localStorage.clear();
+  (dom.window as any).sessionStorage.clear();
+  const { client, calls } = fakePartnerClient();
+  const { host, close } = await mount(React.createElement(PartnerPortalLogin, { client }));
+  try {
+    await wait(() => !!host.querySelector('#partner-login-forgot'), 'the login form renders');
+    await act(async () => {
+      host.querySelector<HTMLElement>('#partner-login-forgot')!.click();
+    });
+    await wait(() => !!host.querySelector('#partner-forgot-email'), 'the forgot form renders');
+    // DOM-only fill: React state still holds '' while the email is visible.
+    await autofill(host, '#partner-forgot-email', 'partner@example.com');
+    await submitForm(host);
+    await wait(
+      () => calls.some((c) => c.fn === 'resetPasswordForEmail'),
+      'resetPasswordForEmail was called'
+    );
+    const resetCall = calls.find((c) => c.fn === 'resetPasswordForEmail')!;
+    assert.equal(resetCall.args.email, 'partner@example.com', 'the visible email is what was sent');
   } finally {
     await close();
   }
