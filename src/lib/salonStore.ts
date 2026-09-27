@@ -9,6 +9,7 @@ import { CATEGORY_TEMPLATES } from '../categoryTemplates';
 import { DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey } from '../themeAccents';
 import { DEFAULT_LOYALTY_CONFIG } from '../loyaltyData';
 import { safeWriteLocalStorage, LocalStorageWriteResult } from './autoSave';
+import { getPublicWebsiteUrl } from './publicSiteUrl';
 
 // ============================================================================
 // Central persistent salon state.
@@ -44,30 +45,27 @@ export function slugifySalonName(name: string): string {
 
 /** Build the public (white-label) site URL from a profile. */
 export function getSiteUrl(profile: SalonProfile, publishedOrigin?: string): string {
+  // An owner-configured custom domain is already production — keep it verbatim.
   if (profile.customDomain) {
     return `https://${profile.customDomain}`;
   }
+  // The saved published slug is the single source of truth for which site opens.
   const sub = profile.subdomain || slugifySalonName(profile.businessName);
 
-  // Share the published deployment, not the editor's temporary preview origin.
-  if (publishedOrigin) {
-    const url = new URL('/', publishedOrigin);
-    url.searchParams.set('site', sub);
-    return url.toString();
-  }
-
   if (typeof window !== 'undefined') {
-    const origin = window.location.origin;
     const host = window.location.hostname;
-    // If running under official nexora.in production domain:
+    // Official nexora.in production keeps its white-label subdomain format.
     if (host.endsWith('nexora.in') && !host.startsWith('localhost')) {
       return `https://${sub}.nexora.in`;
     }
-    // For Vercel deployments, preview hosts, sandbox, localhost:
-    return `${origin}/?site=${sub}`;
   }
 
-  return `https://${sub}.nexora.in`;
+  // Everything else goes through the canonical helper: preview origins
+  // (Cloud Run, localhost, sandboxes, preview deployments) fall back to the
+  // stable production origin, so a copied link never depends on where the
+  // owner happened to be editing. `publishedOrigin`, when given, is sanitized
+  // the same way instead of being trusted blindly.
+  return getPublicWebsiteUrl(sub, publishedOrigin);
 }
 
 /** Get the official subdomain format URL (e.g. https://mysalon.nexora.in). */
