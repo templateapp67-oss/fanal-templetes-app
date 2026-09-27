@@ -42,6 +42,8 @@ define('HTMLElement', dom.window.HTMLElement);
 define('HTMLInputElement', dom.window.HTMLInputElement);
 define('HTMLSelectElement', dom.window.HTMLSelectElement);
 define('HTMLButtonElement', dom.window.HTMLButtonElement);
+define('HTMLFormElement', dom.window.HTMLFormElement);
+define('FormData', dom.window.FormData);
 define('Element', dom.window.Element);
 define('Node', dom.window.Node);
 define('Event', dom.window.Event);

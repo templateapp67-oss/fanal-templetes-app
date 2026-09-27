@@ -1031,9 +1031,17 @@ export const PartnerPortalLogin: React.FC<{
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
+    // The submitted form controls are the source of truth, not component
+    // state: browser autofill can fill the DOM without dispatching React
+    // change events, which would otherwise sign in with a stale password.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const submittedEmail = String(form.get('partner-login-email') ?? email);
+    const submittedPassword = String(form.get('partner-login-password') ?? password);
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
     const errors: { email?: string; password?: string } = {};
-    if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email address.';
-    if (!password) errors.password = 'Enter your password.';
+    if (!EMAIL_RE.test(submittedEmail.trim())) errors.email = 'Enter a valid email address.';
+    if (!submittedPassword) errors.password = 'Enter your password.';
     setFieldErrors(errors);
     if (errors.email || errors.password) return;
     setBusy(true);
@@ -1042,9 +1050,9 @@ export const PartnerPortalLogin: React.FC<{
     // credentials are submitted; a failed attempt reverts the choice so an
     // existing remembered session is never destroyed.
     const revertLifetime = beginPartnerSessionLifetime(rememberMe);
-    void signInGrowthPartner(sb, { email, password }).then(
+    void signInGrowthPartner(sb, { email: submittedEmail, password: submittedPassword }).then(
       (viewer) => {
-        writeRememberedPartnerEmail(email.trim(), rememberMe);
+        writeRememberedPartnerEmail(submittedEmail.trim(), rememberMe);
         finishPartnerSessionLifetime(rememberMe);
         setSessionUser(viewer);
       },
@@ -1060,12 +1068,18 @@ export const PartnerPortalLogin: React.FC<{
     if (forgotBusy) return;
     setForgotError('');
     setForgotSuccess('');
-    if (!EMAIL_RE.test(forgotEmail.trim())) {
+    // The submitted form controls are the source of truth, not component
+    // state: browser autofill can fill the DOM without dispatching React
+    // change events.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const submittedEmail = String(form.get('partner-forgot-email') ?? forgotEmail);
+    setForgotEmail(submittedEmail);
+    if (!EMAIL_RE.test(submittedEmail.trim())) {
       setForgotError('Enter a valid email address.');
       return;
     }
     setForgotBusy(true);
-    void sendPartnerPasswordReset(sb, forgotEmail.trim()).then(
+    void sendPartnerPasswordReset(sb, submittedEmail.trim()).then(
       () => setForgotSuccess(PARTNER_RESET_REQUESTED_MESSAGE),
       (error: Error) => setForgotError(safePartnerErrorMessage(error, 'Password reset failed. Please try again.'))
     ).finally(() => setForgotBusy(false));
@@ -1076,13 +1090,20 @@ export const PartnerPortalLogin: React.FC<{
     if (resetBusy) return;
     setResetError('');
     setResetSuccess('');
-    const check = validatePartnerNewPassword(newPassword, newPasswordConfirm);
+    // The submitted form controls are the source of truth: validate exactly
+    // what the user sees, then send exactly what was validated.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const submittedPassword = String(form.get('partner-new-password') ?? newPassword);
+    const submittedConfirm = String(form.get('partner-confirm-password') ?? newPasswordConfirm);
+    setNewPassword(submittedPassword);
+    setNewPasswordConfirm(submittedConfirm);
+    const check = validatePartnerNewPassword(submittedPassword, submittedConfirm);
     if (check.ok === false) {
       setResetError(check.message);
       return;
     }
     setResetBusy(true);
-    void completePartnerPasswordReset(sb, newPassword).then(
+    void completePartnerPasswordReset(sb, submittedPassword).then(
       () => {
         setResetSuccess(PARTNER_PASSWORD_UPDATED_MESSAGE);
         // The recovery session is already live; let the role verification (or

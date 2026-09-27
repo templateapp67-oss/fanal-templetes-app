@@ -54,9 +54,17 @@ export const SetPasswordScreen: React.FC<{
           onSubmit={(event) => {
             event.preventDefault();
             if (busy) return;
+            // Password managers can fill the DOM after React's last change event.
+            // Read the submitted controls, rather than only component state, so a
+            // visibly filled password can never be validated as an empty one.
+            const form = new FormData(event.currentTarget);
+            const submittedPassword = String(form.get('onboarding-reset-password') ?? '');
+            const submittedConfirm = String(form.get('onboarding-reset-confirm') ?? '');
+            setPassword(submittedPassword);
+            setConfirm(submittedConfirm);
             setBusy(true);
             setFormError('');
-            void setNewPassword(client as OnboardingSupabaseClient, password, confirm).then(
+            void setNewPassword(client as OnboardingSupabaseClient, submittedPassword, submittedConfirm).then(
               () => {
                 setDone(true);
                 onDone?.();
