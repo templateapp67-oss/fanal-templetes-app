@@ -15,7 +15,10 @@ export async function readPartnerProfile(expectedOwnerId?: string) {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { headers: { Authorization: `Bearer ${session.access_token}` } },
   });
-  const result = await client.rpc('get_partner_profile');
+  // Canonical owner profile read used by the header/editor modal. The former
+  // partner-only RPC depended on optional partner tables and could return an
+  // empty shape for a perfectly valid salon owner.
+  const result = await client.rpc('get_my_profile_settings');
   if (result.error) throw new Error(`Profile load failed (${result.error.code || 'database'}): ${result.error.message}`);
   return result;
 }

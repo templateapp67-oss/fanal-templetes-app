@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SalonProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase, isMockSupabase, refreshSchemaCache } from '../lib/supabaseClient';
+import { supabase, isMockSupabase } from '../lib/supabaseClient';
 
 interface UserProfileSettingsModalProps {
   isOpen: boolean;
@@ -39,7 +39,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Re-sync form state from profile whenever the modal opens or the active profile properties update
+  // Re-sync form state from profile whenever the modal opens or the active profile updates
   React.useEffect(() => {
     if (isOpen) {
       setFormData({
@@ -54,7 +54,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
       setErrors({});
     }
-  }, [isOpen, profile.ownerId, profile.ownerName, profile.whatsapp, profile.dob, profile.postalCode, profile.city, profile.areaLocality]);
+  }, [isOpen, profile]);
 
   if (!isOpen) return null;
 
@@ -203,55 +203,27 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
           throw new Error('No active user session found. Please sign in again.');
         }
 
-        // Force schema cache refresh to ensure newly added columns are acknowledged immediately
-        await refreshSchemaCache();
-
-        // Perform upsert query on profiles table matching id = user.id
-        // Handles column spelling variations and omits non-core schema fields that use RPC synchronization
-        const { error: dbError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: user.id,
-            full_name: formData.ownerName.trim(),
-            whatsapp_number: cleanPhone || null,
-            whatsapp: cleanWhatsapp || null,
-            phone_number: cleanPhone || null,
+        // Never send every historical column spelling through PostgREST. A
+        // production project can legitimately be missing one legacy alias
+        // (for example `owner_photo_url`), and PostgREST rejects the entire
+        // request before RLS is even evaluated. The RPC owns the small,
+        // validated compatibility boundary and updates only the caller's row.
+        const { error: dbError } = await supabase.rpc('save_my_profile_settings', {
+          p_patch: {
+            ownerName: formData.ownerName.trim(),
             phone: cleanPhone || null,
-            avatar_url: formData.ownerPhotoUrl || null,
-            owner_photo_url: formData.ownerPhotoUrl || null,
-            photo_url: formData.ownerPhotoUrl || null,
-            pincode: cleanPostal || null,
-            postal_code: cleanPostal || null,
+            whatsapp: cleanWhatsapp || null,
+            dob: validDateStr,
+            postalCode: cleanPostal || null,
             city: formData.city.trim() || null,
-            preferred_city: formData.city.trim() || null,
-            area: formData.areaLocality.trim() || null,
-            preferred_area: formData.areaLocality.trim() || null,
-            whatsapp_notifications_enabled: whatsappNotificationsEnabled,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
+            areaLocality: formData.areaLocality.trim() || null,
+            ownerPhotoUrl: formData.ownerPhotoUrl || null,
+            whatsappNotificationsEnabled,
+          },
+        });
 
         if (dbError) {
           throw dbError;
-        }
-
-        // Synchronize profile updates to corresponding salons and owner_editor_state
-        const { error: syncError } = await supabase.rpc('sync_owner_contact', {
-          p_profile: {
-            ownerName: formData.ownerName.trim(),
-            phone: cleanPhone || '',
-            whatsapp: cleanWhatsapp || '',
-            postalCode: cleanPostal || '',
-            city: formData.city.trim() || '',
-            areaLocality: formData.areaLocality.trim() || '',
-            ownerPhotoUrl: formData.ownerPhotoUrl || '',
-            businessName: profile.businessName || '',
-            subdomain: profile.subdomain || '',
-            email: profile.email || '',
-            address: profile.address || '',
-          }
-        });
-        if (syncError) {
-          console.warn('[UserProfileSettingsModal] sync_owner_contact RPC sync notice:', syncError);
         }
       }
 
