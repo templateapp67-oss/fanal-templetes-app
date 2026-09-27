@@ -512,6 +512,8 @@ export function matchBookingDetailPath(pathname: string): string | null {
 // ---------------------------------------------------------------------------
 export const SETTINGS_PROFILE_PATH = '/settings/profile';
 export const ONBOARDING_WEBSITE_PATH = '/onboarding/website';
+/** Legacy/public setup address kept as an alias for the same screen. */
+export const SETUP_PATH = '/setup';
 export const EDITOR_PATH = '/editor';
 export const TEMPLATES_PATH = '/templates';
 
@@ -568,7 +570,7 @@ export function isEditorPath(pathname: string): boolean {
 
 export function isOnboardingWebsitePath(pathname: string): boolean {
   const p = normalizePath(pathname).toLowerCase();
-  return p === ONBOARDING_WEBSITE_PATH || p === '/onboarding' || p.startsWith('/onboarding/');
+  return p === ONBOARDING_WEBSITE_PATH || p === SETUP_PATH || p === '/onboarding' || p.startsWith('/onboarding/');
 }
 
 export function parseNextUrl(search: string): string | null {
@@ -598,7 +600,10 @@ export function parseSiteParam(search: string): string | null {
  */
 export function editorTemplateId(search = ''): string | null {
   try {
-    const templateId = new URLSearchParams(search).get('template')?.trim();
+    const params = new URLSearchParams(search);
+    // `templateId` is the public handoff spelling. Accept the short legacy
+    // `template` spelling too so old shared links do not enter a setup loop.
+    const templateId = (params.get('templateId') || params.get('template'))?.trim();
     return templateId || null;
   } catch {
     return null;
@@ -608,7 +613,7 @@ export function editorTemplateId(search = ''): string | null {
 export function buildEditorUrl(siteId?: string | null, templateId?: string | null): string {
   const params = new URLSearchParams();
   if (siteId) params.set('site', siteId);
-  if (templateId) params.set('template', templateId);
+  if (templateId) params.set('templateId', templateId);
   const suffix = params.toString();
   return suffix ? `${EDITOR_PATH}?${suffix}` : EDITOR_PATH;
 }
