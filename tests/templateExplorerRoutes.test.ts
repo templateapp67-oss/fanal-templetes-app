@@ -7,6 +7,7 @@ import {
   templateExplorerPath,
   buildEditorUrl,
   editorTemplateId,
+  isOnboardingWebsitePath,
 } from '../src/lib/router';
 
 test('template explorer keeps category and search in a shareable URL', () => {
@@ -33,6 +34,8 @@ test('only the templates namespace is recognised as the explorer', () => {
 });
 
 test('template selection enters the existing editor without an onboarding detour', () => {
-  assert.equal(buildEditorUrl(null, 'barber'), '/editor?template=barber');
+  assert.equal(buildEditorUrl(null, 'barber'), '/editor?templateId=barber');
   assert.equal(editorTemplateId('?template=barber'), 'barber');
+  assert.equal(editorTemplateId('?templateId=barber'), 'barber');
+  assert.equal(isOnboardingWebsitePath('/setup'), true);
 });
