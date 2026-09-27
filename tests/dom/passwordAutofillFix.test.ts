@@ -19,7 +19,8 @@
 //   2. main AuthModal (owner + customer)  6. onboarding SetPasswordScreen
 //   3. customer AuthScreen                7. partner portal login + set-password
 //   4. GrowthPartnerSignupForm (both      8. partner account change-password
-//      partner routes share it)
+//      partner routes share it)            9. forgot-password handlers (both)
+//  10. whitespace preservation at DOM level + diagnostics leak audit
 //
 // Autofill is simulated the way a password manager writes it: the native
 // input-value setter with NO event dispatched, so React state stays stale
@@ -54,6 +55,7 @@ import { GrowthPartnerLogin } from '../../src/components/GrowthPartnerLogin';
 import { PartnerPortalLogin } from '../../src/components/PartnerPortalLogin';
 import { PartnerAccountSettingsPage } from '../../src/components/PartnerAccountSettingsPage';
 import { supabase } from '../../src/lib/supabaseClient';
+import { AUTH_PASSWORD_DIAG_TAG } from '../../src/lib/authPasswordDiagnostics';
 
 after(() => {
   try {
@@ -1062,5 +1064,85 @@ test('partner portal forgot-password: autofilled email is sent (stale React stat
     assert.equal(resetCall.args.email, 'partner@example.com', 'the visible email is what was sent');
   } finally {
     await close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 10. Whitespace at DOM level + diagnostics leak audit
+// ---------------------------------------------------------------------------
+
+test('onboarding signup: typed password with surrounding spaces passes byte-identical', async () => {
+  const { client, calls } = fakeOnboardingClient();
+  const { host, close } = await mount(React.createElement(SignupScreen, { client }));
+  try {
+    await type(host, '#onboarding-signup-full-name', 'Uma Rao');
+    await type(host, '#onboarding-signup-email', 'spaced@example.com');
+    await type(host, '#onboarding-signup-phone', '+91 98450 77654');
+    // 9 characters with significant surrounding whitespace: must pass as-is.
+    await type(host, '#onboarding-signup-password', '  abcde  ');
+    await type(host, '#onboarding-signup-confirm', '  abcde  ');
+    await submitForm(host);
+    await wait(() => !!host.textContent?.includes('Check your inbox'), 'the confirmation screen');
+    const signUpCall = calls.find((c) => c.fn === 'signUp')!;
+    assert.ok(signUpCall, 'Supabase signUp was called');
+    assert.equal(signUpCall.args.password, '  abcde  ', 'sent byte-identical, untrimmed');
+    assert.equal(signUpCall.args.password.length, 9, 'length-only check matches');
+  } finally {
+    await close();
+  }
+});
+
+test('diagnostics audit: submit-time logs carry lengths only, never password content', async () => {
+  const seen: any[] = [];
+  const restore = stubSharedSupabaseAuth({
+    signUp: async (args: any) => {
+      seen.push(args);
+      return {
+        data: {
+          user: { id: 'd-1', email: args.email, user_metadata: {} },
+          session: { access_token: 't', user: { id: 'd-1', email: args.email } },
+        },
+        error: null,
+      };
+    },
+  });
+  const captured: unknown[][] = [];
+  const originalDebug = console.debug;
+  console.debug = (...args: unknown[]) => {
+    captured.push(args);
+  };
+  let succeeded: any = null;
+  const { host, close } = await mount(
+    React.createElement(AuthModal, {
+      isOpen: true,
+      onClose: () => {},
+      initialMode: 'signup',
+      purpose: 'customer',
+      onSuccess: (user: any) => { succeeded = user; },
+    })
+  );
+  try {
+    await type(host, 'input[name="auth-full-name"]', 'Diag User');
+    await type(host, 'input[name="auth-email"]', 'diag@example.com');
+    await type(host, 'input[name="auth-password"]', 'Abc12!');
+    await submitForm(host);
+    await wait(() => succeeded !== null, 'onSuccess fired');
+  } finally {
+    await close();
+    restore();
+    console.debug = originalDebug;
+  }
+  const diagLines = captured.filter((args) => args[0] === AUTH_PASSWORD_DIAG_TAG);
+  assert.ok(diagLines.length >= 1, 'a length diagnostic was emitted on submit');
+  const report = (diagLines[0] as any[])[2] as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(report).sort(),
+    ['match', 'stateLength', 'submittedLength'],
+    'the report carries numbers/booleans only'
+  );
+  assert.equal(report.submittedLength, 6, 'the submitted length was tracked');
+  assert.equal(report.match, true, 'typed input keeps state and DOM in agreement');
+  for (const args of captured) {
+    assert.doesNotMatch(JSON.stringify(args), /Abc12/, 'no password content in any debug log');
   }
 });

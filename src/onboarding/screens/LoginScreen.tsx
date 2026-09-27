@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { signInWithEmail, type OnboardingSupabaseClient } from '../lib/auth';
 import { createSingleFlight, toSafeAuthError, validateLogin } from '../lib/flow';
+import { logPasswordLengths } from '../../lib/authPasswordDiagnostics';
 
 // ============================================================================
 // Login — email + password via Supabase Auth, plus forgot-password and a
@@ -53,6 +54,7 @@ export const LoginScreen: React.FC<{
           };
           setEmail(submitted.email);
           setPassword(submitted.password);
+          logPasswordLengths('onboarding:login', password, submitted.password);
           const validation = validateLogin(submitted);
           setFieldErrors(validation.errors);
           if (!validation.ok) return;

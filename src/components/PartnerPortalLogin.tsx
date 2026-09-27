@@ -1,4 +1,5 @@
 import { safePartnerErrorMessage } from '../lib/partnerUiErrors';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -1039,6 +1040,7 @@ export const PartnerPortalLogin: React.FC<{
     const submittedPassword = String(form.get('partner-login-password') ?? password);
     setEmail(submittedEmail);
     setPassword(submittedPassword);
+    logPasswordLengths('partner-portal:login', password, submittedPassword);
     const errors: { email?: string; password?: string } = {};
     if (!EMAIL_RE.test(submittedEmail.trim())) errors.email = 'Enter a valid email address.';
     if (!submittedPassword) errors.password = 'Enter your password.';
@@ -1097,6 +1099,7 @@ export const PartnerPortalLogin: React.FC<{
     const submittedConfirm = String(form.get('partner-confirm-password') ?? newPasswordConfirm);
     setNewPassword(submittedPassword);
     setNewPasswordConfirm(submittedConfirm);
+    logPasswordLengths('partner-portal:set-password', newPassword, submittedPassword);
     const check = validatePartnerNewPassword(submittedPassword, submittedConfirm);
     if (check.ok === false) {
       setResetError(check.message);

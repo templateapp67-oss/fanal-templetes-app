@@ -32,6 +32,7 @@ import {
 } from '../lib/growthPartnerLogin';
 import { GROWTH_PARTNER_PATH } from '../lib/router';
 import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 
 // ============================================================================
 // Growth Partner LOGIN route — `/growth-partner/login`.
@@ -275,6 +276,7 @@ export const GrowthPartnerSignupForm: React.FC<{
     setPassword(submitted.password);
     setKycDocumentType(submitted.kycDocumentType);
     setKycDocumentReference(submitted.kycDocumentReference);
+    logPasswordLengths('growth-partner:signup', password, submitted.password);
     const errors = validateGrowthPartnerSignupInput(submitted);
     setLocalFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -848,6 +850,7 @@ export const GrowthPartnerLogin: React.FC<{
     const submittedPassword = String(form.get('growth-partner-login-password') ?? password);
     setEmail(submittedEmail);
     setPassword(submittedPassword);
+    logPasswordLengths('growth-partner:login', password, submittedPassword);
     const errors: { email?: string; password?: string } = {};
     if (!EMAIL_RE.test(submittedEmail.trim())) errors.email = 'Enter a valid email address.';
     if (!submittedPassword) errors.password = 'Enter your password.';

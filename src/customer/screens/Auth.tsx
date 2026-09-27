@@ -16,6 +16,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, Lock, Mail, Phone, User, ShieldCheck } from 'lucide-react';
 import { supabase, isMockSupabase } from '../../lib/supabaseClient';
+import { logPasswordLengths } from '../../lib/authPasswordDiagnostics';
 import { Button, CARD_CLASS, MUTED_CLASS } from '../ui';
 
 export interface AuthScreenProps {
@@ -55,6 +56,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
     setPassword(submittedPassword);
     setFullName(submittedFullName);
     setPhone(submittedPhone);
+    logPasswordLengths(`customer-auth:${mode}`, password, submittedPassword);
 
     if (isMockSupabase) {
       setError(

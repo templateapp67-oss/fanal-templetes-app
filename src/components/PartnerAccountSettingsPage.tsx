@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toDataURL } from 'qrcode';
 import { copyToClipboard } from '../lib/clipboard';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 import {
   AlertTriangle,
   Check,
@@ -289,6 +290,7 @@ const ChangePasswordSection: React.FC<{
       confirmPassword: String(formData.get('account-confirm-password') ?? form.confirmPassword),
     };
     setForm(submitted);
+    logPasswordLengths('partner-account:change-password', form.newPassword, submitted.newPassword);
     let parsed: ReturnType<typeof changePasswordSchema.parse>;
     try {
       parsed = parseFields(changePasswordSchema, submitted);

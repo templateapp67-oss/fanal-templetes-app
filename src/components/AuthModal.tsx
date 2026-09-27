@@ -11,6 +11,7 @@ import {
   MIN_PASSWORD_LENGTH,
   toSafeAuthError,
 } from '../onboarding/lib/flow';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -95,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setPhoneNumber(submitted.phoneNumber);
     setCity(submitted.city);
     setReferralCode(submitted.referralCode);
+    logPasswordLengths(`auth-modal:${mode}`, password, submitted.password);
     const activeReferralCode = (submitted.referralCode || getStoredReferralCode() || '').trim();
     // Ref-guarded single flight — see authFlight above.
     await authFlight.current.run(async () => {

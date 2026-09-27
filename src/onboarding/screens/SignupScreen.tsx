@@ -7,6 +7,7 @@ import {
   type OnboardingSupabaseClient,
 } from '../lib/auth';
 import { createSingleFlight, validateSignup } from '../lib/flow';
+import { logPasswordLengths } from '../../lib/authPasswordDiagnostics';
 
 // ============================================================================
 // Sign Up — owner identity (name + phone) + credentials. Supabase Auth creates
@@ -192,6 +193,7 @@ export const SignupScreen: React.FC<{
           setPhone(submitted.phone);
           setPassword(submitted.password);
           setConfirm(submitted.confirm);
+          logPasswordLengths('onboarding:signup', password, submitted.password);
           const validation = validateSignup(submitted);
           setFieldErrors(validation.errors);
           if (!validation.ok) return;
