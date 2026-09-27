@@ -1,5 +1,39 @@
-import { CategoryTemplateConfig, BusinessTypeOption } from './types';
-import { SALON_IMAGES } from './assets/images';
+import { CategoryTemplateConfig, BusinessTypeOption } from '../types';
+import { SALON_IMAGES } from '../assets/images';
+import { CATEGORY_STANDARDIZED_DATA as CATEGORY_CONTENT, type CategoryStandardData } from './templateContent';
+
+export type TemplateCategory =
+  | 'barber' | 'hair' | 'beauty' | 'nails' | 'spa' | 'ayurvedic' | 'skin' | 'tattoo' | 'kids';
+
+/** The single stable key used across URLs, persistence and selection. */
+export type TemplateId = import('../types').BusinessTypeId;
+
+export interface RegisteredTemplate {
+  id: TemplateId;
+  slug: string;
+  name: string;
+  tagline: string;
+  category: TemplateCategory;
+  description: string;
+  keywords: string[];
+  keyFeatures: string[];
+  thumbnailUrl?: string;
+  /** Existing template content, exposed in one normalized registry shape. */
+  defaultData: {
+    hero: { title: string; tagline: string; imageUrl: string; theme: string };
+    services: CategoryTemplateConfig['services'];
+    staff: CategoryTemplateConfig['stylists'];
+    gallery: CategoryStandardData['gallery'];
+    testimonials: CategoryStandardData['reviews'];
+    contact: { address: string; city: string; phone: string; whatsapp: string };
+    operatingHours: { opens: string; closes: string };
+    offers: [];
+    videos: [];
+  };
+  /** Rendering configuration kept for the existing live preview engine. */
+  config: CategoryTemplateConfig;
+  content: CategoryStandardData;
+}
 
 export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
   // 1. Hair Cut & Styling Studio
@@ -3393,3 +3427,132 @@ export const ALL_CATEGORY_OPTIONS: BusinessTypeOption[] = [
     }))
   }
 ];
+
+// Keep category assignment explicit and stable. It is intentionally keyed by
+// the existing persisted template id, never a display label or random UUID.
+const TEMPLATE_CATEGORY: Record<TemplateId, TemplateCategory> = {
+  hair_salon: 'hair', barber: 'barber', unisex_salon: 'hair', beauty_parlour: 'beauty',
+  nail_studio: 'nails', hair_spa: 'spa', skincare_clinic: 'skin', makeup_studio: 'beauty',
+  massage_wellness: 'spa', hair_coloring: 'hair', bridal_lounge: 'beauty', tattoo_studio: 'tattoo',
+  lash_brow: 'nails', ayurvedic_spa: 'ayurvedic', ayurvedic_wellness_spa: 'ayurvedic',
+  luxury_hair_salon: 'hair', bridal_makeover_studio: 'beauty', family_salon: 'hair',
+  barber_grooming_club: 'barber', nails_lash_brow_bar: 'nails', medispa_aesthetics: 'skin',
+  organic_bio_salon: 'ayurvedic', express_beauty_bar: 'nails', thai_massage_center: 'spa',
+  kids_teens_studio: 'kids', resort_spa: 'spa', vedic_ayurveda_studio: 'ayurvedic',
+};
+
+/** Explorer labels do not participate in identity; id/slug above always do. */
+const TEMPLATE_EXPLORER_NAMES: Record<TemplateId, string> = {
+  hair_salon: 'Hair & Styling Studio',
+  barber: "The Royal Blade Barber & Men's Club",
+  unisex_salon: 'Aura Unisex Salon & Wellness Lounge',
+  beauty_parlour: 'Roop Mahal Beauty Parlour & Makeover Space',
+  nail_studio: 'Pinky Nails Studio',
+  hair_spa: 'Kesh Prakriti Hair Spa & Scalp Sanctuary',
+  skincare_clinic: 'Dermacure Aesthetic Dermatology & Laser Clinic',
+  makeup_studio: 'Vogue Noir Makeup Studio & Academy',
+  massage_wellness: 'Bodhi Tree Massage & Wellness Sanctuary',
+  hair_coloring: 'Prism & Chroma Hair Color Atelier',
+  bridal_lounge: 'Shringaar Royal Indian Bridal Lounge',
+  tattoo_studio: 'Iron & Ink Urban Tattoo & Body Art Studio',
+  lash_brow: 'Arch & Flutter Lash & Brow Bar',
+  ayurvedic_spa: 'Veda Sanjeevani Ayurvedic Wellness & Spa',
+  ayurvedic_wellness_spa: 'Sattva Ayurvedic & Wellness Spa',
+  luxury_hair_salon: 'Maison Éclat Hair Atelier',
+  bridal_makeover_studio: 'Rose & Ivory Bridal Atelier',
+  family_salon: 'Cedar & Bloom Family Salon',
+  barber_grooming_club: 'The Iron Standard Barber & Grooming Club',
+  nails_lash_brow_bar: 'Peony & Lacquer Lash, Brow & Nail Bar',
+  medispa_aesthetics: 'Porcelain Skin Lab Medi-Spa & Aesthetics Clinic',
+  organic_bio_salon: 'Terra Botanica Organic & Bio-Salon',
+  express_beauty_bar: 'Blink Express Beauty Bar',
+  thai_massage_center: 'Baan Sen Thai & Oriental Massage Center',
+  kids_teens_studio: 'Scissors & Sprinkles Kids & Teens Fun Hair Studio',
+  resort_spa: 'Azure Palms Luxury Hotel & Resort Spa',
+  vedic_ayurveda_studio: 'Vedvriksha Vedic Ayurveda Wellness Studio',
+};
+
+function toRegisteredTemplate(config: CategoryTemplateConfig): RegisteredTemplate {
+  const id = config.id as TemplateId;
+  const content = CATEGORY_CONTENT[id];
+  return {
+    id,
+    // Existing IDs are already URL-safe, stable slugs. Persist and route this
+    // value; display names are never identity.
+    slug: id,
+    name: TEMPLATE_EXPLORER_NAMES[id],
+    tagline: config.tagline,
+    category: TEMPLATE_CATEGORY[id],
+    description: config.about,
+    keywords: [...new Set([TEMPLATE_CATEGORY[id], TEMPLATE_EXPLORER_NAMES[id], config.title, config.shortName, ...config.subCategories].map((value) => value.toLowerCase()))],
+    keyFeatures: content?.specialties || [],
+    thumbnailUrl: config.coverImageUrl,
+    defaultData: {
+      hero: { title: config.title, tagline: config.tagline, imageUrl: config.coverImageUrl, theme: config.themePreset },
+      services: config.services,
+      staff: config.stylists,
+      gallery: content?.gallery || [],
+      testimonials: content?.reviews || [],
+      contact: { address: config.defaultAddress, city: config.defaultCity, phone: config.phone, whatsapp: config.whatsapp },
+      operatingHours: { opens: content?.openHourText || '', closes: content?.closeHourText || '' },
+      offers: [],
+      videos: [],
+    },
+    config,
+    content,
+  };
+}
+
+/**
+ * Keep the registry safe if a configuration is accidentally added twice.
+ * Both persisted ids and URL slugs are identity, so either collision refers
+ * to the same template rather than an additional category entry.
+ */
+function dedupeTemplatesByIdentity(templates: readonly RegisteredTemplate[]): RegisteredTemplate[] {
+  const ids = new Set<string>();
+  const slugs = new Set<string>();
+
+  return templates.filter((template) => {
+    if (ids.has(template.id) || slugs.has(template.slug)) return false;
+    ids.add(template.id);
+    slugs.add(template.slug);
+    return true;
+  });
+}
+
+/**
+ * Single source for Explorer, Preview, Editor and publish-time template reads.
+ * Derived once at module load from the original detailed configuration so no
+ * customer/default content is duplicated during this migration.
+ */
+export const TEMPLATE_REGISTRY: readonly RegisteredTemplate[] = Object.freeze(
+  dedupeTemplatesByIdentity(Object.values(CATEGORY_TEMPLATES).map(toRegisteredTemplate))
+);
+
+export const TEMPLATE_REGISTRY_BY_ID: Readonly<Record<string, RegisteredTemplate>> = Object.freeze(
+  Object.fromEntries(TEMPLATE_REGISTRY.map((template) => [template.id, template]))
+);
+
+export const TEMPLATE_REGISTRY_BY_SLUG: Readonly<Record<string, RegisteredTemplate>> = Object.freeze(
+  Object.fromEntries(TEMPLATE_REGISTRY.map((template) => [template.slug, template]))
+);
+
+export function getTemplateById(id: string | null | undefined): RegisteredTemplate | null {
+  return id ? TEMPLATE_REGISTRY_BY_ID[id] || null : null;
+}
+
+export function getTemplateBySlug(slug: string | null | undefined): RegisteredTemplate | null {
+  return slug ? TEMPLATE_REGISTRY_BY_SLUG[slug] || null : null;
+}
+
+export function getTemplateConfig(id: string | null | undefined): CategoryTemplateConfig | null {
+  return getTemplateById(id)?.config || null;
+}
+
+export function getTemplateContent(id: string | null | undefined): CategoryStandardData | null {
+  return getTemplateById(id)?.content || null;
+}
+
+/** Compatibility exports for the existing preview/content renderer. New code uses TEMPLATE_REGISTRY. */
+export { CATEGORY_STANDARDIZED_DATA } from './templateContent';
+export type { GalleryPhoto, Testimonial, CategoryStandardData } from './templateContent';

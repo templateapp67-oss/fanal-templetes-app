@@ -1,5 +1,5 @@
-import { BusinessTypeId } from './types';
-import { SALON_IMAGES } from './assets/images';
+import { BusinessTypeId } from '../types';
+import { SALON_IMAGES } from '../assets/images';
 
 export interface GalleryPhoto {
   id: string;

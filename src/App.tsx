@@ -25,12 +25,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
-import { CATEGORY_TEMPLATES } from './categoryTemplates';
+import { getTemplateById } from './data/templates';
 import { ACCENT_PALETTES, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
 import { applyGoogleFonts } from './utils/fontHelper';
 import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
+import { TemplateExplorer } from './components/TemplateExplorer';
 import { WebsiteEditor } from './components/WebsiteEditor';
 import { QuickWebsiteLaunch } from './components/QuickWebsiteLaunch';
 import { SalonWebsitePreview } from './components/SalonWebsitePreview';
@@ -43,13 +44,9 @@ import {
   clearAllLocalUserState,
   clearStoredSalonState,
   getBlankOnboardingProfile,
-  mergeTemplatePreservingUserData,
-  mergeTemplateServices,
-  mergeTemplateStylists,
   getSiteUrl,
   slugifySalonName,
   ONBOARDING_COMPLETED_KEY,
-  getStoredAuthenticatedProfile,
   setStoredAuthenticatedProfile,
   AuthenticatedProfileState,
 } from './lib/salonStore';
@@ -88,6 +85,9 @@ import {
   isSettingsProfilePath,
   isEditorPath,
   isOnboardingWebsitePath,
+  isTemplatesPath,
+  matchTemplateExplorerRoute,
+  templateExplorerPath,
   parseNextUrl,
   parseSiteParam,
   buildEditorUrl,
@@ -95,6 +95,7 @@ import {
   SETTINGS_PROFILE_PATH,
   ONBOARDING_WEBSITE_PATH,
   EDITOR_PATH,
+  TEMPLATES_PATH,
   MY_BOOKINGS_PATH,
   OWNER_DASHBOARD_PATH,
   STAFF_PERFORMANCE_PATH,
@@ -291,6 +292,7 @@ function fromRewardRow(row: any) {
 
 export default function App() {
   const [currentView, setCurrentViewState] = useState<AppView>('landing');
+  const [templatePreviewDevice, setTemplatePreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const { path, search, navigate } = usePathRoute();
   // Which booking `/customer/booking/:id` is showing. Lives in state as well as
   // the URL so a deep link and an in-app tap converge on the same screen.
@@ -334,12 +336,16 @@ export default function App() {
       setIsProfileSettingsOpen(true);
       return;
     }
+    if (isTemplatesPath(path)) {
+      setCurrentViewState((view) => (view === 'templates' ? view : 'templates'));
+      return;
+    }
     if (isEditorPath(path) || isOnboardingWebsitePath(path)) {
       setCurrentViewState((view) => (view === 'wizard' ? view : 'wizard'));
       return;
     }
     setCurrentViewState((view) =>
-      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission' || view === 'growthPartner'
+      view === 'bookings' || view === 'bookingDetail' || view === 'staffPerformance' || view === 'staffCommission' || view === 'growthPartner' || view === 'templates'
         ? 'landing'
         : view
     );
@@ -369,6 +375,8 @@ export default function App() {
         // /partner/login by the area's gate). The legacy /growth-partner
         // namespace keeps working for existing links.
         navigate(PARTNER_DASHBOARD_PATH);
+      } else if (view === 'templates') {
+        navigate(TEMPLATES_PATH);
       } else {
         navigate('/');
       }
@@ -1430,9 +1438,18 @@ export default function App() {
               themePreset: data.theme_preset || base.themePreset,
               themeAccentKey: data.theme_accent_key || base.themeAccentKey,
               customAccentColor: data.custom_accent_color || base.customAccentColor,
+              primaryColor: data.primary_color || (isDifferentUser ? undefined : base.primaryColor),
+              secondaryColor: data.secondary_color || (isDifferentUser ? undefined : base.secondaryColor),
+              backgroundColor: data.background_color || (isDifferentUser ? undefined : base.backgroundColor),
+              headingStyle: data.heading_style || (isDifferentUser ? undefined : base.headingStyle),
+              buttonStyle: data.button_style || (isDifferentUser ? undefined : base.buttonStyle),
+              borderRadius: data.border_radius || (isDifferentUser ? undefined : base.borderRadius),
+              appearance: data.appearance || (isDifferentUser ? undefined : base.appearance),
               customFaviconUrl: data.custom_favicon_url || data.custom_favicon || data.favicon_url || (isDifferentUser ? '' : base.customFaviconUrl),
               socialShareImageUrl: data.social_share_image_url || data.social_share_image || (isDifferentUser ? '' : base.socialShareImageUrl),
               seoKeywords: data.seo_keywords || (isDifferentUser ? '' : base.seoKeywords),
+              seoTitle: data.seo_title || (isDifferentUser ? '' : base.seoTitle),
+              seoDescription: data.seo_description || (isDifferentUser ? '' : base.seoDescription),
               headingFont: data.heading_font || (isDifferentUser ? '' : base.headingFont),
               bodyFont: data.body_font || (isDifferentUser ? '' : base.bodyFont),
             },
@@ -1719,6 +1736,12 @@ export default function App() {
     }): Promise<SalonPersistResult> => {
       const source = options?.source ?? 'manual';
       saveStep('start', { source, hasUser: !!salonStateRef.current?.user, mock: isMockSupabase });
+      // Anonymous browsers may explore templates, but are never allowed to
+      // create device drafts or write any owner/tenant state.
+      if (!isMockSupabase && !salonStateRef.current?.user?.id) {
+        if (source === 'manual') showToast('Sign in before saving or publishing your website.', 'error');
+        return { published: false, localDraft: false, failed: true };
+      }
       if (options?.explicitState) {
         salonStateRef.current = {
           ...salonStateRef.current,
@@ -2119,6 +2142,7 @@ export default function App() {
     if (isCustomerApp) return; // …and neither does anyone in the Customer App
     if (isOnboardingApp) return; // …or in the Onboarding App
     if (isPartnerPortal) return; // …or in the standalone Growth Partner portal
+    if (!isMockSupabase && !user?.id) return; // visitors can never create anonymous salon drafts
     if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
     setSaveStatus('pending');
     hasPendingSaveRef.current = true;
@@ -2206,25 +2230,24 @@ export default function App() {
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
     const pal = ACCENT_PALETTES[accentKey];
-    const primaryColor = profile.customAccentColor || (pal ? pal.primaryHex : '#0f172a');
-    const secondaryColor = pal ? pal.secondaryHex : '#334155';
+    const primaryColor = profile.primaryColor || profile.customAccentColor || (pal ? pal.primaryHex : '#0f172a');
+    const secondaryColor = profile.secondaryColor || (pal ? pal.secondaryHex : '#334155');
     applyPrimaryAccentCssVar(primaryColor, secondaryColor);
-  }, [profile.themeAccentKey, profile.customAccentColor]);
+    const root = document.documentElement;
+    root.style.setProperty('--brand-background', profile.backgroundColor || '#ffffff');
+    root.style.setProperty('--brand-radius', ({ none: '0px', small: '0.5rem', medium: '1rem', large: '1.5rem' }[profile.borderRadius || 'medium']));
+    root.dataset.salonAppearance = profile.appearance || 'light';
+  }, [profile.themeAccentKey, profile.customAccentColor, profile.primaryColor, profile.secondaryColor, profile.backgroundColor, profile.borderRadius, profile.appearance]);
 
   useEffect(() => {
     applyGoogleFonts(profile.headingFont, profile.bodyFont);
   }, [profile.headingFont, profile.bodyFont]);
 
   const handleSelectTemplate = (catId: BusinessTypeId) => {
-    const tmpl = CATEGORY_TEMPLATES[catId];
-    if (!tmpl) return;
-
-    const prevTmplId = previousTemplateIdRef.current;
-    const authProfile = getStoredAuthenticatedProfile();
-
-    setProfile((prev) => mergeTemplatePreservingUserData(prev, catId, prevTmplId, authProfile));
-    setServices((prev) => mergeTemplateServices(prev, catId, prevTmplId));
-    setStylists((prev) => mergeTemplateStylists(prev, catId, prevTmplId));
+    if (!getTemplateById(catId)) return;
+    // Selection is deliberately only an id/slug state change. The editor's
+    // existing profile, services, staff, media, address and booking draft are
+    // never replaced with template defaults.
     setSelectedTemplateId(catId);
     previousTemplateIdRef.current = catId;
   };
@@ -2379,6 +2402,69 @@ export default function App() {
   const publicProfile = (siteTenant?.profile || profile) as SalonProfile;
   const publicServices = (siteTenant?.services || services) as SalonService[];
   const publicStylists = (siteTenant?.stylists || stylists) as Stylist[];
+  const templateExplorerRoute = matchTemplateExplorerRoute(path, search);
+  const templatePreviewId = templateExplorerRoute.templateId && getTemplateById(templateExplorerRoute.templateId)
+    ? templateExplorerRoute.templateId as BusinessTypeId
+    : null;
+  const previewTemplate = templatePreviewId ? getTemplateById(templatePreviewId) : null;
+  const previewProfile: SalonProfile | null = previewTemplate ? {
+    ...createBlankSalonProfile(),
+    businessType: previewTemplate.id,
+    businessName: previewTemplate.name,
+    ownerName: previewTemplate.config.ownerName || 'Nexora Template Team',
+    ownerRole: previewTemplate.config.ownerRole,
+    phone: previewTemplate.defaultData.contact.phone || '9876543210',
+    whatsapp: previewTemplate.defaultData.contact.whatsapp || '9876543210',
+    tagline: previewTemplate.tagline,
+    about: previewTemplate.description,
+    ownerPhotoUrl: previewTemplate.config.ownerPhotoUrl,
+    coverImageUrl: previewTemplate.defaultData.hero.imageUrl,
+    themePreset: previewTemplate.config.themePreset,
+    address: previewTemplate.defaultData.contact.address,
+    city: previewTemplate.defaultData.contact.city,
+    postalCode: previewTemplate.config.defaultPostalCode,
+    state: previewTemplate.config.defaultCity.split(',').slice(1).join(',').trim(),
+    subdomain: `preview-${previewTemplate.slug}`,
+  } : null;
+  const openTemplateExplorer = (category = '', query = '') => {
+    if (!category && !query && user?.id) {
+      try {
+        const explorer = sessionStorage.getItem(`nexora:template:${user.id}:explorer`);
+        if (explorer?.startsWith('/templates')) {
+          navigate(explorer);
+          return;
+        }
+      } catch {}
+    }
+    navigate(templateExplorerPath({ category, query }));
+  };
+  const selectTemplateFromExplorer = (templateId: BusinessTypeId) => {
+    // This is intentionally the only template-explorer callback that mutates
+    // the owner's selected template. Search, chips, cards and preview are read-only.
+    handleSelectTemplate(templateId);
+    try {
+      const explorer = templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query });
+      if (user?.id) {
+        sessionStorage.setItem(`nexora:template:${user.id}:explorer`, explorer);
+        sessionStorage.setItem(`nexora:template:${user.id}:selection`, JSON.stringify({ templateId, returnTo: buildEditorUrl() }));
+      }
+    } catch {}
+    navigate(buildEditorUrl());
+  };
+  // A login/signup round-trip may remount the SPA. Resume only the benign,
+  // registry-validated template id and the editor route; no salon data is
+  // carried through browser storage.
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const pending = JSON.parse(sessionStorage.getItem(`nexora:template:${user.id}:selection`) || '{}');
+      if (!pending.templateId || !getTemplateById(pending.templateId)) return;
+      if (pending.returnTo !== buildEditorUrl()) return;
+      setSelectedTemplateId(pending.templateId as BusinessTypeId);
+      if (!isEditorPath(path)) navigate(buildEditorUrl());
+      sessionStorage.removeItem(`nexora:template:${user.id}:selection`);
+    } catch {}
+  }, [user?.id, path, navigate]);
   const openBookingAuth = (mode: 'login' | 'signup' = 'login') => {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
@@ -2569,7 +2655,6 @@ export default function App() {
         currentView={currentView}
         setCurrentView={setCurrentView}
         salonName={profile.businessName}
-        onBuildWebsiteClick={handleBuildWebsiteClick}
         user={user}
         setUser={setUser}
         onProfileSaved={(patch) => {
@@ -2589,24 +2674,51 @@ export default function App() {
       />
 
       {currentView === 'landing' && (
-        <LandingPage 
-          setCurrentView={(view) => {
-            if (view === 'preview') {
-              setWizardStartingStep(1);
-              setCurrentView('wizard');
-            } else {
-              setCurrentView(view);
-            }
-          }} 
-          onSelectCategory={handleSelectCategory}
+        <LandingPage onBrowseTemplates={openTemplateExplorer} selectedTemplateId={selectedTemplateId} />
+      )}
+
+      {currentView === 'templates' && templateExplorerRoute.preview && !templatePreviewId && (
+        <main className="grid min-h-dvh place-items-center bg-slate-50 px-6 pt-20"><div className="max-w-md rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200"><h1 className="text-2xl font-black">Template not found</h1><p className="mt-3 text-sm text-slate-600">This template link is invalid or no longer available.</p><button type="button" onClick={() => navigate('/templates')} className="mt-6 rounded-xl bg-[#C20E5A] px-4 py-3 text-sm font-black text-white">Back to Templates</button></div></main>
+      )}
+
+      {currentView === 'templates' && !templateExplorerRoute.preview && !templatePreviewId && (
+        <TemplateExplorer
+          category={templateExplorerRoute.category}
+          query={templateExplorerRoute.query}
+          selectedTemplateId={selectedTemplateId}
+          onHome={() => navigate('/')}
+          onFiltersChange={({ category, query }) => openTemplateExplorer(category === 'all' ? '' : category, query)}
+          onPreview={(templateId) => navigate(templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query, templateId, preview: true }))}
+          onSelect={selectTemplateFromExplorer}
         />
       )}
 
+      {currentView === 'templates' && templatePreviewId && (
+        <div className="min-h-dvh bg-slate-950 pt-20">
+          <div className="fixed left-3 right-3 top-24 z-[60] flex items-center justify-between gap-3 rounded-2xl bg-white/95 p-3 shadow-lg backdrop-blur sm:left-6 sm:right-6">
+            <button type="button" onClick={() => navigate(templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query }))} className="text-sm font-black text-slate-700 hover:text-[#C20E5A]">← Back to Explorer</button>
+            <div className="hidden min-w-0 items-center gap-2 text-sm sm:flex"><span className="truncate font-black">{previewTemplate?.name}</span><span className="rounded-full bg-rose-50 px-2 py-1 text-xs font-bold capitalize text-[#C20E5A]">{previewTemplate?.category}</span></div>
+            <div className="flex items-center rounded-xl bg-slate-100 p-1">{(['desktop', 'tablet', 'mobile'] as const).map((device) => <button key={device} type="button" onClick={() => setTemplatePreviewDevice(device)} className={`rounded-lg px-2 py-1.5 text-[10px] font-black capitalize sm:px-3 sm:text-xs ${templatePreviewDevice === device ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{device}</button>)}</div>
+            <button type="button" onClick={() => selectTemplateFromExplorer(templatePreviewId)} className="rounded-xl bg-[#C20E5A] px-4 py-2 text-sm font-black text-white hover:bg-[#A30B4A]">Select &amp; Customize This Template</button>
+          </div>
+          <SalonWebsitePreview
+            profile={previewProfile!}
+            services={previewTemplate!.defaultData.services}
+            stylists={previewTemplate!.defaultData.staff}
+            onAddAppointment={handleAddAppointment}
+            selectedTemplateId={templatePreviewId}
+            publicView
+            previewMode
+            forcedDeviceMode={templatePreviewDevice}
+          />
+        </div>
+      )}
+
       {currentView === 'wizard' && (
-        isOnboardingWebsitePath(path) ? <QuickWebsiteLaunch
+        !isMockSupabase && !user ? <main className="grid min-h-dvh place-items-center bg-slate-50 px-6 pt-20"><div className="max-w-md rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200"><h1 className="text-2xl font-black">Sign in to customize your website</h1><p className="mt-3 text-sm text-slate-600">You can preview every template without an account. Editing, saving and publishing are available only to your authenticated owner account.</p><button type="button" onClick={() => openBookingAuth('login')} className="mt-6 rounded-xl bg-[#059669] px-5 py-3 text-sm font-black text-white">Sign in to continue</button></div></main> : isOnboardingWebsitePath(path) ? <QuickWebsiteLaunch
           profile={profile}
           setProfile={setProfile}
-          onExploreTemplates={() => setCurrentView('landing')}
+          onExploreTemplates={() => openTemplateExplorer()}
           onOpenDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}
         /> : <WebsiteEditor
@@ -2618,7 +2730,7 @@ export default function App() {
           lastSavedAt={lastSavedAt}
           onComplete={handleWizardComplete}
           selectedTemplateId={selectedTemplateId}
-          onSelectTemplate={handleSelectTemplate}
+          onChangeTemplate={() => openTemplateExplorer()}
           siteUrl={getSiteUrl(profile)}
           onSave={handleSaveNow}
           onBackToDashboard={() => setCurrentView('dashboard')}
@@ -2643,6 +2755,7 @@ export default function App() {
           onSelectTemplate={handleSelectTemplate}
           selectedTemplateId={selectedTemplateId}
           setSelectedTemplateId={setSelectedTemplateId}
+          onOpenTemplateExplorer={() => openTemplateExplorer()}
           siteUrl={getSiteUrl(profile)}
           rebookRequest={rebookTarget}
         />

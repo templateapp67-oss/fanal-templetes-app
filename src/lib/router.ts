@@ -513,6 +513,50 @@ export function matchBookingDetailPath(pathname: string): string | null {
 export const SETTINGS_PROFILE_PATH = '/settings/profile';
 export const ONBOARDING_WEBSITE_PATH = '/onboarding/website';
 export const EDITOR_PATH = '/editor';
+export const TEMPLATES_PATH = '/templates';
+
+export interface TemplateExplorerRoute {
+  /** Template shown in the full-screen preview, if any. */
+  templateId: string | null;
+  preview: boolean;
+  /** Explorer filters stay in the URL so sharing/back/refresh are reliable. */
+  category: string;
+  query: string;
+}
+
+export function isTemplatesPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === TEMPLATES_PATH || path.startsWith(`${TEMPLATES_PATH}/`);
+}
+
+/** Parse only the two supported explorer screens; malformed paths fall back to the catalogue. */
+export function matchTemplateExplorerRoute(pathname: string, search = ''): TemplateExplorerRoute {
+  const path = normalizePath(pathname);
+  const parts = path.split('/').filter(Boolean);
+  const templateId = parts.length === 3 && parts[0] === 'templates' && parts[2] === 'preview'
+    ? decodeRouteSegment(parts[1])
+    : null;
+  let category = '';
+  let query = '';
+  try {
+    const params = new URLSearchParams(search || '');
+    category = (params.get('category') || '').trim().toLowerCase();
+    query = (params.get('q') || '').trim();
+  } catch {}
+  return { templateId, preview: Boolean(templateId), category, query };
+}
+
+/** Canonical, URL-encoded explorer path. Empty filters are deliberately omitted. */
+export function templateExplorerPath(options: { category?: string; query?: string; templateId?: string; preview?: boolean } = {}): string {
+  const params = new URLSearchParams();
+  if (options.category?.trim()) params.set('category', options.category.trim().toLowerCase());
+  if (options.query?.trim()) params.set('q', options.query.trim());
+  const base = options.preview && options.templateId
+    ? `${TEMPLATES_PATH}/${encodeURIComponent(options.templateId)}/preview`
+    : TEMPLATES_PATH;
+  const suffix = params.toString();
+  return suffix ? `${base}?${suffix}` : base;
+}
 
 export function isSettingsProfilePath(pathname: string): boolean {
   return normalizePath(pathname).toLowerCase().startsWith(SETTINGS_PROFILE_PATH);

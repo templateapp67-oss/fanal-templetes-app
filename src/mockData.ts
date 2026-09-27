@@ -1,11 +1,11 @@
 import { slugifySalonName } from './lib/salonStore';
 import { BusinessTypeOption, SalonProfile, SalonService, Stylist, Appointment, ClientRecord } from './types';
-import { CATEGORY_TEMPLATES, ALL_CATEGORY_OPTIONS } from './categoryTemplates';
+import { getTemplateConfig, ALL_CATEGORY_OPTIONS } from './data/templates';
 
 export const BUSINESS_TYPES: BusinessTypeOption[] = ALL_CATEGORY_OPTIONS;
 
 // Default hair salon template
-const defaultTemplate = CATEGORY_TEMPLATES.hair_salon;
+const defaultTemplate = getTemplateConfig('hair_salon')!;
 
 export const INITIAL_SALON_PROFILE: SalonProfile = {
   businessType: 'hair_salon',

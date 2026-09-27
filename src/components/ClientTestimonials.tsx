@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Star, X, Check, Info } from 'lucide-react';
-import { Testimonial } from '../templateData';
+import { Testimonial } from '../data/templates';
 
 interface TestimonialModalProps {
   isOpen: boolean;
