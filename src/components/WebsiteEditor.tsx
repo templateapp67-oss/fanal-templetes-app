@@ -37,7 +37,7 @@ import {
 import { CURATED_GOOGLE_FONTS } from '../utils/fontHelper';
 import { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { CATEGORY_TEMPLATES } from '../categoryTemplates';
-import { slugifySalonName } from '../lib/salonStore';
+import { getSiteUrl, slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
 import { SavePermissionNotice } from './SavePermissionNotice';
@@ -362,6 +362,39 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     } catch (err) {
       console.error('[WebsiteEditor] Unexpected error during manual save:', err);
       showToast?.('Save failed. Please try again.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleOpenSite = async () => {
+    if (isSaving || saveStatus === 'saving') return;
+    const liveUrl = getSiteUrl(profile);
+    // Open a tab synchronously so browsers do not block it while the cloud save
+    // commits. If the save fails, close the blank tab and keep the owner here.
+    const popup = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+    if (popup) {
+      try { popup.opener = null; } catch {}
+      try { popup.document.title = 'Opening your salon website…'; } catch {}
+    }
+
+    setIsSaving(true);
+    try {
+      const published = await onSave();
+      if (!published) {
+        try { popup?.close(); } catch {}
+        showToast?.('Publish did not complete, so the live site was not opened. Please retry after the save succeeds.', 'error');
+        return;
+      }
+      if (popup) {
+        popup.location.href = liveUrl;
+      } else if (typeof window !== 'undefined') {
+        window.open(liveUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      try { popup?.close(); } catch {}
+      console.error('[WebsiteEditor] Unexpected error opening live site:', err);
+      showToast?.('Could not open the live site. Please try again after saving.', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -1675,15 +1708,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copied ? 'Copied!' : 'Copy Link'}</span>
                 </button>
-                <a
-                  href={siteUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-colors"
+                <button
+                  type="button"
+                  onClick={handleOpenSite}
+                  disabled={isSaving || saveStatus === 'saving'}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-[11px] font-bold transition-colors"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Site</span>
-                </a>
+                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                  <span>{isSaving ? 'Saving…' : 'Open Site'}</span>
+                </button>
               </div>
             </div>
           </div>

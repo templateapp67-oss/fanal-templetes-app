@@ -12,6 +12,13 @@ export default function middleware(request: Request): Response | void {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
+  // Public white-label links are resolved by the app/API from `?site=slug`.
+  // Middleware must never strip that search param or send root public-site
+  // traffic to an owner fallback route.
+  if ((pathname === '/' || pathname === '') && url.searchParams.has('site')) {
+    return;
+  }
+
   // 1. PUBLIC AUTH SURFACES:
   // Never intercept or require active partner credentials on the login/signup routes.
   const isPublicPartnerAuth =
@@ -36,7 +43,7 @@ export default function middleware(request: Request): Response | void {
     if (!hasAuthCookie && !hasAuthHeader) {
       const loginUrl = new URL('/partner/login', request.url);
       if (pathname !== '/partner' && pathname !== '/partner/dashboard') {
-        loginUrl.searchParams.set('returnUrl', pathname);
+        loginUrl.searchParams.set('returnUrl', `${pathname}${url.search}`);
       }
       return Response.redirect(loginUrl.toString(), 307);
     }

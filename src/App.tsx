@@ -116,6 +116,7 @@ import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboar
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
 import { GrowthPartnerPage } from './components/GrowthPartnerPage';
 import { recordTemplateCompletion } from './lib/growthPartner';
+import { isTenantHost } from './lib/tenant';
 
 /** Deterministic-id namespaces for rows synced to `appointments`/`clients`. */
 export const APPOINTMENT_ID_NAMESPACE = 'nexora-appointment';
@@ -290,7 +291,7 @@ function fromRewardRow(row: any) {
 
 export default function App() {
   const [currentView, setCurrentViewState] = useState<AppView>('landing');
-  const { path, navigate } = usePathRoute();
+  const { path, search, navigate } = usePathRoute();
   // Which booking `/customer/booking/:id` is showing. Lives in state as well as
   // the URL so a deep link and an in-app tap converge on the same screen.
   const [bookingDetailId, setBookingDetailId] = useState<string | null>(null);
@@ -527,19 +528,49 @@ export default function App() {
     }
   };
 
+  const publicSiteRequest = React.useMemo(() => {
+    // `site` is a public-site slug only on the customer-facing root URL:
+    //   /?site=star-salon
+    // Owner routes also use `?site=...` for editor/site IDs, so never let this
+    // bootstrap hijack `/editor?site=...` and render a public 404 over the editor.
+    if (normalizePath(path) !== '/') return { requestedSite: '', isPublicParam: false };
+    try {
+      const params = new URLSearchParams(search || '');
+      return {
+        requestedSite: (params.get('site') || params.get('subdomain') || params.get('tenant') || '').trim(),
+        isPublicParam: params.get('view') === 'public' || params.has('public'),
+      };
+    } catch {
+      return { requestedSite: '', isPublicParam: false };
+    }
+  }, [path, search]);
+  const requestedPublicSite = publicSiteRequest.requestedSite;
+  const hasPublicSiteRequest = !!requestedPublicSite || publicSiteRequest.isPublicParam;
+  const isTenantHostRequest = React.useMemo(() => {
+    try {
+      return typeof window !== 'undefined' && isTenantHost(window.location.host || window.location.hostname);
+    } catch {
+      return false;
+    }
+  }, [path]);
+  const shouldBlockForSiteLookup = hasPublicSiteRequest || isTenantHostRequest;
+
   // -------------------------------------------------------------------------
   // WHITE-LABEL TENANT BOOTSTRAP
   // Supports:
   //   1. Subdomain / Host lookup (e.g. https://arts-by-uma.nexora.in)
-  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site---------------------------------------------------------
+  //   2. Vercel deployment query params (e.g. https://fanal-templetes-app.vercel.app/?site=star-salon)
+  // -------------------------------------------------------------------------
   const [siteTenant, setSiteTenant] = useState<{
     isTenant: boolean;
     found: boolean;
     subdomain?: string;
     customDomain?: string | null;
-    profile?: SalonProfile;
+    profile?: SalonProfile | null;
     services?: SalonService[];
     stylists?: Stylist[];
+    lookupFailed?: boolean;
+    error?: string | null;
   } | null>(null);
   const [siteLoading, setSiteLoading] = useState<boolean>(true);
   // Computed before the hooks below so the auto-save engine can skip saving
@@ -563,55 +594,75 @@ export default function App() {
   // it must be matched BEFORE the Onboarding App branch below.
   const isTemplateHandoff = isTemplateHandoffPath(path);
 
+  type SiteJsonResult =
+    | { ok: true; data: any }
+    | { ok: false; status?: number; error: string; data?: any };
+
   /**
    * Fetch a same-origin JSON API route with exact diagnostics.
    *
-   * Returns the parsed JSON on success, or `null` after logging the failure
-   * to the console for HTTP errors (404/500…), non-JSON bodies (an Express /
-   * Vercel HTML error page or the SPA fallback) and network failures. Callers
-   * can therefore distinguish "the server answered: not found" from "the
-   * request itself failed" instead of silently guessing.
+   * The return value intentionally distinguishes an explicit "not found" JSON
+   * response (`ok: true`, `data.found === false`) from a transport/server
+   * failure (`ok: false`). A public `?site=slug` URL must not fall through to
+   * Explore Templates while this lookup is pending, nor show a 404 when the DB
+   * check did not actually complete.
    */
-  const fetchSiteJson = useCallback(async (url: string): Promise<any | null> => {
+  const fetchSiteJson = useCallback(async (url: string): Promise<SiteJsonResult> => {
     try {
       const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      const contentType = res.headers.get('content-type') || '';
+      const readJsonOrText = async (): Promise<{ parsed: any; text: string }> => {
+        if (contentType.includes('application/json')) {
+          try {
+            const parsed = await res.json();
+            return { parsed, text: JSON.stringify(parsed).slice(0, 400) };
+          } catch {
+            return { parsed: null, text: '' };
+          }
+        }
+        const text = await res.text().catch(() => '');
+        return { parsed: null, text };
+      };
+
       if (!res.ok) {
-        const body = await res.text().catch(() => '');
+        const { parsed, text } = await readJsonOrText();
+        const message = parsed?.error || parsed?.message || `HTTP ${res.status} ${res.statusText}`;
         console.error(
           `[Site bootstrap] GET ${url} failed → HTTP ${res.status} ${res.statusText}.`,
-          body ? `Body (first 400 chars): ${body.slice(0, 400)}` : '(empty body)'
+          text ? `Body (first 400 chars): ${text.slice(0, 400)}` : '(empty body)'
         );
-        return null;
+        return { ok: false, status: res.status, error: message, data: parsed };
       }
-      const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const body = await res.text().catch(() => '');
         console.error(
           `[Site bootstrap] GET ${url} returned "${contentType}" instead of application/json — the API route may not be deployed.`,
           body ? `Body (first 400 chars): ${body.slice(0, 400)}` : '(empty body)'
         );
-        return null;
+        return { ok: false, status: res.status, error: 'The site API did not return JSON.' };
       }
-      return await res.json();
+      return { ok: true, data: await res.json() };
     } catch (err) {
-      console.error(`[Site bootstrap] GET ${url} threw:`, describeError(err));
-      return null;
+      const message = describeError(err);
+      console.error(`[Site bootstrap] GET ${url} threw:`, message);
+      return { ok: false, error: message };
     }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const requestedSite = params?.get('site') || params?.get('subdomain') || params?.get('tenant');
-    const isPublicParam = params?.get('view') === 'public' || params?.has('public');
+    const requestedSite = requestedPublicSite.trim();
+    const isPublicParam = publicSiteRequest.isPublicParam;
+    setSiteLoading(true);
 
     (async () => {
       try {
         if (requestedSite) {
-          const data = await fetchSiteJson(`/api/site/${encodeURIComponent(requestedSite)}`);
+          const result = await fetchSiteJson(`/api/site?site=${encodeURIComponent(requestedSite)}`);
           if (cancelled) return;
 
-          if (data && data.found && data.salon) {
+          if (result.ok && result.data?.found && result.data?.salon) {
+            const data = result.data;
             setSiteTenant({
               isTenant: true,
               found: true,
@@ -627,15 +678,26 @@ export default function App() {
           // A missing published site is NOT this browser's current editor.
           // Never substitute a signed-in owner's private state into a public URL.
           if (!isMockSupabase) {
-            setSiteTenant({ isTenant: true, found: false, subdomain: requestedSite,
-              customDomain: null, profile: null, services: [], stylists: [] });
+            setSiteTenant({
+              isTenant: true,
+              found: false,
+              subdomain: requestedSite,
+              customDomain: null,
+              profile: null,
+              services: [],
+              stylists: [],
+              lookupFailed: !result.ok,
+              error: result.ok
+                ? `No published salon site was found for "${requestedSite}".`
+                : result.error || 'The site lookup failed.',
+            });
             return;
           }
 
           // Mock/demo mode (no Supabase configured) or an unreachable API:
           // fall back to the current local profile so the preview flow keeps
           // working; the fetch failure itself was logged above by fetchSiteJson.
-          if (data === null) {
+          if (!result.ok) {
             console.warn(
               `[Site bootstrap] API unreachable for "${requestedSite}" — previewing from local state.`
             );
@@ -653,9 +715,10 @@ export default function App() {
           return;
         }
 
-        const data = await fetchSiteJson('/api/site');
+        const result = await fetchSiteJson('/api/site');
         if (cancelled) return;
-        if (data && data.isTenant) {
+        const data = result.ok ? result.data : result.data;
+        if (result.ok && data?.isTenant) {
           setSiteTenant({
             isTenant: true,
             found: !!data.found,
@@ -664,6 +727,18 @@ export default function App() {
             profile: data.salon?.profile || profile,
             services: data.salon?.services || services,
             stylists: data.salon?.stylists || stylists,
+          });
+        } else if (!result.ok && data?.isTenant) {
+          setSiteTenant({
+            isTenant: true,
+            found: false,
+            subdomain: data.tenant?.subdomain,
+            customDomain: data.tenant?.customDomain,
+            profile: null,
+            services: [],
+            stylists: [],
+            lookupFailed: true,
+            error: result.error || data?.error || 'The site lookup failed.',
           });
         } else if (isPublicParam) {
           setSiteTenant({
@@ -682,8 +757,17 @@ export default function App() {
         // A failed public lookup must never render this browser's editor data.
         console.error('Could not resolve site tenant:', err);
         if (requestedSite || isPublicParam) {
-          setSiteTenant({ isTenant: true, found: false, subdomain: requestedSite || '',
-            customDomain: null, profile: null, services: [], stylists: [] });
+          setSiteTenant({
+            isTenant: true,
+            found: false,
+            subdomain: requestedSite || '',
+            customDomain: null,
+            profile: null,
+            services: [],
+            stylists: [],
+            lookupFailed: true,
+            error: describeError(err),
+          });
         } else {
           setSiteTenant({ isTenant: false, found: false });
         }
@@ -696,7 +780,7 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchSiteJson, isMockSupabase]);
+  }, [fetchSiteJson, isMockSupabase, requestedPublicSite, publicSiteRequest.isPublicParam]);
 
   // Global save/update toast so the owner always knows their work is secure.
   const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
@@ -883,8 +967,7 @@ export default function App() {
     // Do not turn a visit to Home into an onboarding/editor redirect. Login
     // callbacks that intentionally want the old resume behaviour can opt in
     // with `/?resume=1`.
-    const search = typeof window !== 'undefined' ? window.location.search : '';
-    if (new URLSearchParams(search).get('resume') !== '1') return;
+    if (new URLSearchParams(search || '').get('resume') !== '1') return;
     const ownerId = user.id;
     // Claimed before the read so a second run cannot race the first.
     entryRoutedForRef.current = ownerId;
@@ -907,7 +990,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, authStatus, path, setCurrentView]);
+  }, [user?.id, authStatus, path, search, setCurrentView]);
 
   /**
    * Comprehensive diagnostic suite that runs select, insert, and update checks
@@ -1060,7 +1143,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user?.id || authStatus !== 'ready' || isMockSupabase) return;
-    if (isPublicSite || isCustomerApp || isPartnerPortal) return;
+    if (isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isPartnerPortal) return;
 
     const currentPathNorm = normalizePath(path);
     const isProfileRoute = isSettingsProfilePath(path);
@@ -1093,8 +1176,7 @@ export default function App() {
 
     // If profile was incomplete and is now complete:
     if (isProfileRoute && completeness.isComplete) {
-      const searchParams = typeof window !== 'undefined' ? window.location.search : '';
-      const nextFromUrl = parseNextUrl(searchParams) || targetNextPath || '/editor';
+      const nextFromUrl = parseNextUrl(search || '') || targetNextPath || '/editor';
       console.info('[Middleware Guard] Profile complete -> proceeding to next destination:', nextFromUrl);
       setIsProfileSettingsOpen(false);
       navigate(nextFromUrl);
@@ -1122,8 +1204,7 @@ export default function App() {
 
       // Case B: (Target = /editor?site=123 & Ownership Valid) -> /editor?site=123
       if (isEditorRoute) {
-        const searchParams = typeof window !== 'undefined' ? window.location.search : '';
-        const requestedSiteId = parseSiteParam(searchParams);
+        const requestedSiteId = parseSiteParam(search || '');
 
         if (requestedSiteId) {
           const { isValid, salon } = await validateSiteOwnership(supabase, user.id, requestedSiteId);
@@ -1164,8 +1245,10 @@ export default function App() {
     user?.id,
     authStatus,
     path,
+    search,
     profile,
     isPublicSite,
+    shouldBlockForSiteLookup,
     isCustomerApp,
     isPartnerPortal,
     navigate,
@@ -2335,9 +2418,28 @@ export default function App() {
   // -------------------------------------------------------------------------
   // PUBLIC LIVE SITE RENDER
   // -------------------------------------------------------------------------
+  if (shouldBlockForSiteLookup && siteLoading) {
+    return (
+      <main className="min-h-dvh flex items-center justify-center bg-slate-50 p-6" role="status" aria-live="polite">
+        <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-pink-600" />
+          <h1 className="text-lg font-bold text-slate-950">Loading salon website…</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            {requestedPublicSite ? `Checking ${requestedPublicSite} before opening the live site.` : 'Preparing the public preview.'}
+          </p>
+        </div>
+      </main>
+    );
+  }
   if (siteTenant?.isTenant && !siteTenant.found && !siteLoading && !isMockSupabase) {
+    const message = siteTenant.lookupFailed
+      ? siteTenant.error || 'We could not load this website right now. Please try again.'
+      : siteTenant.error || 'This website is unavailable. Check the address or try again later.';
     return <main className="min-h-dvh flex items-center justify-center bg-slate-50 p-6" role="alert">
-      <p className="text-slate-800">This website is unavailable. Check the address or try again later.</p>
+      <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <h1 className="text-lg font-bold text-slate-950">Website unavailable</h1>
+        <p className="mt-2 text-sm text-slate-700">{message}</p>
+      </div>
     </main>;
   }
   if (isPublicSite) {

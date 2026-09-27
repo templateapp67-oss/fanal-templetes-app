@@ -19,6 +19,7 @@ function database(answer: (call: Call) => any) {
       const q: any = {
         select(fields: any) { call.fields = fields; return q; },
         eq(k: string,v: any) { call.filters[k] = v; return q; },
+        ilike(k: string,v: any) { call.filters[k] = v; return q; },
         in(k: string,v: any) { call.filters[k] = v; return q; },
         or(expression: string) { call.filters.or = expression; return q; },
         is(k: string,v: any) { call.filters[k] = v; return q; },
@@ -51,6 +52,21 @@ test('live empty catalogue stays empty and public staff query excludes private e
   assert.doesNotMatch(staff.fields, /commission|access_role|phone/);
   const service = db.calls.find(c=>c.table==='services')!;
   assert.equal(service.filters.is_active, true); assert.equal(service.filters.salon_id, salonId);
+});
+
+test('public lookup trims and lowercases ?site slug and honors freshly edited editor subdomain', async () => {
+  const db = database(c => {
+    if (c.table === 'salons' && c.filters.slug) return result(null);
+    if (c.table === 'salons' && c.filters['data->editor_profile->>subdomain']) {
+      return result({ id: salonId, name: 'Star Salon', slug: 'hellosalon', data: { editor_profile: { subdomain: 'star-salon' } } });
+    }
+    return result([]);
+  });
+  const response = await lookupSalon({ db: db as any, isMockSupabase: false, mockSalons: {} }, '  Star-Salon  ');
+  assert.equal(response.found, true);
+  assert.equal(response.salon.profile.subdomain, 'star-salon');
+  assert.equal(db.calls.find(c => c.table === 'salons' && c.filters.slug)?.filters.slug, 'star-salon');
+  assert.equal(db.calls.find(c => c.table === 'salons' && c.filters['data->editor_profile->>subdomain'])?.filters['data->editor_profile->>subdomain'], 'star-salon');
 });
 test('canonical salon contact overrides stale editor snapshot without supplying invented contact', () => {
   const profile = mapProfileRow({ id: salonId, name: 'Mine', city: 'Jaipur', area: 'Jhotwara', phone: 'new', data: { editor_profile: { city: 'Old', phone: 'old' } } });

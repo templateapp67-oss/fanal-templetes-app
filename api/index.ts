@@ -51,7 +51,7 @@ import {
   ApiUnavailableError,
   ApiInvalidStateError,
 } from "../server/safeError.js";
-import { lookupSalon } from "../server/siteLookup.js";
+import { lookupSalon, normalizeSiteIdentifier } from "../server/siteLookup.js";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
@@ -186,6 +186,35 @@ app.get(
 );
 
 app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+  const querySite = normalizeSiteIdentifier(req.query?.site || req.query?.subdomain || req.query?.tenant || '');
+  if (querySite) {
+    const { found, salon, error } = await lookupSalon(
+      { db, isMockSupabase, mockSalons },
+      querySite,
+      false,
+      res.locals?.requestDeadlineAt
+    );
+    if (error) {
+      const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
+      return res.status(safe.status).json({
+        success: false,
+        found: false,
+        isTenant: true,
+        tenant: { subdomain: querySite, customDomain: null },
+        code: safe.code,
+        error: safe.message,
+        ...(safe.retryable ? { retryable: true } : {}),
+      });
+    }
+    return res.json({
+      found,
+      isTenant: true,
+      tenant: { subdomain: querySite, customDomain: null },
+      salon: salon || null,
+      baseDomain: BASE_DOMAIN,
+    });
+  }
+
   const { host, tenant, salon, error } = await resolveSalonFromHost(req, res.locals?.requestDeadlineAt);
   if (error) {
     // DB failure while resolving the tenant — JSON 500 (never "not found"),
@@ -214,7 +243,7 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
 }));
 
 app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
-  const sub = String(req.params.subdomain || '').toLowerCase();
+  const sub = normalizeSiteIdentifier(req.params.subdomain || '');
   const deadlineAt = res.locals?.requestDeadlineAt;
   try {
     const { found, salon, error } = await lookupSalon(

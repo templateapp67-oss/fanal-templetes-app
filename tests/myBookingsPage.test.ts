@@ -219,6 +219,8 @@ test('other paths do not match the bookings route', () => {
 
 test('normalizePath strips trailing slashes but keeps the root', () => {
   assert.equal(normalizePath('/customer/bookings/'), '/customer/bookings');
+  assert.equal(normalizePath('/?site=star-salon'), '/');
+  assert.equal(normalizePath('/editor?site=abc'), '/editor');
   assert.equal(normalizePath('/'), '/');
   assert.equal(normalizePath(''), '/');
 });
