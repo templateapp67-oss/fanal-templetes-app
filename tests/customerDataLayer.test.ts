@@ -608,7 +608,9 @@ test('the customer app is mounted without disturbing the owner screens', () => {
   // The customer surface must silence the owner’s auto-save engine: a signed-out
   // visitor must never write the default profile over a real salon's row.
   assert.match(app, /if \(isCustomerApp\) return;/);
-  assert.match(app, /isMockSupabase \|\| isPublicSite \|\| isCustomerApp/);
+  // A public salon URL silences it for the whole lookup window too, not only
+  // once the tenant has resolved (`shouldBlockForSiteLookup`).
+  assert.match(app, /isMockSupabase \|\| isPublicSite \|\| shouldBlockForSiteLookup \|\| isCustomerApp/);
   const ownerModal = readFileSync(join(process.cwd(), 'src/components/BookingModal.tsx'), 'utf8');
   assert.equal(ownerModal.includes("from '../mockData'"), false, 'the booking widget must not fall back to a fictional salon');
 });

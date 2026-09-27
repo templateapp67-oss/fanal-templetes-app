@@ -52,6 +52,7 @@ import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
 import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
 import { InteractiveMapSetup } from './InteractiveMapSetup';
+import { GoogleMapsView } from './GoogleMapsView';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 import { TestimonialModal } from './ClientTestimonials';
 import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
@@ -197,6 +198,81 @@ const SalonOfferCard: React.FC<SalonOfferCardProps> = ({ offer, isDarkCanvas }) 
 };
 
 type DeviceMode = 'desktop' | 'tablet' | 'mobile';
+
+/**
+ * READ-ONLY location card for the public (customer) site.
+ *
+ * The owner editor's `InteractiveMapSetup` used to be rendered here for
+ * everybody: visitors were shown a "Salon Address & Localization Setup" form
+ * with address inputs, a "Use Current Location" button and — because that
+ * component falls back to a hard-coded Mumbai address — a salon address the
+ * owner never entered. Customers only ever need to SEE the location and get
+ * directions, so the public site renders this instead.
+ */
+const PublicLocationMap: React.FC<{
+  profile: SalonProfile;
+  googleMapsUrl: string;
+  googleDirectionsUrl: string;
+  accent: string;
+}> = ({ profile, googleMapsUrl, googleDirectionsUrl, accent }) => {
+  const latitude = Number(profile.latitude);
+  const longitude = Number(profile.longitude);
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude) && (latitude !== 0 || longitude !== 0);
+  const addressLine = [profile.address, profile.areaLocality, profile.city, profile.postalCode, profile.state]
+    .filter((part) => String(part ?? '').trim())
+    .join(', ');
+
+  if (hasCoordinates) {
+    return (
+      <div className="rounded-xl overflow-hidden">
+        <GoogleMapsView
+          latitude={latitude}
+          longitude={longitude}
+          title={profile.businessName || 'Salon'}
+          address={addressLine}
+          interactive={false}
+          height="360px"
+          accentColor={accent}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 rounded-xl bg-slate-50 p-6 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+        <MapPin className="h-5 w-5" />
+      </div>
+      <div>
+        <div className="text-sm font-bold text-slate-900">{profile.businessName || 'Salon'}</div>
+        <div className="mt-1 text-xs text-slate-600">
+          {addressLine || 'Address shared on request — call the studio for directions.'}
+        </div>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+        <a
+          href={googleMapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-lg px-3 py-2 text-xs font-bold text-white"
+          style={{ backgroundColor: accent }}
+          title="View on Google Maps"
+        >
+          View on Google Maps
+        </a>
+        <a
+          href={googleDirectionsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+          title="Get directions"
+        >
+          Get Directions
+        </a>
+      </div>
+    </div>
+  );
+};
 
 export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   profile,
@@ -2728,12 +2804,21 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
               </div>
 
-              {/* Map Preview Placeholder Card */}
+              {/* Map card — read-only for visitors, editable in the owner editor. */}
               <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 min-h-[380px] shadow-xs">
-                <InteractiveMapSetup 
-                  profile={activeProfile}
-                  setProfile={setProfile || (() => {})}
-                />
+                {publicView ? (
+                  <PublicLocationMap
+                    profile={activeProfile}
+                    googleMapsUrl={googleMapsUrl}
+                    googleDirectionsUrl={googleDirectionsUrl}
+                    accent={activeAccent.primaryHex}
+                  />
+                ) : (
+                  <InteractiveMapSetup 
+                    profile={activeProfile}
+                    setProfile={setProfile || (() => {})}
+                  />
+                )}
               </div>
             </div>
           </section>
