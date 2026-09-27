@@ -76,11 +76,20 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
         if (active) {
           setForm(f => ({
             ...f,
+            ownerName: data?.ownerName || f.ownerName || '',
+            whatsapp: data?.whatsapp || f.whatsapp || '',
+            postalCode: data?.postalCode || f.postalCode || '',
+            city: data?.city || f.city || '',
+            areaLocality: data?.area || f.areaLocality || '',
+            phone: data?.phone || f.phone || '',
+            email: data?.email || f.email || '',
+            address: data?.address || f.address || '',
+            state: data?.state || f.state || '',
+            landmark: data?.landmark || f.landmark || '',
             dob: data?.dob || f.dob || '',
-            areaLocality: profile.areaLocality ?? data?.area ?? f.areaLocality ?? '',
-            notifications: data?.notifications === true,
+            notifications: typeof data?.notifications === 'boolean' ? data.notifications : f.notifications,
           }));
-          if (data?.avatar && !avatar) {
+          if (data?.avatar) {
             setAvatar(data.avatar);
           }
         }
@@ -163,6 +172,10 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
       }
 
       photo = photo || avatar || DEFAULT_AVATAR_LOGO;
+      // The permanent Nexora asset is a UI fallback, not a user-uploaded
+      // avatar. Persisting its relative URL trips server-side image URL
+      // validation and used to make an otherwise valid profile look saved.
+      const photoToPersist = photo === DEFAULT_AVATAR_LOGO ? null : photo;
 
       const { notifications, ...shared } = form;
       const patch: Partial<SalonProfile> = {
@@ -172,25 +185,28 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
         city,
         areaLocality,
         postalCode: cleanPostal,
-        ownerPhotoUrl: photo,
+        ownerPhotoUrl: photoToPersist || '',
         dob,
         whatsappNotificationsEnabled: notifications,
       };
 
-      // Persist to Supabase RPC if authenticated
+      // Persist through the one canonical profile RPC. Do not swallow an RPC
+      // failure: closing this modal after a failed write is why users had to
+      // fill the same profile again after refresh.
       if (currentUser && !isMockSupabase) {
-        try {
-          await queueOwnerWrite(async () => {
-            const result = await supabase.rpc('save_partner_profile_details', {
-              p_details: { ...patch, subdomain: profile.subdomain, dob, notifications }
-            });
-            if (result.error) {
-              console.warn('[PartnerProfileModal] RPC save_partner_profile_details notice:', result.error.message);
-            }
+        await queueOwnerWrite(async () => {
+          const result = await supabase.rpc('save_my_profile_settings', {
+            p_patch: {
+              ownerName, phone: patch.phone || null, whatsapp: patch.whatsapp || null,
+              dob: patch.dob || null, postalCode: patch.postalCode || null,
+              city: patch.city || null, areaLocality: patch.areaLocality || null,
+              email: patch.email || null, address: patch.address || null,
+              state: patch.state || null, landmark: patch.landmark || null,
+              ownerPhotoUrl: photoToPersist, whatsappNotificationsEnabled: notifications,
+            },
           });
-        } catch (rpcErr: any) {
-          console.warn('[PartnerProfileModal] Profile RPC write notice:', rpcErr?.message || rpcErr);
-        }
+          if (result.error) throw new Error(result.error.message || 'Could not save your profile.');
+        });
       }
 
       uploaded = null;
