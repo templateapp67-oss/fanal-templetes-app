@@ -8,6 +8,8 @@ test('quick launch redirects template browsing to the existing catalogue', async
   assert.match(source, /About 30 minutes/);
   assert.match(source, /Explore Custom Templates/);
   assert.match(source, /Explore existing templates/);
+  assert.match(source, /Go to Website Editor/);
+  assert.match(source, /selectedTemplateId/);
 });
 
 test('successful owner authentication opens quick website launch', async () => {
@@ -15,4 +17,5 @@ test('successful owner authentication opens quick website launch', async () => {
   assert.match(source, /navigate\(ONBOARDING_WEBSITE_PATH\)/);
   assert.match(source, /Complete your quick website setup to go live/);
   assert.match(source, /onExploreTemplates/);
+  assert.match(source, /onOpenEditor/);
 });
