@@ -84,6 +84,7 @@ import {
   isPartnerPortalPath,
   isSettingsProfilePath,
   isEditorPath,
+  editorTemplateId,
   isOnboardingWebsitePath,
   isTemplatesPath,
   matchTemplateExplorerRoute,
@@ -1243,7 +1244,9 @@ export default function App() {
       // A missing salon matters only after the owner explicitly asks to open
       // the editor. Do not infer that Home (`/`) or Dashboard (`/dashboard`)
       // should become the Explore Templates route.
-      if (shouldRedirectEditorToWebsiteOnboarding(path, count)) {
+      const selectedEditorTemplate = editorTemplateId(search || '');
+      const hasSelectedEditorTemplate = Boolean(selectedEditorTemplate && getTemplateById(selectedEditorTemplate));
+      if (shouldRedirectEditorToWebsiteOnboarding(path, count, hasSelectedEditorTemplate)) {
         if (!isOnboardingRoute && currentPathNorm !== '/wizard') {
           console.info('[Owner Editor Guard] 0 sites found -> routing to /onboarding/website');
           navigate(ONBOARDING_WEBSITE_PATH);
@@ -2403,6 +2406,7 @@ export default function App() {
   const publicServices = (siteTenant?.services || services) as SalonService[];
   const publicStylists = (siteTenant?.stylists || stylists) as Stylist[];
   const templateExplorerRoute = matchTemplateExplorerRoute(path, search);
+  const templateIdFromEditorRoute = editorTemplateId(search);
   const templatePreviewId = templateExplorerRoute.templateId && getTemplateById(templateExplorerRoute.templateId)
     ? templateExplorerRoute.templateId as BusinessTypeId
     : null;
@@ -2442,14 +2446,15 @@ export default function App() {
     // This is intentionally the only template-explorer callback that mutates
     // the owner's selected template. Search, chips, cards and preview are read-only.
     handleSelectTemplate(templateId);
+    const editorUrl = buildEditorUrl(null, templateId);
     try {
       const explorer = templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query });
       if (user?.id) {
         sessionStorage.setItem(`nexora:template:${user.id}:explorer`, explorer);
-        sessionStorage.setItem(`nexora:template:${user.id}:selection`, JSON.stringify({ templateId, returnTo: buildEditorUrl() }));
+        sessionStorage.setItem(`nexora:template:${user.id}:selection`, JSON.stringify({ templateId, returnTo: editorUrl }));
       }
     } catch {}
-    navigate(buildEditorUrl());
+    navigate(editorUrl);
   };
   // A login/signup round-trip may remount the SPA. Resume only the benign,
   // registry-validated template id and the editor route; no salon data is
@@ -2459,12 +2464,19 @@ export default function App() {
     try {
       const pending = JSON.parse(sessionStorage.getItem(`nexora:template:${user.id}:selection`) || '{}');
       if (!pending.templateId || !getTemplateById(pending.templateId)) return;
-      if (pending.returnTo !== buildEditorUrl()) return;
+      if (pending.returnTo !== buildEditorUrl(null, pending.templateId)) return;
       setSelectedTemplateId(pending.templateId as BusinessTypeId);
-      if (!isEditorPath(path)) navigate(buildEditorUrl());
+      if (!isEditorPath(path)) navigate(buildEditorUrl(null, pending.templateId));
       sessionStorage.removeItem(`nexora:template:${user.id}:selection`);
     } catch {}
   }, [user?.id, path, navigate]);
+  // The URL keeps a pre-login selection alive without carrying any salon data.
+  // It also makes a refresh on the editor deterministic for a first-time owner.
+  useEffect(() => {
+    if (!isEditorPath(path) || !templateIdFromEditorRoute || !getTemplateById(templateIdFromEditorRoute)) return;
+    setSelectedTemplateId(templateIdFromEditorRoute as BusinessTypeId);
+    previousTemplateIdRef.current = templateIdFromEditorRoute as BusinessTypeId;
+  }, [path, templateIdFromEditorRoute]);
   const openBookingAuth = (mode: 'login' | 'signup' = 'login') => {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
@@ -2879,8 +2891,16 @@ export default function App() {
           setUser(u);
           setCurrentViewState('wizard');
           setWizardStartingStep(1);
-          navigate(ONBOARDING_WEBSITE_PATH);
-          showToast('Welcome! Complete your quick website setup to go live.');
+          const chosenTemplate = editorTemplateId(search);
+          if (chosenTemplate && getTemplateById(chosenTemplate)) {
+            setSelectedTemplateId(chosenTemplate as BusinessTypeId);
+            previousTemplateIdRef.current = chosenTemplate as BusinessTypeId;
+            navigate(buildEditorUrl(null, chosenTemplate));
+            showToast('Your selected design is ready to customize.');
+          } else {
+            navigate(ONBOARDING_WEBSITE_PATH);
+            showToast('Welcome! Complete your quick website setup to go live.');
+          }
         }}
       />
 

@@ -1,4 +1,4 @@
-import { isEditorPath, isOnboardingWebsitePath, normalizePath } from './router';
+import { isEditorPath, normalizePath } from './router';
 
 /**
  * Owner setup is a guard for the editor, not for general app navigation.
@@ -6,8 +6,7 @@ import { isEditorPath, isOnboardingWebsitePath, normalizePath } from './router';
  * while the first salon is still being created.
  */
 export function requiresOwnerEditorSetup(pathname: string): boolean {
-  const norm = normalizePath(pathname).toLowerCase();
-  return isEditorPath(norm) || isOnboardingWebsitePath(norm) || norm === '/wizard';
+  return isEditorPath(pathname);
 }
 
 /**
@@ -16,7 +15,11 @@ export function requiresOwnerEditorSetup(pathname: string): boolean {
  */
 export function shouldRedirectEditorToWebsiteOnboarding(
   pathname: string,
-  ownedSalonCount: number
+  ownedSalonCount: number,
+  hasSelectedTemplate = false
 ): boolean {
-  return requiresOwnerEditorSetup(normalizePath(pathname)) && ownedSalonCount === 0;
+  // Selecting a template is an explicit request to customise it. A new owner
+  // legitimately has no salon record yet, so sending that request to the old
+  // profile/setup screen loses the selected design and creates a loop.
+  return requiresOwnerEditorSetup(normalizePath(pathname)) && ownedSalonCount === 0 && !hasSelectedTemplate;
 }

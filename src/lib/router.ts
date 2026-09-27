@@ -18,13 +18,6 @@ export const MY_BOOKINGS_PATH = '/customer/bookings';
 export const BOOKING_DETAIL_PREFIX = '/customer/booking';
 export const OWNER_DASHBOARD_PATH = '/owner/dashboard';
 
-export const TEMPLATES_PATH = '/templates';
-
-export function isTemplatesPath(pathname: string): boolean {
-  const path = normalizePath(pathname).toLowerCase();
-  return path === TEMPLATES_PATH || path === '/template' || path === '/explorer';
-}
-
 export function isOwnerDashboardPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   return path === OWNER_DASHBOARD_PATH || path === '/dashboard' || path === '/owner';
@@ -192,7 +185,6 @@ export type GrowthPartnerSection =
   | 'dashboard'
   | 'referrals'
   | 'customers'
-  | 'referral-history'
   | 'performance'
   | 'commission'
   | 'profile';
@@ -201,7 +193,6 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'dashboard',
   'referrals',
   'customers',
-  'referral-history',
   'performance',
   'commission',
   'profile',
@@ -291,7 +282,6 @@ export type PartnerPortalSection =
   | 'referral-code'
   | 'referred-users'
   | 'referral-status'
-  | 'referral-history'
   | 'profile'
   | 'account-settings'
   | 'diagnostics'
@@ -312,7 +302,6 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
-  'referral-history',
   'rewards',
   'performance',
   'commission',
@@ -334,7 +323,6 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
-  'referral-history',
   'rewards',
   'commission',
   'earnings',
@@ -355,7 +343,6 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   'referral-code': `${PARTNER_PORTAL_ROOT}/referral`,
   'referred-users': `${PARTNER_PORTAL_ROOT}/referrals`,
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
-  'referral-history': `${PARTNER_PORTAL_ROOT}/referral-history`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
   'account-settings': `${PARTNER_PORTAL_ROOT}/account-settings`,
   diagnostics: `${PARTNER_PORTAL_ROOT}/diagnostics`,
@@ -388,8 +375,6 @@ const PARTNER_PORTAL_ALIASES: Record<string, PartnerPortalSection> = {
   referral: 'referral-code',
   referrals: 'referred-users',
   customers: 'referral-status',
-  history: 'referral-history',
-  'referral-history': 'referral-history',
   marketing: 'marketing-materials',
   levels: 'partner-levels',
   leaderboard: 'leaderboards',
@@ -606,8 +591,26 @@ export function parseSiteParam(search: string): string | null {
   }
 }
 
-export function buildEditorUrl(siteId?: string | null): string {
-  return siteId ? `${EDITOR_PATH}?site=${encodeURIComponent(siteId)}` : EDITOR_PATH;
+/**
+ * The selected template travels to the existing editor as a stable registry
+ * id. This is intentionally separate from `site`: a first-time owner has no
+ * salon id yet, but must still land in the editor after choosing a design.
+ */
+export function editorTemplateId(search = ''): string | null {
+  try {
+    const templateId = new URLSearchParams(search).get('template')?.trim();
+    return templateId || null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildEditorUrl(siteId?: string | null, templateId?: string | null): string {
+  const params = new URLSearchParams();
+  if (siteId) params.set('site', siteId);
+  if (templateId) params.set('template', templateId);
+  const suffix = params.toString();
+  return suffix ? `${EDITOR_PATH}?${suffix}` : EDITOR_PATH;
 }
 
 export function buildSettingsProfileUrl(nextPath?: string | null): string {
