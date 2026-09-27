@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SalonProfile, SalonOffer } from '../types';
 import { copyToClipboard } from '../lib/clipboard';
+import { getSiteUrl } from '../lib/salonStore';
 import { 
   Plus, 
   Edit2, 
@@ -141,14 +142,17 @@ export const OffersManagement: React.FC<OffersManagementProps> = ({
   // Social Sharing State & Action
   const [shareCopied, setShareCopied] = useState(false);
   const handleShareCampaign = async () => {
-    const promoText = `✨ Special Promo Offer from ${profile.businessName || 'our salon'}! ✨\n\n🎁 ${title || 'Special Promotion'}\n🔥 Discount: ${discountValue || 'Limited offer'}\n🎟️ Coupon Code: ${code || 'WELCOME'}\n📅 Validity: ${formatDate(startDate)} - ${formatDate(expiryDate)}\n\nBook your slot now at: ${window.location.origin}`;
+    // Share the canonical public site URL — never the editor's own origin,
+    // which may be an unreachable preview host for customers.
+    const bookingLink = getSiteUrl(profile);
+    const promoText = `✨ Special Promo Offer from ${profile.businessName || 'our salon'}! ✨\n\n🎁 ${title || 'Special Promotion'}\n🔥 Discount: ${discountValue || 'Limited offer'}\n🎟️ Coupon Code: ${code || 'WELCOME'}\n📅 Validity: ${formatDate(startDate)} - ${formatDate(expiryDate)}\n\nBook your slot now at: ${bookingLink}`;
 
     if (navigator.share) {
       try {
         await navigator.share({
           title: title || 'Special Promo Offer',
           text: promoText,
-          url: window.location.origin,
+          url: bookingLink,
         });
       } catch (err) {
         console.log('Share failed or was cancelled, falling back to clipboard:', err);

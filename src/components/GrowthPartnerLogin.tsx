@@ -32,6 +32,7 @@ import {
 } from '../lib/growthPartnerLogin';
 import { GROWTH_PARTNER_PATH } from '../lib/router';
 import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 
 // ============================================================================
 // Growth Partner LOGIN route — `/growth-partner/login`.
@@ -256,25 +257,38 @@ export const GrowthPartnerSignupForm: React.FC<{
   const handleFormSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    const errors = validateGrowthPartnerSignupInput({
-      fullName,
-      phone,
-      email,
-      password,
-      kycDocumentType,
-      kycDocumentReference,
-    });
+    // Password managers / browser autofill can fill the DOM without
+    // dispatching the React change events that keep component state in sync.
+    // The submitted form controls are the source of truth: validate exactly
+    // what the user sees, then send exactly what was validated.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const submitted = {
+      fullName: String(form.get('growth-partner-signup-name') ?? fullName),
+      phone: String(form.get('growth-partner-signup-phone') ?? phone),
+      email: String(form.get('growth-partner-signup-email') ?? email),
+      password: String(form.get('growth-partner-signup-password') ?? password),
+      kycDocumentType: String(form.get('growth-partner-kyc-type') ?? kycDocumentType),
+      kycDocumentReference: String(form.get('growth-partner-kyc-reference') ?? kycDocumentReference),
+    };
+    setFullName(submitted.fullName);
+    setPhone(submitted.phone);
+    setEmail(submitted.email);
+    setPassword(submitted.password);
+    setKycDocumentType(submitted.kycDocumentType);
+    setKycDocumentReference(submitted.kycDocumentReference);
+    logPasswordLengths('growth-partner:signup', password, submitted.password);
+    const errors = validateGrowthPartnerSignupInput(submitted);
     setLocalFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
       return;
     }
     onSubmit({
-      fullName: fullName.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      password,
-      kycDocumentType,
-      kycDocumentReference: kycDocumentReference.trim(),
+      fullName: submitted.fullName.trim(),
+      phone: submitted.phone.trim(),
+      email: submitted.email.trim(),
+      password: submitted.password,
+      kycDocumentType: submitted.kycDocumentType,
+      kycDocumentReference: submitted.kycDocumentReference.trim(),
     });
   };
 
@@ -828,14 +842,23 @@ export const GrowthPartnerLogin: React.FC<{
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
+    // The submitted form controls are the source of truth, not component
+    // state: browser autofill can fill the DOM without dispatching React
+    // change events, which would otherwise sign in with a stale password.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const submittedEmail = String(form.get('growth-partner-login-email') ?? email);
+    const submittedPassword = String(form.get('growth-partner-login-password') ?? password);
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
+    logPasswordLengths('growth-partner:login', password, submittedPassword);
     const errors: { email?: string; password?: string } = {};
-    if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email address.';
-    if (!password) errors.password = 'Enter your password.';
+    if (!EMAIL_RE.test(submittedEmail.trim())) errors.email = 'Enter a valid email address.';
+    if (!submittedPassword) errors.password = 'Enter your password.';
     setFieldErrors(errors);
     if (errors.email || errors.password) return;
     setBusy(true);
     setFormError('');
-    void signInGrowthPartner(sb, { email, password }).then(
+    void signInGrowthPartner(sb, { email: submittedEmail, password: submittedPassword }).then(
       (viewer) => setSessionUser(viewer),
       (error: Error) => setFormError(safePartnerErrorMessage(error, 'Login failed. Please try again.'))
     ).finally(() => setBusy(false));

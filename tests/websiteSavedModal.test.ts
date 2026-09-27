@@ -58,3 +58,14 @@ test('the native dialog has accessible labels and does not claim a link was copi
   assert.equal(html.includes('Site link copied to clipboard!'), false);
   assert.equal(html.includes('Copied!'), false);
 });
+
+test('the QR code encodes exactly the canonical site link', () => {
+  const html = renderModal();
+  assert.ok(
+    html.includes(`data-qr-payload="${SITE_URL}"`),
+    'the QR payload must be exactly the canonical site URL'
+  );
+  assert.match(html, /aria-label="QR code for your live website link"/);
+  const other = renderModal('https://fanal-templetes-app.vercel.app/?site=another-studio');
+  assert.ok(other.includes('data-qr-payload="https://fanal-templetes-app.vercel.app/?site=another-studio"'));
+});

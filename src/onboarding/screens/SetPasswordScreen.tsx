@@ -2,6 +2,7 @@ import { toSafeAuthError } from '../lib/flow';
 import React, { useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton } from './Shell';
 import { setNewPassword, type OnboardingSupabaseClient } from '../lib/auth';
+import { logPasswordLengths } from '../../lib/authPasswordDiagnostics';
 
 // ============================================================================
 // Set a new password — the second half of Forgot Password.
@@ -54,9 +55,18 @@ export const SetPasswordScreen: React.FC<{
           onSubmit={(event) => {
             event.preventDefault();
             if (busy) return;
+            // Password managers can fill the DOM after React's last change event.
+            // Read the submitted controls, rather than only component state, so a
+            // visibly filled password can never be validated as an empty one.
+            const form = new FormData(event.currentTarget);
+            const submittedPassword = String(form.get('onboarding-reset-password') ?? '');
+            const submittedConfirm = String(form.get('onboarding-reset-confirm') ?? '');
+            setPassword(submittedPassword);
+            setConfirm(submittedConfirm);
+            logPasswordLengths('onboarding:set-password', password, submittedPassword);
             setBusy(true);
             setFormError('');
-            void setNewPassword(client as OnboardingSupabaseClient, password, confirm).then(
+            void setNewPassword(client as OnboardingSupabaseClient, submittedPassword, submittedConfirm).then(
               () => {
                 setDone(true);
                 onDone?.();

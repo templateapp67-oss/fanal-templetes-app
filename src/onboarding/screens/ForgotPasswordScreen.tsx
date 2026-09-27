@@ -41,14 +41,20 @@ export const ForgotPasswordScreen: React.FC<{
           onSubmit={(event) => {
             event.preventDefault();
             if (busy) return;
-            if (!isValidEmail(email)) {
+            // Password managers can fill the DOM after React's last change event.
+            // Read the submitted controls, rather than only component state, so a
+            // visibly filled email can never be validated as an empty one.
+            const form = new FormData(event.currentTarget);
+            const submittedEmail = String(form.get('onboarding-forgot-email') ?? '');
+            setEmail(submittedEmail);
+            if (!isValidEmail(submittedEmail)) {
               setFieldError('Enter a valid email address.');
               return;
             }
             setFieldError('');
             setBusy(true);
             setFormError('');
-            void sendPasswordReset(client as OnboardingSupabaseClient, email).then(
+            void sendPasswordReset(client as OnboardingSupabaseClient, submittedEmail).then(
               () => setSent(true),
               (error: Error) => setFormError(toSafeAuthError(error, 'reset').message)
             ).finally(() => setBusy(false));

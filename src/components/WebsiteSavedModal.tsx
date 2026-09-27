@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, LayoutDashboard, Loader2, X } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { copyToClipboard } from '../lib/clipboard';
 
 interface WebsiteSavedModalProps {
@@ -112,6 +113,22 @@ export const WebsiteSavedModal: React.FC<WebsiteSavedModalProps> = ({
             onFocus={(event) => event.currentTarget.select()}
             className="w-full rounded bg-transparent p-1 font-mono text-xs text-gray-700 outline-none focus:ring-2 focus:ring-[#C20E5A]/30"
           />
+        </div>
+
+        <div className="my-6 flex items-center gap-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <div
+            data-testid="saved-site-qr"
+            data-qr-payload={siteUrl}
+            title="Scan to open your live website"
+            className="shrink-0 rounded-lg bg-white p-2 shadow-sm"
+          >
+            <QRCodeSVG value={siteUrl} size={88} level="M" aria-label="QR code for your live website link" />
+          </div>
+          <p className="text-xs leading-relaxed text-gray-600">
+            <span className="font-bold text-gray-800">Scan to open your live site.</span>
+            <br />
+            Print it for your counter or share it anywhere — it opens exactly the link above.
+          </p>
         </div>
 
         <a

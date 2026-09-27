@@ -8,8 +8,10 @@ import {
   buildSafeSignupMetadata,
   logSignupFailure,
   MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
   toSafeAuthError,
 } from '../onboarding/lib/flow';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -71,13 +73,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    const activeReferralCode = (referralCode || getStoredReferralCode() || '').trim();
+    // Password managers / browser autofill can fill the DOM without
+    // dispatching the React change events that keep component state in sync.
+    // The submitted form controls are the source of truth: validate exactly
+    // what the user sees, then send exactly what was validated. (This is the
+    // permanent fix for "Password must be at least 6 characters." appearing
+    // while a 6+ character password is visibly filled in.)
+    const form = new FormData(e.currentTarget as HTMLFormElement);
+    const submitted = {
+      email: String(form.get('auth-email') ?? email),
+      password: String(form.get('auth-password') ?? password),
+      fullName: String(form.get('auth-full-name') ?? fullName),
+      salonName: String(form.get('auth-salon-name') ?? salonName),
+      phoneNumber: String(form.get('auth-phone') ?? phoneNumber),
+      city: String(form.get('auth-city') ?? city),
+      referralCode: String(form.get('auth-referral-code') ?? referralCode),
+    };
+    setEmail(submitted.email);
+    setPassword(submitted.password);
+    setFullName(submitted.fullName);
+    setSalonName(submitted.salonName);
+    setPhoneNumber(submitted.phoneNumber);
+    setCity(submitted.city);
+    setReferralCode(submitted.referralCode);
+    logPasswordLengths(`auth-modal:${mode}`, password, submitted.password);
+    const activeReferralCode = (submitted.referralCode || getStoredReferralCode() || '').trim();
     // Ref-guarded single flight — see authFlight above.
     await authFlight.current.run(async () => {
     setLoading(true);
     setError(null);
 
-    if (password.length > MAX_PASSWORD_LENGTH) {
+    // Signup validates the SUBMITTED password in strict order: exists, then
+    // minimum length, then maximum length. Login never length-checks — the
+    // server owns that decision; the submitted value is always attempted.
+    if (mode === 'signup' && !submitted.password) {
+      setError('Enter a password.');
+      setLoading(false);
+      return;
+    }
+    if (mode === 'signup' && submitted.password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      setLoading(false);
+      return;
+    }
+    if (submitted.password.length > MAX_PASSWORD_LENGTH) {
       // GoTrue/bcrypt truncate above 72 bytes, so a longer password would
       // silently become a different one rather than fail here.
       setError(`Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
@@ -104,21 +143,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       {
         const mockUser = {
           id: 'mock-user-123',
-          email: email,
+          email: submitted.email,
           user_metadata: {
-            full_name: fullName || (isCustomer ? 'Customer' : 'Salon Owner'),
-            ...(isCustomer ? {} : { salon_name: salonName || 'My Salon' }),
-            ...(isCustomer ? {} : { phone_number: phoneNumber || '' }),
-            ...(isCustomer ? {} : { city: city || '' }),
+            full_name: submitted.fullName || (isCustomer ? 'Customer' : 'Salon Owner'),
+            ...(isCustomer ? {} : { salon_name: submitted.salonName || 'My Salon' }),
+            ...(isCustomer ? {} : { phone_number: submitted.phoneNumber || '' }),
+            ...(isCustomer ? {} : { city: submitted.city || '' }),
           }
         };
         if (!isCustomer) {
           setStoredAuthenticatedProfile({
-            salonName: salonName || 'My Salon',
-            phone: phoneNumber || '',
-            city: city || '',
-            ownerName: fullName || 'Salon Owner',
-            email: email,
+            salonName: submitted.salonName || 'My Salon',
+            phone: submitted.phoneNumber || '',
+            city: submitted.city || '',
+            ownerName: submitted.fullName || 'Salon Owner',
+            email: submitted.email,
           });
         }
         onSuccess(mockUser);
@@ -133,15 +172,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         // Clear any previous tenant state before new account creation
         clearAllLocalUserState();
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
+          email: submitted.email,
+          password: submitted.password,
           options: {
             data: {
               ...buildSafeSignupMetadata({
-                fullName,
-                salonName,
-                phone: phoneNumber,
-                city,
+                fullName: submitted.fullName,
+                salonName: submitted.salonName,
+                phone: submitted.phoneNumber,
+                city: submitted.city,
               }),
               account_type: purpose,
             },
@@ -166,22 +205,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           if (!isCustomer) {
             setStoredAuthenticatedProfile({
-              salonName: salonName || (data.user.user_metadata?.salon_name as string),
-              phone: phoneNumber || (data.user.user_metadata?.phone_number as string),
-              city: city || (data.user.user_metadata?.city as string),
-              ownerName: fullName || (data.user.user_metadata?.full_name as string),
-              email: email,
+              salonName: submitted.salonName || (data.user.user_metadata?.salon_name as string),
+              phone: submitted.phoneNumber || (data.user.user_metadata?.phone_number as string),
+              city: submitted.city || (data.user.user_metadata?.city as string),
+              ownerName: submitted.fullName || (data.user.user_metadata?.full_name as string),
+              email: submitted.email,
             }, data.user.id);
 
             const { error: profileError } = await supabase
               .from('profiles')
               .upsert({
                 id: data.user.id,
-                full_name: fullName,
-                salon_name: salonName,
-                phone_number: phoneNumber,
-                email: email,
-                city: city,
+                full_name: submitted.fullName,
+                salon_name: submitted.salonName,
+                phone_number: submitted.phoneNumber,
+                email: submitted.email,
+                city: submitted.city,
                 updated_at: new Date().toISOString(),
               });
 
@@ -195,8 +234,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         // Clear previous tenant state before logging in
         clearAllLocalUserState();
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: submitted.email,
+          password: submitted.password,
         });
 
         if (signInError) throw signInError;
@@ -288,6 +327,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <input
                           type="text"
                           required
+                          name="auth-full-name"
+                          autoComplete="name"
                           value={fullName}
                           onChange={(e) => setFullName(e.target.value)}
                           className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
@@ -300,6 +341,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           <input
                             type="text"
                             required
+                            name="auth-salon-name"
+                            autoComplete="organization"
                             value={salonName}
                             onChange={(e) => setSalonName(e.target.value)}
                             className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
@@ -315,6 +358,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           <input
                             type="tel"
                             required
+                            name="auth-phone"
+                            autoComplete="tel"
                             value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)}
                             className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
@@ -326,6 +371,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           <input
                             type="text"
                             required
+                            name="auth-city"
+                            autoComplete="address-level2"
                             value={city}
                             onChange={(e) => setCity(e.target.value)}
                             className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
@@ -349,6 +396,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </div>
                       <input
                         type="text"
+                        name="auth-referral-code"
+                        autoComplete="off"
                         value={referralCode}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -367,6 +416,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <input
                     type="email"
                     required
+                    name="auth-email"
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"
@@ -379,6 +430,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <input
                     type="password"
                     required
+                    name="auth-password"
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#C20E5A]/5 focus:border-[#C20E5A] transition-all text-sm"

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toDataURL } from 'qrcode';
 import { copyToClipboard } from '../lib/clipboard';
+import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 import {
   AlertTriangle,
   Check,
@@ -279,9 +280,20 @@ const ChangePasswordSection: React.FC<{
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
+    // The submitted form controls are the source of truth, not component
+    // state: browser autofill can fill the DOM without dispatching React
+    // change events, which would otherwise validate a stale password.
+    const formData = new FormData(event.currentTarget as HTMLFormElement);
+    const submitted = {
+      currentPassword: String(formData.get('account-current-password') ?? form.currentPassword),
+      newPassword: String(formData.get('account-new-password') ?? form.newPassword),
+      confirmPassword: String(formData.get('account-confirm-password') ?? form.confirmPassword),
+    };
+    setForm(submitted);
+    logPasswordLengths('partner-account:change-password', form.newPassword, submitted.newPassword);
     let parsed: ReturnType<typeof changePasswordSchema.parse>;
     try {
-      parsed = parseFields(changePasswordSchema, form);
+      parsed = parseFields(changePasswordSchema, submitted);
     } catch (cause) {
       setErrors(cause instanceof PartnerValidationError ? cause.fieldErrors : { _: cause instanceof Error ? cause.message : 'Check the password fields.' });
       return;
@@ -311,6 +323,7 @@ const ChangePasswordSection: React.FC<{
           <input
             type="password"
             required
+            name="account-current-password"
             autoComplete="current-password"
             value={form.currentPassword}
             onChange={(event) => {
@@ -330,6 +343,7 @@ const ChangePasswordSection: React.FC<{
             required
             minLength={8}
             maxLength={72}
+            name="account-new-password"
             autoComplete="new-password"
             value={form.newPassword}
             onChange={(event) => {
@@ -347,6 +361,7 @@ const ChangePasswordSection: React.FC<{
           <input
             type="password"
             required
+            name="account-confirm-password"
             autoComplete="new-password"
             value={form.confirmPassword}
             onChange={(event) => {

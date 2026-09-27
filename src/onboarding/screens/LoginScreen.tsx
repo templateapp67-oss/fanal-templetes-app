@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Field, FormAlert, GatewayShell, SubmitButton, TextLinkButton } from './Shell';
 import { signInWithEmail, type OnboardingSupabaseClient } from '../lib/auth';
 import { createSingleFlight, toSafeAuthError, validateLogin } from '../lib/flow';
+import { logPasswordLengths } from '../../lib/authPasswordDiagnostics';
 
 // ============================================================================
 // Login — email + password via Supabase Auth, plus forgot-password and a
@@ -43,7 +44,18 @@ export const LoginScreen: React.FC<{
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          const validation = validateLogin({ email, password });
+          // Password managers can fill the DOM after React's last change event.
+          // Read the submitted controls, rather than only component state, so a
+          // visibly filled password can never be validated as an empty one.
+          const form = new FormData(event.currentTarget);
+          const submitted = {
+            email: String(form.get('onboarding-login-email') ?? ''),
+            password: String(form.get('onboarding-login-password') ?? ''),
+          };
+          setEmail(submitted.email);
+          setPassword(submitted.password);
+          logPasswordLengths('onboarding:login', password, submitted.password);
+          const validation = validateLogin(submitted);
           setFieldErrors(validation.errors);
           if (!validation.ok) return;
           setFormError('');
@@ -51,7 +63,7 @@ export const LoginScreen: React.FC<{
             .run(async () => {
               setBusy(true);
               try {
-                return await signInWithEmail(client as OnboardingSupabaseClient, { email, password });
+                return await signInWithEmail(client as OnboardingSupabaseClient, submitted);
               } finally {
                 setBusy(false);
               }
