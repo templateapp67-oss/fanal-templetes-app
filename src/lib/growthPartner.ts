@@ -379,7 +379,14 @@ export function resolveGrowthPartnerGate(input: {
     return 'unauthorized';
   }
   if (input.partnerRow.is_active === false) return 'inactive';
-  if (input.partnerRow.user_id !== input.userId || input.partnerRow.status !== 'approved') return 'unauthorized';
+  if (input.partnerRow.user_id !== input.userId) return 'unauthorized';
+  // The deployed compatibility RPC for the active-schema generation returns
+  // `{ user_id, referral_code, is_active, ... }` without `status`. Requiring
+  // an omitted field to equal "approved" rejects every valid active partner.
+  // An explicit lifecycle value still fails closed unless it represents an
+  // active/approved partner; authorization remains enforced by the RPC/RLS.
+  const status = String(input.partnerRow.status || '').trim().toLowerCase();
+  if (status && status !== 'approved' && status !== 'active') return 'unauthorized';
   return 'ready';
 }
 
@@ -1053,48 +1060,3 @@ export async function fetchMyPartnerReferralDetail(referralId: string): Promise<
   return readPartnerPayload('Referral detail lookup failed', normalizePartnerReferralEntry,
     () => supabase.rpc('get_my_partner_referral_detail', { p_referral_id: referralId }));
 }
-
-export interface ReferredSalon {
-  id: string;
-  salon_id?: string | null;
-  name: string;
-  slug?: string | null;
-  city?: string | null;
-  address?: string | null;
-  phone?: string | null;
-  owner_name?: string | null;
-  owner_email?: string | null;
-  partner_code?: string | null;
-  referral_code?: string | null;
-  status: 'active' | 'onboarding' | 'pending' | 'completed';
-  joined_at?: string | null;
-  created_at?: string | null;
-}
-
-export function normalizeReferredSalon(raw: unknown): ReferredSalon | null {
-  const row = record(raw);
-  if (!row) return null;
-  return safely('referred salon row', () => ({
-    id: String(row.id || row.salon_id || Math.random().toString(36).slice(2)),
-    salon_id: nullableText(row.salon_id),
-    name: String(row.name || row.owner_name || 'Referred Salon'),
-    slug: nullableText(row.slug),
-    city: nullableText(row.city) ?? 'Jaipur',
-    address: nullableText(row.address),
-    phone: nullableText(row.phone),
-    owner_name: nullableText(row.owner_name),
-    owner_email: nullableText(row.owner_email),
-    partner_code: nullableText(row.partner_code),
-    referral_code: nullableText(row.referral_code),
-    status: (row.status === 'active' || row.status === 'completed') ? 'active' : 'onboarding',
-    joined_at: nullableText(row.joined_at),
-    created_at: nullableText(row.created_at),
-  }), null);
-}
-
-/** Fetches list of salons referred by the logged-in partner using their partner_code/referral_code. */
-export async function fetchMyPartnerReferredSalons(): Promise<ReferredSalon[]> {
-  return readPartnerPayload('Referred salons lookup failed', (data) => list(data, normalizeReferredSalon),
-    () => supabase.rpc('get_my_partner_referred_salons'));
-}
-
