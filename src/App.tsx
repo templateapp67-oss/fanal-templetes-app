@@ -2407,6 +2407,9 @@ export default function App() {
   const publicStylists = (siteTenant?.stylists || stylists) as Stylist[];
   const templateExplorerRoute = matchTemplateExplorerRoute(path, search);
   const templateIdFromEditorRoute = editorTemplateId(search);
+  const selectedTemplateForSetup = templateIdFromEditorRoute && getTemplateById(templateIdFromEditorRoute)
+    ? templateIdFromEditorRoute as BusinessTypeId
+    : null;
   const templatePreviewId = templateExplorerRoute.templateId && getTemplateById(templateExplorerRoute.templateId)
     ? templateExplorerRoute.templateId as BusinessTypeId
     : null;
@@ -2731,6 +2734,8 @@ export default function App() {
           profile={profile}
           setProfile={setProfile}
           onExploreTemplates={() => openTemplateExplorer()}
+          selectedTemplateId={selectedTemplateForSetup}
+          onOpenEditor={() => selectedTemplateForSetup && navigate(buildEditorUrl(null, selectedTemplateForSetup))}
           onOpenDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}
         /> : <WebsiteEditor
