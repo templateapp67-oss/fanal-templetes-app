@@ -14,7 +14,7 @@ export function generateSocialSharePlaceholder(profile: SalonProfile): string {
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
-  const brandColor = profile.faviconColor || profile.customAccentColor || '#C20E5A';
+  const brandColor = profile.primaryColor || profile.customAccentColor || profile.faviconColor || '#C20E5A';
   const contrastColor = getContrastTextColor(brandColor);
   const isDarkBg = contrastColor === '#ffffff';
 
@@ -83,7 +83,7 @@ export function generateSocialSharePlaceholder(profile: SalonProfile): string {
   ctx.textAlign = 'left';
   ctx.fillStyle = isDarkBg ? '#ffffff' : '#1e293b';
   ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-  ctx.fillText('NEXORA PREMIUM PLATFORM', iconX + iconSize + 25, iconY + iconSize / 2 + 5);
+  ctx.fillText((profile.businessName || 'YOUR SALON').slice(0, 36).toUpperCase(), iconX + iconSize + 25, iconY + iconSize / 2 + 5);
 
   // 5. Main Content: Business Name & Tagline (Center-Left)
   const mainX = 90;
@@ -132,7 +132,7 @@ export function generateSocialSharePlaceholder(profile: SalonProfile): string {
   ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
   ctx.fillText('BOOK ONLINE', badgeX + badgeWidth / 2, badgeY + 40);
   ctx.font = '14px system-ui, sans-serif';
-  ctx.fillText('Nexora Verified Business', badgeX + badgeWidth / 2, badgeY + 72);
+  ctx.fillText('Appointments & services', badgeX + badgeWidth / 2, badgeY + 72);
 
   // 7. Footer Contact Bar
   const footerY = 510;

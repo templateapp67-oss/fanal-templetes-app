@@ -2,34 +2,29 @@
  * Social Media utilities and URL formatters for Salon Website Header & Footers.
  */
 
-export function formatInstagramUrl(input?: string): string {
-  if (!input || !input.trim()) return '';
-  const trimmed = input.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
+function socialUrl(input: string | undefined, domain: string, at = ''): string {
+  const value = input?.trim();
+  if (!value) return '';
+  const candidate = /^(?:www\.)?(?:[a-z]+\.)?(?:instagram|facebook|tiktok)\.com\//i.test(value) ? `https://${value}` : value;
+  if (/^https?:\/\//i.test(candidate)) {
+    try {
+      const url = new URL(candidate);
+      if (url.username || url.password || (url.hostname !== domain && !url.hostname.endsWith(`.${domain}`))) return '';
+      return url.href;
+    } catch { return ''; }
   }
-  const handle = trimmed.replace(/^@/, '').trim();
-  return `https://www.instagram.com/${handle}`;
+  const handle = value.replace(/^@/, '');
+  if (!/^[a-zA-Z0-9._-]+$/.test(handle)) return '';
+  return `https://www.${domain}/${at}${handle}`;
 }
+export function formatInstagramUrl(input?: string): string { return socialUrl(input, 'instagram.com'); }
+export function formatFacebookUrl(input?: string): string { return socialUrl(input, 'facebook.com'); }
+export function formatTikTokUrl(input?: string): string { return socialUrl(input, 'tiktok.com', '@'); }
 
-export function formatFacebookUrl(input?: string): string {
-  if (!input || !input.trim()) return '';
-  const trimmed = input.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-  const page = trimmed.replace(/^@/, '').trim();
-  return `https://www.facebook.com/${page}`;
-}
-
-export function formatTikTokUrl(input?: string): string {
-  if (!input || !input.trim()) return '';
-  const trimmed = input.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-  const handle = trimmed.replace(/^@/, '').trim();
-  return `https://www.tiktok.com/@${handle}`;
+/** Read legacy aliases even when template defaults supplied an empty handle.
+ * Editor changes/clears write all three aliases together to avoid resurrection. */
+export function getTikTokValue(profile: { tiktokHandle?: string; tiktokProfile?: string; tiktokUrl?: string }): string {
+  return profile.tiktokHandle || profile.tiktokProfile || profile.tiktokUrl || '';
 }
 
 export function displaySocialHandle(input?: string, prefix = '@'): string {

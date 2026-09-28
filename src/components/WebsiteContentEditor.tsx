@@ -1,3 +1,4 @@
+import { addMissingStarterServices } from '../data/categoryStarterServices';
 import React, { useState } from 'react';
 import { TestimonialModal } from './ClientTestimonials';
 import type { Testimonial } from '../data/templates';
@@ -22,13 +23,13 @@ export function WebsiteContentEditor({ profile, setProfile, services, setService
       <p className="text-xs text-slate-500">All content here appears on your website preview and is included when you save. Demo content is editable; replace sample details before publishing.</p>
       {template && <button type="button" className="rounded-lg bg-rose-700 px-4 py-2 text-xs font-bold text-white" onClick={() => {
         // Explicit import only: never overwrite an owner's identity or edited menu.
-        if (setServices && services?.length === 0) setServices(template.defaultData.services.map(s => ({ ...s })));
+        setServices?.(current => addMissingStarterServices(current, template.id));
         setProfile(p => ({ ...p,
           socialVideos: p.socialVideos ?? template.defaultData.videos.map(v => ({ ...v })),
           gallery: p.gallery ?? template.defaultData.gallery.map(photo => ({ ...photo })),
           ownerRole: p.ownerRole || template.config.ownerRole,
         }));
-      }}>Add missing starter content{services?.length === 0 ? ' + 5 template services' : ''}</button>}
+      }}>Add missing starter content{!services?.length ? ' + 5 template services' : ''}</button>}
       <p className="text-xs text-slate-500">Existing edits and intentionally emptied video or gallery lists are kept.</p>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { injectSocialMetadata } from './src/lib/socialMetadata';
 import { registerReferralAttributionRoutes } from './server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from './server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from './server/ownerDashboard.js';
@@ -1140,14 +1142,33 @@ Return strictly JSON with the following keys:
     });
   }
 
+  // Also render crawler-visible metadata under the Express dev/production host.
+  const publicSocialHtml = (loadHtml: (url: string) => Promise<string>) => async (req: any, res: any, next: any) => {
+    const site = typeof req.query.site === 'string' ? req.query.site : '';
+    const tenant = resolveTenantFromHost(req.get('host') || '');
+    if (req.path !== '/' || !['GET', 'HEAD'].includes(req.method) || (!site && !tenant)) return next();
+    if (site && !/^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(site)) return next();
+    try {
+      const identifier = site || tenant?.customDomain || tenant?.subdomain || '';
+      const result = await lookupSalon({ db: getSupabaseAdmin() || supabase, isMockSupabase, mockSalons }, identifier, !site && !!tenant?.customDomain, Date.now() + 6000);
+      if (!result.found || !result.salon?.profile || result.error) return next();
+      const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : req.protocol;
+      const pageUrl = new URL(req.originalUrl, `${protocol}://${req.get('host')}`).href;
+      const html = injectSocialMetadata(await loadHtml(req.originalUrl), result.salon.profile, pageUrl);
+      res.set('Cache-Control', 'no-store').type('html').send(html);
+    } catch { next(); }
+  };
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
+    app.use(publicSocialHtml(async url => vite.transformIndexHtml(url, await readFile(path.join(process.cwd(), 'index.html'), 'utf8'))));
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    app.use(publicSocialHtml(() => readFile(path.join(distPath, 'index.html'), 'utf8')));
     app.use(express.static(distPath));
     app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));

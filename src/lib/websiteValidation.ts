@@ -41,6 +41,7 @@ export function websiteContentError(state: any): string | null {
       if (ids.has(s.id)) return 'Service IDs must be unique.';
       ids.add(s.id);
       if (typeof s.price !== 'number' || !Number.isFinite(s.price) || s.price < 0) return 'Service prices must be finite numbers of zero or more.';
+      if (s.originalPrice !== undefined && (typeof s.originalPrice !== 'number' || !Number.isFinite(s.originalPrice) || s.originalPrice < s.price)) return 'Regular service prices must be finite and at least the sale price.';
       if (!Number.isInteger(s.durationMinutes) || s.durationMinutes <= 0) return 'Service durations must be positive whole minutes.';
       if (s.imageUrl !== undefined && !isSafeImageUrl(s.imageUrl)) return 'Use a valid service image URL or uploaded JPG, PNG or WebP.';
     }

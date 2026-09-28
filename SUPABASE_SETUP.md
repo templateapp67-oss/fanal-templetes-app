@@ -511,3 +511,36 @@ npm run verify -- --api https://your-host   # + table probes + RLS reality + API
 
 If stage 2 reports a missing table, the migrations in
 `supabase/migrations/` were not fully applied to that project.
+
+## Targeted repair: mixed legacy services + normalized website save
+
+When `supabase/repairs/diagnose_website_save_schema.sql` reports missing salon
+contact/location columns, `services.salon_id` / `price_paise` / visibility
+columns, `staff_schedules.is_working`, and the atomic save helpers while the
+underlying tables already exist, review and apply:
+
+`supabase/migrations/20261026000000_website_save_schema_bridge.sql`
+
+Back up first. Run this **entire file alone** in the SQL Editor. It contains one
+transaction, additive columns, the contact helper, and the restored atomic RPC.
+It is repeatable; it does not drop tables, disable RLS, change existing grants,
+or provision organizations/memberships. The contact helper updates only the
+caller's profile; the atomic RPC updates one authorized salon. Existing
+`services.owner_id NOT NULL` is supported by supplying the authenticated actor
+on new service inserts. Legacy services without a salon stay unlinked and are
+not silently assigned or published; migrating those requires a separately
+verified ownership mapping. An attempt to reuse an unlinked legacy service UUID
+is rejected, not reported as a successful no-op.
+
+After applying, rerun the read-only diagnostic, then save from the signed-in
+editor and reload to confirm persisted services/profile. Test the public page
+separately. A `Select a salon owned by this account` error indicates a remaining
+workspace/membership issue, not a reason to disable RLS or assign an arbitrary
+owner. If any statement fails, the transaction is rolled back; capture that
+exact error before applying another migration. Passing the diagnostic checks
+presence only, not every constraint, trigger, permission or account mapping.
+
+Local regression coverage: `tests/websiteSaveSchemaBridge.test.ts` reproduces
+the reported missing objects and the legacy NOT NULL owner column, verifies
+repeat application and save/reload, and checks rollback and tenant boundaries.
+This is not a claim of a live production migration or verification.

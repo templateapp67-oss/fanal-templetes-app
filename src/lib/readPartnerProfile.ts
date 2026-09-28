@@ -38,7 +38,7 @@ export function resolveOwnerProfileName(profileName?: string | null, fallbackNam
   const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : '';
   const genericNames = new Set(['user', 'owner', 'salon owner', 'unknown']);
   if (stored && !genericNames.has(stored.toLowerCase())) return stored;
-  return fallback || stored;
+  return fallback && !genericNames.has(fallback.toLowerCase()) ? fallback : '';
 }
 
 /**
@@ -46,10 +46,12 @@ export function resolveOwnerProfileName(profileName?: string | null, fallbackNam
  * the raw row as well as one consistent camelCase view so both the editor and
  * older website autofill callers can consume the same authenticated read.
  */
-export function mapProfileSettingsRow(row: Record<string, any> | null | undefined) {
+export function mapProfileSettingsRow(row: Record<string, any> | null | undefined, fallbackName?: string) {
   if (!row) return null;
 
-  const ownerName = firstText(row.full_name, row.ownerName, row.owner_name);
+  const ownerName = resolveOwnerProfileName(
+    firstText(row.full_name, row.ownerName, row.owner_name), fallbackName
+  );
   const phone = firstText(row.phone_number, row.phone, row.mobile);
   const whatsapp = firstText(row.whatsapp_number, row.whatsapp);
   const postalCode = firstText(row.pin_code, row.postal_code, row.pincode, row.postalCode);
@@ -136,7 +138,7 @@ export async function readPartnerProfile(expectedOwnerId?: string) {
     };
   }
 
-  return { data: mapProfileSettingsRow(result.data), error: null };
+  return { data: mapProfileSettingsRow(result.data, resolveOwnerProfileName(user.user_metadata?.full_name, user.user_metadata?.name)), error: null };
 }
 
 /** Build a partial upsert while leaving fields not present in the form intact. */

@@ -1,7 +1,12 @@
+import { ServicePriceFields } from './ServicePriceFields';
+import { parseSeoKeywords } from '../lib/seoKeywords';
+import { SocialSharePreview } from './SocialSharePreview';
+import { prepareSocialShareImage, uploadSocialShareImage } from '../lib/socialShareAssets';
 import { WebsiteLocationMap } from './WebsiteLocationMap';
 import { WebsiteContentEditor } from './WebsiteContentEditor';
 import { ContentImageField } from './ContentImageField';
-import { readPartnerProfile } from '../lib/readPartnerProfile';
+import { uploadWebsiteFavicon } from '../lib/faviconStorage';
+import { readPartnerProfile, resolveOwnerProfileName } from '../lib/readPartnerProfile';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { isPartnerProfileComplete, isSalonProfileComplete, getSalonProfileCompletion } from '../lib/profileCompletion';
 import { PartnerProfileModal } from './PartnerProfileModal';
@@ -48,7 +53,7 @@ import { SavePermissionNotice } from './SavePermissionNotice';
 import { WebsiteSavedModal } from './WebsiteSavedModal';
 import { isCompletionNotReadyError, recordTemplateCompletion } from '../lib/growthPartner';
 import { TikTokIcon } from './TikTokIcon';
-import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
+import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle, getTikTokValue } from '../utils/social';
 import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';
 import { GooglePlacesAutocompleteInput } from './GooglePlacesAutocompleteInput';
 import { GoogleMapsView } from './GoogleMapsView';
@@ -118,30 +123,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
       let profileData: any = null;
       let authUser: any = null;
 
-      if (!isMockSupabase) {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          authUser = user;
-          if (user?.id) {
-            const res = await readPartnerProfile(user.id);
-            if (res?.data) {
-              profileData = res.data;
-            }
-          }
-        } catch {
-          // Fallback direct query if readPartnerProfile errors
-          const { data: { user } } = await supabase.auth.getUser();
-          authUser = user;
-          if (user?.id) {
-            const { data } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', user.id)
-              .maybeSingle();
-            if (data) profileData = data;
-          }
-        }
-      }
+      if (isMockSupabase) return false;
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user?.id) throw new Error('Sign in before syncing profile settings.');
+      authUser = user;
+      const res = await readPartnerProfile(user.id);
+      if (res.error) throw res.error;
+      if (!res.data) throw new Error('No saved profile was found for this account.');
+      profileData = res.data;
 
       setProfile((prev) => {
         const phoneVal = profileData?.phone_number || profileData?.phone || '';
@@ -151,7 +141,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         const cityVal = profileData?.city || '';
         const postalCodeVal = profileData?.postal_code || profileData?.pincode || profileData?.postalCode || '';
         const areaLocalityVal = profileData?.area_locality || profileData?.areaLocality || profileData?.landmark || '';
-        const ownerNameVal = profileData?.full_name || profileData?.owner_name || '';
+        const ownerNameVal = resolveOwnerProfileName(profileData?.full_name, profileData?.ownerName || authUser?.user_metadata?.full_name);
         const businessNameVal = profileData?.salon_name || profileData?.business_name || '';
         const ownerPhotoUrlVal = profileData?.avatar_url || profileData?.owner_photo_url || '';
         const aboutVal = profileData?.about || profileData?.bio || '';
@@ -165,14 +155,18 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           city: forceSync ? (cityVal || prev.city || '') : (prev.city || cityVal || ''),
           postalCode: forceSync ? (postalCodeVal || prev.postalCode || '') : (prev.postalCode || postalCodeVal || ''),
           areaLocality: forceSync ? (areaLocalityVal || prev.areaLocality || '') : (prev.areaLocality || areaLocalityVal || ''),
-          ownerName: forceSync ? (ownerNameVal || prev.ownerName || '') : (prev.ownerName || ownerNameVal || ''),
+          // Account identity must replace template/demo founder names as well
+          // as generic placeholders. Profile Settings is the source of truth.
+          ownerName: ownerNameVal,
           businessName: forceSync ? (businessNameVal || prev.businessName || '') : (prev.businessName || businessNameVal || ''),
           ownerPhotoUrl: forceSync ? (ownerPhotoUrlVal || prev.ownerPhotoUrl || '') : (prev.ownerPhotoUrl || ownerPhotoUrlVal || ''),
           about: forceSync ? (aboutVal || prev.about || '') : (prev.about || aboutVal || ''),
         };
       });
+      return true;
     } catch (err) {
       console.warn('[WebsiteEditor] Contact details auto-fill notice:', err);
+      return false;
     } finally {
       setIsSyncingProfile(false);
     }
@@ -209,17 +203,21 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [brandFocus, setBrandFocus] = useState('');
   const [brandAdvice, setBrandAdvice] = useState('');
   const [isBrandThinking, setIsBrandThinking] = useState(false);
-  const [scentProfile, setScentProfile] = useState('Jasmine & White Tea');
-  const [soundscape, setSoundscape] = useState('Lounge & Acoustic Chill');
-  const [consultationStyle, setConsultationStyle] = useState('Warm & Personalised');
+  const scentProfile = profile.scentProfile ?? 'Jasmine & White Tea';
+  const soundscape = profile.soundscape ?? 'Lounge & Acoustic Chill';
+  const consultationStyle = profile.consultationStyle ?? 'Warm & Personalised';
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
   // Phase 5: set ONLY when the verified completion RPC rejects as not-ready
   // after a successful cloud save. Never set optimistically, never blocks save.
   const [completionNote, setCompletionNote] = useState<string | null>(null);
   const [showUnsavedChangesGuard, setShowUnsavedChangesGuard] = useState(false);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [socialShareBusy, setSocialShareBusy] = useState(false);
+  const socialShareBusyRef = useRef(false);
+  const [socialShareError, setSocialShareError] = useState('');
   const socialShareInputRef = useRef<HTMLInputElement | null>(null);
   const faviconUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploadingFavicon, setIsUploadingFavicon] = useState(false);
   const [faviconMode, setFaviconMode] = useState<'letter' | 'custom'>(profile.customFaviconUrl ? 'custom' : 'letter');
 
   React.useEffect(() => {
@@ -230,34 +228,56 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
   const handleFaviconUploadFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || isUploadingFavicon) return;
+    setIsUploadingFavicon(true);
     try {
       const result = await compressAndResizeImage(file, 256, 2 * 1024 * 1024);
       if (result.isValid && result.dataUrl) {
-        upd({ customFaviconUrl: result.dataUrl });
-        if (showToast) showToast('Custom favicon image uploaded successfully!', 'success');
+        const image = await (await fetch(result.dataUrl)).blob();
+        const url = isMockSupabase ? result.dataUrl : await uploadWebsiteFavicon(supabase, image, profile.ownerId);
+        upd({ customFaviconUrl: url });
+        setFaviconMode('custom');
+        if (showToast) showToast('Favicon uploaded. Save website to publish it.', 'success');
       } else {
         if (showToast) showToast(result.errorMessage || 'Failed to compress favicon image.', 'error');
       }
     } catch (err: any) {
-      if (showToast) showToast('Error processing custom favicon image.', 'error');
+      if (showToast) showToast(err?.message || 'Error processing custom favicon image.', 'error');
+    } finally {
+      setIsUploadingFavicon(false);
+      e.target.value = '';
     }
   };
 
+  const saveSocialShareAsset = async (source: File | null) => {
+    if (socialShareBusyRef.current || (!source && profile.socialShareImageUrl)) return;
+    socialShareBusyRef.current = true;
+    setSocialShareBusy(true); setSocialShareError('');
+    try {
+      if (isMockSupabase) throw new Error('Connect Supabase Storage before publishing social images.');
+      let image: Blob;
+      if (source) image = await prepareSocialShareImage(source);
+      else {
+        const generated = generateSocialSharePlaceholder(profile);
+        if (!generated) throw new Error('Could not generate an image in this browser.');
+        image = await (await fetch(generated)).blob();
+      }
+      const url = await uploadSocialShareImage(supabase, image, profile.ownerId);
+      upd({ socialShareImageUrl: url });
+      showToast?.('Social image uploaded. Save website to publish it.', 'success');
+    } catch (err: any) {
+      const message = err?.message || 'Could not save the social image. Please retry.';
+      setSocialShareError(message);
+      showToast?.(message, 'error');
+    } finally {
+      socialShareBusyRef.current = false;
+      setSocialShareBusy(false);
+    }
+  };
   const handleSocialShareFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const result = await compressAndResizeImage(file, 1200, 2 * 1024 * 1024);
-      if (result.isValid && result.dataUrl) {
-        upd({ socialShareImageUrl: result.dataUrl });
-        if (showToast) showToast('Social share image updated!', 'success');
-      } else {
-        if (showToast) showToast(result.errorMessage || 'Failed to compress social image.', 'error');
-      }
-    } catch (err: any) {
-      if (showToast) showToast('Error processing social share image.', 'error');
-    }
+    if (file) await saveSocialShareAsset(file);
+    e.target.value = '';
   };
   // 'pending' = edits are debounced and will save in ~1.2s; 'saving' = the
   // save request is in flight. Both show as "Saving…".
@@ -686,8 +706,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <button
                 type="button"
                 onClick={async () => {
-                  await loadProfileContactDetails(true);
-                  if (showToast) showToast('Contact & Location synced from User Profile!', 'success');
+                  const synced = await loadProfileContactDetails(true);
+                  if (showToast) showToast(
+                    synced ? 'Owner name, Contact & Location synced from Profile Settings.' : 'Could not load your saved profile. Sign in and retry.',
+                    synced ? 'success' : 'error'
+                  );
                 }}
                 disabled={isSyncingProfile}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
@@ -868,7 +891,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <div className="flex p-1 bg-gray-100 rounded-xl">
                 <button
                   type="button"
-                  onClick={() => setFaviconMode('letter')}
+                  disabled={isUploadingFavicon}
+                  onClick={() => { upd({ customFaviconUrl: '' }); setFaviconMode('letter'); }}
                   className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 text-center ${
                     faviconMode === 'letter'
                       ? 'bg-white text-gray-900 shadow-sm'
@@ -967,12 +991,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                       <input 
                         type="file"
                         ref={faviconUploadInputRef}
+                        disabled={isUploadingFavicon}
                         onChange={handleFaviconUploadFileChange}
                         accept="image/png, image/x-icon, image/vnd.microsoft.icon, image/svg+xml, image/jpeg, image/jpg"
                         className="hidden"
                       />
                       <Upload className="w-5 h-5 text-gray-400" />
-                      <span className="text-xs font-bold text-gray-700">Drag &amp; drop or click to upload</span>
+                      <span className="text-xs font-bold text-gray-700">{isUploadingFavicon ? 'Uploading…' : 'Click to upload'}</span>
                       <span className="text-[10px] text-gray-400">Square layout (1:1), PNG/ICO/SVG, Max 2MB</span>
                     </div>
                   </div>
@@ -981,8 +1006,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                     <div className="pt-1">
                       <button
                         type="button"
+                        disabled={isUploadingFavicon}
                         onClick={() => {
-                          upd({ customFaviconUrl: undefined });
+                          upd({ customFaviconUrl: '' });
                           setFaviconMode('letter');
                           if (showToast) showToast('Custom favicon cleared, reverted to Character Favicon.', 'success');
                         }}
@@ -1272,13 +1298,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   <input 
                     type="file"
                     ref={socialShareInputRef}
+                    disabled={socialShareBusy}
                     onChange={handleSocialShareFileChange}
                     accept="image/png, image/jpeg, image/jpg, image/webp"
                     className="hidden"
                   />
                   <Upload className="w-5 h-5 text-gray-400" />
-                  <span className="text-xs font-bold text-gray-700">Drag &amp; drop or click to upload</span>
-                  <span className="text-[10px] text-gray-400">1200x630 (1.91:1) recommended, Max 2MB</span>
+                  <span className="text-xs font-bold text-gray-700">{socialShareBusy ? 'Uploading…' : 'Click to upload'}</span>
+                  <span className="text-[10px] text-gray-400">Max 2 MB. Images are centre-cropped to 1200×630 (1.91:1).</span>
                 </div>
               </div>
 
@@ -1286,24 +1313,19 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <div className="bg-pink-50/30 border border-pink-100 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-pink-600" />
-                  <span className="text-xs font-bold text-gray-800">AI Branded Placeholder</span>
+                  <span className="text-xs font-bold text-gray-800">Branded Card Generator</span>
                 </div>
                 <p className="text-[10px] leading-relaxed text-gray-500">
-                  Don't have a social image? Generate a stunning salon-branded card using your business details, tagline, and brand color instantly.
+                  Generate a card from your salon name, tagline, primary color, phone and location. This is a template-based graphic, not an AI image model. Clear an existing image first to generate a new card.
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    const dynamicUrl = generateSocialSharePlaceholder(profile);
-                    if (dynamicUrl) {
-                      upd({ socialShareImageUrl: dynamicUrl });
-                      if (showToast) showToast('AI Salon-Branded share graphic generated!', 'success');
-                    }
-                  }}
+                  disabled={socialShareBusy || !!profile.socialShareImageUrl}
+                  onClick={() => void saveSocialShareAsset(null)}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#C20E5A] hover:bg-[#A30B4A] text-white text-xs font-bold transition-colors cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Generate with AI</span>
+                  <span>{socialShareBusy ? 'Preparing…' : 'Generate branded card'}</span>
                 </button>
               </div>
 
@@ -1312,8 +1334,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 <div className="pt-1">
                   <button
                     type="button"
+                    disabled={socialShareBusy}
                     onClick={() => {
-                      upd({ socialShareImageUrl: undefined });
+                      setSocialShareError('');
+                      upd({ socialShareImageUrl: '' });
                       if (showToast) showToast('Social share image cleared. Site will use default cover image.', 'success');
                     }}
                     className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 hover:bg-rose-50 hover:text-rose-700 text-gray-600 text-xs font-bold transition-all cursor-pointer"
@@ -1325,63 +1349,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               )}
             </div>
 
-            {/* Right side: Live Card Mockup Previews */}
-            <div className="lg:col-span-7 bg-gray-50/50 border border-gray-100 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-3">
-                  Live Social Share Card Preview (Facebook / WhatsApp / iMessage)
-                </label>
-                
-                {/* Social Card Preview Component */}
-                <div className="bg-white border border-gray-200/80 rounded-xl overflow-hidden shadow-sm max-w-[480px] mx-auto">
-                  {/* Image Area (1.91:1) */}
-                  <div className="relative aspect-[1.91/1] bg-slate-100 flex items-center justify-center overflow-hidden border-b border-gray-150">
-                    {profile.socialShareImageUrl ? (
-                      <img 
-                        src={profile.socialShareImageUrl} 
-                        alt="Social Share Card" 
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      // Show AI auto-computed graphic live in the preview!
-                      <img 
-                        src={generateSocialSharePlaceholder(profile)} 
-                        alt="AI Placeholder Preview" 
-                        className="w-full h-full object-cover opacity-90 transition-opacity"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div className="absolute top-2.5 left-2.5 bg-slate-900/80 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                      <ImageIcon className="w-3 h-3" />
-                      <span>{profile.socialShareImageUrl ? 'Custom Image Active' : 'AI Branded Placeholder Active'}</span>
-                    </div>
-                  </div>
-
-                  {/* Metadata Area */}
-                  <div className="p-3 bg-gray-50/50 text-left space-y-1">
-                    <div className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
-                      {profile.subdomain || 'salon'}.nexora.in
-                    </div>
-                    <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
-                      {profile.businessName || 'My Premium Salon'} – {profile.tagline || 'Premium Salon Services'}
-                    </h4>
-                    <p className="text-[10px] leading-relaxed text-gray-500 line-clamp-2">
-                      {profile.about || 'Book appointments, view services and check stylist availability online.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status explanation */}
-              <div className="mt-4 pt-3 border-t border-gray-150 text-[10px] leading-relaxed text-slate-500">
-                <span className="font-bold text-slate-700">SEO &amp; OpenGraph Standard:</span>
-                {profile.socialShareImageUrl ? (
-                  <span> Your custom-uploaded share image is fully registered.</span>
-                ) : (
-                  <span> No image uploaded. The platform is automatically serving a high-resolution, salon-branded dynamic placeholder graphic using your active brand palette, tagline, and phone details.</span>
-                )}
-              </div>
+            <div className="lg:col-span-7">
+              <SocialSharePreview profile={profile} pageUrl={siteUrl} />
+              {socialShareError && <p role="alert" className="mt-3 text-sm text-rose-700">{socialShareError}</p>}
             </div>
           </div>
         </section>
@@ -1415,6 +1385,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 SEO Keywords (Comma-Separated)
               </label>
               <textarea
+                aria-label="SEO keywords"
                 value={profile.seoKeywords || ''}
                 onChange={(e) => upd({ seoKeywords: e.target.value })}
                 placeholder="e.g. hair salon Mumbai, Balayage specialist Bandra, organic facials, bridal hair, Keratin treatment"
@@ -1431,10 +1402,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               <div className="bg-gray-50 border border-gray-150 rounded-xl p-3">
                 <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-2">Registered SEO Terms Preview</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {profile.seoKeywords
-                    .split(',')
-                    .map((kw) => kw.trim())
-                    .filter(Boolean)
+                  {parseSeoKeywords(profile.seoKeywords)
                     .map((kw, idx) => (
                       <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md bg-[#C20E5A]/5 border border-[#C20E5A]/10 text-[#C20E5A] text-[10px] font-medium shadow-sm">
                         🏷️ {kw}
@@ -1486,6 +1454,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               </div>
               <input
                 type="text"
+                aria-label="Instagram"
                 value={profile.instagramHandle || ''}
                 onChange={(e) => upd({ instagramHandle: e.target.value })}
                 placeholder="e.g. @arts_by_uma or url"
@@ -1519,6 +1488,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               </div>
               <input
                 type="text"
+                aria-label="Facebook"
                 value={profile.facebookPage || ''}
                 onChange={(e) => upd({ facebookPage: e.target.value })}
                 placeholder="e.g. https://facebook.com/salon"
@@ -1538,9 +1508,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </span>
                   <span>TikTok</span>
                 </label>
-                {profile.tiktokHandle && (
+                {getTikTokValue(profile) && (
                   <a
-                    href={formatTikTokUrl(profile.tiktokHandle)}
+                    href={formatTikTokUrl(getTikTokValue(profile))}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[10px] font-bold text-slate-700 hover:text-slate-900 hover:underline flex items-center gap-0.5"
@@ -1552,13 +1522,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
               </div>
               <input
                 type="text"
-                value={profile.tiktokHandle || ''}
-                onChange={(e) => upd({ tiktokHandle: e.target.value })}
+                aria-label="TikTok"
+                value={getTikTokValue(profile)}
+                onChange={(e) => upd({ tiktokHandle: e.target.value, tiktokProfile: e.target.value, tiktokUrl: e.target.value })}
                 placeholder="e.g. @arts_by_uma or url"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
               />
               <div className="text-[10px] text-gray-400 mt-1">
-                {profile.tiktokHandle ? displaySocialHandle(profile.tiktokHandle) : 'Add handle or URL'}
+                {getTikTokValue(profile) ? displaySocialHandle(getTikTokValue(profile)) : 'Add handle or URL'}
               </div>
             </div>
           </div>
@@ -1631,20 +1602,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
-                        Price (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={srv.price}
-                        onChange={(e) =>
-                          updateService(srv.id, { price: Number(e.target.value) || 0 })
-                        }
-                        className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
-                      />
-                    </div>
+                    <ServicePriceFields service={srv} onChange={patch => updateService(srv.id, patch)} />
                     <div>
                       <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
                         Mins
@@ -1721,9 +1679,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             <div className="flex items-center gap-2 mb-1"><Sparkles className="w-4 h-4 text-amber-600" /><span className="text-xs font-bold text-gray-800">In-Salon Brand Experience</span></div>
             <p className="text-[10px] text-gray-500 mb-3">Make every visit feel consistent with your digital brand.</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <label className="text-[11px] font-bold text-gray-700">Scent Profile<select value={scentProfile} onChange={(e) => setScentProfile(e.target.value)} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Jasmine &amp; White Tea</option><option>Eucalyptus &amp; Lavender</option><option>Citrus &amp; Cedar</option><option>Rose &amp; Sandalwood</option></select></label>
-              <label className="text-[11px] font-bold text-gray-700">Soundscape<select value={soundscape} onChange={(e) => setSoundscape(e.target.value)} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Lounge &amp; Acoustic Chill</option><option>Lo-fi Ambient</option><option>Soft Piano &amp; Spa</option><option>Upbeat Contemporary</option></select></label>
-              <label className="text-[11px] font-bold text-gray-700">Consultation Style<select value={consultationStyle} onChange={(e) => setConsultationStyle(e.target.value)} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Warm &amp; Personalised</option><option>Thorough &amp; Clinical</option><option>Express &amp; Efficient</option><option>Luxury Concierge</option></select></label>
+              <label className="text-[11px] font-bold text-gray-700">Scent Profile<select value={scentProfile} onChange={(e) => upd({ scentProfile: e.target.value })} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Jasmine &amp; White Tea</option><option>Eucalyptus &amp; Lavender</option><option>Citrus &amp; Cedar</option><option>Rose &amp; Sandalwood</option></select></label>
+              <label className="text-[11px] font-bold text-gray-700">Soundscape<select value={soundscape} onChange={(e) => upd({ soundscape: e.target.value })} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Lounge &amp; Acoustic Chill</option><option>Lo-fi Ambient</option><option>Soft Piano &amp; Spa</option><option>Upbeat Contemporary</option></select></label>
+              <label className="text-[11px] font-bold text-gray-700">Consultation Style<select value={consultationStyle} onChange={(e) => upd({ consultationStyle: e.target.value })} className="mt-1 w-full p-2 rounded-lg border border-gray-200 bg-white text-xs font-normal"><option>Warm &amp; Personalised</option><option>Thorough &amp; Clinical</option><option>Express &amp; Efficient</option><option>Luxury Concierge</option></select></label>
             </div>
           </div>
 
