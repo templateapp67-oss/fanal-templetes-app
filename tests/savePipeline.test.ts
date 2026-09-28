@@ -70,6 +70,7 @@ const OWNER_ID = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 
 const PAYLOAD = {
   ownerId: OWNER_ID,
+  selectedTemplateId: 'hair_salon',
   profile: {
     businessType: 'hair_salon',
     businessName: 'Arts By Uma',
@@ -178,6 +179,7 @@ test('saveViaWebsiteApi posts the salonData envelope and reports success', async
   const body = JSON.parse(String(calls[0].init.body));
   assert.equal(body.salonData.profile.subdomain, 'arts-by-uma');
   assert.equal(body.salonData.ownerId, OWNER_ID);
+  assert.equal(body.salonData.selectedTemplateId, 'hair_salon');
 });
 
 test('saveViaWebsiteApi reports the exact HTTP status on a 500 response', async () => {
