@@ -46,7 +46,7 @@ import {
   RefreshCw, 
   Scissors
 } from 'lucide-react';
-import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer } from '../types';
+import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer, LookbookPhoto, SocialVideo } from '../types';
 import { TEMPLATE_REGISTRY, getTemplateConfig, getTemplateContent, type Testimonial } from '../data/templates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { createBlankSalonProfile } from '../lib/ownerSalonResolution';
@@ -61,13 +61,12 @@ import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../u
 import { getServiceIcon } from './ServiceManagement';
 import {
   buildYouTubeEmbedUrl,
-  buildYouTubeShortsUrl,
-  buildYouTubeWatchUrl,
   extractYouTubeId,
   isYouTubeVideoId,
   YOUTUBE_IFRAME_ALLOW,
 } from '../utils/youtube';
 import { slugifySalonName } from '../lib/salonStore';
+import { useSalonData } from '../lib/useSalonData';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -303,19 +302,36 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   rebookRequest,
   isLoading = false,
 }) => {
+  // Every public template consumes the same published server payload. Props
+  // are retained as a graceful initial/fallback render while the API responds.
+  const publicSalon = useSalonData(
+    publicView ? profile?.subdomain : null,
+    { profile, services, stylists, selectedTemplateId: selectedTemplateId || null },
+    publicView ? user?.id : null,
+  );
+  const resolvedProfile = publicView ? publicSalon.data.profile : profile;
+  const resolvedServices = publicView ? publicSalon.data.services : services;
+  const resolvedStylists = publicView ? publicSalon.data.stylists : stylists;
   // Fallback internal state if setters not passed
-  const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
-  const [internalServices, setInternalServices] = useState<SalonService[]>(services);
-  const [internalStylists, setInternalStylists] = useState<Stylist[]>(stylists);
+  const [internalProfile, setInternalProfile] = useState<SalonProfile>(resolvedProfile);
+  const [internalServices, setInternalServices] = useState<SalonService[]>(resolvedServices);
+  const [internalStylists, setInternalStylists] = useState<Stylist[]>(resolvedStylists);
 
-  const activeProfile = (setProfileProp ? profile : internalProfile) || createBlankSalonProfile();
+  const activeProfile = (setProfileProp ? resolvedProfile : internalProfile) || createBlankSalonProfile();
   const setProfile = setProfileProp || setInternalProfile;
 
-  const activeServices = setServicesProp ? services : internalServices;
+  const activeServices = setServicesProp ? resolvedServices : internalServices;
   const setServices = setServicesProp || setInternalServices;
 
-  const activeStylists = setStylistsProp ? stylists : internalStylists;
+  const activeStylists = setStylistsProp ? resolvedStylists : internalStylists;
   const setStylists = setStylistsProp || setInternalStylists;
+
+  useEffect(() => {
+    if (!publicView) return;
+    setInternalProfile(resolvedProfile);
+    setInternalServices(resolvedServices);
+    setInternalStylists(resolvedStylists);
+  }, [publicView, resolvedProfile, resolvedServices, resolvedStylists]);
 
   // Dynamically update page titles, meta descriptions, canonical URLs, and structured data
   useSalonSEO(activeProfile, true);
@@ -503,6 +519,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [heroImageSrc, primaryAccentColor]);
 
   const standardData = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
+  const activeGalleryPhotos = (activeProfile.lookbookPhotos?.length
+    ? activeProfile.lookbookPhotos
+    : standardData.gallery || []) as LookbookPhoto[];
 
   // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
@@ -510,6 +529,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [selectedService, setSelectedService] = useState<SalonService>(activeServices[0] || activeTemplate.services[0]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
+  const [selectedSocialVideo, setSelectedSocialVideo] = useState<SocialVideo | null>(null);
   const pendingBookingRef = useRef<{ service?: SalonService; stylist?: Stylist } | null>(null);
   // True only for a booking started from "My Bookings" → Rebook, so the
   // confirmation page can offer "Book this service again" instead of the
@@ -650,7 +670,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Lightbox keyboard navigation (Left/Right arrow keys and Escape key)
   useEffect(() => {
     if (!selectedGalleryPhoto) return;
-    const galleryPhotos = standardData.gallery || [];
+    const galleryPhotos = activeGalleryPhotos;
     const currentIndex = galleryPhotos.findIndex(photo => photo.url === selectedGalleryPhoto);
     if (currentIndex === -1) return;
 
@@ -668,7 +688,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedGalleryPhoto, standardData.gallery]);
+  }, [selectedGalleryPhoto, activeGalleryPhotos]);
 
   const handleCopyRefCode = async (code: string) => {
     const ok = await copyToClipboard(code);
@@ -2569,7 +2589,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {(standardData.gallery || []).map((photo, idx) => (
+              {activeGalleryPhotos.map((photo, idx) => (
                 <div
                   key={idx}
                   onClick={() => setSelectedGalleryPhoto(photo.url)}
@@ -2660,9 +2680,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                                 } catch {}
                               }
                             }}
-                            onClick={() =>
-                              playerVideoId && window.open(buildYouTubeShortsUrl(playerVideoId), '_blank')
-                            }
+                            onClick={() => setSelectedSocialVideo(video)}
                           >
                             {embedSrc ? (
                               <iframe
@@ -2713,14 +2731,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         const playerVideoId = isYouTubeVideoId(video.videoId)
                           ? video.videoId
                           : extractYouTubeId(video.youtubeUrl) || '';
-                        const watchUrl = playerVideoId
-                          ? buildYouTubeWatchUrl(playerVideoId)
-                          : video.youtubeUrl;
                         return (
                         <div
                           key={video.id}
                           className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-lg transition-all cursor-pointer bg-white"
-                          onClick={() => window.open(watchUrl, '_blank')}
+                          onClick={() => setSelectedSocialVideo(video)}
                         >
                           <div className="relative">
                             <img src={video.thumbnailUrl || (playerVideoId ? `https://img.youtube.com/vi/${playerVideoId}/maxresdefault.jpg` : '')} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -3105,11 +3120,30 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             price: toastData.price
           });
         }}
+        loyalty={publicSalon.loyalty}
       />
+
+      {selectedSocialVideo && (() => {
+        const videoId = isYouTubeVideoId(selectedSocialVideo.videoId)
+          ? selectedSocialVideo.videoId
+          : extractYouTubeId(selectedSocialVideo.youtubeUrl) || '';
+        const src = buildYouTubeEmbedUrl(videoId, { autoplay: true });
+        return (
+          <div className="fixed inset-0 z-[70] grid min-h-dvh place-items-center bg-slate-950/90 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Video preview: ${selectedSocialVideo.title}`} onClick={() => setSelectedSocialVideo(null)}>
+            <div className="w-full max-w-4xl overflow-hidden rounded-3xl bg-black shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 text-white">
+                <p className="min-w-0 truncate text-sm font-bold">{selectedSocialVideo.title}</p>
+                <button type="button" onClick={() => setSelectedSocialVideo(null)} className="min-h-11 min-w-11 rounded-xl bg-white/10 px-3 text-sm font-bold hover:bg-white/20">Close</button>
+              </div>
+              {src ? <iframe src={src} title={selectedSocialVideo.title} className="block aspect-video w-full" allow={YOUTUBE_IFRAME_ALLOW} allowFullScreen /> : <div className="grid aspect-video place-items-center p-8 text-sm text-white/70">This video is unavailable.</div>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Gallery Lightbox Modal */}
       {selectedGalleryPhoto && (() => {
-        const galleryPhotos = standardData.gallery || [];
+        const galleryPhotos = activeGalleryPhotos;
         const currentIndex = galleryPhotos.findIndex(photo => photo.url === selectedGalleryPhoto);
         const currentPhoto = galleryPhotos[currentIndex];
 
