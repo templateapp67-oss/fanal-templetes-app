@@ -287,3 +287,108 @@
   border: 1px solid rgba(227, 189, 195, 0.3);
 }
 
+/* ==========================================================
+   NEXORA HOME — Glassmorphism & smooth hover motion
+   ========================================================== */
+
+/* The signature frosted-glass surface: semi-transparent white
+   fill, a subtle 1px white border, and a real backdrop blur. */
+.nx-glass {
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  box-shadow:
+    0 24px 60px -24px rgba(120, 16, 60, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+/* Lighter inner chips that sit on top of a glass card. */
+.nx-glass-chip {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 10px 28px -14px rgba(120, 16, 60, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Smooth lift on hover: gentle scale + soft drop shadow. */
+.nx-lift {
+  transition:
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.nx-lift:hover {
+  transform: scale(1.05);
+  box-shadow:
+    0 36px 80px -24px rgba(120, 16, 60, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Logo hover: the same motion language as the hero card. */
+.nx-logo {
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nx-logo:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 6px 14px rgba(194, 14, 90, 0.45));
+}
+
+/* Gentle idle float for decorative chips. */
+@keyframes nx-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.nx-float { animation: nx-float 5.5s ease-in-out infinite; }
+.nx-float-delayed { animation: nx-float 6.5s ease-in-out 1.2s infinite; }
+
+/* Soft drifting glow behind the hero glass card. */
+@keyframes nx-pulse-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.85; }
+  50% { transform: translate(14px, -16px) scale(1.08); opacity: 1; }
+}
+.nx-blob { animation: nx-pulse-blob 9s ease-in-out infinite; }
+.nx-blob-alt { animation: nx-pulse-blob 11s ease-in-out 1.5s infinite; }
+
+/* Hero entrance */
+@keyframes nx-rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.nx-rise { animation: nx-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.nx-rise-d1 { animation-delay: 0.08s; }
+.nx-rise-d2 { animation-delay: 0.16s; }
+.nx-rise-d3 { animation-delay: 0.24s; }
+.nx-rise-d4 { animation-delay: 0.32s; }
+
+/* Pulsing play button ring on video cards. */
+@keyframes nx-play-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(194, 14, 90, 0.35); }
+  100% { box-shadow: 0 0 0 18px rgba(194, 14, 90, 0); }
+}
+.nx-play-pulse { animation: nx-play-pulse 2.2s ease-out infinite; }
+
+/* Reduced motion: keep everything static and instant. */
+@media (prefers-reduced-motion: reduce) {
+  .nx-lift,
+  .nx-logo,
+  .nx-float,
+  .nx-float-delayed,
+  .nx-blob,
+  .nx-blob-alt,
+  .nx-rise,
+  .nx-play-pulse {
+    animation: none;
+    transition: none;
+  }
+  .nx-lift:hover,
+  .nx-logo:hover {
+    transform: none;
+  }
+}
+

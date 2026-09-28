@@ -200,7 +200,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setCurrentView('landing')}
           className="flex items-center gap-base cursor-pointer group"
         >
-          <img alt="Nexora Logo" className="w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJYocRxmo4vpJ1_AiSXtAMUVqSgd5cKajB-4RUxdyE8aRIhXYKc6rpkP2QfQk08sdDXrCP9Xpc0FsS9TCBIXdCIvQsKMtaXaNapgbxpoP6ZtqwDgiKttI_L1wi-DCFFUdw5zFns1eezsmbwoXe7dlwdAN6mudQV7w2QZhWcRTvgOfjdEndslxxaWrRhgFdVl0nFcwkXUBL3dISegAZ9Wpv-_iyNsyPYyyAeFelbPvSjMco5lgCDlptw6yYIDX8QK0hSWM"/>
+          <img alt="Nexora Logo" className="nx-logo w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJYocRxmo4vpJ1_AiSXtAMUVqSgd5cKajB-4RUxdyE8aRIhXYKc6rpkP2QfQk08sdDXrCP9Xpc0FsS9TCBIXdCIvQsKMtaXaNapgbxpoP6ZtqwDgiKttI_L1wi-DCFFUdw5zFns1eezsmbwoXe7dlwdAN6mudQV7w2QZhWcRTvgOfjdEndslxxaWrRhgFdVl0nFcwkXUBL3dISegAZ9Wpv-_iyNsyPYyyAeFelbPvSjMco5lgCDlptw6yYIDX8QK0hSWM"/>
           <span className="material-symbols-outlined text-[#C20E5A]" style={{ fontVariationSettings: "'FILL' 1" }}>spa</span>
           <span className="font-display-lg text-display-lg-mobile tracking-tighter text-[#C20E5A]">Nexora</span>
         </div>
