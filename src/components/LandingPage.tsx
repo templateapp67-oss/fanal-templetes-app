@@ -230,7 +230,7 @@ const VideoShowcase: React.FC = () => {
 
   return (
     <section id="nexora-videos" className="scroll-mt-24 bg-white py-20 sm:py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-8">
+      <div className="mx-0 w-full max-w-full px-4 sm:px-8">
         <SectionHeading
           eyebrow="Videos"
           icon="play_circle"
@@ -285,7 +285,7 @@ const CampaignPoster: React.FC = () => (
     <div className="nx-dots pointer-events-none absolute left-0 top-0 h-40 w-40 opacity-60" />
     <div className="nx-dots pointer-events-none absolute bottom-0 right-0 h-40 w-40 opacity-60" />
 
-    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+    <div className="relative mx-0 w-full min-w-full max-w-full px-4 sm:px-8">
       <SectionHeading
         light
         eyebrow="Campaign"
@@ -351,7 +351,7 @@ const RewardsSection: React.FC = () => (
   <section id="rewards" className="scroll-mt-24 relative overflow-hidden bg-gradient-to-b from-[#2a0616] via-[#4a0b26] to-[#2a0616] py-20 sm:py-24">
     <div className="nx-blob pointer-events-none absolute -left-24 top-10 h-72 w-72 rounded-full bg-fuchsia-600/30 blur-3xl" />
     <div className="nx-blob-alt pointer-events-none absolute -right-20 bottom-10 h-80 w-80 rounded-full bg-rose-500/25 blur-3xl" />
-    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+    <div className="relative mx-0 w-full min-w-full max-w-full px-4 sm:px-8">
       <SectionHeading
         light
         eyebrow="Rewards"
@@ -396,7 +396,7 @@ const ProblemSolutionSection: React.FC = () => (
     <div className="nx-dots pointer-events-none absolute right-0 top-0 h-44 w-44 opacity-50" />
     <div className="nx-blob pointer-events-none absolute -left-24 bottom-10 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl" />
 
-    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+    <div className="relative mx-0 w-full min-w-full max-w-full px-4 sm:px-8">
       <SectionHeading
         light
         eyebrow="Is problem ka"
@@ -452,7 +452,7 @@ const ProblemSolutionSection: React.FC = () => (
 const JaipurDiscountSection: React.FC = () => (
   <section id="jaipur-offer" className="relative scroll-mt-24 overflow-hidden py-20 sm:py-24" style={{ background: 'radial-gradient(900px 500px at 50% -10%, #2a1f05 0%, #070502 55%)' }}>
     <div className="nx-blob pointer-events-none absolute right-0 top-24 h-80 w-80 rounded-full bg-amber-400/10 blur-3xl" />
-    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+    <div className="relative mx-0 w-full min-w-full max-w-full px-4 sm:px-8">
       <SectionHeading
         light
         eyebrow="Jaipur special"
@@ -512,7 +512,7 @@ const POSTER_WALL = [
 
 const PosterWall: React.FC = () => (
   <section id="posters" className="scroll-mt-24 bg-white py-20 sm:py-24">
-    <div className="mx-auto max-w-6xl px-4 sm:px-8">
+    <div className="mx-0 w-full max-w-full px-4 sm:px-8">
       <SectionHeading
         eyebrow="Poster wall"
         icon="image"
@@ -576,7 +576,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
         <div className="nx-blob pointer-events-none absolute -left-24 top-32 h-80 w-80 rounded-full bg-[#f9a8c9]/50 blur-3xl" />
         <div className="nx-blob-alt pointer-events-none absolute right-0 top-16 h-96 w-96 rounded-full bg-[#e1b8ff]/40 blur-3xl" />
 
-        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 sm:px-8 lg:grid-cols-[1.05fr_.95fr]">
+        <div className="relative mx-0 grid w-full min-w-full max-w-full items-center gap-12 px-4 sm:px-8 lg:grid-cols-[1.05fr_.95fr]">
           {/* ---- Copy ---- */}
           <div>
             <span className="nx-rise inline-flex items-center gap-2 rounded-full border border-rose-200/70 bg-white/60 px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#C20E5A] backdrop-blur-md">
@@ -670,7 +670,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
         </div>
 
         {/* ---- factual stats band ---- */}
-        <div className="relative mx-auto mt-16 max-w-6xl px-4 sm:px-8">
+        <div className="relative mx-0 mt-16 w-full min-w-full max-w-full px-4 sm:px-8">
           <div className="nx-glass grid grid-cols-2 gap-6 rounded-[2rem] p-6 sm:p-8 lg:grid-cols-4">
             {PLATFORM_STATS.map((s) => (
               <div key={s.label} className="text-center">
@@ -685,7 +685,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ ABOUT ============================ */}
       <section id="about" className="scroll-mt-24 py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-8">
+        <div className="mx-0 w-full max-w-full px-4 sm:px-8">
           <SectionHeading
             eyebrow="About the app"
             icon="info"
@@ -725,7 +725,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ CUSTOMERS ============================ */}
       <section id="customers" className="scroll-mt-24 bg-gradient-to-b from-[#fff5f8] to-surface py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-8">
+        <div className="mx-0 w-full max-w-full px-4 sm:px-8">
           <SectionHeading
             eyebrow="For customers"
             icon="favorite"
@@ -755,7 +755,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ OWNERS ============================ */}
       <section id="owners" className="scroll-mt-24 py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-8">
+        <div className="mx-0 w-full max-w-full px-4 sm:px-8">
           <SectionHeading
             eyebrow="For shop owners"
             icon="storefront"
@@ -788,7 +788,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ GROWTH PARTNER ============================ */}
       <section id="partner" className="scroll-mt-24 bg-gradient-to-b from-surface to-[#fff5f8] py-20 sm:py-24">
-        <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 sm:px-8 lg:grid-cols-2">
+        <div className="mx-0 grid w-full min-w-full max-w-full items-center gap-10 px-4 sm:px-8 lg:grid-cols-2">
           <figure className="nx-glass nx-lift overflow-hidden rounded-[2rem] p-3">
             <img src={partnerHero} alt="Nexora Growth Partner program" className="h-72 w-full rounded-3xl object-cover sm:h-96" loading="lazy" />
           </figure>
@@ -824,7 +824,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ TEMPLATES ============================ */}
       <section id="templates" className="scroll-mt-24 bg-white py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-8">
+        <div className="mx-0 w-full max-w-full px-4 sm:px-8">
           <SectionHeading
             eyebrow="Templates"
             icon="palette"
@@ -857,7 +857,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ TESTIMONIALS ============================ */}
       <section id="stories" className="scroll-mt-24 py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-8">
+        <div className="mx-0 w-full max-w-full px-4 sm:px-8">
           <SectionHeading eyebrow="Community stories" icon="forum" title="Loved by owners, customers & partners" sub="One platform, three happy sides of the counter." />
           <div className="mt-12 grid gap-5 lg:grid-cols-3">
             {TESTIMONIALS.map((t) => (
@@ -908,7 +908,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ FOOTER ============================ */}
       <footer className="border-t border-rose-100 bg-[#fffafc] py-12">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-8 md:grid-cols-[1.4fr_1fr_1fr]">
+        <div className="mx-0 grid w-full min-w-full max-w-full gap-10 px-4 sm:px-8 md:grid-cols-[1.4fr_1fr_1fr]">
           <div>
             <span className="inline-flex items-center gap-2 text-xl font-black tracking-tight text-[#C20E5A]">
               <Ic name="spa" className="text-2xl fill-1" /> Nexora
@@ -937,12 +937,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
             </ul>
           </nav>
         </div>
-        <p className="mx-auto mt-10 max-w-6xl px-4 text-xs text-on-surface-variant sm:px-8">© {new Date().getFullYear()} Nexora · Salon OS. All rights reserved.</p>
+        <p className="mx-0 mt-10 w-full max-w-full px-4 text-xs text-on-surface-variant sm:px-8">© {new Date().getFullYear()} Nexora · Salon OS. All rights reserved.</p>
       </footer>
 
       {/* ---- continuity: previously selected template ---- */}
       {selected && (
-        <section className="mx-auto max-w-6xl px-4 pb-10 sm:px-8">
+        <section className="mx-0 w-full max-w-full px-4 pb-10 sm:px-8">
           <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <img src={selected.thumbnailUrl} alt="" className="h-14 w-14 rounded-xl object-cover" />
             <div>

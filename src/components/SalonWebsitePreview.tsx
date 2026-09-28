@@ -27,6 +27,9 @@ import {
   ExternalLink, 
   ChevronRight, 
   ChevronLeft,
+  Home,
+  List,
+  PhoneCall,
   ZoomIn,
   ArrowRight, 
   Edit3, 
@@ -43,7 +46,7 @@ import {
   RefreshCw, 
   Scissors
 } from 'lucide-react';
-import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer } from '../types';
+import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer, LookbookPhoto, SocialVideo } from '../types';
 import { TEMPLATE_REGISTRY, getTemplateConfig, getTemplateContent, type Testimonial } from '../data/templates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { createBlankSalonProfile } from '../lib/ownerSalonResolution';
@@ -58,13 +61,12 @@ import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../u
 import { getServiceIcon } from './ServiceManagement';
 import {
   buildYouTubeEmbedUrl,
-  buildYouTubeShortsUrl,
-  buildYouTubeWatchUrl,
   extractYouTubeId,
   isYouTubeVideoId,
   YOUTUBE_IFRAME_ALLOW,
 } from '../utils/youtube';
 import { slugifySalonName } from '../lib/salonStore';
+import { useSalonData } from '../lib/useSalonData';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -300,19 +302,36 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   rebookRequest,
   isLoading = false,
 }) => {
+  // Every public template consumes the same published server payload. Props
+  // are retained as a graceful initial/fallback render while the API responds.
+  const publicSalon = useSalonData(
+    publicView ? profile?.subdomain : null,
+    { profile, services, stylists, selectedTemplateId: selectedTemplateId || null },
+    publicView ? user?.id : null,
+  );
+  const resolvedProfile = publicView ? publicSalon.data.profile : profile;
+  const resolvedServices = publicView ? publicSalon.data.services : services;
+  const resolvedStylists = publicView ? publicSalon.data.stylists : stylists;
   // Fallback internal state if setters not passed
-  const [internalProfile, setInternalProfile] = useState<SalonProfile>(profile);
-  const [internalServices, setInternalServices] = useState<SalonService[]>(services);
-  const [internalStylists, setInternalStylists] = useState<Stylist[]>(stylists);
+  const [internalProfile, setInternalProfile] = useState<SalonProfile>(resolvedProfile);
+  const [internalServices, setInternalServices] = useState<SalonService[]>(resolvedServices);
+  const [internalStylists, setInternalStylists] = useState<Stylist[]>(resolvedStylists);
 
-  const activeProfile = (setProfileProp ? profile : internalProfile) || createBlankSalonProfile();
+  const activeProfile = (setProfileProp ? resolvedProfile : internalProfile) || createBlankSalonProfile();
   const setProfile = setProfileProp || setInternalProfile;
 
-  const activeServices = setServicesProp ? services : internalServices;
+  const activeServices = setServicesProp ? resolvedServices : internalServices;
   const setServices = setServicesProp || setInternalServices;
 
-  const activeStylists = setStylistsProp ? stylists : internalStylists;
+  const activeStylists = setStylistsProp ? resolvedStylists : internalStylists;
   const setStylists = setStylistsProp || setInternalStylists;
+
+  useEffect(() => {
+    if (!publicView) return;
+    setInternalProfile(resolvedProfile);
+    setInternalServices(resolvedServices);
+    setInternalStylists(resolvedStylists);
+  }, [publicView, resolvedProfile, resolvedServices, resolvedStylists]);
 
   // Dynamically update page titles, meta descriptions, canonical URLs, and structured data
   useSalonSEO(activeProfile, true);
@@ -359,6 +378,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
+  const [mobileNavActive, setMobileNavActive] = useState<'home' | 'services' | 'location'>('home');
   useEffect(() => {
     if (forcedDeviceMode) setDeviceMode(forcedDeviceMode);
   }, [forcedDeviceMode]);
@@ -403,7 +423,22 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [selectedCategoryKey]);
 
   // Side Panel Section Visibility
-  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibilityState>(DEFAULT_SECTION_VISIBILITY);
+  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibilityState>(() => ({
+    ...DEFAULT_SECTION_VISIBILITY,
+    ...(activeProfile.sectionVisibility || {}),
+  }));
+
+  // The customizer used to keep these choices only inside this component.
+  // Mirror them into the owner profile so the normal autosave pipeline stores
+  // them and a public refresh renders the same template sections.
+  useEffect(() => {
+    if (!setProfile || publicView) return;
+    setProfile((current) => {
+      const currentValue = current.sectionVisibility || {};
+      if (JSON.stringify(currentValue) === JSON.stringify(sectionVisibility)) return current;
+      return { ...current, sectionVisibility };
+    });
+  }, [sectionVisibility, setProfile, publicView]);
 
   // Promotional Popup Trigger State
   const [showPromoPopup, setShowPromoPopup] = useState<boolean>(false);
@@ -484,6 +519,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [heroImageSrc, primaryAccentColor]);
 
   const standardData = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
+  const activeGalleryPhotos = (activeProfile.lookbookPhotos?.length
+    ? activeProfile.lookbookPhotos
+    : standardData.gallery || []) as LookbookPhoto[];
 
   // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
@@ -491,6 +529,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [selectedService, setSelectedService] = useState<SalonService>(activeServices[0] || activeTemplate.services[0]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
+  const [selectedSocialVideo, setSelectedSocialVideo] = useState<SocialVideo | null>(null);
   const pendingBookingRef = useRef<{ service?: SalonService; stylist?: Stylist } | null>(null);
   // True only for a booking started from "My Bookings" → Rebook, so the
   // confirmation page can offer "Book this service again" instead of the
@@ -576,15 +615,25 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     testimonialsTitle: string;
     galleryTitle: string;
     locationTitle: string;
-  }>({
+  }>(() => ({
     servicesTitle: 'Curated Services & Treatments',
     servicesSubtitle: 'Explore our handcrafted menu with transparent pricing in INR (₹).',
     stylistsTitle: 'Meet Our Master Specialists & Stylists',
     stylistsSubtitle: 'Dedicated artisans trained in contemporary international and classical Indian beauty traditions.',
     testimonialsTitle: 'Loved by 1,200+ Verified Clients',
     galleryTitle: 'Studio Lookbook & Client Transformations',
-    locationTitle: 'Visit Our Sanctuary'
-  });
+    locationTitle: 'Visit Our Sanctuary',
+    ...(activeProfile.sectionHeadings || {}),
+  }));
+
+  useEffect(() => {
+    if (!setProfile || publicView) return;
+    setProfile((current) => {
+      const currentValue = current.sectionHeadings || {};
+      if (JSON.stringify(currentValue) === JSON.stringify(sectionHeadings)) return current;
+      return { ...current, sectionHeadings };
+    });
+  }, [sectionHeadings, setProfile, publicView]);
 
   // Top AI Prompt state
   const [topAiPrompt, setTopAiPrompt] = useState<string>('');
@@ -621,7 +670,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Lightbox keyboard navigation (Left/Right arrow keys and Escape key)
   useEffect(() => {
     if (!selectedGalleryPhoto) return;
-    const galleryPhotos = standardData.gallery || [];
+    const galleryPhotos = activeGalleryPhotos;
     const currentIndex = galleryPhotos.findIndex(photo => photo.url === selectedGalleryPhoto);
     if (currentIndex === -1) return;
 
@@ -639,7 +688,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedGalleryPhoto, standardData.gallery]);
+  }, [selectedGalleryPhoto, activeGalleryPhotos]);
 
   const handleCopyRefCode = async (code: string) => {
     const ok = await copyToClipboard(code);
@@ -722,6 +771,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     setSelectedService(serviceToBook);
     setSelectedStylist(stylistToBook);
     setIsBookingOpen(true);
+  };
+
+  const scrollToMobileSection = (id: 'home' | 'services' | 'location') => {
+    setMobileNavActive(id);
+    const target = document.getElementById(`${id}-section`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   // Complete the booking action that opened the auth dialog. This is keyed by
@@ -955,11 +1010,30 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       ? '[&_button]:rounded-none'
       : profile.buttonStyle === 'soft'
         ? '[&_button]:shadow-sm'
-        : '';
+      : '';
+
+  // Keep the installed-PWA browser chrome aligned with the active template.
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (meta) meta.content = resolvedPrimaryColor;
+  }, [resolvedPrimaryColor]);
+
+  useEffect(() => {
+    if (!publicView || typeof IntersectionObserver === 'undefined') return;
+    const targets = ['home', 'services', 'location']
+      .map((id) => document.getElementById(`${id}-section`))
+      .filter((element): element is HTMLElement => Boolean(element));
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.find((entry) => entry.isIntersecting);
+      if (visible) setMobileNavActive(visible.target.id.replace('-section', '') as 'home' | 'services' | 'location');
+    }, { rootMargin: '-35% 0px -50% 0px', threshold: 0.01 });
+    targets.forEach((target) => observer.observe(target));
+    return () => observer.disconnect();
+  }, [publicView, sectionVisibility.header, sectionVisibility.location]);
 
   return (
     <div 
-      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${profile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-16' : 'pt-20 pb-24'}`}
+      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${profile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-28 md:pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': resolvedPrimaryColor,
         '--theme-primary': resolvedPrimaryColor,
@@ -1429,7 +1503,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
         {sectionVisibility.header && (
-          <header className={`flex min-w-0 flex-col sm:flex-row items-center justify-between gap-2 p-2 sm:p-4 w-full overflow-hidden border-b transition-colors ${
+          <header className={`sticky top-0 z-30 flex min-w-0 flex-row items-center justify-between gap-2 p-2 sm:p-4 w-full overflow-hidden border-b transition-colors ${
             isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
           }`}>
             <div className="flex min-w-0 max-w-full items-center gap-3">
@@ -1582,7 +1656,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
         {sectionVisibility.hero && (
-          <section className="relative w-full max-w-full min-w-0 overflow-hidden transition-all bg-slate-950 text-white min-h-[480px] md:min-h-[540px] flex items-center">
+          <section id="home-section" className="relative w-full max-w-full min-w-0 overflow-hidden transition-all bg-slate-950 text-white min-h-[480px] md:min-h-[540px] flex items-center scroll-mt-16">
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
             <div className="absolute inset-0 z-0 overflow-hidden">
               <img
@@ -1597,7 +1671,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               />
               {/* Dynamic Overlay Ambient Tint (Gentle ~15-25% mask max) */}
               <div 
-                className={`absolute inset-0 ${heroAIStyling.overlayGradientClass} pointer-events-none transition-all duration-500`}
+                className={`absolute inset-0 bg-black/60 md:bg-transparent ${heroAIStyling.overlayGradientClass} pointer-events-none transition-all duration-500`}
                 style={{
                   backgroundColor: heroAIStyling.overlayAccentColor,
                   mixBlendMode: heroAIStyling.overlayBlendMode as any
@@ -1726,11 +1800,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 )}
 
                 {/* Primary Action Buttons */}
-                <div className="flex flex-wrap items-center gap-3.5 mt-8">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 mt-8">
                   <button
                     type="button"
                     onClick={() => handleOpenBooking()}
-                    className="font-bold text-sm px-6 py-3.5 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
+                    className="w-full sm:w-auto font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
                     style={{ 
                       backgroundColor: heroAIStyling.primaryBtnBg,
                       color: heroAIStyling.primaryBtnText 
@@ -1921,7 +1995,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 3. SERVICES & PRICING MENU SECTION (100% INLINE EDITABLE) */}
         {/* ============================================================ */}
         {sectionVisibility.services && (
-          <section className={`p-6 md:p-12 border-b ${
+          <section className={`px-4 py-6 sm:p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
           }`} id="services-section">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -2180,7 +2254,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               {activeProfile.offers.map((offer) => (
                 <SalonOfferCard key={offer.id} offer={offer} isDarkCanvas={isDarkCanvas} />
               ))}
@@ -2196,7 +2270,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className={`p-6 md:p-12 border-b ${
+            className={`px-4 py-6 sm:p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-slate-50/50 border-slate-200'
           }`} id="team-section">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
@@ -2253,7 +2327,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               initial="hidden"
               whileInView="show"
               viewport={{ once: true }}
-              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5"
+              className="grid w-full min-w-0 grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3"
             >
               {activeStylists.map((st) => (
                 <motion.div
@@ -2262,11 +2336,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     show: { opacity: 1, y: 0 }
                   }}
                   key={st.id}
-                  className={`rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all shadow-xs ${
+                  className={`w-full min-w-0 rounded-2xl border p-4 sm:p-5 flex flex-col justify-between gap-4 transition-all shadow-xs ${
                     isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'
                   }`}
                 >
-                  <div className="flex items-start gap-3.5">
+                  <div className="flex w-full min-w-0 items-start gap-3.5">
                     <div className="relative shrink-0">
                       <img
                         src={st.avatarUrl}
@@ -2335,7 +2409,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                   {/* Book / Manage */}
-                  <div className={`pt-2.5 border-t flex items-center justify-between gap-2 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
+                  <div className={`w-full min-w-0 pt-2.5 border-t flex items-center justify-between gap-2 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
                     {isEditMode && (
                       <button
                         type="button"
@@ -2350,7 +2424,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleOpenBooking(undefined, st)}
-                      className="w-full text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                      className="min-h-11 w-full min-w-0 whitespace-nowrap text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
                       style={{
                         backgroundColor: isDarkCanvas ? '#ffffff' : activeAccent.primaryHex,
                         color: isDarkCanvas ? '#0f172a' : 'var(--accent-text-color, #ffffff)',
@@ -2371,7 +2445,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 5. CLIENT REVIEWS & TESTIMONIALS SECTION */}
         {/* ============================================================ */}
         {sectionVisibility.testimonials && (
-          <section className={`p-6 md:p-12 border-b ${
+          <section className={`px-4 py-6 sm:p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
           }`}>
             <div className="text-center max-w-3xl mx-auto mb-8">
@@ -2408,10 +2482,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid w-full max-w-full grid-cols-1 gap-4 md:grid-cols-3">
               {(activeReviews || []).length > 0 && (
                 <div
-                  className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 transition-all ${
+                  className={`flex w-full min-w-0 max-w-full flex-col justify-between gap-3 rounded-2xl border p-4 sm:p-5 transition-all ${
                     isDarkCanvas ? 'bg-neutral-900/60 border-neutral-800' : 'bg-slate-50 border-slate-200'
                   }`}
                 >
@@ -2425,7 +2499,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <span className="text-[10px] font-mono text-slate-400">{activeReviews[testimonialIndex].date}</span>
                     </div>
 
-                    <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
+                    <p className={`break-words text-left text-sm italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
                       "{activeReviews[testimonialIndex].comment}"
                     </p>
                   </div>
@@ -2515,7 +2589,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {(standardData.gallery || []).map((photo, idx) => (
+              {activeGalleryPhotos.map((photo, idx) => (
                 <div
                   key={idx}
                   onClick={() => setSelectedGalleryPhoto(photo.url)}
@@ -2606,9 +2680,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                                 } catch {}
                               }
                             }}
-                            onClick={() =>
-                              playerVideoId && window.open(buildYouTubeShortsUrl(playerVideoId), '_blank')
-                            }
+                            onClick={() => setSelectedSocialVideo(video)}
                           >
                             {embedSrc ? (
                               <iframe
@@ -2659,14 +2731,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         const playerVideoId = isYouTubeVideoId(video.videoId)
                           ? video.videoId
                           : extractYouTubeId(video.youtubeUrl) || '';
-                        const watchUrl = playerVideoId
-                          ? buildYouTubeWatchUrl(playerVideoId)
-                          : video.youtubeUrl;
                         return (
                         <div
                           key={video.id}
                           className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-lg transition-all cursor-pointer bg-white"
-                          onClick={() => window.open(watchUrl, '_blank')}
+                          onClick={() => setSelectedSocialVideo(video)}
                         >
                           <div className="relative">
                             <img src={video.thumbnailUrl || (playerVideoId ? `https://img.youtube.com/vi/${playerVideoId}/maxresdefault.jpg` : '')} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -2706,7 +2775,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 7. LOCATION, MAP & WORKING HOURS CARD */}
         {/* ============================================================ */}
         {sectionVisibility.location && (
-          <section className="p-6 md:p-12 bg-slate-50 border-t border-slate-100">
+          <section id="location-section" className="scroll-mt-16 px-4 py-6 sm:p-6 md:p-12 bg-slate-50 border-t border-slate-100">
             <div data-layout-stable-contact className="grid grid-cols-1 lg:min-h-[36rem] lg:grid-cols-2 gap-6 [contain:layout]">
               {/* Location details */}
               <div className="flex flex-col justify-between gap-4">
@@ -2984,6 +3053,41 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         </a>
       )}
 
+      {publicView && !previewMode && (
+        <nav
+          aria-label="Salon quick actions"
+          className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-slate-200/80 bg-white/95 px-1 pt-1 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden [padding-bottom:calc(env(safe-area-inset-bottom)+0.25rem)]"
+        >
+          {[
+            { id: 'home' as const, label: 'Home', icon: Home, onClick: () => scrollToMobileSection('home') },
+            { id: 'services' as const, label: 'Services', icon: List, onClick: () => scrollToMobileSection('services') },
+            { id: 'book' as const, label: 'Book Now', icon: CalendarCheck, onClick: () => handleOpenBooking() },
+            { id: 'location' as const, label: 'Location', icon: MapPin, onClick: () => scrollToMobileSection('location') },
+          ].map((item) => {
+            const active = item.id === mobileNavActive || item.id === 'book';
+            const Icon = item.icon;
+            return (
+              <button key={item.id} type="button" onClick={item.onClick} className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold transition-all active:scale-95 ${active ? 'text-[var(--primary-accent)]' : 'text-slate-500'}`}>
+                {active && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-[var(--primary-accent)] shadow-[0_0_10px_var(--primary-accent)]" />}
+                <Icon className="h-5 w-5" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+          {activeProfile.whatsapp ? (
+            <a href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold text-emerald-600 active:scale-95">
+              <MessageSquare className="h-5 w-5" />
+              <span>WhatsApp</span>
+            </a>
+          ) : (
+            <a href={`tel:${activeProfile.phone?.replace(/\D/g, '') || ''}`} className="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold text-slate-700 active:scale-95">
+              <PhoneCall className="h-5 w-5" />
+              <span>Call</span>
+            </a>
+          )}
+        </nav>
+      )}
+
       {/* Booking Modal Flow */}
       <BookingModal
         isOpen={isBookingOpen}
@@ -3016,11 +3120,30 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             price: toastData.price
           });
         }}
+        loyalty={publicSalon.loyalty}
       />
+
+      {selectedSocialVideo && (() => {
+        const videoId = isYouTubeVideoId(selectedSocialVideo.videoId)
+          ? selectedSocialVideo.videoId
+          : extractYouTubeId(selectedSocialVideo.youtubeUrl) || '';
+        const src = buildYouTubeEmbedUrl(videoId, { autoplay: true });
+        return (
+          <div className="fixed inset-0 z-[70] grid min-h-dvh place-items-center bg-slate-950/90 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Video preview: ${selectedSocialVideo.title}`} onClick={() => setSelectedSocialVideo(null)}>
+            <div className="w-full max-w-4xl overflow-hidden rounded-3xl bg-black shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 text-white">
+                <p className="min-w-0 truncate text-sm font-bold">{selectedSocialVideo.title}</p>
+                <button type="button" onClick={() => setSelectedSocialVideo(null)} className="min-h-11 min-w-11 rounded-xl bg-white/10 px-3 text-sm font-bold hover:bg-white/20">Close</button>
+              </div>
+              {src ? <iframe src={src} title={selectedSocialVideo.title} className="block aspect-video w-full" allow={YOUTUBE_IFRAME_ALLOW} allowFullScreen /> : <div className="grid aspect-video place-items-center p-8 text-sm text-white/70">This video is unavailable.</div>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Gallery Lightbox Modal */}
       {selectedGalleryPhoto && (() => {
-        const galleryPhotos = standardData.gallery || [];
+        const galleryPhotos = activeGalleryPhotos;
         const currentIndex = galleryPhotos.findIndex(photo => photo.url === selectedGalleryPhoto);
         const currentPhoto = galleryPhotos[currentIndex];
 

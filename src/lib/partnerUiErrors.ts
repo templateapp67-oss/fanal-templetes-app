@@ -10,6 +10,7 @@ const SAFE_MESSAGES = new Set([
   "Could not save your partner profile. Please retry.",
   "Could not update the password. Please try again.",
   "Email changes require a live Supabase Auth connection.",
+  "Email sign-in is disabled in Supabase. Enable the Email provider in Authentication → Providers → Email.",
   "Enter a different email address.",
   "Enter a full name of 1–120 characters.",
   "Enter a phone number with 7–15 digits.",

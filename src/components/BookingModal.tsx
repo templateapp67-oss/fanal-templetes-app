@@ -28,6 +28,7 @@ import {
   Minus
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
+import type { SalonLoyaltySnapshot } from '../lib/useSalonData';
 import { payAdvanceWithRazorpay, type PaymentGatewayMode, type RazorpayOutcome } from '../lib/razorpayCheckout';
 import {
   buildBookingDraft,
@@ -89,6 +90,8 @@ export interface BookingModalProps {
    * duplicate "Book Another Service".
    */
   fromHistory?: boolean;
+  /** Public loyalty summary for this signed-in customer at this salon. */
+  loyalty?: SalonLoyaltySnapshot | null;
 }
 
 type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
@@ -128,6 +131,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   user,
   onRequireAuth,
   fromHistory = false,
+  loyalty = null,
 }) => {
   // Safe resolved values.
   //
@@ -1290,15 +1294,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs font-sans">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs font-sans">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+        initial={{ opacity: 0, scale: 0.98, y: 48 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[92dvh] flex flex-col overflow-hidden text-slate-800"
+        exit={{ opacity: 0, scale: 0.98, y: 48 }}
+        className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[94dvh] sm:max-h-[92dvh] flex flex-col overflow-hidden text-slate-800"
       >
         {/* MODAL HEADER */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
+          <span className="absolute top-2 left-1/2 h-1 w-12 -translate-x-1/2 rounded-full bg-slate-300 sm:hidden" aria-hidden="true" />
           <div className="flex items-center gap-3">
             <span
               className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-xs"
@@ -1362,6 +1367,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
         {/* MODAL BODY (SCROLLABLE) */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col gap-4">
+
+          {loyalty?.programEnabled && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-amber-950">
+              <div className="min-w-0">
+                <p className="text-xs font-black">{loyalty.tier ? `${loyalty.tier} rewards` : 'Salon rewards active'}</p>
+                <p className="text-[11px] text-amber-800">{loyalty.pointsBalance !== undefined ? `${loyalty.pointsBalance.toLocaleString('en-IN')} points available` : 'Points and tier discounts apply at checkout.'}</p>
+              </div>
+              {loyalty.tierDiscount ? <span className="shrink-0 rounded-lg bg-amber-200 px-2 py-1 text-[10px] font-black">{loyalty.tierDiscount}% OFF</span> : <Sparkles className="h-5 w-5 shrink-0 text-amber-600" />}
+            </div>
+          )}
 
           {/* Interrupted-payment draft found for THIS salon (e.g. the tab
               reloaded while the UPI app was open). Offered, never forced. */}

@@ -183,13 +183,26 @@ export function mapProfileRow(row: any): SalonProfile {
     requireDeposit: row.require_deposit ?? data.require_deposit ?? false,
     depositPercentage: row.deposit_percentage ?? data.deposit_percentage ?? 20,
     themeAccentKey: row.theme_accent_key || data.theme_accent_key || 'slate',
+    primaryColor: row.primary_color || data.primary_color || undefined,
+    secondaryColor: row.secondary_color || data.secondary_color || undefined,
+    backgroundColor: row.background_color || data.background_color || undefined,
+    headingStyle: row.heading_style || data.heading_style || undefined,
+    buttonStyle: row.button_style || data.button_style || undefined,
+    borderRadius: row.border_radius || data.border_radius || undefined,
+    appearance: row.appearance || data.appearance || undefined,
+    offers: Array.isArray(row.offers) ? row.offers : (Array.isArray(data.offers) ? data.offers : []),
+    promotionalBanner: row.promotional_banner || data.promotional_banner || config.promotionalBanner || undefined,
+    sectionVisibility: row.template_settings?.sectionVisibility || data.template_settings?.sectionVisibility || config.sectionVisibility || undefined,
+    sectionHeadings: row.template_settings?.sectionHeadings || data.template_settings?.sectionHeadings || config.sectionHeadings || undefined,
+    socialVideos: Array.isArray(config.socialVideos) ? config.socialVideos : (Array.isArray(data.social_videos) ? data.social_videos : []),
+    lookbookPhotos: Array.isArray(config.lookbookPhotos) ? config.lookbookPhotos : (Array.isArray(data.lookbook_photos) ? data.lookbook_photos : []),
     // The public site payload must carry this setting. Legacy rows with no
     // value retain the database/product default instead of being treated as off.
     acceptsOnlineBookings: row.accepts_online_bookings ?? true,
     customAccentColor: row.custom_accent_color || data.custom_accent_color || undefined,
     landmark: row.landmark || row.location_landmark || undefined,
     foundingYear: row.founding_year || data.founding_year || undefined,
-    whiteLabelEnabled: row.white_label_enabled ?? true,
+    whiteLabelEnabled: row.white_label_enabled ?? data.white_label_enabled ?? config.whiteLabelEnabled ?? true,
   };
 }
 
@@ -267,6 +280,38 @@ async function readOwnerEditorState(
     // Unreadable draft (missing table, RLS, timeout) is not a site failure.
     return null;
   }
+}
+
+/** Resolve the owner behind a published salon without exposing that identity. */
+async function resolvePublishedOwnerId(deps: SiteLookupDeps, salon: any, deadlineAt?: number): Promise<string | null> {
+  const direct = salon?.owner_id || salon?.ownerId || salon?.data?.owner_id || salon?.data?.editor_profile?.ownerId;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  const organizationId = salon?.organization_id;
+  if (!organizationId || deps.isMockSupabase) return null;
+  try {
+    const result = await runDb(
+      () => deps.db.from('organization_members').select('user_id').eq('organization_id', organizationId).in('role', ['owner', 'manager']).eq('status', 'active').order('created_at').limit(1).maybeSingle(),
+      { label: 'public salon owner resolution', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false },
+    );
+    return typeof result?.data?.user_id === 'string' ? result.data.user_id : null;
+  } catch {
+    return null;
+  }
+}
+
+function publicLoyaltyConfig(row: any, editorState: any): any | null {
+  const source = editorState?.loyaltyConfig || row;
+  if (!source || source.program_enabled === false || source.programEnabled === false) return { programEnabled: false };
+  const enabled = source.program_enabled ?? source.programEnabled;
+  if (enabled !== true) return null;
+  return {
+    programEnabled: true,
+    pointsPerVisit: Number(source.points_per_visit ?? source.pointsPerVisit ?? 0),
+    pointsPerHundredSpent: Number(source.points_per_hundred_spent ?? source.pointsPerHundredSpent ?? 0),
+    tierThresholds: source.tier_thresholds || source.tierThresholds || {},
+    tierMultipliers: source.tier_multipliers || source.tierMultipliers || {},
+    rewards: Array.isArray(source.rewards) ? source.rewards.filter((reward: any) => reward?.isActive !== false) : [],
+  };
 }
 
 function textOrEmpty(value: unknown): string {
@@ -363,6 +408,14 @@ function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): Salo
   if (profile.longitude === undefined && Number.isFinite(Number(source.longitude))) {
     merged.longitude = Number(source.longitude);
   }
+  if ((!Array.isArray(merged.socialVideos) || merged.socialVideos.length === 0) && Array.isArray(source.socialVideos)) {
+    merged.socialVideos = source.socialVideos;
+  }
+  if ((!Array.isArray(merged.lookbookPhotos) || merged.lookbookPhotos.length === 0) && Array.isArray(source.lookbookPhotos)) {
+    merged.lookbookPhotos = source.lookbookPhotos;
+  }
+  if (!merged.promotionalBanner && source.promotionalBanner) merged.promotionalBanner = source.promotionalBanner;
+  if ((!Array.isArray(merged.offers) || merged.offers.length === 0) && Array.isArray(source.offers)) merged.offers = source.offers;
   return merged;
 }
 
@@ -449,22 +502,37 @@ export async function lookupSalon(
 
     if (!salonRow) return { found: false, salon: null };
     const catalogueSalonId = salonRow.__catalogue_salon_id || salonRow.id;
+    const ownerId = await resolvePublishedOwnerId(deps, salonRow, deadlineAt);
 
-    const [servicesRes, staffRes, hoursRes, editorState] = await Promise.all([
+    const [servicesRes, staffRes, legacyStylistsRes, hoursRes, ownerEditorState, loyaltyRes] = await Promise.all([
       runDb(() => deps.db.from('services').select('*').eq('salon_id', catalogueSalonId).eq('is_active', true).or('is_bookable_online.is.true,is_bookable_online.is.null').order('display_order'),
         { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', catalogueSalonId).eq('is_active', true).eq('is_public', true),
         { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
+      ownerId
+        ? runDb(() => deps.db.from('stylists').select('id,name,role,avatar_url,bio,specialties,assigned_services,rating,status,sort_order').eq('owner_id', ownerId).order('sort_order'),
+          { label: 'public dashboard team', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt })
+        : Promise.resolve({ data: [], error: null }),
       runDb(() => deps.db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',catalogueSalonId),
         { label: 'public salon hours', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
-      readOwnerEditorState(deps, salonRow.owner_id || salonRow.ownerId, deadlineAt),
+      readOwnerEditorState(deps, ownerId, deadlineAt),
+      ownerId
+        ? runDb(() => deps.db.from('loyalty_config').select('*').eq('owner_id', ownerId).maybeSingle(),
+          { label: 'public loyalty programme', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false })
+        : Promise.resolve({ data: null, error: null }),
     ]);
-    if (hoursRes.error) return { found: false, salon: null, error: hoursRes.error };
-    if (servicesRes.error || staffRes.error) return { found: false, salon: null, error: servicesRes.error || staffRes.error };
+    // This project supports the normalized schema as well as legacy owner_id
+    // catalogue rows. A missing optional normalized table/column must not turn
+    // a published website into a 500; its persisted editor snapshot below is
+    // the safe compatibility fallback.
+    if (hoursRes.error && !isIgnorableLookupSchemaError(hoursRes.error)) return { found: false, salon: null, error: hoursRes.error };
+    if (servicesRes.error && !isIgnorableLookupSchemaError(servicesRes.error)) return { found: false, salon: null, error: servicesRes.error };
+    if (staffRes.error && !isIgnorableLookupSchemaError(staffRes.error)) return { found: false, salon: null, error: staffRes.error };
 
     const catalogueServices = (servicesRes.data || []).map(mapServiceRow);
     const catalogueStylists = (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
       assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) }));
+    const editorState = ownerEditorState || salonRow.data?.editor_state || null;
     const profile = { ...mapProfileRow(salonRow), ownerId: undefined, ...publicHours(hoursRes.data || []) };
 
     return { found: true, salon: {
@@ -474,10 +542,12 @@ export async function lookupSalon(
       // catalogue is empty — a salon saved before the catalogue mirror
       // existed, or one whose services were never mirrored — does the owner's
       // own saved draft fill the site, instead of a template with no content.
+      salonId: catalogueSalonId,
       profile: fillProfileFromEditorState(profile, editorState?.profile),
       services: catalogueServices.length ? catalogueServices : publicServicesFromEditorState(editorState?.services),
-      stylists: catalogueStylists.length ? catalogueStylists : publicStylistsFromEditorState(editorState?.stylists),
+      stylists: catalogueStylists.length ? catalogueStylists : (legacyStylistsRes.data || []).length ? (legacyStylistsRes.data || []).map(mapStylistRow) : publicStylistsFromEditorState(editorState?.stylists),
       selectedTemplateId: typeof editorState?.selectedTemplateId === 'string' ? editorState.selectedTemplateId : null,
+      loyaltyConfig: publicLoyaltyConfig(loyaltyRes.data, editorState),
     } };
   } catch (error) {
     return { found: false, salon: null, error };
