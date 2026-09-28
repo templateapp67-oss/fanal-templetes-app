@@ -11,6 +11,8 @@ import {
 type GuardInput = Parameters<typeof resolveGrowthPartnerGate>[0] & {
   verifiedFor: string | null;
   isLoginPath: boolean;
+  /** Keep a shared portal URL in place while presenting its login surface. */
+  suppressUnauthenticatedRedirect?: boolean;
   loginRoute: string;
   navigate?: (to: string) => void;
 };
@@ -21,14 +23,14 @@ export function usePartnerRouteGuard(input: GuardInput): GrowthPartnerGate {
     (!input.isMockMode && !!input.userId && input.verifiedFor !== input.userId)});
   const lastRedirect = useRef('');
   useEffect(() => {
-    if (input.isLoginPath || (gate !== 'unauthenticated' && gate !== 'session-expired')) {
+    if (input.isLoginPath || input.suppressUnauthenticatedRedirect || (gate !== 'unauthenticated' && gate !== 'session-expired')) {
       lastRedirect.current = ''; return;
     }
     const key = `${input.userId}:${gate}:${input.loginRoute}`;
     if (lastRedirect.current === key) return;
     lastRedirect.current = key;
     input.navigate?.(input.loginRoute);
-  }, [gate, input.userId, input.isLoginPath, input.loginRoute, input.navigate]);
+  }, [gate, input.userId, input.isLoginPath, input.suppressUnauthenticatedRedirect, input.loginRoute, input.navigate]);
   return gate;
 }
 

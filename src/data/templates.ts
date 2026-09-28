@@ -14,6 +14,8 @@ export interface RegisteredTemplate {
   id: TemplateId;
   slug: string;
   name: string;
+  /** One deliberately exclusive template; it is not a duplicate catalogue item. */
+  isVip?: boolean;
   tagline: string;
   category: TemplateCategory;
   description: string;
@@ -1740,25 +1742,25 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     ]
   },
 
-  // 16. Premium Luxury Hair Salon (Newly Added)
+  // 16. VIP Black & Gold — reusable premium design for every business type.
   luxury_hair_salon: {
     id: 'luxury_hair_salon',
-    title: 'Maison Éclat Hair Atelier',
-    shortName: 'Premium Luxury Hair Salon',
-    tagline: 'Haute Hair Couture, Kérastase Rituals & Red-Carpet Precision Gloss',
-    about: 'Housed in a private atelier on Lavelle Road, New Delhi, Maison Éclat is a luxury hair house where every appointment opens with a bespoke hair-mapping consultation. Our Kérastase-certified master artists craft precision dry sculpting, hand-painted balayage, Olaplex molecular repair, and mirror-gloss keratin rituals with couture precision.',
+    title: 'VIP Black & Gold — Signature Studio',
+    shortName: 'VIP Black & Gold',
+    tagline: 'An all-purpose premium experience for beauty, grooming, wellness and signature services',
+    about: 'VIP Black & Gold is Nexora’s all-purpose premium website design. Its onyx-and-champagne-gold visual system adapts to your own services, team, photos, offers and booking settings—whether you run a salon, barber shop, spa, skin clinic, nail studio, tattoo studio or wellness business.',
     icon: 'workspace_premium',
     layoutStyle: 'haute_luxe',
     paletteLabel: 'Onyx & Champagne Gold Theme',
     themePreset: 'onyx_champagne_gold',
-    subCategories: ['Precision Sculpting', 'Color & Glossing', 'Bond Repair & Care', 'Smoothing & Gloss'],
+    subCategories: ['Signature Services', 'Premium Care', 'Curated Experiences', 'Private Appointments'],
     defaultCity: 'New Delhi',
     defaultAddress: 'Lavelle Road, South Extension II, Near ITC Maurya',
     defaultPostalCode: '110049',
     phone: '+91 98108 55672',
     whatsapp: '+91 98108 55672',
     ownerName: 'Aarav Malhotra',
-    ownerRole: 'Founder & Creative Hair Director',
+    ownerRole: 'Founder & Creative Director',
     ownerPhotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
     coverImageUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=80',
     instagramHandle: '@maisoneclat.delhi',
@@ -3250,12 +3252,12 @@ export const ALL_CATEGORY_OPTIONS: BusinessTypeOption[] = [
   },
   {
     id: 'luxury_hair_salon',
-    title: 'Premium Luxury Hair Salon',
-    categoryTag: 'Haute Hair Couture',
+    title: 'VIP Black & Gold — All-Purpose',
+    categoryTag: 'All-Purpose VIP',
     icon: 'workspace_premium',
-    aestheticDescription: 'High-fashion editorial layout, onyx & champagne gold luxury theme.',
+    aestheticDescription: 'All-purpose premium layout for any salon, grooming, beauty or wellness business.',
     paletteName: 'Onyx & Champagne Gold',
-    badge: 'Newly Added',
+    badge: 'Exclusive VIP',
     defaultServices: CATEGORY_TEMPLATES.luxury_hair_salon.services.map((s) => ({
       name: s.name,
       price: s.price,
@@ -3430,6 +3432,10 @@ export const ALL_CATEGORY_OPTIONS: BusinessTypeOption[] = [
   }
 ];
 
+// Keep the VIP choice first anywhere the legacy business-type selector is
+// rendered, too (the Explorer has its own immutable registry order below).
+ALL_CATEGORY_OPTIONS.sort((a, b) => Number(b.id === 'luxury_hair_salon') - Number(a.id === 'luxury_hair_salon'));
+
 // Keep category assignment explicit and stable. It is intentionally keyed by
 // the existing persisted template id, never a display label or random UUID.
 const TEMPLATE_CATEGORY: Record<TemplateId, TemplateCategory> = {
@@ -3460,7 +3466,7 @@ const TEMPLATE_EXPLORER_NAMES: Record<TemplateId, string> = {
   lash_brow: 'Arch & Flutter Lash & Brow Bar',
   ayurvedic_spa: 'Veda Sanjeevani Ayurvedic Wellness & Spa',
   ayurvedic_wellness_spa: 'Sattva Ayurvedic & Wellness Spa',
-  luxury_hair_salon: 'Maison Éclat Hair Atelier',
+  luxury_hair_salon: 'VIP Black & Gold — All-Purpose Signature',
   bridal_makeover_studio: 'Rose & Ivory Bridal Atelier',
   family_salon: 'Cedar & Bloom Family Salon',
   barber_grooming_club: 'The Iron Standard Barber & Grooming Club',
@@ -3494,10 +3500,14 @@ function toRegisteredTemplate(config: CategoryTemplateConfig): RegisteredTemplat
     // value; display names are never identity.
     slug: id,
     name: TEMPLATE_EXPLORER_NAMES[id],
+    isVip: id === 'luxury_hair_salon',
     tagline: config.tagline,
     category: TEMPLATE_CATEGORY[id],
     description: config.about,
-    keywords: [...new Set([TEMPLATE_CATEGORY[id], TEMPLATE_EXPLORER_NAMES[id], config.title, config.shortName, ...config.subCategories].map((value) => value.toLowerCase()))],
+    keywords: [...new Set([
+      TEMPLATE_CATEGORY[id], TEMPLATE_EXPLORER_NAMES[id], config.title, config.shortName, ...config.subCategories,
+      ...(id === 'luxury_hair_salon' ? ['all-purpose', 'universal', 'barber', 'beauty', 'nails', 'spa', 'skin', 'tattoo', 'kids'] : []),
+    ].map((value) => value.toLowerCase()))],
     keyFeatures: content?.specialties || [],
     thumbnailUrl: config.coverImageUrl,
     defaultData: {

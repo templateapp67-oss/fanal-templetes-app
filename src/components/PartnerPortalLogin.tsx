@@ -17,7 +17,6 @@ import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
-  ensureMyGrowthPartner,
   isMissingPartnerSchemaError,
   GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
   GROWTH_PARTNER_INACTIVE_BODY,
@@ -590,17 +589,6 @@ export const PartnerPortalPendingReview: React.FC<{
   onCheckAgain?: () => void;
   onSwitchAccount?: () => void;
 }> = ({ submittedAt, onBack, onCheckAgain, onSwitchAccount }) => {
-  const [enrollNotice, setEnrollNotice] = useState('');
-  const enrollSelf = async () => {
-    setEnrollNotice('');
-    try {
-      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
-      await approveDemoGrowthPartnerAccount();
-    } catch {
-      // Ignored: fallback ensures approved session
-    }
-    onCheckAgain?.();
-  };
   const submittedLabel = (() => {
     if (!submittedAt) return '';
     const parsed = new Date(submittedAt);
@@ -629,7 +617,6 @@ export const PartnerPortalPendingReview: React.FC<{
           </span>
         </button>
 
-        {enrollNotice ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{enrollNotice}</p> : null}
         <button
           type="button"
           onClick={() => onBack?.()}
@@ -782,11 +769,6 @@ export const PartnerPortalLogin: React.FC<{
   // injected client supplies its own role read; otherwise the default
   // RLS SELECT-own-row query is used (they are the same client in production).
   const readPartnerRow = client?.fetchPartnerRow ?? fetchMyGrowthPartnerRow;
-  // Self-enrollment follows the same source: an injected client may supply its
-  // own hook; otherwise the real session-scoped RPC runs (never when a client
-  // is injected without one, so a test never fires a live call it did not ask
-  // for).
-  const enrollPartnerRow = client?.ensurePartnerRow ?? (client ? null : () => ensureMyGrowthPartner());
   const readApplicationRow = client?.fetchApplicationRow ?? fetchMyGrowthPartnerApplication;
 
   // Session source of truth for this route: seed from the app's restored user
@@ -932,7 +914,7 @@ export const PartnerPortalLogin: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, enrollPartnerRow, client]);
+  }, [sessionUser?.id, attempt, readPartnerRow, readApplicationRow, client]);
 
   const state: PartnerPortalLoginState = resolvePartnerPortalLogin({
     loading: verifying,
@@ -1150,7 +1132,7 @@ export const PartnerPortalLogin: React.FC<{
         }
         setSignupSuccess(
           result.confirmed
-            ? 'Growth Partner access activated. Opening your dashboard…'
+            ? 'Application submitted. Dashboard access will be enabled after approval.'
             : 'Account created. Verify your email, then return here to sign in and submit your application.'
         );
       },
@@ -1166,8 +1148,8 @@ export const PartnerPortalLogin: React.FC<{
     setBusy(true);
     setFormError('');
     void submitGrowthPartnerApplication(sb, input).then(
-      () => {
-        setApplication({ id: 'submitted', status: 'approved', kyc_status: 'approved', created_at: new Date().toISOString() });
+      (result) => {
+        setApplication({ id: 'submitted', status: result.status, kyc_status: 'submitted', created_at: new Date().toISOString() });
         setMode('login');
         setAttempt((value) => value + 1);
       },
@@ -1292,6 +1274,15 @@ export const PartnerPortalLogin: React.FC<{
 
   if (state === 'rejected') {
     return <PartnerPortalRejected onBack={onBack} onSwitchAccount={() => void clearSession()} />;
+  }
+
+  if (state === 'pending') {
+    return <PartnerPortalPendingReview
+      submittedAt={application?.created_at}
+      onBack={onBack}
+      onCheckAgain={() => setAttempt((value) => value + 1)}
+      onSwitchAccount={() => void clearSession()}
+    />;
   }
 
   if (state === 'unauthorized') {
