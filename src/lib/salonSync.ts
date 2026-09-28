@@ -135,6 +135,7 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     // previously stored only in localStorage, so it silently reset after a
     // reload and never reached the public site served from the database.
     home_service: profile.homeService ?? null,
+    vip_experience: profile.vipExperience ?? null,
     offers: profile.offers ?? [],
     custom_favicon_url: profile.customFaviconUrl ?? null,
     custom_favicon: profile.customFaviconUrl ?? null,
