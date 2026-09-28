@@ -188,6 +188,18 @@ export interface HomeServiceConfig {
   radiusLimitKm: number;
 }
 
+/**
+ * Settings reserved for the VIP Black & Gold template.  They stay on the
+ * tenant profile so the same salon can be published safely without creating
+ * a second account or a duplicate salon record.
+ */
+export interface VipExperienceConfig {
+  enabled: boolean;
+  inviteOnly: boolean;
+  conciergeLabel: string;
+  privateSuiteEnabled: boolean;
+}
+
 export type PromoBannerTheme = 
   | 'gradient_purple'
   | 'royal_gold'
@@ -256,6 +268,7 @@ export interface SalonProfile {
   latitude?: number;
   longitude?: number;
   homeService?: HomeServiceConfig; // Added this
+  vipExperience?: VipExperienceConfig;
   promotionalBanner?: PromotionalBannerConfig;
   instagramHandle: string;
   facebookPage?: string;
