@@ -683,6 +683,7 @@ export interface LocalDraftEnvelope {
   services: unknown[];
   stylists: unknown[];
   loyaltyConfig: unknown;
+  selectedTemplateId?: unknown;
   savedAt: number;
 }
 
@@ -884,6 +885,7 @@ export async function saveViaWebsiteApi(
           services: payload.services,
           stylists: payload.stylists,
           loyaltyConfig: payload.loyaltyConfig,
+          selectedTemplateId: payload.selectedTemplateId,
         },
       }),
     });
