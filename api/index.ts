@@ -198,6 +198,13 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
       res.locals?.requestDeadlineAt
     );
     if (error) {
+      // Sanitized answer to the browser; raw database code → server log so an
+      // operator can tell "keys rejected" (401/PGRST301) from "table missing".
+      console.error('[Site lookup] database read failed', {
+        site: querySite,
+        code: (error as any)?.code ?? null,
+        message: (typeof (error as any)?.message === 'string' ? (error as any).message : '(no message in the database response)').replace(/\s+/g, ' ').slice(0, 300),
+      });
       const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
       return res.status(safe.status).json({
         success: false,
@@ -206,7 +213,7 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
         tenant: { subdomain: querySite, customDomain: null },
         code: safe.code,
         error: safe.message,
-        ...(safe.retryable ? { retryable: true } : {}),
+        retryable: safe.retryable,
       });
     }
     return res.json({
@@ -221,7 +228,12 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
   const { host, tenant, salon, error } = await resolveSalonFromHost(req, res.locals?.requestDeadlineAt);
   if (error) {
     // DB failure while resolving the tenant — JSON 500 (never "not found"),
-    // so the SPA logs the real status instead of guessing.
+    // so the SPA logs the real status instead of guessing. Raw code → server log.
+    console.error('[Site lookup] tenant-host database read failed', {
+      host,
+      code: (error as any)?.code ?? null,
+      message: (typeof (error as any)?.message === 'string' ? (error as any).message : '(no message in the database response)').replace(/\s+/g, ' ').slice(0, 300),
+    });
     const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
     return res.status(safe.status).json({
       success: false,
@@ -229,7 +241,7 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
       isTenant: true,
       code: safe.code,
       error: safe.message,
-      ...(safe.retryable ? { retryable: true } : {}),
+      retryable: safe.retryable,
     });
   }
   if (!tenant) {
@@ -264,7 +276,7 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
         found: false,
         code: safe.code,
         error: safe.message,
-        ...(safe.retryable ? { retryable: true } : {}),
+        retryable: safe.retryable,
       });
     }
 

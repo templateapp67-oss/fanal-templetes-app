@@ -48,6 +48,7 @@ const QUIET_LOG_PREFIXES = [
   '[owner-appointment]',
   '[AutoSave]',
   '[Website save]',
+  '[Site lookup]',
   '[MyBookings]',
   '[Customer]',
   '[Notifications]',

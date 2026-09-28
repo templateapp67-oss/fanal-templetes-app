@@ -443,12 +443,19 @@ curl -s https://<your-domain>/api/health?deep=1 | jq
 ```
 
 The answer carries `mode` (`live`/`mock`), `bookingReady`, per-item `checks[]`
-and a `problems[]` list. Secrets are never echoed — only whether they exist.
+and a `problems[]` list. Secrets are never echoed — keys are reported as
+booleans, and failed probes surface their Postgres/PostgREST error **code**
+(e.g. `401`, `PGRST301`, `42501`) plus a sanitized message, never key material.
+Plain `/api/health` already runs one lightweight `database_access` probe
+(head-only count on `profiles`), so a deployment whose keys were refused is
+`degraded` even without `?deep=1`.
 
 | `problems[]` entry | What it means | Fix |
 |---|---|---|
 | `SUPABASE_ANON_KEY … is missing` | Only the URL (± service-role key) is configured. Before the fix this **crashed the API at import time**, so every `/api/*` route answered an un-parseable HTML 500 — the exact "Server error (HTTP 500)" the checkout reported. | Set `SUPABASE_ANON_KEY` (or `VITE_SUPABASE_ANON_KEY`) in the hosting environment and redeploy. |
 | `SUPABASE_SERVICE_ROLE_KEY is missing` | The API writes with the anon key, so RLS rejects authenticated booking writes (`42501`). | Set `SUPABASE_SERVICE_ROLE_KEY` server-side (never in the browser bundle). |
+| `database access rejected (code 401 / PGRST301 …)` | The API key this deployment presents is **not accepted** by the project at `supabase.host` — stale key, key pasted from a different project, or rotated/legacy keys disabled. Presence checks stay green in this state, while every query fails and every public `?site=` page answers "The database is not configured…". | In THAT Supabase project (Settings → API) re-copy the anon/publishable key into `SUPABASE_ANON_KEY` and the service_role/secret key into `SUPABASE_SERVICE_ROLE_KEY`, keep `SUPABASE_URL` on the same project, then **redeploy** — Vercel only applies environment changes to a new deployment. |
+| `database permission denied (code 42501) …` | The key authenticates but lacks table access: missing grants, or a non-service key blocked by Row Level Security. | Verify `SUPABASE_SERVICE_ROLE_KEY` is the service_role/secret key (not the anon key) and re-apply the grants from `20260907_owner_save_grants.sql`. |
 | `Cannot read the bookings table: …` | Migrations not applied, or the project is paused. | Run `supabase/migrations/00001_init.sql`, then `20260907_owner_save_grants.sql`. |
 | `No salon profile exists …` | An authenticated booking cannot resolve the NOT NULL `owner_id`. | Publish the salon (so `profiles.subdomain` matches the site host) or set `DEFAULT_OWNER_ID`. |
 
