@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { QrCode, Download, Copy, Check, Smartphone, Sparkles } from 'lucide-react';
 import { partnerReferralShareLink } from '../../lib/partnerReferralLink';
+// One canonical "no code yet" sentence across the portal and the owner PWA.
+import { GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE } from '../../lib/growthPartner';
 
 export interface PartnerReferralQRCodeProps {
   referralCode: string | null;
@@ -83,7 +85,7 @@ export const PartnerReferralQRCode: React.FC<PartnerReferralQRCodeProps> = ({
           Referral QR Code
         </h3>
         <p className="mt-3 text-sm font-bold text-slate-700">
-          Referral code unavailable
+          {GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE}
         </p>
         <p className="mt-2 text-xs text-slate-500">
           Your QR code will automatically appear here once your Growth Partner referral code is issued.

@@ -178,9 +178,11 @@ export const DEFAULT_CATEGORY_ACCENTS: Record<BusinessTypeId, AccentPaletteKey> 
   bridal_makeover_studio: 'rose',
   family_salon: 'ocean',
   barber_grooming_club: 'mahogany',
-  barber_classic_gent: 'mahogany',
-  barber_modern_fade: 'mahogany',
-  barber_urban_grooming: 'mahogany',
+  // NOTE: the barber catalog ships ONE id — `barber_grooming_club` (types.ts).
+  // The former `barber_classic_gent` / `barber_modern_fade` /
+  // `barber_urban_grooming` keys were left behind by an earlier catalog
+  // revision; no BusinessTypeId can produce them, so they are gone rather than
+  // silently widening the map. Barber-branded salons keep the mahogany accent.
   nails_lash_brow_bar: 'crimson',
   medispa_aesthetics: 'ocean',
   organic_bio_salon: 'emerald',

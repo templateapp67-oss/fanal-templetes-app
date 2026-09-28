@@ -17,6 +17,8 @@ import { TopClientsLoyaltyChart } from './TopClientsLoyaltyChart';
 import { DEFAULT_LOYALTY_CONFIG, TIER_METADATA, calculateLoyaltyTier, calculateRewardProgress } from '../loyaltyData';
 import { getSiteUrl } from '../lib/salonStore';
 import { copyToClipboard } from '../lib/clipboard';
+// The social-connectivity form shows a YouTube badge next to the channel field.
+import { Youtube } from 'lucide-react';
 
 import { AppointmentsCalendarView } from './AppointmentsCalendarView';
 import { BookingManager } from './BookingManager';
@@ -181,7 +183,9 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     if (!file) return;
     setAppearanceError(null);
     setAppearanceSuccess('Processing favicon...');
-    const result = await compressAndResizeImage(file, { maxWidth: 64, maxHeight: 64 });
+    // compressAndResizeImage(file, maxDimension) scales the longest edge and
+    // keeps the aspect ratio; an options object silently skipped the resize.
+    const result = await compressAndResizeImage(file, 64);
     if (result.isValid && result.dataUrl) {
       setProfile((prev) => ({ ...prev, customFaviconUrl: result.dataUrl, faviconLetter: undefined }));
       setAppearanceSuccess('Custom favicon applied!');
@@ -196,7 +200,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     if (!file) return;
     setAppearanceError(null);
     setAppearanceSuccess('Processing photo...');
-    const result = await compressAndResizeImage(file, { maxWidth: 400, maxHeight: 400 });
+    const result = await compressAndResizeImage(file, 400);
     if (result.isValid && result.dataUrl) {
       setProfile((prev) => ({ ...prev, ownerPhotoUrl: result.dataUrl }));
       setAppearanceSuccess('Owner photo updated!');
@@ -211,7 +215,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
     if (!file) return;
     setAppearanceError(null);
     setAppearanceSuccess('Processing sharing image...');
-    const result = await compressAndResizeImage(file, { maxWidth: 1200, maxHeight: 630 });
+    const result = await compressAndResizeImage(file, 1200);
     if (result.isValid && result.dataUrl) {
       setProfile((prev) => ({ ...prev, socialShareImageUrl: result.dataUrl }));
       setAppearanceSuccess('Social sharing image updated!');

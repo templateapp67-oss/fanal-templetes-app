@@ -172,6 +172,7 @@ test('the shell nav registry mirrors the router menu and adds no extra live item
     PARTNER_PORTAL_NAV.map((item) => item.label),
     [
       'Dashboard', 'My Referral Code', 'Referred Users', 'Referral Status',
+      'Referral History',
       'Rewards', 'Extra Onboarding Reward', 'Earnings', 'Withdrawals',
       'Partner Levels', 'Leaderboards', 'Marketing Materials', 'Notifications',
       'Support', 'Profile', 'Account Settings', 'Session & Audit Diagnostics',
