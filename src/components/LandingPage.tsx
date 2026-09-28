@@ -3,6 +3,9 @@ import type { BusinessTypeId } from '../types';
 import { getTemplateById } from '../data/templates';
 import { SALON_IMAGES } from '../assets/images';
 import partnerHero from '../assets/nexora-partner-hero.jpg';
+import campaignModels from '../assets/nexora-campaign-models.jpg';
+import goldBanner from '../assets/nexora-gold-banner.jpg';
+import goldSalon from '../assets/nexora-gold-salon.jpg';
 
 interface LandingPageProps { onBrowseTemplates: (category?: string) => void; selectedTemplateId?: BusinessTypeId; }
 
@@ -235,6 +238,76 @@ const VideoShowcase: React.FC = () => {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Campaign poster — "Salon ja rhe ho? Pehle Nexora!"                */
+/* ------------------------------------------------------------------ */
+
+const CampaignPoster: React.FC = () => (
+  <section id="campaign" className="relative scroll-mt-24 overflow-hidden bg-[#070502] py-20 sm:py-24">
+    {/* gold ambience */}
+    <div className="nx-blob pointer-events-none absolute -left-24 top-16 h-72 w-72 rounded-full bg-amber-500/15 blur-3xl" />
+    <div className="nx-blob-alt pointer-events-none absolute -right-20 bottom-16 h-80 w-80 rounded-full bg-yellow-400/10 blur-3xl" />
+    <div className="nx-dots pointer-events-none absolute left-0 top-0 h-40 w-40 opacity-60" />
+    <div className="nx-dots pointer-events-none absolute bottom-0 right-0 h-40 w-40 opacity-60" />
+
+    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+      <SectionHeading
+        light
+        eyebrow="Campaign"
+        icon="campaign"
+        title={<>Salon ja rhe ho? <span className="nx-gold-text">Pehle Nexora!</span></>}
+        sub="India ka apna salon ritual — appointment lock karo, rewards kamao, phir style karo. #PehleNexoraPhirSalon"
+      />
+
+      {/* poster card — recreation of the Nexora black & gold campaign creative */}
+      <div className="nx-poster-frame nx-lift relative mx-auto mt-14 max-w-md overflow-hidden rounded-[2.5rem] bg-black">
+        <img src={campaignModels} alt="Nexora Salon OS campaign — salon ja rhe ho? Pehle Nexora kiya?" className="aspect-[3/4] w-full object-cover" loading="lazy" />
+        <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/75" aria-hidden="true" />
+
+        {/* wordmark */}
+        <div className="absolute inset-x-0 top-6 text-center">
+          <p className="nx-gold-text text-3xl font-black tracking-[0.28em]">NEXORA</p>
+          <p className="mt-1 text-[11px] font-black tracking-[0.5em] text-amber-100/90">SALON OS</p>
+          <span className="mx-auto mt-2 block h-px w-24 bg-gradient-to-r from-transparent via-amber-400 to-transparent" />
+        </div>
+
+        {/* main campaign line */}
+        <div className="absolute inset-x-0 top-[30%] px-6 text-center">
+          <p className="text-4xl font-black leading-[1.05] tracking-tight text-white drop-shadow-lg sm:text-5xl">SALON<br />JA RHE HO?</p>
+          <p className="nx-gold-text mt-2 text-5xl font-black tracking-tight drop-shadow-lg sm:text-6xl">NEXORA</p>
+          <p className="text-4xl font-black tracking-tight text-white drop-shadow-lg sm:text-5xl">KIYA?</p>
+        </div>
+
+        {/* calendar icon + badge */}
+        <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-3 px-6">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-amber-300/70 bg-black/70 text-amber-300 backdrop-blur-sm">
+            <Ic name="calendar_month" className="text-2xl" />
+          </span>
+          <div className="w-full max-w-[240px] rounded-2xl border border-amber-400/60 bg-black/65 px-4 py-3 text-center backdrop-blur-md">
+            <p className="text-lg font-black leading-tight"><span className="nx-gold-text">PAHLE NEXORA</span></p>
+            <p className="my-0.5 text-xs font-black text-amber-400" aria-hidden="true">•</p>
+            <p className="text-lg font-black leading-tight text-white">PHIR <span className="nx-gold-text">SALON</span></p>
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-6 text-center text-sm font-bold text-amber-100/70">Book smart. Earn points. Shine golden — har visit par.</p>
+
+      {/* gold gallery strip — brand imagery */}
+      <div className="mx-auto mt-12 grid max-w-4xl gap-5 sm:grid-cols-2">
+        <figure className="nx-poster-frame nx-lift group overflow-hidden rounded-3xl">
+          <img src={goldBanner} alt="Golden scissors and comb — the Nexora standard" className="h-52 w-full object-cover transition-transform duration-500 group-hover:scale-105 sm:h-60" loading="lazy" />
+          <figcaption className="bg-black px-5 py-3 text-center text-xs font-black uppercase tracking-widest text-amber-200">The Nexora Standard</figcaption>
+        </figure>
+        <figure className="nx-poster-frame nx-lift group overflow-hidden rounded-3xl">
+          <img src={goldSalon} alt="Luxury black and gold salon interior" className="h-52 w-full object-cover transition-transform duration-500 group-hover:scale-105 sm:h-60" loading="lazy" />
+          <figcaption className="bg-black px-5 py-3 text-center text-xs font-black uppercase tracking-widest text-amber-200">Partner Salons, Luxury Vibes</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+);
+
+/* ------------------------------------------------------------------ */
 /*  Rewards ladder + tiers                                            */
 /* ------------------------------------------------------------------ */
 
@@ -455,6 +528,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ VIDEOS ============================ */}
       <VideoShowcase />
+
+      {/* ============================ CAMPAIGN POSTER ============================ */}
+      <CampaignPoster />
 
       {/* ============================ CUSTOMERS ============================ */}
       <section id="customers" className="scroll-mt-24 bg-gradient-to-b from-[#fff5f8] to-surface py-20 sm:py-24">

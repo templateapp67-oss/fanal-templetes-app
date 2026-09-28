@@ -40,9 +40,17 @@ test('home page renders hero, every section and the glass hooks', () => {
   assert.match(html, /nx-float/);
 
   // All marketing section anchors exist
-  for (const id of ['top', 'about', 'nexora-videos', 'customers', 'rewards', 'owners', 'partner', 'templates', 'stories', 'faq']) {
+  for (const id of ['top', 'about', 'nexora-videos', 'campaign', 'customers', 'rewards', 'owners', 'partner', 'templates', 'stories', 'faq']) {
     assert.match(html, new RegExp(`id="${id}"`), `missing section #${id}`);
   }
+
+  // Campaign poster (black & gold creative)
+  assert.match(html, /SALON/);
+  assert.match(html, /JA RHE HO\?/);
+  assert.match(html, /PAHLE NEXORA/);
+  assert.match(html, /PHIR/);
+  assert.match(html, /nx-poster-frame/);
+  assert.match(html, /nx-gold-text/);
 
   // Complete-information content blocks
   assert.match(html, /Rewards Ladder/);

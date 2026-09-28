@@ -373,6 +373,30 @@
 }
 .nx-play-pulse { animation: nx-play-pulse 2.2s ease-out infinite; }
 
+/* ---- Black & gold campaign (poster section) ---- */
+
+/* Metallic gold gradient text (wordmark, poster headline). */
+.nx-gold-text {
+  background: linear-gradient(100deg, #f9e08a 0%, #d4af37 45%, #f5d67b 70%, #a97c1f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Gold museum frame for the poster & gallery cards. */
+.nx-poster-frame {
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  box-shadow:
+    0 30px 90px -30px rgba(212, 175, 55, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+/* Fine gold halftone dots, like the poster corners. */
+.nx-dots {
+  background-image: radial-gradient(rgba(212, 175, 55, 0.25) 1px, transparent 1.6px);
+  background-size: 14px 14px;
+}
+
 /* Reduced motion: keep everything static and instant. */
 @media (prefers-reduced-motion: reduce) {
   .nx-lift,
