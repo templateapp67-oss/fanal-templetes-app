@@ -1439,6 +1439,7 @@ export default function App() {
               subdomain: data.subdomain || slugifySalonName(resolvedBusinessName),
               instagramHandle: data.instagram_handle || (isDifferentUser ? '' : base.instagramHandle),
               homeService: data.home_service ?? base.homeService,
+              vipExperience: data.vip_experience ?? base.vipExperience,
               offers: Array.isArray(data.offers) ? data.offers : [],
               themePreset: data.theme_preset || base.themePreset,
               themeAccentKey: data.theme_accent_key || base.themeAccentKey,
@@ -1970,6 +1971,12 @@ export default function App() {
             services: state.services,
             stylists: state.stylists,
             loyaltyConfig: state.loyaltyConfig,
+            // This is part of the editor's persisted state, not merely a
+            // route hint. Omitting it here meant a successful profile/content
+            // save could still lose the owner's selected template on reload
+            // (especially on a different device, where there is no local
+            // cache to hide the problem).
+            selectedTemplateId: state.selectedTemplateId,
           },
           workspaceReady: canCleanUpCloudRows,
           deleteRemoved: canCleanUpCloudRows,

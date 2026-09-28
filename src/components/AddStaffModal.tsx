@@ -155,6 +155,10 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   // Software Permissions Modal Dialog
   const [showPermissionsModal, setShowPermissionsModal] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>('');
+  // Quick add keeps the first visit to just name + role. All operational
+  // controls remain available, but they should not make creating a staff
+  // profile feel like filling an HR form.
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   if (!isOpen) return null;
 
@@ -314,6 +318,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             </div>
           )}
 
+          {showAdvanced && <>
           {/* ========================================================= */}
           {/* SECTION 1: STAFF PHOTO */}
           {/* ========================================================= */}
@@ -383,6 +388,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             </div>
           </div>
 
+          </>}
           {/* ========================================================= */}
           {/* SECTION 2: BASIC INFORMATION (2-COLUMN GRID) */}
           {/* ========================================================= */}
@@ -422,6 +428,15 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             </div>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((value) => !value)}
+            className="w-full rounded-xl border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            {showAdvanced ? 'Hide optional details' : 'Add optional photo, contact, services & schedule'}
+          </button>
+
+          {showAdvanced && <>
           {/* ========================================================= */}
           {/* SECTION 3: APP ACCESS ROLE */}
           {/* ========================================================= */}
@@ -750,6 +765,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               ))}
             </div>
           </div>
+          </>}
         </form>
 
         {/* ========================================================= */}

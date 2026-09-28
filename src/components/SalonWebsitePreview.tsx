@@ -346,6 +346,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Active template configuration
   const activeTemplate = getTemplateConfig(selectedCategoryKey) || getTemplateConfig('hair_salon')!;
+  const isVipTemplate = selectedCategoryKey === 'luxury_hair_salon' && activeProfile.vipExperience?.enabled !== false;
+  const vipLabel = activeProfile.vipExperience?.conciergeLabel?.trim() || 'VIP Concierge';
 
   // Active Accent Palette selection
   const [selectedAccentKey, setSelectedAccentKey] = useState<AccentPaletteKey>(
@@ -1415,6 +1417,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     label="Salon Name"
                   />
                 </div>
+                {isVipTemplate && (
+                  <div className="inline-flex items-center gap-1 mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#d4af37]">
+                    <Award className="w-3 h-3" /> VIP Black & Gold
+                  </div>
+                )}
                 <div className={`text-[11px] flex items-center gap-1 font-mono ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
                   <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
                   <span className="truncate max-w-[180px] sm:max-w-md text-xs">
@@ -1578,6 +1585,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <span>{activeTemplate.shortName}</span>
                   </span>
 
+                  {isVipTemplate && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#d4af37]/15 border border-[#d4af37]/45 text-[#f6d878] text-[10px] font-mono font-bold uppercase tracking-wide">
+                      <Award className="w-3 h-3" /> {activeProfile.vipExperience?.inviteOnly ? 'Invitation only' : 'Private-suite priority'}
+                    </span>
+                  )}
+
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-mono transition-colors ${heroAIStyling.verifiedBadgeClass}`}>
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Verified Indian Salon</span>
@@ -1691,7 +1704,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       color: heroAIStyling.primaryBtnText 
                     }}
                   >
-                    <span>Book Now</span>
+                    <span>{isVipTemplate ? `Request ${vipLabel}` : 'Book Now'}</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
 
