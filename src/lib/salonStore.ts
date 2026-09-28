@@ -440,6 +440,12 @@ export function getBlankOnboardingProfile(user?: any): SalonProfile {
     whiteLabelEnabled: true,
     ownerId: user?.id,
     promotionalBanner: { enabled: false, text: '' },
+    vipExperience: {
+      enabled: true,
+      inviteOnly: false,
+      conciergeLabel: 'VIP Concierge',
+      privateSuiteEnabled: true,
+    },
     offers: [],
   };
 }
