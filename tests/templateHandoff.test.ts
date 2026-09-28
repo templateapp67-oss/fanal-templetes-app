@@ -463,7 +463,7 @@ test('handoff routes parse per the existing router conventions', () => {
   assert.equal(isTemplateHandoffPath('/onboarding/login'), false);
   assert.equal(isTemplateHandoffPath('/onboarding'), false);
   // Overlap is real: the App must match the handoff BEFORE the onboarding app.
-  assert.equal(isOnboardingPath('/onboarding/handoff'), true);
+  assert.equal(isOnboardingPath('/onboarding/handoff'), false, 'handoff is its own explicit route, not the onboarding wizard');
   assert.deepEqual(matchTemplateHandoffQuery('?token=abc&state=xyz'), { token: 'abc', state: 'xyz' });
   assert.deepEqual(matchTemplateHandoffQuery(''), { token: '', state: '' });
   // Identity-ish params are ignored entirely — never trusted, never returned.
@@ -502,7 +502,7 @@ test('the token is stripped from the URL after successful processing', () => {
   // The component applies this via replaceState (never lingering in history).
   const src = readFileSync(new URL('../src/components/TemplateHandoffPage.tsx', import.meta.url), 'utf8');
   assert.match(src, /history\.replaceState/);
-  assert.match(src, /replaceState\(\{\}, '', '\/'\)/);
+  assert.match(src, /history\.replaceState\(\{\}, '', '\/onboarding\/website'\)/);
 });
 
 test('base URLs come from env with a same-origin default and strict validation', () => {
@@ -721,8 +721,8 @@ test('the handoff container first-paints its verifying state', () => {
 
 test('the App renders the handoff page before the onboarding surface', () => {
   const src = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
-  const handoffBranch = src.indexOf('return <TemplateHandoffPage');
-  const onboardingBranch = src.indexOf('return <OnboardingApp');
+  const handoffBranch = src.indexOf('<TemplateHandoffPage');
+  const onboardingBranch = src.indexOf('<OnboardingApp');
   const customerBranch = src.indexOf('if (isCustomerApp)');
   assert.ok(handoffBranch >= 0 && onboardingBranch >= 0 && customerBranch >= 0);
   assert.ok(handoffBranch < onboardingBranch, 'handoff must win over the /onboarding prefix branch');

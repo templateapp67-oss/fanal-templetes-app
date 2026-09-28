@@ -284,7 +284,7 @@ function fakeClient(overrides: Record<string, any> = {}) {
       calls.push(`rpc:${fn}`);
       if (overrides[fn]) return overrides[fn];
       if (fn === 'get_my_owner_workspace') {
-        return { data: { resolved: true, ambiguous: false, salon_count: 1, salons: [{}] }, error: null };
+        return { data: { resolved: true, ambiguous: false, salon_count: 1, salon_id: 'salon-1', salon: { id: 'salon-1' }, salons: [{ id: 'salon-1' }] }, error: null };
       }
       if (fn === 'get_my_onboarding_status') return { data: { status: 'linked', linked: true }, error: null };
       if (fn === 'get_owner_editor_state') return { data: null, error: null };
@@ -442,4 +442,11 @@ test('the only provisioning call sites are still the handoff and the save fallba
   }
   const helper = readFileSync(new URL('../src/lib/ownerWorkspace.ts', import.meta.url), 'utf8');
   assert.match(helper, /rpc\('ensure_owner_workspace'\)/, 'the single provisioning helper is intact');
+});
+
+
+test('a resolved flag without a salon ID cannot route an owner into an empty workspace', async () => {
+  const read = await readOwnerEntryFacts(fakeClient({ get_my_owner_workspace: { data: { resolved: true, salon_count: 0, salons: [] }, error: null } }));
+  assert.equal(read.workspaceResolved, false);
+  assert.equal(classifyOwnerEntry(read), 'no-workspace');
 });

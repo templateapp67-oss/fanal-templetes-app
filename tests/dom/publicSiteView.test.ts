@@ -101,8 +101,10 @@ test('a visitor never sees the owner address form or an invented salon address',
 test('the owner editor keeps the editable map setup', () => {
   const { container, root } = mountPreview(false);
   try {
-    const text = container.textContent || '';
-    assert.match(text, /Salon Address & Localization Setup/, 'the owner surface must keep the editor');
+    const edit = [...container.querySelectorAll('button')].find(b => b.textContent?.includes('Inline Edit Mode'));
+    assert.ok(edit);
+    act(() => edit.click());
+    assert.match(container.textContent || '', /Salon Address & Localization Setup/, 'editing the owner preview exposes the location form');
   } finally {
     unmount(container, root);
   }

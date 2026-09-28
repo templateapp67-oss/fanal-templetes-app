@@ -193,27 +193,24 @@ function catalogueDatabase(options: {
   });
 }
 
-test('empty public catalogue falls back to the owner draft so the published template has content', async () => {
+test('an empty public catalogue stays empty; a scoped draft supplies only presentation metadata', async () => {
   const db = catalogueDatabase({
     editorState: {
       selectedTemplateId: 'nail_studio',
-      profile: { businessName: 'Star Salon', tagline: 'Precision nail art', about: 'Studio story' },
+      profile: { subdomain: 'hello', businessName: 'Star Salon', tagline: 'Precision nail art', about: 'Studio story' },
       services: [{ id: 's1', name: 'Gel Extensions', category: 'Nail Couture', price: 2400, durationMinutes: 90 }],
       stylists: [{ id: 'st1', name: 'Elena', role: 'Founder', phone: '+91 98000 00001' }],
     },
   });
   const response = await lookupSalon({ db: db as any, isMockSupabase: false, mockSalons: {} }, 'hello');
   assert.equal(response.found, true);
-  assert.equal(response.salon.services.length, 1);
-  assert.equal(response.salon.services[0].name, 'Gel Extensions');
-  assert.equal(response.salon.stylists.length, 1);
-  assert.equal(response.salon.stylists[0].name, 'Elena');
+  assert.deepEqual(response.salon.services, []);
+  assert.deepEqual(response.salon.stylists, []);
   // The owner's chosen template travels with the public payload.
   assert.equal(response.salon.selectedTemplateId, 'nail_studio');
   // Profile gaps are filled; published values are never invented.
   assert.equal(response.salon.profile.tagline, 'Precision nail art');
   // A visitor must never receive a staff member's private number.
-  assert.equal(response.salon.stylists[0].phone, '');
   assert.equal(JSON.stringify(response.salon).includes('98000 00001'), false);
 });
 
@@ -223,6 +220,7 @@ test('mirrored catalogue wins over the editor draft', async () => {
     staff: [{ id: 'staff-uuid', name: 'Published Stylist', role_title: 'Senior', is_active: true, is_public: true }],
     editorState: {
       selectedTemplateId: 'barber',
+      salonId,
       services: [{ id: 's1', name: 'Draft Only Service', price: 10, durationMinutes: 10 }],
       stylists: [{ id: 'st1', name: 'Draft Only Stylist' }],
     },
@@ -254,7 +252,7 @@ test('editor draft never overrides published profile values and unreadable draft
   assert.equal(fallback.salon.selectedTemplateId, null);
 });
 
-test('public fallback drops malformed draft rows instead of rendering a broken menu', async () => {
+test('malformed owner drafts cannot fabricate free services or public stylists', async () => {
   const db = catalogueDatabase({
     editorState: {
       services: [{ name: '  ' }, null, { id: 'ok', name: 'Valid Service', price: 'not-a-number', durationMinutes: -5 }, { id: 'x', name: 'Second' }],
@@ -262,8 +260,6 @@ test('public fallback drops malformed draft rows instead of rendering a broken m
     },
   });
   const response = await lookupSalon({ db: db as any, isMockSupabase: false, mockSalons: {} }, 'hello');
-  assert.deepEqual(response.salon.services.map((s: any) => s.name), ['Valid Service', 'Second']);
-  assert.equal(response.salon.services[0].price, 0);
-  assert.equal(response.salon.services[0].durationMinutes, 45);
-  assert.deepEqual(response.salon.stylists.map((s: any) => s.name), ['No Id Stylist']);
+  assert.deepEqual(response.salon.services, []);
+  assert.deepEqual(response.salon.stylists, []);
 });

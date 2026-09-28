@@ -1,0 +1,623 @@
+{
+  "note": "Observed in broad audit, excluding six failures subsequently repaired and passing in test:website. These also occurred in the initial follow-up audit; this does NOT establish baseline-commit equivalence or that all are product defects. Full suite was not rerun after final targeted cleanup.",
+  "failures": [
+    {
+      "suite": "bookingCreateResilience.test.ts",
+      "test": "a database that never answers becomes a 503 with a retry hint (never a hang)",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'must give up quickly, took 30260ms'"
+    },
+    {
+      "suite": "growthPartnerAccessRecovery.test.ts",
+      "test": "ensureMyGrowthPartner() reports a missing migration as such, and a real row as a partner",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "growthPartnerAccessRecovery.test.ts",
+      "test": "approveDemoGrowthPartnerAccount() never resolves as a silent no-op",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Partner access required: approval must be granted by an administrator.'"
+    },
+    {
+      "suite": "growthPartnerApproval.test.ts",
+      "test": "9. the approval SQL only touches columns growth_partners actually has",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "growthPartnerApproval.test.ts",
+      "test": "12. the older \"production\" partner read cannot be applied to this schema",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'expected the statement to fail, but it succeeded'"
+    },
+    {
+      "suite": "growthPartnerDirectAccess.test.ts",
+      "test": "../src/components/GrowthPartnerLogin.tsx auto-activates a signed-in account before rendering a denial",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "growthPartnerDirectAccess.test.ts",
+      "test": "../src/components/GrowthPartnerPage.tsx auto-activates a signed-in account before rendering a denial",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "growthPartnerEnrollment.test.ts",
+      "test": "ensure_my_growth_partner() provisions the caller, is idempotent, never touches another account and never reactivates a suspended partner",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "growthPartnerProfileBasics.test.ts",
+      "test": "profile client only sends basic fields, uploads to the session owner and uses Auth for email changes",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Your session changed. Reload your profile before saving.'"
+    },
+    {
+      "suite": "growthPartnerResilience.test.ts",
+      "test": "the referral, performance, application and partner reads survive empty payloads",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "onboardingApp.test.ts",
+      "test": "email + signup validation enforces the gateway minimums",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "onboardingApp.test.ts",
+      "test": "auth failures map to safe messages and never leak internals",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "onboardingApp.test.ts",
+      "test": "sign up succeeds with valid credentials and flags email confirmation",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "onboardingApp.test.ts",
+      "test": "sign up renders identity + credentials and nothing business-related",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "onboardingReferralPersistenceIntegration.test.ts",
+      "test": "Referral code in URL persists through multiple login/auth redirects and links to DB on registration",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.1 the whole onboarding state already lives in five existing objects, and nothing named like a parallel one exists",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.2 a new owner is: profiles row + not_started funnel + no workspace + no editor state",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.3 \"business details saved\" is the existing save transaction: owner_editor_state.state.profile + the salon row + profiles contact columns",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.4 the chosen template is stored in the existing editor state \u2014 and the \"template-selected\" stage cannot be reached from it",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.5 \"editor started\" has two existing signals \u2014 the editor state row and the funnel milestone",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.6 \"published\" is derived from the salon row + the verified completion, not from a published flag",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.7 \"onboarding completed\" is the funnel row: template_completed + server timestamps, idempotent",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.8 the funnel row is not referral-only, but the app's entry into the Template App is",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.9 GAP: a direct owner who finishes their website is never recorded as completed",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "onboardingStateResolution.test.ts",
+      "test": "8.10 the reachable stage set covers the requested states, and every one of them is read from existing tables",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "part1SharedBackend.test.ts",
+      "test": "Part1-1A: auth is Supabase Auth only \u2014 no password storage, no parallel identity",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "part1SharedBackend.test.ts",
+      "test": "Part1-1A/1C: service-role key can never reach the browser",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'src/lib/authSession.ts must not reference a VITE service key'"
+    },
+    {
+      "suite": "part1SharedBackend.test.ts",
+      "test": "Part1-1A/1C: no role, partner or user identity is trusted from client state",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "part1cSecurity.test.ts",
+      "test": "Part1C-C10: one shared Supabase project, Auth, and client singleton",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "part1cSecurity.test.ts",
+      "test": "Part1C-C11: service-role key cannot reach the browser",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'src/lib/authSession.ts must not reference a VITE service key'"
+    },
+    {
+      "suite": "part1cSecurity.test.ts",
+      "test": "Part1C-C12: no URL/storage/role-based authorization trust in the client",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "part1cSecurity.test.ts",
+      "test": "Part1C-C13: a production bundle can never fabricate or restore a session",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "part3GrowthPartnerIntegration.test.ts",
+      "test": "7.1 a partner referral code is generated in one canonical store, in the canonical format",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerFailureIntegrity.test.ts",
+      "test": "failed partner RPCs never become fabricated approval, referrals, progress or earnings",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalOperations.test.ts",
+      "test": "a dead socket, an HTML body and a 503 all fall back; a JSON error never does",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Missing expected rejection.'"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "the ledger read runs as the caller with a clamped window",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "query params are bound, not forwarded raw",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "the standings and preference reads answer their own shapes",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "a payout request is validated here and refused there \u2014 with the SQL copy preserved",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "a payout request with an unusable body never reaches the database",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "a successful payout request answers 201 with the row the ledger created",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "cancelling needs a real id, and only the caller\u2019s own open request can be cancelled",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "marking notifications read returns the row count and accepts the all-case",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "notification preferences are booleans in, the stored row back out",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "a support ticket is bounded the way the table checks it",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "database failures are translated, and raw text never leaks",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalRoutesApi.test.ts",
+      "test": "a private asset is signed only after it proved itself published for this caller",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "the portal migrations install on the schema this repository ships",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "the ledger: 15% of a cleared payment, pending until the 7-day clearance",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "a payout request is bounded by the floor, the balance and one open request",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'the ledger floor is the database\u2019s, not the form\u2019s'"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "cancel is limited to the caller\u2019s own open request, and frees the slot",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Active Growth Partner required'"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "tickets: the table checks run, the number is the partner\u2019s receipt, the list is their own",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'a one-word subject never becomes a ticket'"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "notification preferences default on, persist a change, and stay private",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Active Growth Partner required'"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "a paid payout notifies the partner, and the type filter is real",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Active Growth Partner required'"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "the asset library, the tier ladder and the leaderboard answer from their own tables",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "a deployed generation with an approval status is honoured, not ignored",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'column \"status\" of relation \"growth_partners\" already exists'"
+    },
+    {
+      "suite": "partnerPortalSectionSql.test.ts",
+      "test": "own-row RLS holds on the new tables, not just inside the RPCs",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Active Growth Partner required'"
+    },
+    {
+      "suite": "partnerProfile.test.ts",
+      "test": "WhatsApp normalization accepts Indian and international numbers and rejects malformed values",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Missing expected exception.'"
+    },
+    {
+      "suite": "partnerReferralEventsRls.test.ts",
+      "test": "referral events record real first milestones atomically with safe metadata and trusted future-event hooks",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerSafeResponse.test.ts",
+      "test": "5.2. the client validation wrapper drops everything outside the allowlist",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "partnerSafeResponse.test.ts",
+      "test": "5.2. the onboarding client keeps only the code and the one-use capability",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "phase1ReferralRole.test.ts",
+      "test": "referred normal user denied, only own approved active partner admitted",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "referralAttribution.test.ts",
+      "test": "attribution is validated anonymously, consumed on account creation and immutable",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Referral code is already in use'"
+    },
+    {
+      "suite": "referralAttribution.test.ts",
+      "test": "cookie API protects capability, preserves expiry and fails safely",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "referralAttribution.test.ts",
+      "test": "referral attribution is rate limited per client and never reaches the database once limited",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "referralAttributionLock.test.ts",
+      "test": "6.1. no committed migration creates a parallel referral table (this phase adds none)",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "referralValidation.test.ts",
+      "test": "5/6/7/8. the code has no per-code active flag, expiry, block flag or usage limit",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "restoreAuthSession.test.ts",
+      "test": "network failure preserves an established user and retry restores readiness",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.1a the same-origin continuation needs the session and the backend state \u2014 no grant row is created",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.1b no identity parameter exists on the continuation surface \u2014 there is nothing for a URL to override",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.1c the referral and workspace gates are backend state, not URL claims",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.2a the grant is not a session: the exchange returns no credential and a token cannot be used as one",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.2b identity query parameters stay inert end to end",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.2c the repo-wide sweep: identity from a query parameter is never authentication on a reachable path",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.2d the split-deployment switch is opt-in, validated, and never identity-bearing",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "secureContinuation.test.ts",
+      "test": "9.1d production is one deployment: one build, one SPA, one API entry, no external rewrite",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'function \"save_owner_editor_state\" already exists with same argument types'"
+    },
+    {
+      "suite": "dom/growthPartnerAccessRecovery.test.ts",
+      "test": "a missing enrollment step keeps the honest denial and explains itself (the reported bug)",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/growthPartnerAccessRecovery.test.ts",
+      "test": "a successful enrollment carries the page past the denial",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'the page settled'"
+    },
+    {
+      "suite": "dom/growthPartnerBrowserFlow.test.ts",
+      "test": "a pending application renders the review screen, and \"Check again\" re-reads the backend",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'a pending applicant must see the review screen, not \"Growth Partners only\"'"
+    },
+    {
+      "suite": "dom/loginAndSignupRecoveryBrowserFlow.test.ts",
+      "test": "signup: an address that already exists recovers instead of dead-ending",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'UI settled: inbox screen'"
+    },
+    {
+      "suite": "dom/loginAndSignupRecoveryBrowserFlow.test.ts",
+      "test": "signup: the recovery path does not create a second account",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'UI settled: inbox screen'"
+    },
+    {
+      "suite": "dom/onboardingJourneyBrowserFlow.test.ts",
+      "test": "PART 3 journey: share link \u2192 sign up \u2192 referral link \u2192 handoff \u2192 Template App entry",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/onboardingSignupBrowserFlow.test.ts",
+      "test": "an in-flight submit shows the busy state and the fields lock",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'UI settled: the safe error copy'"
+    },
+    {
+      "suite": "dom/part3GrowthPartnerJourneyBrowserFlow.test.ts",
+      "test": "PHASE 7: a PART 3 owner journey produces one referral the partner watches go pending -> active -> converted",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/partnerAccountSettingsSecurityFailure.test.ts",
+      "test": "a failed security overview degrades that section only \u2014 the rest of Account Settings stays usable",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'the failure is shown'"
+    },
+    {
+      "suite": "dom/partnerAccountSettingsSecurityFailure.test.ts",
+      "test": "a partner-scoped refusal says so, and the page still renders",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'the failure is shown'"
+    },
+    {
+      "suite": "dom/partnerAccountSettingsSecurityFailure.test.ts",
+      "test": "Retry re-fetches the overview and the page heals itself",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'the failure is shown'"
+    },
+    {
+      "suite": "dom/partnerActivitySharingBrowserFlow.test.ts",
+      "test": "copy code/link use exact snackbars, repeat after dismiss, last action wins and failures never claim success",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'Copy Code'"
+    },
+    {
+      "suite": "dom/partnerExistingReferralBrowserFlow.test.ts",
+      "test": "registered visitors get an explicit notice and neither capture nor prefill another partner, linked or unlinked",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'UI settled'"
+    },
+    {
+      "suite": "dom/partnerExistingReferralBrowserFlow.test.ts",
+      "test": "register validates before redirect, shows invalid-code recovery and hides technical boot failures",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/partnerPortalModulesBrowserFlow.test.ts",
+      "test": "the Earnings link navigates the SPA and renders the wallet from the backend",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/partnerPortalModulesBrowserFlow.test.ts",
+      "test": "a wallet failure is told to the partner in actionable words, not a blank card",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'timed out waiting for the partner-only explanation'"
+    },
+    {
+      "suite": "dom/partnerPortalModulesBrowserFlow.test.ts",
+      "test": "Levels, Leaderboards and Marketing Materials render their real data",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'and the partner\u2019s own share link'"
+    },
+    {
+      "suite": "dom/partnerPortalShellBrowserFlow.test.ts",
+      "test": "sidebar navigation drives the SPA: My Referral Code shows the code and the share link",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'timed out waiting for the referral code page'"
+    },
+    {
+      "suite": "dom/partnerPortalShellBrowserFlow.test.ts",
+      "test": "a partner share link (?ref=CODE) pre-fills the onboarding referral code input",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/partnerProfileEmptyStatesBrowserFlow.test.ts",
+      "test": "profile shows protected fields read-only, persists profile + account settings together, and removes photo",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'retry'"
+    },
+    {
+      "suite": "dom/partnerProfileEmptyStatesBrowserFlow.test.ts",
+      "test": "empty referrals copy the real link; unmatched searches clear both criteria and form controls",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/partnerRouteGuardBrowserFlow.test.ts",
+      "test": "every canonical and legacy partner page blocks denied accounts before private reads and redirects expired sessions",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'guard settled'"
+    },
+    {
+      "suite": "dom/partnerRouteGuardBrowserFlow.test.ts",
+      "test": "pending approval retries the same shared gate before loading the dashboard",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/partnerRouteGuardBrowserFlow.test.ts",
+      "test": "guard never mounts denied children, and switching identities hides cached private content synchronously",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "'guard settled'"
+    },
+    {
+      "suite": "dom/publicReferralSharing.test.ts",
+      "test": "copy and sharing actions use the real code and signup URL, with safe fallbacks",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/referralAttributionBrowserFlow.test.ts",
+      "test": "incoming link is validated before navigation; cookie attribution reaches signup after remount without ref",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "|-"
+    },
+    {
+      "suite": "dom/referralAttributionPersistence.test.ts",
+      "test": "PHASE 6: the referral link survives refresh, logout, login, a browser restart and a server restart \u2014 and cannot be re-attributed by a later ?ref=",
+      "also_failed_in_initial_followup_audit": true,
+      "error": "\"UI never reached: existing-account notice for a signed-in owner. Screen: OnboardingReferral code savedYou are currently signed in as phase6.owner@example.com. Referral codes only apply to new account registrations.The referral code NEXORA-D304B153A631 is saved for a new account. It will not change this account's existing attribution.Go to DashboardLog Out & Apply Referral\""
+    }
+  ]
+}

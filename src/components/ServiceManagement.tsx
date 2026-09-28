@@ -1,3 +1,5 @@
+import { getTemplateById } from '../data/templates';
+import { ContentImageField } from './ContentImageField';
 import React, { useState } from 'react';
 import { SalonService, SalonProfile } from '../types';
 import { 
@@ -68,6 +70,7 @@ export const getServiceIcon = (iconName: string) => {
 };
 
 interface ServiceManagementProps {
+  templateId?: SalonProfile['businessType'];
   services: SalonService[];
   setServices: React.Dispatch<React.SetStateAction<SalonService[]>>;
   primaryAccentColor: string;
@@ -101,6 +104,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   setServices,
   primaryAccentColor,
   profile,
+  templateId,
   onPersistChange,
   onNavigateToPreview,
   isAuthenticated = true,
@@ -118,6 +122,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   const [formCustomCategory, setFormCustomCategory] = useState<string>('');
   const [formDuration, setFormDuration] = useState<number>(45);
   const [formPrice, setFormPrice] = useState<number>(650);
+  const [formImage, setFormImage] = useState('');
   const [formDescription, setFormDescription] = useState<string>('');
   const [formPopular, setFormPopular] = useState<boolean>(false);
   const [formShowDuration, setFormShowDuration] = useState<boolean>(true);
@@ -151,6 +156,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormDuration(45);
     setFormPrice(650);
     setFormDescription('');
+    setFormImage('');
     setFormPopular(false);
     setFormShowDuration(true);
     setFormIcon('Scissors');
@@ -175,6 +181,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormDuration(srv.durationMinutes || 45);
     setFormPrice(srv.price || 0);
     setFormDescription(srv.description || '');
+    setFormImage(srv.imageUrl || '');
     setFormPopular(!!srv.popular);
     setFormShowDuration(srv.showDuration !== false);
     setFormIcon(srv.icon || 'Scissors');
@@ -202,12 +209,12 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       setFormError('Service name is required.');
       return;
     }
-    if (formPrice < 0) {
+    if (!Number.isFinite(formPrice) || formPrice < 0) {
       setFormError('Price must be 0 or greater.');
       return;
     }
-    if (formDuration <= 0) {
-      setFormError('Duration must be greater than 0 minutes.');
+    if (!Number.isInteger(formDuration) || formDuration <= 0) {
+      setFormError('Duration must be a positive whole number of minutes.');
       return;
     }
 
@@ -228,6 +235,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
               durationMinutes: Number(formDuration),
               price: Number(formPrice),
               description: formDescription.trim(),
+              imageUrl: formImage,
               popular: formPopular,
               showDuration: formShowDuration,
               icon: formIcon,
@@ -244,6 +252,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         durationMinutes: Number(formDuration),
         price: Number(formPrice),
         description: formDescription.trim(),
+        imageUrl: formImage,
         icon: formIcon,
         popular: formPopular,
         showDuration: formShowDuration,
@@ -419,6 +428,20 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         </div>
       )}
 
+      {services.length === 0 && getTemplateById(templateId || profile?.businessType) && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm">
+        <p className="mb-3">Start with five category-specific services, then edit images, descriptions, prices and durations.</p>
+        <button type="button" className="rounded-lg bg-rose-700 px-4 py-2 font-bold text-white" onClick={async () => {
+          if (!isAuthenticated) { onRequireAuth?.('login'); return; }
+          const next = getTemplateById(templateId || profile?.businessType)!.defaultData.services.map(s => ({ ...s }));
+          setServices(next);
+          if (onPersistChange) {
+            try {
+              const result = await onPersistChange('Template services added.', { services: next });
+              if (!result.published && !result.localDraft) setSaveError('Could not save template services. Your changes are retained; retry save.');
+            } catch { setSaveError('Could not save template services. Your changes are retained; retry save.'); }
+          }
+        }}>Add 5 template services</button>
+      </div>}
       {/* HEADER SECTION & SUMMARY CARDS */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-5">
@@ -629,7 +652,8 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                       </div>
                     </div>
 
-                    {/* Description */}
+                    <ContentImageField label="Service image" value={formImage} onChange={setFormImage} />
+                {/* Description */}
                     {srv.description && (
                       <p className="text-xs text-gray-600 mt-2 leading-relaxed line-clamp-2">
                         {srv.description}
@@ -884,6 +908,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                   </div>
                 </div>
 
+                <ContentImageField label="Service image" value={formImage} onChange={setFormImage} />
                 {/* Description */}
                 <div>
                   <div className="flex items-center justify-between mb-1">

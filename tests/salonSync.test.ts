@@ -108,7 +108,7 @@ test('toProfileRow maps every editor field to the backend profiles schema', () =
   assert.equal(row.salon_name, 'Miraki Hair Studio');
   assert.equal(row.tagline, 'Redefining luxury salon care');
   assert.equal(row.about, 'Our story…');
-  assert.equal(row.whatsapp, '+91 90000 00000');
+  assert.equal(row.whatsapp, '+919000000000', 'phone values are normalized for the DB');
   assert.equal(row.city, 'Hyderabad');
   assert.equal(row.subdomain, 'miraki-hair-studio');
   assert.equal(row.theme_preset, profile.themePreset);

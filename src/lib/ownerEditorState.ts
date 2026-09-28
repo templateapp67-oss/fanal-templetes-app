@@ -109,12 +109,14 @@ export async function saveOwnerEditorState(
   // best-effort: if it cannot help (legacy schema, older database) the
   // original failure is returned unchanged rather than being masked.
   try {
-    await resolveOwnerWorkspace(db as any);
+    const workspace = await resolveOwnerWorkspace(db as any);
+    if (!workspace.salonId) return first;
   } catch (err) {
     console.warn('[AutoSave] resolveOwnerWorkspace attempt skipped or failed:', err);
+    return first;
   }
 
-  // Always attempt a retry write after workspace resolution
+  // Retry only when a workspace was actually resolved.
   const retried = await writeOwnerEditorState(db, payload);
   return retried.ok ? retried : first;
 }

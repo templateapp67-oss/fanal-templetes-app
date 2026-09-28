@@ -1,3 +1,4 @@
+import { WebsiteContentEditor } from './WebsiteContentEditor';
 import { SalonOpeningHours } from './SalonOpeningHours';
 import { useOwnerDashboard, dashboardTotals } from '../lib/useOwnerDashboard';
 import React, { useState } from 'react';
@@ -33,6 +34,7 @@ import { isSalonProfileComplete, getSalonProfileCompletion } from '../lib/profil
 import { ProfileCompletionModal, ProfileCompletionBanner } from './ProfileCompletionModal';
 
 interface SaaSDashboardProps {
+  selectedTemplateId?: SalonProfile['businessType'];
   ownerId?: string;
   profile: SalonProfile;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
@@ -75,6 +77,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   setAppointments,
   clients: suppliedClients,
   ownerId,
+  selectedTemplateId,
   setClients = (_clients: React.SetStateAction<ClientRecord[]>) => {},
   loyaltyConfig: externalLoyaltyConfig,
   setLoyaltyConfig: externalSetLoyaltyConfig,
@@ -454,7 +457,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             { id: 'promobanner', label: 'Promo Banner', icon: 'campaign' },
             { id: 'marketing', label: 'Promo Studio', icon: 'photo_camera_back' },
             { id: 'social_connectivity', label: 'Social & Reels', icon: 'share' },
-            { id: 'appearance', label: 'Appearance', icon: 'palette' },
+            { id: 'appearance', label: 'Appearance & Content', icon: 'palette' },
             { id: 'website', label: 'Salon Info', icon: 'storefront' }
           ].map((tab) => {
             const isTabActive = activeTab === tab.id;
@@ -1252,6 +1255,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         {/* TAB CONTENT: SERVICES */}
         {activeTab === 'services' && (
           <ServiceManagement
+            templateId={selectedTemplateId}
             services={services}
             setServices={setServices}
             primaryAccentColor={currentPrimaryColor}
@@ -1609,6 +1613,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         {activeTab === 'social_connectivity' && (
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
             <SocialConnectivityStep
+              templateId={selectedTemplateId}
               profile={profile}
               setProfile={setProfile}
               onContinue={onNavigateToPreview}
@@ -1619,6 +1624,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         {/* TAB CONTENT: APPEARANCE (THEME ACCENT COLOR PICKER & CSS VARIABLE UPDATER) */}
         {activeTab === 'appearance' && (
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-6">
+            <WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} />
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">

@@ -80,6 +80,7 @@ const PAYLOAD = {
     themePreset: 'slate_silver',
     currency: '₹',
     city: 'Bengaluru',
+    address: '100 Studio Road',
   },
   services: [
     { id: 'hs-1', name: 'Precision Cut', category: 'Hair', durationMinutes: 45, price: 750, description: 'Cut.', icon: 'scissors', popular: true },

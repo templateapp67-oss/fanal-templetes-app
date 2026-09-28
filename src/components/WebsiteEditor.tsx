@@ -1,3 +1,6 @@
+import { WebsiteLocationMap } from './WebsiteLocationMap';
+import { WebsiteContentEditor } from './WebsiteContentEditor';
+import { ContentImageField } from './ContentImageField';
 import { readPartnerProfile } from '../lib/readPartnerProfile';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { isPartnerProfileComplete, isSalonProfileComplete, getSalonProfileCompletion } from '../lib/profileCompletion';
@@ -274,6 +277,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     } else if ('whatsapp_number' in patch) {
       merged.whatsapp = (patch as any).whatsapp_number;
     }
+    const addressChanged = ['address', 'city', 'state', 'postalCode', 'areaLocality'].some(key => key in patch);
+    if (addressChanged && !('latitude' in patch) && !('longitude' in patch)) {
+      merged.latitude = undefined; merged.longitude = undefined;
+    }
     setProfile((prev) => ({ ...prev, ...merged }));
   };
 
@@ -281,10 +288,12 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   React.useEffect(() => {
     if (!profile.address || profile.address.trim().length < 5) return;
 
+    let cancelled = false;
     const timer = setTimeout(async () => {
       const result = await geocodeAddressWithGoogleMaps(profile.address);
-      if (result) {
+      if (result && !cancelled) {
         setProfile((prev) => {
+          if (prev.address !== profile.address || prev.ownerId !== profile.ownerId) return prev;
           // Avoid triggering unnecessary re-renders if coordinates haven't changed significantly
           if (
             Math.abs((prev.latitude || 0) - result.lat) < 0.0001 &&
@@ -301,8 +310,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
       }
     }, 800);
 
-    return () => clearTimeout(timer);
-  }, [profile.address, setProfile]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [profile.address, profile.ownerId, setProfile]);
 
   // -- Services ------------------------------------------------
   const addService = () => {
@@ -835,29 +844,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 }}
               />
 
-              {profile.latitude && profile.longitude ? (
-                <div className="space-y-1.5 mt-2 animate-fade-in">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-                      Live Location Map Preview
-                    </label>
-                  </div>
-                  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-xs">
-                    <GoogleMapsView
-                      latitude={profile.latitude}
-                      longitude={profile.longitude}
-                      title={profile.businessName || 'Your Salon'}
-                      address={profile.address || ''}
-                      phone={profile.phone || ''}
-                      height="180px"
-                      zoom={15}
-                      interactive={false}
-                      onPositionChange={undefined} // Location is set by address autocomplete only
-                      accentColor={profile.brandColor || '#C20E5A'}
-                    />
-                  </div>
-                </div>
-              ) : null}
+              {(profile.address || (profile.latitude != null && profile.longitude != null)) && <WebsiteLocationMap profile={profile} />}
             </div>
           </div>
         </section>
@@ -1577,6 +1564,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
+        <WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} />
+
         {/* ===== 4. SERVICES & PRICING ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-1">
@@ -1608,6 +1597,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 </div>
 
                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
+                  <div className="sm:col-span-4"><ContentImageField label={`${srv.name} image`} value={srv.imageUrl} onChange={imageUrl => updateService(srv.id, { imageUrl })} /></div>
+                  <label className="sm:col-span-4 text-xs">Full service details<textarea className="w-full rounded-lg border border-gray-300 p-2" rows={3} value={srv.description} onChange={e => updateService(srv.id, { description: e.target.value })} /></label>
+                  <label className="sm:col-span-4 text-xs"><input type="checkbox" checked={srv.showDuration !== false} onChange={e => updateService(srv.id, { showDuration: e.target.checked })} /> Show duration on website</label>
                   <div className="sm:col-span-2">
                     <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
                       Service Name
@@ -1630,7 +1622,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                       onChange={(e) => updateService(srv.id, { category: e.target.value })}
                       className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
                     >
-                      {subCategories.map((c) => (
+                      {Array.from(new Set([srv.category, ...subCategories])).map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>

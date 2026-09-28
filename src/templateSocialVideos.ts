@@ -115,7 +115,20 @@ export const TEMPLATE_DEFAULT_VIDEOS: Record<string, SocialVideo[]> = {
   ]
 };
 
+/** Mock cards intentionally use a labelled sample player, not unrelated music
+ * presented as real customer results. Owners replace these with their own links. */
 export function getDefaultVideosForTemplate(categoryId?: string): SocialVideo[] {
-  if (!categoryId) return [];
-  return TEMPLATE_DEFAULT_VIDEOS[categoryId] || [];
+  const source = TEMPLATE_DEFAULT_VIDEOS[categoryId || ''] || [];
+  if (!source.length) return [];
+  const cards = source.map(video => ({
+    ...video, isOwnerVideo: false, isDemo: true, views: undefined,
+    videoId: 'aqz-KE-bpKQ',
+    youtubeUrl: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+    title: `Demo • ${video.title}`,
+    description: 'Template mock content. The player uses a sample animation, not client footage. Replace with your own YouTube link before publishing.',
+  }));
+  if (!cards.some(v => v.categoryTag !== 'SHORT')) {
+    cards.push({ ...cards[0], id: `${categoryId}-showcase-demo`, categoryTag: 'SHOWCASE', title: `Demo • ${source[0].channelTitle} showcase` });
+  }
+  return cards;
 }
