@@ -157,7 +157,7 @@ async function resolveSalonFromHost(req: any, deadlineAt?: number) {
     const identifier = tenant.customDomain || tenant.subdomain;
     const isCustom = Boolean(tenant.customDomain);
     const { found, salon, error } = await lookupSalon(
-      { db, isMockSupabase, mockSalons },
+      { db: admin || db, isMockSupabase, mockSalons },
       identifier,
       isCustom,
       deadlineAt
@@ -189,7 +189,7 @@ app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(asyn
   const querySite = normalizeSiteIdentifier(req.query?.site || req.query?.subdomain || req.query?.tenant || '');
   if (querySite) {
     const { found, salon, error } = await lookupSalon(
-      { db, isMockSupabase, mockSalons },
+      { db: admin || db, isMockSupabase, mockSalons },
       querySite,
       false,
       res.locals?.requestDeadlineAt
@@ -247,7 +247,7 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
   const deadlineAt = res.locals?.requestDeadlineAt;
   try {
     const { found, salon, error } = await lookupSalon(
-      { db, isMockSupabase, mockSalons },
+      { db: admin || db, isMockSupabase, mockSalons },
       sub,
       false,
       deadlineAt
