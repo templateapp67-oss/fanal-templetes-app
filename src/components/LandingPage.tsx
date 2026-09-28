@@ -3,9 +3,13 @@ import type { BusinessTypeId } from '../types';
 import { getTemplateById } from '../data/templates';
 import { SALON_IMAGES } from '../assets/images';
 import partnerHero from '../assets/nexora-partner-hero.jpg';
-import campaignModels from '../assets/nexora-campaign-models.jpg';
-import goldBanner from '../assets/nexora-gold-banner.jpg';
-import goldSalon from '../assets/nexora-gold-salon.jpg';
+import campaignModels from '../assets/posters/nexora-campaign-models.jpg';
+import goldBanner from '../assets/posters/nexora-gold-banner.jpg';
+import goldSalon from '../assets/posters/nexora-gold-salon.jpg';
+import posterWaiting from '../assets/posters/poster-waiting-problem.jpg';
+import posterQr from '../assets/posters/poster-qr-standee.jpg';
+import posterCrown from '../assets/posters/poster-crown-ranking.jpg';
+import posterSuccess from '../assets/posters/poster-booking-success.jpg';
 
 interface LandingPageProps { onBrowseTemplates: (category?: string) => void; selectedTemplateId?: BusinessTypeId; }
 
@@ -149,6 +153,38 @@ const TESTIMONIALS = [
     quote: 'As a growth partner I share my referral link, help local salons set up, and watch my dashboard grow. The leaderboards keep the whole team motivated.',
     name: 'Kabir Khan', role: 'Growth Partner, Bengaluru', emoji: '🚀',
   },
+];
+
+/* ----------------- Customer problems → solution ----------------- */
+
+const CUSTOMER_PROBLEMS = [
+  { icon: 'hourglass_top', title: 'Time ki barbadi?', text: 'Salon pahunchne par pata chalta hai 60–90 minute ka waiting hai. Aadha din kharab.' },
+  { icon: 'sentiment_dissatisfied', title: 'Waiting ki pareshani?', text: 'Weekend par bheed itni ki baithne ki jagah nahi — service se zyada queue yaad rehti hai.' },
+  { icon: 'event_busy', title: 'Appointment ka koi confirmation nahi?', text: 'Phone karne par “aa jao bhai” — pahunchne par 3 aur log aage. Na slot, na guarantee.' },
+];
+
+const SOLUTION_POINTS = [
+  { icon: 'calendar_month', title: 'Online Booking', text: 'Kabhi bhi, kahin se bhi — 60 second me asaani se booking karein.' },
+  { icon: 'chat', title: 'WhatsApp Par Confirmation', text: 'Turant booking confirm message payein — koi confusion nahi.' },
+  { icon: 'location_on', title: 'Manpasand Salon Chune', text: 'Apni location par Jaipur ke sabhi partner salons me se chune.' },
+  { icon: 'savings', title: 'Time Aur Paise Dono Bachaye', text: 'Smart booking se time bhi bache, paise bhi — dono.' },
+];
+
+/* ----------------- Jaipur 15% QR discount ----------------- */
+
+const QR_CATEGORIES = [
+  { icon: 'content_cut', label: 'Salon' },
+  { icon: 'face_retouching_natural', label: 'Beauty Parlour' },
+  { icon: 'spa', label: 'Spa' },
+  { icon: 'draw', label: 'Tattoo' },
+  { icon: 'self_improvement', label: 'Massage' },
+  { icon: 'brush', label: 'Nail Art' },
+];
+
+const QR_STEPS = [
+  { step: '1', title: 'Partner salon par Nexora QR dekho', text: 'Jaipur ke har partner salon ke counter par golden QR standee rakhi hai.' },
+  { step: '2', title: 'Scan karke payment karo', text: 'Phone camera se scan karo — secure payment window khul jayega.' },
+  { step: '3', title: 'Turant 15% discount pao', text: 'Payment hote hi discount apply — koi coupon code nahi, koi waiting nahi.' },
 ];
 
 const FAQS = [
@@ -352,6 +388,155 @@ const RewardsSection: React.FC = () => (
 );
 
 /* ------------------------------------------------------------------ */
+/*  Customer problems → Nexora solution                               */
+/* ------------------------------------------------------------------ */
+
+const ProblemSolutionSection: React.FC = () => (
+  <section id="solution" className="relative scroll-mt-24 overflow-hidden bg-[#070502] py-20 sm:py-24">
+    <div className="nx-dots pointer-events-none absolute right-0 top-0 h-44 w-44 opacity-50" />
+    <div className="nx-blob pointer-events-none absolute -left-24 bottom-10 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl" />
+
+    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+      <SectionHeading
+        light
+        eyebrow="Is problem ka"
+        icon="emoji_objects"
+        title={<span className="nx-gold-text">Solution hai na!</span>}
+        sub="Har baar waiting, confirmation na milna, time waste — Nexora in teeno ka ek jawaab hai."
+      />
+
+      <div className="mt-14 grid items-center gap-10 lg:grid-cols-2">
+        <figure className="nx-poster-frame nx-lift relative overflow-hidden rounded-[2rem]">
+          <img src={posterWaiting} alt="Salon me lambi waiting — ek aam problem" className="h-72 w-full object-cover sm:h-96" loading="lazy" />
+          <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" aria-hidden="true" />
+          <figcaption className="absolute inset-x-0 bottom-0 p-6">
+            <span className="inline-flex items-center gap-2 rounded-full bg-red-500/90 px-4 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-white">
+              <Ic name="sentiment_very_dissatisfied" className="text-sm" /> Same problems, same everytime!
+            </span>
+          </figcaption>
+        </figure>
+
+        <div className="space-y-4">
+          {CUSTOMER_PROBLEMS.map((p) => (
+            <div key={p.title} className="nx-poster-frame flex items-start gap-4 rounded-3xl bg-black/70 p-5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-400/50 bg-black text-amber-300"><Ic name={p.icon} className="text-xl" /></span>
+              <div>
+                <h3 className="font-black tracking-tight text-white">{p.title}</h3>
+                <p className="mt-1 text-sm leading-6 text-amber-100/75">{p.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="nx-poster-frame mt-12 rounded-[2rem] bg-gradient-to-b from-[#15100a] to-black p-8 sm:p-10">
+        <p className="text-center text-xs font-black uppercase tracking-[0.3em] text-amber-400">— Is problem ka solution hai na! —</p>
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {SOLUTION_POINTS.map((s) => (
+            <div key={s.title} className="nx-lift rounded-3xl border border-amber-400/30 bg-black/60 p-5">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-yellow-600 text-black shadow-lg"><Ic name={s.icon} className="text-xl" /></span>
+              <h3 className="mt-4 text-sm font-black text-white">{s.title}</h3>
+              <p className="mt-1.5 text-xs leading-5 text-amber-100/70">{s.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+);
+
+/* ------------------------------------------------------------------ */
+/*  Jaipur 15% QR discount                                            */
+/* ------------------------------------------------------------------ */
+
+const JaipurDiscountSection: React.FC = () => (
+  <section id="jaipur-offer" className="relative scroll-mt-24 overflow-hidden py-20 sm:py-24" style={{ background: 'radial-gradient(900px 500px at 50% -10%, #2a1f05 0%, #070502 55%)' }}>
+    <div className="nx-blob pointer-events-none absolute right-0 top-24 h-80 w-80 rounded-full bg-amber-400/10 blur-3xl" />
+    <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+      <SectionHeading
+        light
+        eyebrow="Jaipur special"
+        icon="qr_code_2"
+        title={<>Jaipur ke har salon par <span className="nx-gold-text">15% instant discount*</span></>}
+        sub="Hair Salon · Beauty Parlour · Spa · Tattoo Studio · Massage · Nail Art — ek hi QR, har jagah benefits."
+      />
+
+      <div className="mt-14 grid items-center gap-10 lg:grid-cols-[1.05fr_.95fr]">
+        <div className="space-y-4">
+          {QR_STEPS.map((s) => (
+            <div key={s.step} className="nx-poster-frame nx-lift flex items-start gap-4 rounded-3xl bg-black/70 p-5">
+              <span className="nx-gold-text flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-400/50 bg-black text-2xl font-black">{s.step}</span>
+              <div>
+                <h3 className="font-black tracking-tight text-white">{s.title}</h3>
+                <p className="mt-1 text-sm leading-6 text-amber-100/75">{s.text}</p>
+              </div>
+            </div>
+          ))}
+          <div className="nx-poster-frame rounded-3xl bg-black/70 p-5">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-400">Kahan kahan milta hai?</p>
+            <div className="mt-4 flex flex-wrap gap-2.5">
+              {QR_CATEGORIES.map((c) => (
+                <span key={c.label} className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-black px-3.5 py-2 text-xs font-bold text-amber-100">
+                  <Ic name={c.icon} className="text-sm text-amber-300" />{c.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <figure className="nx-poster-frame nx-lift relative overflow-hidden rounded-[2rem]">
+          <img src={posterQr} alt="Nexora golden QR standee — scan karke 15% discount pao" className="h-80 w-full object-cover sm:h-[26rem]" loading="lazy" />
+          <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30" aria-hidden="true" />
+          <figcaption className="absolute inset-x-0 bottom-0 p-6 text-center">
+            <p className="nx-gold-text text-3xl font-black tracking-tight">SCAN. PAY. SAVE 15%.</p>
+            <p className="mt-1 text-xs font-bold text-amber-100/80">Repeat — har visit par, kisi bhi partner shop par</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <p className="mt-8 text-center text-xs text-amber-100/60">*Offer Jaipur ke partner salons par Nexora QR payment ke saath. Details ke liye website visit karein.</p>
+    </div>
+  </section>
+);
+
+/* ------------------------------------------------------------------ */
+/*  Campaign poster wall                                              */
+/* ------------------------------------------------------------------ */
+
+const POSTER_WALL = [
+  { img: posterCrown, title: 'Top Jaipur Ranking', text: 'AI Growth System ke saath apne salon ko #1 tak le jao — reviews, QR payments aur referrals sab ek jagah.' },
+  { img: posterSuccess, title: 'Book Pehle, Jao Baad Me', text: 'Aap haircut ke paise dete ho, waiting ke nahi. Confirmed slot, zero waiting, full style.' },
+  { img: goldBanner, title: 'The Nexora Standard', text: 'Golden scissors wala premium experience — har partner salon me same standard, same trust.' },
+  { img: goldSalon, title: 'Luxury Vibes, Partner Salons', text: 'Jaipur ke best salons, parlours, spas aur studios — sab Nexora network me.' },
+];
+
+const PosterWall: React.FC = () => (
+  <section id="posters" className="scroll-mt-24 bg-white py-20 sm:py-24">
+    <div className="mx-auto max-w-6xl px-4 sm:px-8">
+      <SectionHeading
+        eyebrow="Poster wall"
+        icon="image"
+        title={<>The <span className="text-[#C20E5A]">#PehleNexoraPhirSalon</span> campaign</>}
+        sub="Salon ja rhe ho? Pehle Nexora kiya! — posters jo Jaipur bhar me dikh rahe hain."
+      />
+      <div className="mt-12 grid gap-5 sm:grid-cols-2">
+        {POSTER_WALL.map((p) => (
+          <figure key={p.title} className="nx-glass nx-lift group overflow-hidden rounded-[2rem]">
+            <span className="block overflow-hidden">
+              <img src={p.img} alt={p.title} className="h-56 w-full object-cover transition-transform duration-700 group-hover:scale-105 sm:h-72" loading="lazy" />
+            </span>
+            <figcaption className="p-6">
+              <h3 className="font-black tracking-tight">{p.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-on-surface-variant">{p.text}</p>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+/* ------------------------------------------------------------------ */
 /*  FAQ                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -532,6 +717,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
       {/* ============================ CAMPAIGN POSTER ============================ */}
       <CampaignPoster />
 
+      {/* ============================ PROBLEM TO SOLUTION ============================ */}
+      <ProblemSolutionSection />
+
+      {/* ============================ JAIPUR 15 PERCENT QR OFFER ============================ */}
+      <JaipurDiscountSection />
+
       {/* ============================ CUSTOMERS ============================ */}
       <section id="customers" className="scroll-mt-24 bg-gradient-to-b from-[#fff5f8] to-surface py-20 sm:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-8">
@@ -558,6 +749,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ REWARDS ============================ */}
       <RewardsSection />
+
+      {/* ============================ POSTER WALL ============================ */}
+      <PosterWall />
 
       {/* ============================ OWNERS ============================ */}
       <section id="owners" className="scroll-mt-24 py-20 sm:py-24">

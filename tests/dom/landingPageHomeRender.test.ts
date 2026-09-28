@@ -40,7 +40,7 @@ test('home page renders hero, every section and the glass hooks', () => {
   assert.match(html, /nx-float/);
 
   // All marketing section anchors exist
-  for (const id of ['top', 'about', 'nexora-videos', 'campaign', 'customers', 'rewards', 'owners', 'partner', 'templates', 'stories', 'faq']) {
+  for (const id of ['top', 'about', 'nexora-videos', 'campaign', 'solution', 'jaipur-offer', 'customers', 'rewards', 'posters', 'owners', 'partner', 'templates', 'stories', 'faq']) {
     assert.match(html, new RegExp(`id="${id}"`), `missing section #${id}`);
   }
 
@@ -51,6 +51,15 @@ test('home page renders hero, every section and the glass hooks', () => {
   assert.match(html, /PHIR/);
   assert.match(html, /nx-poster-frame/);
   assert.match(html, /nx-gold-text/);
+
+  // Problem -> solution & Jaipur 15% offer
+  assert.match(html, /Solution hai na!/);
+  assert.match(html, /Time ki barbadi/);
+  assert.match(html, /WhatsApp Par Confirmation/);
+  assert.match(html, /15% instant discount/);
+  assert.match(html, /SCAN\. PAY\. SAVE 15%\./);
+  assert.match(html, /Top Jaipur Ranking/);
+  assert.match(html, /Book Pehle, Jao Baad Me/);
 
   // Complete-information content blocks
   assert.match(html, /Rewards Ladder/);
