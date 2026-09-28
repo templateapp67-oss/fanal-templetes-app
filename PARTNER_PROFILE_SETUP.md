@@ -4,7 +4,7 @@ Signed-in partners open **User Profile Settings** from the avatar in the global 
 
 ## Deployment
 
-The live app https://fanal-templetes-app.vercel.app uses Supabase project `qwaehqsmodekbgvnaavz` (`nexora-staging`). This was verified through `/api/health`, not inferred from a project name.
+The intended new Supabase project for the app is `zilwgiuiygqqardzutxi` (`https://zilwgiuiygqqardzutxi.supabase.co`). Verify the live Vercel deployment through `/api/health` after updating its environment variables and redeploying; a Vercel settings change alone does not verify which project the running deployment uses.
 
 Applied on 2026-09-09:
 - `20260909035237_partner_profile_settings.sql`: private settings, validated save/load RPCs and avatar bucket; compatible with the deployed normalized profile schema and the repository legacy schema.
