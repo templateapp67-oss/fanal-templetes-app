@@ -254,6 +254,9 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     ? partnerPortalContentSection(portalSection)
     : legacySection;
   const isLoginPath = isPartnerLoginPath(path) || isGrowthPartnerLoginPath(path);
+  // A shared dashboard link should open a useful login/apply screen for guests
+  // without exposing any partner data or bypassing the backend RLS checks.
+  const keepDashboardUrlForGuests = isPartnerNamespace && path === PARTNER_DASHBOARD_PATH;
   /** Login route for the active namespace (where the gate sends visitors). */
   const loginRoute = isPartnerNamespace ? PARTNER_LOGIN_PATH : growthPartnerLoginPath();
   /** Section URLs for the legacy namespace's section tabs. */
@@ -399,7 +402,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const gate = usePartnerRouteGuard({
     userId, loading: gateLoading, isMockMode: isMockSupabase,
     partnerRow: partner, loadError, applicationStatus, verifiedFor,
-    isLoginPath, loginRoute, navigate,
+    isLoginPath, suppressUnauthenticatedRedirect: keepDashboardUrlForGuests, loginRoute, navigate,
   });
   const ready = gate === 'ready';
 
@@ -554,6 +557,21 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
     }
     return (
       <GrowthPartnerLogin
+        user={user}
+        navigate={navigate}
+        onBack={onBack}
+        accentHex={accentHex}
+        onLogout={onLogout}
+      />
+    );
+  }
+
+  // Do not bounce a visitor away from the URL they opened. The login surface
+  // stays at /partner/dashboard; successful sign-in still unlocks the real
+  // dashboard only after the normal partner/RLS gate reaches ready.
+  if (keepDashboardUrlForGuests && gate === 'unauthenticated') {
+    return (
+      <PartnerPortalLogin
         user={user}
         navigate={navigate}
         onBack={onBack}

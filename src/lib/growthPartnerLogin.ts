@@ -90,7 +90,7 @@ export async function submitGrowthPartnerApplication(
     p_kyc_document_reference: input.kycDocumentReference.trim(),
   });
   if (error) throw new Error('Your application could not be submitted. Please try again.');
-  return { status: String(data?.status || 'approved'), referral_code: data?.referral_code };
+  return { status: String(data?.status || 'pending'), referral_code: data?.referral_code };
 }
 
 /** The authenticated viewer identity (id + email), never a role. */
@@ -111,6 +111,8 @@ export type GrowthPartnerLoginState =
   | 'mock-mode'
   | 'signed-out'
   | 'unauthorized'
+  | 'pending'
+  | 'rejected'
   | 'inactive'
   | 'session-expired'
   | 'error'
@@ -230,10 +232,11 @@ export function resolveGrowthPartnerLogin(input: {
   if (input.loading) return 'loading';
   if (!input.userId) return 'signed-out';
   if (input.loadError) return isSessionExpiredError(input.loadError) ? 'session-expired' : 'error';
-  // Open enrollment retired the manual-review gate. A rolling deployment may
-  // briefly expose an old pending row before the provisioning migration runs;
-  // route that caller to the application CTA instead of trapping them.
-  if (!input.partnerRow) return 'unauthorized';
+  if (!input.partnerRow) {
+    if (input.applicationStatus === 'pending') return 'pending';
+    if (input.applicationStatus === 'rejected') return 'rejected';
+    return 'unauthorized';
+  }
   if (input.partnerRow.is_active === false) return 'inactive';
   return 'granted';
 }
