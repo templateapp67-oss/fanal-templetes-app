@@ -135,6 +135,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   // the cloud (or service-role API) actually accepts the state.
   const [formSaving, setFormSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Extract all distinct categories
   const allCategories = ['All', ...Array.from(new Set(services.map((s) => s.category || 'General')))];
@@ -161,6 +162,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormShowDuration(true);
     setFormIcon('Scissors');
     setFormError('');
+    setShowAdvanced(false);
     setIsModalOpen(true);
   };
 
@@ -170,6 +172,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       return;
     }
     setEditingServiceId(srv.id);
+    setShowAdvanced(true);
     setFormName(srv.name);
     if (COMMON_CATEGORIES.includes(srv.category)) {
       setFormCategory(srv.category);
@@ -652,7 +655,16 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                       </div>
                     </div>
 
-                    <ContentImageField label="Service image" value={formImage} onChange={setFormImage} />
+                    <button
+                  type="button"
+                  onClick={() => setShowAdvanced((value) => !value)}
+                  className="w-full rounded-xl border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  {showAdvanced ? 'Hide optional details' : 'Add category, image, description & display options'}
+                </button>
+
+                {showAdvanced && <>
+                <ContentImageField label="Service image" value={formImage} onChange={setFormImage} />
                 {/* Description */}
                     {srv.description && (
                       <p className="text-xs text-gray-600 mt-2 leading-relaxed line-clamp-2">
@@ -805,6 +817,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                   />
                 </div>
 
+                {showAdvanced && <>
                 {/* Category Selection */}
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
@@ -865,6 +878,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                   </div>
                 </div>
 
+                </>}
                 {/* Price & Duration Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -1002,6 +1016,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                   </label>
                 </div>
 
+                </>}
                 {/* Form Buttons */}
                 <div className="pt-2 flex items-center justify-end gap-2 border-t border-gray-100">
                   <button
