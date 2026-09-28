@@ -38,6 +38,7 @@ export function applyPublicWebsiteContent(profile: SalonProfile, raw: unknown): 
     });
   }
   if (Array.isArray(source.gallery)) next.gallery = source.gallery.filter(p => p && isSafeImageUrl(p.url) && p.url !== '').slice(0, 100).map(p => ({ id: String(p.id), url: p.url, title: String(p.title || ''), tag: String(p.tag || '') }));
+  if (Array.isArray(source.lookbookPhotos)) next.lookbookPhotos = source.lookbookPhotos.filter(p => p && isSafeImageUrl(p.url) && p.url !== '').slice(0, 100).map(p => ({ id: String(p.id), url: p.url, title: String(p.title || ''), tag: String(p.tag || ''), alt: String(p.alt || '') }));
   if (source.sectionVisibility && typeof source.sectionVisibility === 'object') {
     const keys = ['header', 'hero', 'metrics', 'about', 'services', 'offers', 'promoPopup', 'stylists', 'testimonials', 'gallery', 'location', 'whatsappFloat'];
     next.sectionVisibility = Object.fromEntries(Object.entries(source.sectionVisibility).filter(([key, value]) => keys.includes(key) && typeof value === 'boolean'));

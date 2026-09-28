@@ -90,3 +90,30 @@ test('testimonial deletion is profile-backed, survives remount, and never restor
     assert.deepEqual(saved.testimonials, []);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+
+test('published data is scoped to the current site while the next request is pending or fails', async () => {
+  const { useSalonData } = await import('../../src/lib/useSalonData');
+  const { container, root } = mount();
+  const originalFetch = globalThis.fetch;
+  const requests: Array<(response: any) => void> = [];
+  globalThis.fetch = (() => new Promise(resolve => requests.push(resolve))) as typeof fetch;
+  function Harness({ site }: { site: string | null }) {
+    const { data } = useSalonData(site, { profile: { ...INITIAL_SALON_PROFILE, businessName: `Fallback ${site}` }, services: [], stylists: [] });
+    return React.createElement('p', null, data.profile.businessName);
+  }
+  try {
+    await act(async () => root.render(React.createElement(Harness, { site: 'studio-a' })));
+    await act(async () => requests[0]({ ok: true, json: async () => ({ found: true, salon: { profile: { ...INITIAL_SALON_PROFILE, businessName: 'Published A' }, services: [], stylists: [] } }) }));
+    assert.equal(container.textContent, 'Published A');
+    await act(async () => root.render(React.createElement(Harness, { site: 'studio-b' })));
+    assert.equal(container.textContent, 'Fallback studio-b', 'no previous salon content while loading');
+    await act(async () => requests[1]({ ok: false }));
+    assert.equal(container.textContent, 'Fallback studio-b', 'a failed fetch must not revive another salon');
+    await act(async () => root.render(React.createElement(Harness, { site: null })));
+    assert.equal(container.textContent, 'Fallback null');
+    assert.equal(requests.length, 2, 'template demos with no site do not fetch a public tenant');
+  } finally {
+    globalThis.fetch = originalFetch;
+    await act(async () => root.unmount()); container.remove();
+  }
+});

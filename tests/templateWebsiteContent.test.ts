@@ -115,3 +115,17 @@ test('promotion schedules honor disabled, future and expired dates at render tim
   assert.equal(isWithinPromotionDates(undefined, '2026-09-27', today), false);
   assert.equal(isWithinPromotionDates(undefined, undefined, today), true);
 });
+
+test('upstream lookbook photos render compatibly without resurrecting a deliberately deleted gallery', async () => {
+  const { SalonWebsitePreview } = await import('../src/components/SalonWebsitePreview');
+  const { createBlankSalonProfile } = await import('../src/lib/ownerSalonResolution');
+  const profile = applyPublicWebsiteContent(createBlankSalonProfile(), {
+    lookbookPhotos: [{ id: 'legacy-photo', url: 'https://example.com/legacy-lookbook.jpg', title: 'Legacy showcase' }, { id: 'unsafe', url: 'javascript:alert(1)' }],
+  });
+  assert.equal(profile.lookbookPhotos?.length, 1);
+  const render = (patch = {}) => renderToStaticMarkup(React.createElement(SalonWebsitePreview, {
+    profile: { ...profile, ...patch }, services: [], stylists: [], publicView: true, previewMode: true, onAddAppointment: () => {},
+  }));
+  assert.match(render(), /legacy-lookbook\.jpg/);
+  assert.doesNotMatch(render({ gallery: [] }), /legacy-lookbook\.jpg|Legacy showcase/);
+});

@@ -271,6 +271,12 @@ export function toSafeAuthError(
   // message. Match both, so the copy an owner sees does not depend on which
   // half of the response arrived.
   const text = `${message} ${message.replace(/_/g, ' ')}`;
+  if (
+    (error as {code?: string})?.code === 'email_provider_disabled' ||
+    /email (signups|logins) are disabled|email provider.*disabled/i.test(text)
+  ) {
+    return new OnboardingError('unknown', 'Email sign-in is disabled in Supabase. Enable the Email provider in Authentication → Providers → Email.');
+  }
   if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(text)) return new OnboardingError('unknown', 'Your account is suspended. Contact support for help.');
   // An expired or revoked token is not a login failure — the owner did not do
   // anything wrong, and "Login failed. Please try again." sends them back to a
@@ -314,6 +320,12 @@ export function toSafeAuthError(
   }
   if (/rate limit|too many|over request|for security purposes|only request this after/i.test(text)) {
     return new OnboardingError('unknown', 'Too many attempts. Please wait a moment and try again.');
+  }
+  // A production bundle without the public Supabase URL/anon key reaches the
+  // placeholder client and GoTrue reports an invalid API key. This is an
+  // operator configuration error, not an account-creation failure.
+  if (/invalid api key|api key.*invalid|apikey.*invalid|missing api key|jwt malformed/i.test(text)) {
+    return new OnboardingError('unknown', 'This app is not connected to its Supabase project. Configure the live Supabase URL and anon key, then redeploy.');
   }
   if (/failed to fetch|network|fetch failed|connection/i.test(text)) {
     return new OnboardingError('network', 'Network error. Check your connection and try again.');

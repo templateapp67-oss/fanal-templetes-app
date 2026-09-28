@@ -1,0 +1,11 @@
+{
+  "name": "Nexora Salon OS",
+  "short_name": "Nexora",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#9f1239",
+  "icons": [
+    { "src": "/nexora-salonos-logo.png", "sizes": "any", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

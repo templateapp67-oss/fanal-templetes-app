@@ -60,6 +60,13 @@ export async function signUpGrowthPartner(
   });
   if (error) throw toGrowthPartnerLoginError(error);
   if (!data?.user) throw new Error('Signup failed. Please try again.');
+  // Supabase intentionally returns an empty identities array for an email
+  // that already exists (to avoid account enumeration). It can also return no
+  // session in that case, so do not mislabel an existing account as an email
+  // confirmation requirement.
+  if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new Error('This email already has an account. Please use Sign in instead.');
+  }
   if (!data.session) return { confirmed: false };
   if (!client.rpc) throw new Error('Signup is unavailable. Please try again later.');
   const { error: applicationError } = await client.rpc('submit_growth_partner_application', {
@@ -123,6 +130,12 @@ function messageOf(error: unknown): string {
  */
 export function toGrowthPartnerLoginError(error: unknown): Error {
   const message = messageOf(error);
+  if (
+    (error as {code?: string})?.code === 'email_provider_disabled' ||
+    /email (signups|logins) are disabled|email provider.*disabled/i.test(message)
+  ) {
+    return new Error('Email sign-in is disabled in Supabase. Enable the Email provider in Authentication → Providers → Email.');
+  }
   if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) {
     return new Error('Your account is suspended. Contact support for help.');
   }

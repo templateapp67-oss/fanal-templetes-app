@@ -173,6 +173,15 @@ export interface SocialVideo {
   transformationTag?: string;
 }
 
+/** A published portfolio image managed from the salon dashboard. */
+export interface LookbookPhoto {
+  id: string;
+  url: string;
+  title?: string;
+  tag?: string;
+  alt?: string;
+}
+
 export interface HomeServiceConfig {
   enabled: boolean;
   baseCharge: number;
@@ -260,6 +269,8 @@ export interface SalonProfile {
   gallery?: Array<{ id: string; url: string; title: string; tag: string }>;
   sectionVisibility?: Partial<Record<'header' | 'hero' | 'metrics' | 'about' | 'services' | 'offers' | 'promoPopup' | 'stylists' | 'testimonials' | 'gallery' | 'location' | 'whatsappFloat', boolean>>;
   sectionHeadings?: Record<string, string>;
+  /** Dashboard-managed portfolio images. An explicit empty list stays empty. */
+  lookbookPhotos?: LookbookPhoto[];
   requireDeposit: boolean;
   depositPercentage: number;
   themeAccentKey?: string;
