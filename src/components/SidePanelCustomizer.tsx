@@ -29,6 +29,7 @@ import {
   Link as LinkIcon,
   AlertCircle,
   Scissors,
+  Crown,
   Facebook,
   Youtube
 } from 'lucide-react';
@@ -971,6 +972,56 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                 </div>
               )}
             </div>
+
+            {/* VIP Black & Gold is a single special template, never a copied salon. */}
+            {profile.businessType === 'luxury_hair_salon' && (
+              <div className="bg-gradient-to-br from-[#16120a] to-[#050505] border border-[#d4af37]/45 rounded-2xl p-3.5 space-y-3 text-[#f7edcf]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Crown className="w-4 h-4 text-[#d4af37]" />
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider">VIP Black & Gold</p>
+                      <p className="text-[10px] text-[#d6c58e] mt-0.5">Private-suite and concierge experience</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Toggle VIP experience"
+                    onClick={() => setProfile(prev => ({
+                      ...prev,
+                      vipExperience: {
+                        enabled: !(prev.vipExperience?.enabled ?? true),
+                        inviteOnly: prev.vipExperience?.inviteOnly ?? false,
+                        conciergeLabel: prev.vipExperience?.conciergeLabel || 'VIP Concierge',
+                        privateSuiteEnabled: prev.vipExperience?.privateSuiteEnabled ?? true,
+                      },
+                    }))}
+                    className={`w-10 h-5 rounded-full p-1 transition-colors ${(profile.vipExperience?.enabled ?? true) ? 'bg-[#b9922d]' : 'bg-slate-600'}`}
+                  >
+                    <div className={`w-3 h-3 bg-white rounded-full transition-transform ${(profile.vipExperience?.enabled ?? true) ? 'translate-x-5' : ''}`} />
+                  </button>
+                </div>
+                {(profile.vipExperience?.enabled ?? true) && (
+                  <div className="space-y-2 pt-2 border-t border-[#d4af37]/25">
+                    <label className="flex items-center justify-between gap-3 text-[11px] font-semibold">
+                      Invite-only bookings
+                      <input
+                        type="checkbox"
+                        checked={profile.vipExperience?.inviteOnly ?? false}
+                        onChange={(e) => setProfile(prev => ({ ...prev, vipExperience: { enabled: true, inviteOnly: e.target.checked, conciergeLabel: prev.vipExperience?.conciergeLabel || 'VIP Concierge', privateSuiteEnabled: prev.vipExperience?.privateSuiteEnabled ?? true } }))}
+                      />
+                    </label>
+                    <label className="block text-[10px] text-[#d6c58e]">Concierge label</label>
+                    <input
+                      value={profile.vipExperience?.conciergeLabel || 'VIP Concierge'}
+                      onChange={(e) => setProfile(prev => ({ ...prev, vipExperience: { enabled: true, inviteOnly: prev.vipExperience?.inviteOnly ?? false, conciergeLabel: e.target.value, privateSuiteEnabled: prev.vipExperience?.privateSuiteEnabled ?? true } }))}
+                      maxLength={40}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-[#d4af37]/35 bg-black/40 text-white"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Phone */}
             <div>
