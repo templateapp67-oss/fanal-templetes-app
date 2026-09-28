@@ -788,7 +788,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ GROWTH PARTNER ============================ */}
       <section id="partner" className="scroll-mt-24 bg-gradient-to-b from-surface to-[#fff5f8] py-20 sm:py-24">
-        <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 sm:px-8 lg:grid-cols-2">
+        <div className="mx-0 grid w-full min-w-full max-w-full items-center gap-10 px-4 sm:px-8 lg:grid-cols-2">
           <figure className="nx-glass nx-lift overflow-hidden rounded-[2rem] p-3">
             <img src={partnerHero} alt="Nexora Growth Partner program" className="h-72 w-full rounded-3xl object-cover sm:h-96" loading="lazy" />
           </figure>
@@ -908,7 +908,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
 
       {/* ============================ FOOTER ============================ */}
       <footer className="border-t border-rose-100 bg-[#fffafc] py-12">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-8 md:grid-cols-[1.4fr_1fr_1fr]">
+        <div className="mx-0 grid w-full min-w-full max-w-full gap-10 px-4 sm:px-8 md:grid-cols-[1.4fr_1fr_1fr]">
           <div>
             <span className="inline-flex items-center gap-2 text-xl font-black tracking-tight text-[#C20E5A]">
               <Ic name="spa" className="text-2xl fill-1" /> Nexora
@@ -937,7 +937,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onBrowseTemplates, sel
             </ul>
           </nav>
         </div>
-        <p className="mx-auto mt-10 max-w-6xl px-4 text-xs text-on-surface-variant sm:px-8">© {new Date().getFullYear()} Nexora · Salon OS. All rights reserved.</p>
+        <p className="mx-0 mt-10 w-full max-w-full px-4 text-xs text-on-surface-variant sm:px-8">© {new Date().getFullYear()} Nexora · Salon OS. All rights reserved.</p>
       </footer>
 
       {/* ---- continuity: previously selected template ---- */}
