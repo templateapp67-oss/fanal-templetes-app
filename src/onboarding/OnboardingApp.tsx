@@ -29,6 +29,7 @@ import {
   type OnboardingSnapshot,
 } from './lib/auth';
 import { clearAllLocalUserState } from '../lib/salonStore';
+import { getPublicWebsiteUrl } from '../lib/publicSiteUrl';
 import {
   buildTemplateHandoffUrl,
   createTemplateHandoff,
@@ -145,6 +146,8 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const [sharedReferralCode, setSharedReferralCode] = useState<string>(readSharedReferralCode);
   const [existingAccountNotice, setExistingAccountNotice] = useState(false);
   const [invalidReferral, setInvalidReferral] = useState(false);
+  /** The owner's live public site URL on the status screen (null = no site yet). */
+  const [siteUrl, setSiteUrl] = useState<string | null>(null);
   // Forgot Password, second half: Supabase Auth emits PASSWORD_RECOVERY when
   // it exchanges the reset-link token, and the user must set a new password
   // before the funnel means anything again.
@@ -310,6 +313,37 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     const canonical = onboardingPath(resolved);
     if (normalizePath(path) !== normalizePath(canonical)) navigate(canonical);
   }, [boot, resolved, path, navigate, existingAccountNotice, passwordRecovery]);
+
+  // Hand the user their website URL the moment they land on the status screen
+  // (immediately after sign-up's referral step and after every sign-in).
+  // get_my_owner_workspace() is the READ-ONLY workspace resolver — it never
+  // provisions — and the link is only shown for a slugged, NAMED salon, so a
+  // placeholder workspace can never leak a link that would change later.
+  useEffect(() => {
+    if (!viewer || resolved !== 'status') {
+      setSiteUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await sb.rpc('get_my_owner_workspace');
+        if (cancelled) return;
+        if (error) {
+          setSiteUrl(null);
+          return;
+        }
+        const slug = typeof data?.slug === 'string' ? data.slug.trim() : '';
+        const name = typeof data?.name === 'string' ? data.name.trim() : '';
+        setSiteUrl(data?.resolved === true && slug && name ? getPublicWebsiteUrl(slug) : null);
+      } catch {
+        if (!cancelled) setSiteUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewer, resolved, sb]);
 
   const handleAuthDone = useCallback(async () => {
     try {
@@ -480,6 +514,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         handoffBusy={handoffBusy}
         handoffError={handoffError}
         completed={phase === 'completed'}
+        siteUrl={siteUrl}
       />
     );
   }

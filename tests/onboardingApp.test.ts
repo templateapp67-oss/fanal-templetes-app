@@ -75,6 +75,8 @@ import {
   ReferralScreen,
 } from '../src/onboarding/screens/ReferralScreen';
 import {
+  STATUS_SITE_LINK_LABEL,
+  STATUS_SITE_LINK_PENDING_BODY,
   STATUS_VERIFIED_TITLE,
   STATUS_VERIFIED_WAITING_BODY,
   StatusScreen,
@@ -694,6 +696,47 @@ test('the status screen confirms verification and stays read-only without a hand
   );
   assert.match(withHandoff, /Continue to Template App/);
   assert.doesNotMatch(withHandoff, /Nothing more to do/);
+});
+
+test('the status screen hands every signed-in owner their website link immediately', () => {
+  // Sign-up complete / sign-in: the owner lands on the status screen and gets
+  // their live URL right there — copyable and openable, for any slug.
+  const siteUrl = 'https://fanal-templetes-app.vercel.app/?site=vijay-kumar';
+  const withLink = render(
+    React.createElement(StatusScreen, {
+      phase: 'completed',
+      completed: true,
+      siteUrl,
+    })
+  );
+  assert.match(withLink, new RegExp(STATUS_SITE_LINK_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.ok(withLink.includes(siteUrl), 'the full public URL is rendered');
+  assert.match(withLink, /Copy link/);
+  assert.match(withLink, /Open site/);
+  // The link is a plain share URL — never a tokenised or relative handoff.
+  assert.doesNotMatch(withLink, /token=|state=/);
+
+  // Brand-new owner before business setup: NO site exists yet. Show the honest
+  // pending hint — never a placeholder URL that would break when the real slug
+  // is minted.
+  const pending = render(React.createElement(StatusScreen, { phase: 'referral_added' }));
+  assert.match(pending, new RegExp(STATUS_SITE_LINK_PENDING_BODY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(pending, /\?site=/);
+  assert.doesNotMatch(pending, /Copy link/);
+
+  // Completed owner whose workspace read failed: stay silent rather than
+  // ever showing a broken or placeholder link.
+  const silent = render(React.createElement(StatusScreen, { phase: 'completed', completed: true }));
+  assert.doesNotMatch(silent, /Copy link/);
+  assert.doesNotMatch(silent, /\?site=/);
+  assert.doesNotMatch(silent, new RegExp(STATUS_SITE_LINK_PENDING_BODY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  // The host resolves the slug with the READ-ONLY workspace RPC (never the
+  // provisioning one) and forwards it to the screen.
+  const app = readFileSync(new URL('../src/onboarding/OnboardingApp.tsx', import.meta.url), 'utf8');
+  assert.match(app, /rpc\('get_my_owner_workspace'\)/);
+  assert.doesNotMatch(app, /rpc\('ensure_owner_workspace'\)/);
+  assert.match(app, /siteUrl=\{siteUrl\}/);
 });
 
 test('boot, error and mock states render instead of blank screens', () => {
