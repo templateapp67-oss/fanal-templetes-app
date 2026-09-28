@@ -1,10 +1,8 @@
 # Supabase backend setup
 
-## Existing production database
+## Supabase project configuration
 
-The app at https://fanal-templetes-app.vercel.app uses project **qwaehqsmodekbgvnaavz**. Its schema is normalized: `profiles` holds account identity; `salons`, `organization_members`, `services`, `staff`, `booking_items` and `notifications` hold salon data. A salon's `owner_id` can be null; use verified organization membership.
-
-Do not apply the legacy bootstrap below or blindly run every historical migration against this existing project. Historical scripts target different schema generations.
+The intended new project is `zilwgiuiygqqardzutxi` (`https://zilwgiuiygqqardzutxi.supabase.co`). Confirm the Vercel Production environment points to this URL and redeploy after changing environment variables. Environment variable changes do not migrate the database schema. This repository contains migrations from multiple schema generations; review the target database and migration history before applying any of them. Do not apply the legacy bootstrap below or blindly run every historical migration against the new project.
 
 Apply `supabase/migrations/20260909142000_normalized_owner_workspace.sql` in SQL Editor as a database administrator. The user reported successful execution on 2026-09-09; live schema introspection subsequently confirmed `nexora_save_owner_workspace` exists. This is not a signed-in save/refresh verification.
 
