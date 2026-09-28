@@ -194,15 +194,15 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-surface/80 backdrop-blur-md fixed top-0 w-full z-50 border-b border-outline-variant/30 transition-all duration-300" id="global-nav">
-      <div className="flex justify-between items-center px-margin-mobile md:px-gutter max-w-container-max mx-auto h-20">
+      <div className="flex min-w-0 justify-between items-center px-4 md:px-gutter max-w-container-max mx-auto h-16 sm:h-20">
         {/* Brand */}
         <div 
           onClick={() => setCurrentView('landing')}
-          className="flex items-center gap-base cursor-pointer group"
+          className="flex min-w-0 items-center gap-2 cursor-pointer group"
         >
-          <img alt="Nexora Logo" className="nx-logo w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJYocRxmo4vpJ1_AiSXtAMUVqSgd5cKajB-4RUxdyE8aRIhXYKc6rpkP2QfQk08sdDXrCP9Xpc0FsS9TCBIXdCIvQsKMtaXaNapgbxpoP6ZtqwDgiKttI_L1wi-DCFFUdw5zFns1eezsmbwoXe7dlwdAN6mudQV7w2QZhWcRTvgOfjdEndslxxaWrRhgFdVl0nFcwkXUBL3dISegAZ9Wpv-_iyNsyPYyyAeFelbPvSjMco5lgCDlptw6yYIDX8QK0hSWM"/>
+          <img alt="Nexora Logo" className="w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJYocRxmo4vpJ1_AiSXtAMUVqSgd5cKajB-4RUxdyE8aRIhXYKc6rpkP2QfQk08sdDXrCP9Xpc0FsS9TCBIXdCIvQsKMtaXaNapgbxpoP6ZtqwDgiKttI_L1wi-DCFFUdw5zFns1eezsmbwoXe7dlwdAN6mudQV7w2QZhWcRTvgOfjdEndslxxaWrRhgFdVl0nFcwkXUBL3dISegAZ9Wpv-_iyNsyPYyyAeFelbPvSjMco5lgCDlptw6yYIDX8QK0hSWM"/>
           <span className="material-symbols-outlined text-[#C20E5A]" style={{ fontVariationSettings: "'FILL' 1" }}>spa</span>
-          <span className="font-display-lg text-display-lg-mobile tracking-tighter text-[#C20E5A]">Nexora</span>
+          <span className="font-display-lg text-2xl sm:text-display-lg-mobile tracking-tighter text-[#C20E5A]">Nexora</span>
         </div>
 
         {/* View Switcher Navigation (lg and up) */}
@@ -237,7 +237,7 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-4">
           <NotificationBell userEmail={user?.email || ""} />
           
           {user ? (
@@ -256,7 +256,7 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <button
                 onClick={() => setProfileOpen(true)}
-                className="w-10 h-10 rounded-full overflow-hidden border border-pink-200 bg-slate-900 shrink-0 shadow-xs"
+                className="w-11 h-11 rounded-full overflow-hidden border border-pink-200 bg-slate-900 shrink-0 shadow-xs"
                 aria-label="User Profile Settings" title="User Profile Settings"
               >
                 <img
@@ -267,7 +267,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
               <button
                 onClick={handleLogout}
-                className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all group"
+                className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all group"
                 title="Logout"
               >
                 <span className="material-symbols-outlined text-xl group-hover:scale-110 transition-transform">logout</span>
@@ -277,13 +277,13 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-3">
               <button
                 onClick={() => openAuth('login')}
-                className="px-4 py-2 text-sm font-bold text-gray-600 hover:text-[#C20E5A] transition-colors"
+                className="hidden sm:inline-flex min-h-11 items-center px-4 py-2 text-sm font-bold text-gray-600 hover:text-[#C20E5A] transition-colors"
               >
                 Log In
               </button>
               <button
                 onClick={() => openAuth('signup')}
-                className="px-6 py-2 bg-[#C20E5A] text-white rounded-full text-sm font-bold shadow-lg shadow-[#C20E5A]/20 hover:bg-[#A30B4A] hover:-translate-y-0.5 transition-all active:scale-95"
+                className="min-h-11 px-4 sm:px-6 py-2 bg-[#C20E5A] text-white rounded-full text-sm font-bold shadow-lg shadow-[#C20E5A]/20 hover:bg-[#A30B4A] hover:-translate-y-0.5 transition-all active:scale-95"
               >
                 Sign Up
               </button>
@@ -297,7 +297,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-controls="global-nav-mobile"
             aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
             title={mobileNavOpen ? 'Close menu' : 'Menu'}
-            className="lg:hidden w-10 h-10 shrink-0 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:text-[#C20E5A] hover:bg-pink-50 transition-all"
+            className="lg:hidden w-11 h-11 shrink-0 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:text-[#C20E5A] hover:bg-pink-50 transition-all"
           >
             <span className="material-symbols-outlined text-xl">{mobileNavOpen ? 'close' : 'menu'}</span>
           </button>
@@ -309,7 +309,7 @@ export const Header: React.FC<HeaderProps> = ({
           them out of the accessibility tree while closed. */}
       <div
         id="global-nav-mobile"
-        className={`lg:hidden absolute left-0 top-20 w-full border-b border-outline-variant/30 bg-surface/95 backdrop-blur-md shadow-xl ${
+        className={`lg:hidden absolute left-0 top-16 sm:top-20 w-full border-b border-outline-variant/30 bg-surface/95 backdrop-blur-md shadow-xl ${
           mobileNavOpen ? 'block' : 'hidden'
         }`}
       >
@@ -326,7 +326,7 @@ export const Header: React.FC<HeaderProps> = ({
                 key={entry.view}
                 onClick={() => openNavEntry(entry)}
                 aria-current={active ? 'page' : undefined}
-                className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-left transition-colors ${
+                className={`min-h-11 w-full flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-left transition-colors ${
                   active
                     ? 'bg-[#C20E5A] text-white shadow-sm'
                     : 'text-on-surface-variant hover:bg-surface-variant/60 hover:text-[#C20E5A]'
