@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FormAlert, GatewayShell } from './Shell';
 import type { OnboardingPhase } from '../lib/flow';
 import { templateAppBaseUrl } from '../lib/handoff';
+import { copyToClipboard } from '../../lib/clipboard';
 
 // ============================================================================
 // Post-referral status. Two variants, both read-only views of the BACKEND
@@ -26,6 +27,75 @@ export const STATUS_COMPLETED_TITLE = 'Your website setup is complete.';
 export const STATUS_COMPLETED_BODY =
   'Your Template App website is finished and linked to your referral.';
 
+/** Label of the live website link card (shown the moment a site exists). */
+export const STATUS_SITE_LINK_LABEL = 'Your live website';
+/** Honest placeholder while no slugged site exists yet — never a broken URL. */
+export const STATUS_SITE_LINK_PENDING_BODY =
+  'Your website link will appear here as soon as your business is set up in the Template App.';
+
+// ============================================================================
+// Live website link card — the owner's public URL, shown the moment a slugged
+// site exists so every user gets their link right after sign-up / sign-in.
+// ============================================================================
+const SiteLinkCard: React.FC<{ siteUrl: string }> = ({ siteUrl }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(siteUrl);
+    if (ok) {
+      setCopied(true);
+      if (typeof setTimeout === 'function') {
+        setTimeout(() => setCopied(false), 2000);
+      }
+    }
+  };
+  return (
+    <div
+      className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"
+      data-testid="status-site-link"
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <span className="block text-xs font-bold uppercase tracking-wider text-emerald-700">
+            {STATUS_SITE_LINK_LABEL}
+          </span>
+          <a
+            href={siteUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate font-mono text-sm font-black text-slate-900 underline underline-offset-2"
+            data-testid="status-site-link-url"
+          >
+            {siteUrl}
+          </a>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            className="px-3 py-2 rounded-lg bg-white border border-emerald-300 text-xs font-bold text-slate-900 cursor-pointer hover:opacity-80 shadow-xs"
+            data-testid="status-site-link-copy"
+          >
+            {copied ? 'Copied ✓' : 'Copy link'}
+          </button>
+          <a
+            href={siteUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-2 rounded-lg text-xs font-bold text-white cursor-pointer hover:opacity-90 shadow-xs"
+            style={{ backgroundColor: '#C20E5A' }}
+            data-testid="status-site-link-open"
+          >
+            Open site
+          </a>
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-slate-600">
+        Share it with customers — your bookings land directly on this site.
+      </p>
+    </div>
+  );
+};
+
 export const StatusScreen: React.FC<{
   phase: OnboardingPhase;
   referralCode?: string | null;
@@ -38,6 +108,13 @@ export const StatusScreen: React.FC<{
   handoffError?: string;
   /** Phase 5: true when the backend reports template_completed. Ready state. */
   completed?: boolean;
+  /**
+   * The owner's live public website URL (getPublicWebsiteUrl + workspace
+   * slug). Shown immediately after sign-up / sign-in whenever a slugged
+   * site already exists; absent = the link card is hidden (and a pending
+   * hint is shown until setup finishes).
+   */
+  siteUrl?: string | null;
 }> = ({
   phase,
   referralCode,
@@ -48,6 +125,7 @@ export const StatusScreen: React.FC<{
   handoffBusy,
   handoffError,
   completed,
+  siteUrl,
 }) => (
   <div className="w-full max-w-5xl mx-auto space-y-6">
     <GatewayShell
@@ -71,6 +149,19 @@ export const StatusScreen: React.FC<{
       }
     >
       <div className="space-y-4">
+        {/* Live website URL — handed to the user the moment a slugged site
+            exists (right after sign-up's setup or on every sign-in). */}
+        {siteUrl ? (
+          <SiteLinkCard siteUrl={siteUrl} />
+        ) : completed ? (
+          // A completed owner always has a slugged site; if the read failed we
+          // stay silent rather than ever showing a placeholder link.
+          null
+        ) : (
+          <p className="text-xs text-slate-500" data-testid="status-site-link-pending">
+            {STATUS_SITE_LINK_PENDING_BODY}
+          </p>
+        )}
         {/* Activation Status Badge */}
         <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
           <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Referral Activation Status</span>

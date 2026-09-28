@@ -84,6 +84,11 @@ test('a transient site-lookup failure retries before it is allowed to fail the p
   assert.match(helper, /attempt <= attempts/, 'transport failures are retried');
   assert.match(helper, /if \(last\.ok\) return last;/, 'a JSON verdict — including not-found — is never retried');
   assert.match(helper, /status >= 500/, 'only 5xx/408/429/timeouts are retryable');
+  assert.match(
+    helper,
+    /last\.data\?\.retryable === false/,
+    'an explicit retryable:false verdict (e.g. refused database keys) ends the loop immediately'
+  );
 });
 
 test('the unavailable screen offers a way out instead of being a dead end', () => {

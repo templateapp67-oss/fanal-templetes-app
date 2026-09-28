@@ -366,16 +366,19 @@ export function createConnectionHandler(deps: CustomerRoutesDeps) {
 
       await Promise.all(
         tables.map(async (table) => {
-          // `head: true` + exact count asks PostgREST for the Content-Range
-          // header only: one cheap round-trip per table proves the table exists
-          // AND that the service role can read it, without shipping any rows to
-          // the browser. `runDb` normalises to {data,error} and would drop the
-          // count, so the raw call is timed directly here.
           const remaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : LOOKUP_DB_TIMEOUT_MS;
           const budget = Math.max(1, Math.min(LOOKUP_DB_TIMEOUT_MS, remaining));
           try {
+            // GET with count=exact (deliberately NOT head:true): a HEAD
+            // response carries no body, so supabase-js can only report
+            // {message:''} with no code for it and every failure collapsed to
+            // the bare word "unreadable". limit(1) ships at most one row while
+            // the count preference still returns the full total in
+            // Content-Range — one cheap round-trip per table that proves the
+            // table exists AND that the configured key may read it, with the
+            // real error code available when it may not.
             const result: any = await withDbTimeout(
-              deps.db.from(table).select('*', { count: 'exact', head: true }),
+              deps.db.from(table).select('*', { count: 'exact' }).limit(1),
               `connection check ${table}`,
               budget
             );
@@ -389,7 +392,10 @@ export function createConnectionHandler(deps: CustomerRoutesDeps) {
                 // and the probe failed — never report that as an absent table.
                 exists: code !== '42P01' && !/does not exist|undefined table|relation .* not found/i.test(message),
                 rows: null,
-                error: message || 'unreadable',
+                // The code is what makes a failure diagnosable: 401/PGRST301
+                // means the API key was refused, 42501 means grants/RLS
+                // denied the read — a missing table looks different again.
+                error: message || (code ? `rejected by the database (code ${code})` : 'unreadable'),
               };
               return;
             }

@@ -525,6 +525,14 @@ async function startServer() {
         res.locals?.requestDeadlineAt
       );
       if (error) {
+        // The browser gets the sanitized answer below; the raw database code
+        // (401/PGRST301/42501/…) lands in the server log, which is the only
+        // place an operator can tell "keys rejected" from "table missing".
+        console.error('[Site lookup] database read failed', {
+          site: querySite,
+          code: (error as any)?.code ?? null,
+          message: (typeof (error as any)?.message === 'string' ? (error as any).message : '(no message in the database response)').replace(/\s+/g, ' ').slice(0, 300),
+        });
         const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
         return res.status(safe.status).json({
           success: false,
@@ -533,7 +541,7 @@ async function startServer() {
           tenant: { subdomain: querySite, customDomain: null },
           code: safe.code,
           error: safe.message,
-          ...(safe.retryable ? { retryable: true } : {}),
+          retryable: safe.retryable,
         });
       }
       return res.json({
@@ -545,23 +553,28 @@ async function startServer() {
       });
     }
 
-    const { host, tenant, salon, error } = await resolveSalonFromHost(req, res.locals?.requestDeadlineAt);
-    if (error) {
-      // DB failure while resolving the tenant — JSON 500 (never "not found"),
-      // so the SPA logs the real status instead of guessing.
-      const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
-      return res.status(safe.status).json({
-        success: false,
-        found: false,
-        isTenant: true,
-        code: safe.code,
-        error: safe.message,
-        ...(safe.retryable ? { retryable: true } : {}),
-      });
-    }
-    if (!tenant) {
-      return res.json({ found: false, host, isTenant: false, salon: null });
-    }
+  const { host, tenant, salon, error } = await resolveSalonFromHost(req, res.locals?.requestDeadlineAt);
+  if (error) {
+    // DB failure while resolving the tenant — JSON 500 (never "not found"),
+    // so the SPA logs the real status instead of guessing. Raw code → server log.
+    console.error('[Site lookup] tenant-host database read failed', {
+      host,
+      code: (error as any)?.code ?? null,
+      message: (typeof (error as any)?.message === 'string' ? (error as any).message : '(no message in the database response)').replace(/\s+/g, ' ').slice(0, 300),
+    });
+    const safe = safeDatabaseError(error, 'Database read failed while loading this site.');
+    return res.status(safe.status).json({
+      success: false,
+      found: false,
+      isTenant: true,
+      code: safe.code,
+      error: safe.message,
+      retryable: safe.retryable,
+    });
+  }
+  if (!tenant) {
+    return res.json({ found: false, host, isTenant: false, salon: null });
+  }
     return res.json({
       found: !!salon,
       isTenant: true,
@@ -592,7 +605,7 @@ async function startServer() {
           found: false,
           code: safe.code,
           error: safe.message,
-          ...(safe.retryable ? { retryable: true } : {}),
+          retryable: safe.retryable,
         });
       }
 

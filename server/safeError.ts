@@ -145,6 +145,32 @@ function errorCode(error: any): string {
   return typeof error?.code === 'string' && error.code.trim() ? error.code.trim() : 'unexpected_error';
 }
 
+/**
+ * Operator-facing text for "the database refused the API key this deployment
+ * presented". Unlike the old generic 503, this names the exact fix: the keys
+ * in the hosting environment do not match SUPABASE_URL's project (stale key,
+ * wrong project, or a rotated/legacy key the project no longer accepts).
+ * Never interpolates raw error text — gateway messages are not our contract.
+ */
+export const CREDENTIALS_REJECTED_MESSAGE =
+  'The database rejected the API keys this deployment is using. Update SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY to match SUPABASE_URL, then redeploy.';
+
+/**
+ * True when PostgREST / the Supabase gateway refused the REQUEST ITSELF
+ * because the api key could not be accepted — before any SQL ran:
+ *   401      gateway rejected the apikey (no PostgREST message body)
+ *   PGRST301 the JWT could not be decoded / is invalid for this project
+ *   PGRST302 no bearer sent while the anonymous role is disabled
+ *   PGRST303 JWT claim validation failed
+ * These are configuration faults (keys out of sync with the project), NOT a
+ * missing database and NOT a transient outage — retrying never helps, and
+ * reporting them as "database not configured" sent operators to the wrong fix.
+ */
+export function isCredentialRejection(error: any): boolean {
+  const code = errorCode(error).toUpperCase();
+  return code === '401' || code === 'PGRST301' || code === 'PGRST302' || code === 'PGRST303';
+}
+
 function numericStatus(error: any): number | null {
   const value = Number(error?.status ?? error?.statusCode);
   return Number.isInteger(value) && value >= 400 && value < 600 ? value : null;
@@ -187,6 +213,19 @@ export function classifySafeError(error: any, context = 'request'): SafeErrorInf
   }
   if (status === 422 || lowerCode === 'invalid_state' || lowerCode === 'unprocessable') {
     return { status: 422, code: lowerCode === 'unexpected_error' ? 'invalid_state' : code, message: 'The request could not be completed in the current resource state.', retryable: false };
+  }
+
+  // The gateway/PostgREST refused the API key itself (no SQL ran). A key that
+  // does not match the project never starts working on retry, so this is NOT
+  // a transient service_unavailable answer. Runs AFTER the status-based auth
+  // branches above so a typed 401 (AuthError etc.) keeps its own meaning.
+  if (isCredentialRejection(error)) {
+    return {
+      status: 503,
+      code: 'database_credentials_rejected',
+      message: CREDENTIALS_REJECTED_MESSAGE,
+      retryable: false,
+    };
   }
 
   if (lowerCode === 'supabase_not_configured') {
@@ -276,9 +315,14 @@ export function safeDatabaseError(
     case '23514':
       return { status: 400, code, message: 'The supplied values were rejected by the database rules.', retryable: false };
     case '42501':
+      return { status: 503, code: 'database_not_configured', message: 'The database is not configured to accept this request. Please try again later.', retryable: true };
     case '401':
     case 'PGRST301':
-      return { status: 503, code: 'database_not_configured', message: 'The database is not configured to accept this request. Please try again later.', retryable: true };
+    case 'PGRST302':
+    case 'PGRST303':
+      // Keys out of sync with the project — name the real fix instead of the
+      // old "database is not configured", which sent operators nowhere.
+      return { status: 503, code: 'database_credentials_rejected', message: CREDENTIALS_REJECTED_MESSAGE, retryable: false };
     case '42P01':
     case '42703':
     case 'PGRST204':

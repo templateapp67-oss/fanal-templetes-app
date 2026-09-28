@@ -681,6 +681,10 @@ export default function App() {
         const status = last.status ?? 0;
         const isRetryable = status === 0 || status >= 500 || status === 408 || status === 429;
         if (!isRetryable) return last;
+        // A JSON verdict that explicitly says `retryable: false` (e.g. the
+        // deployment's database keys were refused — retrying cannot help) is
+        // final; waiting three times only delays showing the real error.
+        if (last.data?.retryable === false) return last;
         if (attempt < attempts) {
           await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
         }

@@ -391,6 +391,29 @@ test('the connection report marks every table unreachable without credentials', 
   assert.ok(entries.every((entry) => entry.exists === false), 'mock mode must not claim a table exists');
 });
 
+test('a gateway rejection surfaces its error code instead of the bare "unreadable"', async () => {
+  // The deployed incident: the API answered every probe with {code:'401'} and
+  // an EMPTY message, so the report said "unreadable" and hid the one fact
+  // that identifies the fault — the key was refused.
+  const db: any = {
+    from: () => ({
+      select: () => ({
+        limit: () => Promise.resolve({ data: null, count: null, error: { code: '401', message: '' } }),
+      }),
+    }),
+  };
+  const { deps } = makeDeps({ db });
+  const res = makeRes();
+  await createConnectionHandler(deps)({ query: {}, params: {} }, res);
+  assert.equal(res.body.data.mode, 'live');
+  const entries = Object.values(res.body.data.tables as Record<string, any>);
+  assert.ok(entries.length >= 10);
+  assert.ok(
+    entries.every((entry) => entry.error === 'rejected by the database (code 401)'),
+    `expected the code on every table, got: ${JSON.stringify(entries.slice(0, 2))}`
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 3 — what a customer may write
 // ---------------------------------------------------------------------------
