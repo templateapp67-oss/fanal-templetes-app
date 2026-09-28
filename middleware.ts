@@ -1,55 +1,23 @@
+import { renderPublicSocialPage } from './server/publicSocialPage';
+
 /**
- * Edge Middleware for Nexora Salon OS & Growth Partner Portal.
+ * Partner routes serve the SPA shell, not private data.
  *
- * Uses standard Web Fetch API (Request / Response / Headers / URL) compatible
- * with Vercel Edge Middleware, Next.js, and Cloudflare Workers.
+ * The browser Supabase client restores its session from localStorage or
+ * sessionStorage (see authRememberStorage.ts), neither of which accompanies
+ * a document request. A cookie/header-presence check at the edge therefore
+ * redirects even signed-in partners on a direct visit or refresh.
  *
- * Ensures that public partner auth surfaces (/partner/login, /partner/signup,
- * /partner/forgot-password, /partner/reset-password) are NEVER blocked or
- * redirected with access restriction errors by middleware role checks.
+ * Let the SPA restore Auth and run PartnerRouteGuard. Private reads/writes
+ * remain protected by verified bearer tokens and Supabase RLS/RPC checks;
+ * serving index.html does not authorize access to partner data.
  */
-export default function middleware(request: Request): Response | void {
+export default function middleware(request: Request): void | Promise<Response | undefined> {
   const url = new URL(request.url);
-  const pathname = url.pathname;
-
-  // Public white-label links are resolved by the app/API from `?site=slug`.
-  // Middleware must never strip that search param or send root public-site
-  // traffic to an owner fallback route.
-  if ((pathname === '/' || pathname === '') && url.searchParams.has('site')) {
-    return;
-  }
-
-  // 1. PUBLIC AUTH SURFACES:
-  // Never intercept or require active partner credentials on the login/signup routes.
-  const isPublicPartnerAuth =
-    pathname === '/partner/login' ||
-    pathname === '/partner/signup' ||
-    pathname === '/partner/forgot-password' ||
-    pathname.startsWith('/partner/reset-password') ||
-    pathname === '/growth-partner/login';
-
-  if (isPublicPartnerAuth) {
-    return;
-  }
-
-  // 2. PROTECTED GROWTH PARTNER PORTAL:
-  // /partner/dashboard, /partner/referrals, /partner/earnings, etc.
-  if (pathname.startsWith('/partner') || pathname.startsWith('/growth-partner')) {
-    const cookieHeader = request.headers.get('cookie') || '';
-    const hasAuthCookie = /sb-.*-auth-token/.test(cookieHeader);
-    const hasAuthHeader = request.headers.has('authorization');
-
-    // If completely unauthenticated, redirect to partner login
-    if (!hasAuthCookie && !hasAuthHeader) {
-      const loginUrl = new URL('/partner/login', request.url);
-      if (pathname !== '/partner' && pathname !== '/partner/dashboard') {
-        loginUrl.searchParams.set('returnUrl', `${pathname}${url.search}`);
-      }
-      return Response.redirect(loginUrl.toString(), 307);
-    }
-  }
+  if (url.pathname === '/') return renderPublicSocialPage(request);
+  return;
 }
 
 export const config = {
-  matcher: ['/partner/:path*', '/growth-partner/:path*'],
+  matcher: ['/', '/partner/:path*', '/growth-partner/:path*'],
 };

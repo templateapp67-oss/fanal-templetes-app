@@ -1,3 +1,5 @@
+import { addMissingStarterServices } from './data/categoryStarterServices';
+import { websiteSnapshot, writeWebsiteDraft, recoverWebsiteDraft, acknowledgeWebsiteDraft, type WebsiteSnapshot } from './lib/websiteDraft';
 import { websiteContentError } from './lib/websiteValidation';
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
 import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from './lib/diagnostics';
@@ -1514,6 +1516,17 @@ export default function App() {
   // in the editor) after this hydration has succeeded, so a client that failed
   // to load existing rows can never wipe them.
   const hydratedForUserRef = useRef(false);
+  const templateSelectionVersionRef = useRef(0);
+  const [workspaceHydration, setWorkspaceHydration] = useState<'loading' | 'ready' | 'error'>('loading');
+  const draftBaselineRef = useRef<{ ownerId: string; siteId: string; state: WebsiteSnapshot } | null>(null);
+  const cacheWebsiteDraft = useCallback(() => {
+    const baseline = draftBaselineRef.current;
+    const current = salonStateRef.current;
+    if (!baseline || baseline.ownerId !== current.user?.id || isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isOnboardingApp || isPartnerPortal) return;
+    if (!writeWebsiteDraft(baseline.ownerId, baseline.siteId, baseline.state, current)) {
+      console.warn('[Website draft] Browser storage unavailable/full; keep this tab open until cloud save succeeds.');
+    }
+  }, [isPublicSite, shouldBlockForSiteLookup, isCustomerApp, isOnboardingApp, isPartnerPortal]);
   const hydrationErrorRef = useRef<string | null>(null);
   // Single-flight runner: the mount effect AND a save-time self-heal retry
   // share one hydration run instead of firing overlapping queries. Keyed by
@@ -1582,6 +1595,7 @@ export default function App() {
               : 'no active Supabase session — please sign in again';
             if (hydrationUserRef.current === userId) {
               hydratedForUserRef.current = false;
+              setWorkspaceHydration('error');
               hydrationErrorRef.current = message;
               console.error('[AutoSave] Cloud hydration failed:', message);
               // Only the auth listener changes login state; a data read cannot log the user out.
@@ -1593,7 +1607,11 @@ export default function App() {
           const { data: saved, error } = await supabase.rpc('get_owner_editor_state');
           if (error) throw error;
           if (hydrationUserRef.current === userId) {
-            if (saved) {
+            const siteId = saved?.salonId || 'workspace';
+            const cloudState = mergeHydratedSalonState({ current: beforeRead, beforeRead, saved, userId }) || websiteSnapshot(beforeRead);
+            draftBaselineRef.current = { ownerId: userId, siteId, state: websiteSnapshot(cloudState) };
+            const recovered = recoverWebsiteDraft(userId, siteId, cloudState);
+            if (saved || JSON.stringify(recovered) !== JSON.stringify(cloudState)) {
               // PHASE 3.2 — the cloud row is the authoritative onboarding state
               // and every field of it is restored, including the template the
               // owner picked. `selectedTemplateId` used to be skipped, which
@@ -1607,11 +1625,11 @@ export default function App() {
               const next = mergeHydratedSalonState({
                 current: salonStateRef.current,
                 beforeRead,
-                saved,
+                saved: recovered,
                 userId,
               });
               if (next) {
-                salonStateRef.current = next;
+                salonStateRef.current = { ...salonStateRef.current, ...next };
                 setProfile(next.profile);
                 setServices(next.services);
                 setStylists(next.stylists);
@@ -1642,6 +1660,7 @@ export default function App() {
               }
             }
             hydratedForUserRef.current = true;
+            setWorkspaceHydration('ready');
             hydrationErrorRef.current = null;
           }
           return true;
@@ -1651,6 +1670,7 @@ export default function App() {
           // failed to read).
           if (hydrationUserRef.current === userId) {
             hydratedForUserRef.current = false;
+            setWorkspaceHydration('error');
             hydrationErrorRef.current = describeError(err);
             // Classify the root cause so the console shows the exact remedy.
             const hint = isSessionExpiryFailure(hydrationErrorRef.current)
@@ -1685,11 +1705,15 @@ export default function App() {
       // hydration state so a stale run for a previous owner can never unlock
       // destructive cleanup for a later owner.
       hydrationUserRef.current = null;
+      draftBaselineRef.current = null;
+      setWorkspaceHydration('ready');
       hydratedForUserRef.current = false;
       hydrationErrorRef.current = null;
       return;
     }
     hydratedForUserRef.current = false;
+    draftBaselineRef.current = null;
+    setWorkspaceHydration('loading');
     hydrationErrorRef.current = null;
     hydrationUserRef.current = user.id;
     void startHydration(user.id);
@@ -1773,7 +1797,9 @@ export default function App() {
         // state was NOT persisted, so no "Saved" may be presented.
         return { published: false, localDraft: false, failed: false };
       }
+      cacheWebsiteDraft();
       const state = salonStateRef.current;
+      const draftScope = draftBaselineRef.current;
       const invalidContent = websiteContentError(state);
       if (invalidContent) {
         setSaveStatus('error');
@@ -2075,7 +2101,7 @@ export default function App() {
             );
           }
           lastErrorToastRef.current = detail;
-          return { published: false, localDraft: false, failed: true };
+          return { published: false, localDraft: false, failed: true, error: summarizeSaveError(detail) };
         }
 
         lastPersistedSnapshotRef.current = snapshot;
@@ -2091,6 +2117,12 @@ export default function App() {
         });
 
         if (publishedToCloud) {
+          if (draftScope && draftScope.ownerId === state.user?.id) {
+            acknowledgeWebsiteDraft(draftScope.ownerId, draftScope.siteId, state);
+            if (draftBaselineRef.current?.ownerId === draftScope.ownerId && draftBaselineRef.current.siteId === draftScope.siteId) {
+              draftBaselineRef.current = { ...draftScope, state: websiteSnapshot(state) };
+            }
+          }
           saveStep('complete', { via: cloud.target === 'cloud' ? 'supabase' : 'api', authoritative: true });
           setSaveStatus('saved');
           setSaveNeedsSignIn(false); // a cloud write proves the session works again
@@ -2144,7 +2176,7 @@ export default function App() {
         }
       }
     },
-    [showToast, scheduleStatusReset, startHydration]
+    [showToast, scheduleStatusReset, startHydration, cacheWebsiteDraft]
   );
 
   // Debounced auto-save. The timer resets on every keystroke so a burst of
@@ -2165,6 +2197,7 @@ export default function App() {
     if (isOnboardingApp) return; // …or in the Onboarding App
     if (isPartnerPortal) return; // …or in the standalone Growth Partner portal
     if (!isMockSupabase && !user?.id) return; // visitors can never create anonymous salon drafts
+    cacheWebsiteDraft(); // Synchronous local safety net BEFORE the network debounce.
     if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
     setSaveStatus('pending');
     hasPendingSaveRef.current = true;
@@ -2188,17 +2221,18 @@ export default function App() {
     isOnboardingApp,
     isPartnerPortal,
     persistSalonState,
+    cacheWebsiteDraft,
   ]);
 
-  // Flush a pending debounced save when the tab is hidden or closed so edits
-  // are never lost. The localStorage write inside persistSalonState runs
-  // synchronously before the first await, which beforeunload can rely on.
+  // Cache synchronously on hide/close; an asynchronous network save is only
+  // best-effort during unload and may never reach the server.
   const flushPendingSave = useCallback(() => {
+    cacheWebsiteDraft();
     if (!hasPendingSaveRef.current) return;
     if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
     hasPendingSaveRef.current = false;
     void persistSalonState({ source: 'auto' });
-  }, [persistSalonState]);
+  }, [persistSalonState, cacheWebsiteDraft]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -2290,9 +2324,23 @@ export default function App() {
 
   const handleSelectTemplate = (catId: BusinessTypeId) => {
     if (!getTemplateById(catId)) return;
-    // Selection is deliberately only an id/slug state change. The editor's
-    // existing profile, services, staff, media, address and booking draft are
-    // never replaced with template defaults.
+    // An explicit switch can seed an empty menu; existing menus and owner
+    // identity are never replaced. Hydration itself never imports starters.
+    const selectionVersion = ++templateSelectionVersionRef.current;
+    if (catId !== selectedTemplateId) {
+      if (user?.id && !isMockSupabase && !hydratedForUserRef.current) {
+        // A temporarily blank loading state is not an empty cloud menu.
+        const ownerId = user.id;
+        void startHydrationRef.current(ownerId).then(loaded => {
+          if (!loaded || salonStateRef.current.user?.id !== ownerId || selectionVersion !== templateSelectionVersionRef.current) return;
+          setSelectedTemplateId(catId);
+          previousTemplateIdRef.current = catId;
+          setServices(current => addMissingStarterServices(current, catId));
+        });
+      } else {
+        setServices(current => addMissingStarterServices(current, catId));
+      }
+    }
     setSelectedTemplateId(catId);
     previousTemplateIdRef.current = catId;
   };
@@ -2776,6 +2824,13 @@ export default function App() {
             previewMode
             forcedDeviceMode={templatePreviewDevice}
           />
+        </div>
+      )}
+
+      {!isPublicSite && !shouldBlockForSiteLookup && user && !isMockSupabase && workspaceHydration !== 'ready' && (currentView === 'dashboard' || currentView === 'wizard') && (
+        <div role="status" className="mx-4 my-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {workspaceHydration === 'loading' ? 'Loading your saved workspace… Cloud saves are paused until it is ready.' : 'Saved workspace could not load. Cloud saves are paused to protect existing data.'}
+          {workspaceHydration === 'error' && <button type="button" className="ml-3 underline" onClick={() => { setWorkspaceHydration('loading'); void startHydration(user.id); }}>Retry load</button>}
         </div>
       )}
 

@@ -453,6 +453,8 @@ test('service save: no "successfully" claim before the cloud answers; failure ke
       buttonByText(container, 'Create Service').click();
     });
     assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].overrides?.services?.length, 2, 'retry must not append a duplicate service');
+    assert.equal(stub.calls[1].overrides?.services?.[0]?.id, stub.calls[0].overrides?.services?.[0]?.id, 'retry uses the original service id');
     await stub.settle(PUBLISHED);
     assert.doesNotMatch(bodyText(), /Save failed/);
     act(() => {

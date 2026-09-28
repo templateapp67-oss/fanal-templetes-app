@@ -305,6 +305,9 @@ export interface SalonProfile {
   workingHoursSun?: string;
   whiteLabelEnabled?: boolean;
   offers?: SalonOffer[];
+  scentProfile?: string;
+  soundscape?: string;
+  consultationStyle?: string;
   faviconLetter?: string;
   faviconColor?: string;
   customFaviconUrl?: string;
@@ -322,7 +325,10 @@ export interface SalonService {
   name: string;
   category: string;
   durationMinutes: number;
+  /** Payable INR amount, used by both booking totals and normalized price_paise. */
   price: number;
+  /** Optional regular INR price before a sale. Never used to calculate charges. */
+  originalPrice?: number;
   description: string;
   icon: string;
   popular?: boolean;

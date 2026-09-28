@@ -1,3 +1,4 @@
+import { getTikTokValue } from '../utils/social';
 // ============================================================================
 // Frontend → Supabase sync mappers.
 //
@@ -117,7 +118,7 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     instagram_handle: profile.instagramHandle,
     facebook_page: profile.facebookPage ?? null,
     youtube_channel: profile.youtubeChannel ?? null,
-    tiktok_profile: profile.tiktokProfile ?? null,
+    tiktok_profile: getTikTokValue(profile),
     google_business_url: profile.googleBusinessUrl ?? null,
     theme_preset: profile.themePreset,
     theme_accent_key: profile.themeAccentKey ?? null,

@@ -1,3 +1,4 @@
+import { socialMetadata } from './socialMetadata';
 import { useEffect } from 'react';
 import type { SalonProfile } from '../types';
 import { applyGoogleFonts } from '../utils/fontHelper';
@@ -22,27 +23,15 @@ export function useSalonSEO(profile: SalonProfile | undefined, isActive: boolean
     const postalCode = profile?.postalCode?.trim() || '';
     const phone = profile?.phone?.trim() || (profile as any)?.phone_number?.trim() || '';
 
-    // Title mapping: e.g. "Bella Hair Salon – Luxury Styling in New Delhi"
-    const titleText = profile?.seoTitle?.trim() || (profile?.businessName 
-      ? `${businessName} – ${tagline || 'Professional Salon Services'}`
-      : 'Nexora - Salon Website Builder & Platform');
-
-    // Description mapping (keep within search engine optimization length guidelines 120-160 characters)
-    let descText = profile?.seoDescription?.trim() || about;
-    if (profile?.businessName && !profile?.seoDescription?.trim()) {
-      descText = about.length > 5 
-        ? about 
-        : `Book appointments, view services and check stylist availability at ${businessName}${city ? ` in ${city}` : ''}.`;
-    }
-    if (descText.length > 160) {
-      descText = descText.substring(0, 157) + '...';
-    }
-
-    // Dynamic URL Resolution (client-side origin + path)
-    const canonicalUrl = window.location.origin + window.location.pathname;
+    // Share the same title, description and tenant URL with server HTML and
+    // the live preview, so hydration cannot replace correct crawler metadata.
+    const metadata = socialMetadata(profile || {}, window.location.href);
+    const titleText = metadata.title;
+    const descText = metadata.description;
+    const canonicalUrl = metadata.url;
 
     // Social image mapping
-    const ogImage = profile?.socialShareImageUrl || profile?.coverImageUrl || profile?.ownerPhotoUrl || `${window.location.origin}/src/assets/images/main_salon_hero_1788433653488.jpg`;
+    const ogImage = metadata.image;
 
     // 1. Update Page Title
     document.title = titleText;
@@ -62,37 +51,19 @@ export function useSalonSEO(profile: SalonProfile | undefined, isActive: boolean
     // 2. Set Standard Meta tags
     setMetaTag('description', descText);
 
-    // Set keywords meta tag if specified or use salon-relevant fallback
-    const keywordsVal = profile?.seoKeywords?.trim() || [
-      'Nexora SalonOS',
-      'Nexora',
-      'salon management system',
-      'white label salon software',
-      'salon website builder',
-      'online salon booking app',
-      'beauty parlor management system',
-      'barber shop software',
-      'hair studio booking app',
-      'spa booking software',
-      'ayurvedic wellness center website',
-      'luxury hair salon management',
-      'salon billing software',
-      'salon appointment scheduling',
-      'automated whatsapp booking notifications',
-      'salon loyalty program software',
-      'best salon software in india',
-      'salon booking app india',
-      'salon billing and inventory software',
-      'unisex salon management software',
-      'beauty parlor billing software',
-      'top salon website template'
-    ].join(', ');
-    setMetaTag('keywords', keywordsVal);
+    setMetaTag('keywords', metadata.keywords);
 
     // 3. Set OpenGraph tags
     setMetaTag('og:title', titleText, true);
     setMetaTag('og:description', descText, true);
     setMetaTag('og:image', ogImage, true);
+    if (metadata.sizedImage) {
+      setMetaTag('og:image:width', '1200', true);
+      setMetaTag('og:image:height', '630', true);
+    } else {
+      document.querySelector('meta[property="og:image:width"]')?.remove();
+      document.querySelector('meta[property="og:image:height"]')?.remove();
+    }
     setMetaTag('og:url', canonicalUrl, true);
     setMetaTag('og:type', 'website', true);
     setMetaTag('og:site_name', businessName, true);

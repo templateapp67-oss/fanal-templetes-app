@@ -442,8 +442,12 @@ export function summarizeSaveError(detail: string): string {
 
   // 3) Missing schema/table — the SQL migrations were never applied to the
   // linked Supabase project (PostgREST: "relation … does not exist", 42P01).
-  if (d.includes('does not exist') || d.includes('42p01') || d.includes('undefined table')) {
-    return 'Database schema missing — apply supabase/migrations to your Supabase project (see SUPABASE_SETUP.md).';
+  if (isSchemaLikeFailure(detail)) {
+    // Keep only schema identifiers, never payloads, tokens or error details.
+    const missing = detail.match(/Could not find the ['"]([a-z_][a-z0-9_.]*)['"] (?:column|function)/i)
+      || detail.match(/(?:relation|column|function)\s+["']?([a-z_][a-z0-9_.]*)/i);
+    const code = detail.match(/\b(?:42P01|42703|42883|PGRST202|PGRST204|PGRST205)\b/i)?.[0];
+    return `Database schema missing${missing ? `: ${missing[1]}` : ''}${code ? ` (${code.toUpperCase()})` : ''}. Run the read-only check in supabase/repairs/diagnose_website_save_schema.sql before applying a migration.`;
   }
 
   // 3b) The server-side save fallback itself is absent on the deployed host
@@ -556,7 +560,8 @@ export function isAuthLikeFailure(message: string): boolean {
 /** True when a cloud-operation error message says the table itself is absent. */
 export function isSchemaLikeFailure(message: string): boolean {
   const m = (message || '').toLowerCase();
-  return m.includes('does not exist') || m.includes('42p01') || m.includes('undefined table');
+  return m.includes('does not exist') || m.includes('undefined table')
+    || /\b(42p01|42703|42883|pgrst202|pgrst204|pgrst205)\b/.test(m);
 }
 
 // ----------------------------------------------------------------------------
@@ -628,6 +633,8 @@ export function getSaveUiState(
  * as "not saved yet, retryable", never as success.
  */
 export interface SalonPersistResult {
+  /** Owner-facing failure reason from the save pipeline. */
+  error?: string;
   /** Cloud accepted the state (direct Supabase RPC or the service-role API). */
   published: boolean;
   /** Cloud unreachable / not signed in; the device draft cache holds the state. */

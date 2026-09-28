@@ -1,3 +1,7 @@
+import { globalSiteConfig } from '../lib/globalSiteConfig';
+import { ServicePriceFields } from './ServicePriceFields';
+import { serviceImageFallback } from '../data/categoryStarterServices';
+import { TikTokIcon } from './TikTokIcon';
 import { isWithinPromotionDates } from '../utils/websitePromotions';
 import { WebsiteLocationMap, websiteLocation } from './WebsiteLocationMap';
 import { WebsiteVideoShowcase } from './WebsiteVideoShowcase';
@@ -61,7 +65,7 @@ import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY
 import { InteractiveMapSetup } from './InteractiveMapSetup';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 import { TestimonialModal } from './ClientTestimonials';
-import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
+import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle, getTikTokValue } from '../utils/social';
 import { getServiceIcon } from './ServiceManagement';
 import { slugifySalonName } from '../lib/salonStore';
 import { useSalonData } from '../lib/useSalonData';
@@ -250,13 +254,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const setStylists = setStylistsProp || setInternalStylists;
 
   useEffect(() => {
-    if (!publicView) return;
     setInternalProfile(resolvedProfile);
     setInternalServices(resolvedServices);
     setInternalStylists(resolvedStylists);
   }, [publicView, resolvedProfile, resolvedServices, resolvedStylists]);
 
   // Dynamically update page titles, meta descriptions, canonical URLs, and structured data
+  const siteConfig = React.useMemo(() => globalSiteConfig(activeProfile, activeServices), [activeProfile, activeServices]);
   useSalonSEO(activeProfile, true);
 
   const location = websiteLocation(activeProfile);
@@ -626,6 +630,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     showNotification(`Switched to \"${tmpl.title}\" template — your salon details & services were kept.`);
   };
 
+  const whatsappDigits = (activeProfile.whatsapp || '').replace(/\D/g, '');
+  const bookingWhatsapp = /^\d{7,15}$/.test(whatsappDigits) ? (whatsappDigits.length === 10 ? `91${whatsappDigits}` : whatsappDigits) : '';
   const handleOpenBooking = (srv?: SalonService, stylist?: Stylist) => {
     if (previewMode) {
       showNotification('Preview Mode: This action is simulated.');
@@ -689,7 +695,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const handleUpdateServicePrice = (serviceId: string, newPrice: number) => {
     if (!Number.isFinite(newPrice) || newPrice < 0) { showNotification('Enter a valid non-negative price.'); return; }
     setServices((prev) =>
-      prev.map((s) => (s.id === serviceId ? { ...s, price: newPrice } : s))
+      prev.map((s) => (s.id === serviceId ? { ...s, price: newPrice, originalPrice: s.originalPrice != null && s.originalPrice >= newPrice ? s.originalPrice : undefined } : s))
     );
     showNotification(`Updated service price to ₹${newPrice}`);
   };
@@ -1458,9 +1464,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             <div className="flex min-w-0 max-w-full items-center gap-1 sm:gap-3 text-xs flex-wrap justify-center">
               {/* SOCIAL MEDIA HEADER LINKS (Instagram, Facebook, TikTok) */}
               {(() => {
-                const instagramUrl = formatInstagramUrl(activeProfile.instagramHandle);
-                const facebookUrl = formatFacebookUrl(activeProfile.facebookPage);
-                const hasSocials = Boolean(instagramUrl || facebookUrl);
+                const instagramUrl = formatInstagramUrl(siteConfig.social_links.instagram);
+                const facebookUrl = formatFacebookUrl(siteConfig.social_links.facebook);
+                const tiktokUrl = formatTikTokUrl(siteConfig.social_links.tiktok);
 
                 return (
                   <div className="flex items-center gap-1 sm:gap-3 text-xs flex-wrap mr-1 sm:mr-2" id="header-social-media-links">
@@ -1512,6 +1518,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       </span>
                     ) : null}
 
+                    {tiktokUrl && (
+                      <a href={tiktokUrl} target="_blank" rel="noopener noreferrer"
+                        aria-label="TikTok Profile" title="TikTok"
+                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-200 transition-colors">
+                        <TikTokIcon className="w-4 h-4" />
+                      </a>
+                    )}
                   </div>
                 );
               })()}
@@ -1989,8 +2002,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-slate-200/80'
                   }`}
                 >
-                  {srv.imageUrl && <img src={srv.imageUrl} alt={srv.name} loading="lazy" className="h-48 w-full rounded-xl object-cover" />}
+                  <img src={srv.imageUrl || serviceImageFallback(selectedCategoryKey)} alt={srv.name} loading="lazy" className="h-48 w-full rounded-xl object-cover"
+                    onError={event => { const img = event.currentTarget; const fallback = serviceImageFallback(selectedCategoryKey); if (!img.src.endsWith('/service-placeholder.svg')) img.src = img.src === fallback ? '/service-placeholder.svg' : fallback; }} />
                   {isEditMode && <ContentImageField label="Service image" value={srv.imageUrl} onChange={imageUrl => setServices(prev => prev.map(s => s.id === srv.id ? { ...s, imageUrl } : s))} />}
+                  {isEditMode && <div className="grid grid-cols-2 gap-2"><ServicePriceFields service={srv} onChange={patch => setServices(prev => prev.map(s => s.id === srv.id ? { ...s, ...patch } : s))} /></div>}
                   <div className="flex items-start gap-4 justify-between">
                     <div className="flex items-start gap-3.5 flex-1 min-w-0">
                       {/* Service Icon Container */}
@@ -2032,7 +2047,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'
                         }`}>
                           <InlineEditable
-                            value={srv.description}
+                            value={isEditMode || srv.description.length <= 150 ? srv.description : `${srv.description.slice(0, 147).trimEnd()}…`}
                             onSave={(val) => handleUpdateServiceDesc(srv.id, String(val))}
                             isEditingActive={isEditMode}
                             type="textarea"
@@ -2048,6 +2063,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         <div className={`text-lg md:text-xl font-extrabold font-mono transition-transform duration-200 origin-right group-hover:scale-105 ${
                           isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
                         }`}>
+                          {srv.originalPrice != null && srv.originalPrice > srv.price && <del className="mr-2 text-sm font-normal opacity-60" aria-label="Original price">₹{srv.originalPrice.toLocaleString('en-IN')}</del>}
                           <InlineEditable
                             value={srv.price}
                             onSave={(val) => handleUpdateServicePrice(srv.id, Number(val))}
@@ -2117,7 +2133,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </>
                       )}
 
-                      <button
+                      {activeProfile.acceptsOnlineBookings === false ? <a
+                        href={bookingWhatsapp ? `https://wa.me/${bookingWhatsapp}?text=${encodeURIComponent(`Hello ${activeProfile.businessName}, I would like to book ${srv.name} (${srv.durationMinutes} mins) for ₹${srv.price}.`)}` : '#location-section'}
+                        target={bookingWhatsapp ? '_blank' : undefined} rel={bookingWhatsapp ? 'noopener noreferrer' : undefined}
+                        onClick={event => { if (previewMode) { event.preventDefault(); showNotification('Preview Mode: This action is simulated.'); } }}
+                        className="font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 hover:opacity-90"
+                        style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
+                      ><MessageSquare className="w-3.5 h-3.5" />{bookingWhatsapp ? 'Book on WhatsApp' : 'Contact to book'}</a> : <button
                         type="button"
                         onClick={() => handleOpenBooking(srv)}
                         className="font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-xs transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer hover:opacity-95 hover:shadow-md group-hover:shadow-sm"
@@ -2125,7 +2147,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       >
                         <CalendarCheck className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
                         <span>Book (₹{srv.price})</span>
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 </div>
@@ -2620,7 +2642,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <div className="flex items-center gap-2 mt-3">
                         {activeProfile.instagramHandle && (
                           <a 
-                            href={formatInstagramUrl(activeProfile.instagramHandle)} 
+                            href={formatInstagramUrl(siteConfig.social_links.instagram)}
                             target="_blank" 
                             rel="noreferrer" 
                             className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-pink-100 text-slate-600 hover:text-pink-600 flex items-center justify-center transition-colors"
@@ -2631,7 +2653,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         )}
                         {activeProfile.facebookPage && (
                           <a 
-                            href={formatFacebookUrl(activeProfile.facebookPage)} 
+                            href={formatFacebookUrl(siteConfig.social_links.facebook)}
                             target="_blank" 
                             rel="noreferrer" 
                             className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-600 flex items-center justify-center transition-colors"
@@ -2723,7 +2745,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               {/* ... social links remain the same ... */}
               {activeProfile.instagramHandle && (
                 <a
-                  href={formatInstagramUrl(activeProfile.instagramHandle)}
+                  href={formatInstagramUrl(siteConfig.social_links.instagram)}
                   target="_blank"
                   rel="noreferrer"
                   className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
@@ -2735,7 +2757,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
               {activeProfile.facebookPage && (
                 <a
-                  href={formatFacebookUrl(activeProfile.facebookPage)}
+                  href={formatFacebookUrl(siteConfig.social_links.facebook)}
                   target="_blank"
                   rel="noreferrer"
                   className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
@@ -2757,7 +2779,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </a>
               )}
 
-              {(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl) && <a href={formatTikTokUrl(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl)} target="_blank" rel="noreferrer" className="text-xs font-bold underline">TikTok</a>}
+              {getTikTokValue(activeProfile) && <a href={formatTikTokUrl(siteConfig.social_links.tiktok)} target="_blank" rel="noreferrer" className="text-xs font-bold underline">TikTok</a>}
               {activeProfile.whatsapp && (
                 <a
                   href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}

@@ -14,7 +14,7 @@ export function applyPublicWebsiteContent(profile: SalonProfile, raw: unknown): 
     'ownerName', 'ownerBio', 'ownerExperience', 'ownerQualifications', 'ownerRole',
     'primaryColor', 'secondaryColor', 'backgroundColor', 'headingStyle', 'buttonStyle',
     'borderRadius', 'appearance', 'headingFont', 'bodyFont', 'customAccentColor',
-    'seoTitle', 'seoDescription', 'seoKeywords',
+    'seoTitle', 'seoDescription', 'seoKeywords', 'scentProfile', 'soundscape', 'consultationStyle',
     'instagramHandle', 'facebookPage', 'youtubeChannel', 'tiktokProfile', 'tiktokHandle', 'tiktokUrl', 'googleBusinessUrl',
   ] as const;
   for (const key of textKeys) {
@@ -70,6 +70,10 @@ export function mergeServicePresentation(services: SalonService[], raw: unknown,
     const saved = byId.get(service.id);
     if (!saved) return service;
     return { ...service,
+      // Only presentation metadata comes from JSON. The payable amount stays
+      // authoritative in services.price_paise and is never overridden here.
+      originalPrice: typeof saved.originalPrice === 'number' && Number.isFinite(saved.originalPrice) && saved.originalPrice >= service.price
+        ? saved.originalPrice : undefined,
       imageUrl: isSafeImageUrl(saved.imageUrl) ? saved.imageUrl : service.imageUrl,
       showDuration: typeof saved.showDuration === 'boolean' ? saved.showDuration : service.showDuration,
       category: typeof saved.category === 'string' ? saved.category : service.category,

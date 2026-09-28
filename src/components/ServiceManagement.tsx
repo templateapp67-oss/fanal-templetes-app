@@ -1,6 +1,6 @@
 import { getTemplateById } from '../data/templates';
 import { ContentImageField } from './ContentImageField';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { SalonService, SalonProfile } from '../types';
 import { 
   Plus, 
@@ -136,6 +136,9 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   const [formSaving, setFormSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Keep the identity across failed creates; retries must upsert the same item.
+  const pendingServiceId = useRef<string | null>(null);
+  const saveInFlight = useRef(false);
 
   // Extract all distinct categories
   const allCategories = ['All', ...Array.from(new Set(services.map((s) => s.category || 'General')))];
@@ -150,6 +153,8 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       onRequireAuth?.('login');
       return;
     }
+    pendingServiceId.current = null;
+    setSaveError('');
     setEditingServiceId(null);
     setFormName('');
     setFormCategory('Precision Cuts');
@@ -171,6 +176,8 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       onRequireAuth?.('login');
       return;
     }
+    pendingServiceId.current = null;
+    setSaveError('');
     setEditingServiceId(srv.id);
     setShowAdvanced(true);
     setFormName(srv.name);
@@ -204,6 +211,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
 
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saveInFlight.current) return;
     if (!isAuthenticated) {
       onRequireAuth?.('login');
       return;
@@ -237,6 +245,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
               category: finalCategory,
               durationMinutes: Number(formDuration),
               price: Number(formPrice),
+              originalPrice: s.originalPrice != null && s.originalPrice >= Number(formPrice) ? s.originalPrice : undefined,
               description: formDescription.trim(),
               imageUrl: formImage,
               popular: formPopular,
@@ -249,7 +258,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     } else {
       // Add new
       const newService: SalonService = {
-        id: `srv-${Date.now()}`,
+        id: pendingServiceId.current ?? crypto.randomUUID(),
         name: formName.trim(),
         category: finalCategory,
         durationMinutes: Number(formDuration),
@@ -260,7 +269,8 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         popular: formPopular,
         showDuration: formShowDuration,
       };
-      nextServices = [newService, ...services];
+      pendingServiceId.current = newService.id;
+      nextServices = [newService, ...services.filter(s => s.id !== newService.id)];
       message = `Added new service "${newService.name}" to menu.`;
     }
 
@@ -280,6 +290,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       setIsModalOpen(false);
       return;
     }
+    saveInFlight.current = true;
     setFormSaving(true);
     setSaveError('');
     try {
@@ -288,13 +299,14 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         setIsModalOpen(false);
       } else {
         setSaveError(
-          'Save failed — the service change is kept on this device. Retry the save when the connection is back (exact error in the browser console).'
+          result.error ? `Save failed: ${result.error}` : 'Save failed — the service change is kept on this device. Retry the save when the connection is back (exact error in the browser console).'
         );
       }
     } catch (err) {
       console.error('[ServiceManagement] Unexpected error during service save:', err);
       setSaveError('Save failed — the service change is kept on this device. Please retry (exact error in the browser console).');
     } finally {
+      saveInFlight.current = false;
       setFormSaving(false);
     }
   };
@@ -324,15 +336,22 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   // pipeline with the current (retained) state; the success/error toast is
   // emitted by the engine, never by this component.
   const retryPersist = async () => {
-    if (!onPersistChange) return;
+    if (!onPersistChange || saveInFlight.current) return;
     setSaveError('');
+    saveInFlight.current = true;
     setFormSaving(true);
     try {
       const result = await onPersistChange('Retrying save of service changes.', { services });
       if (!(result.published || result.localDraft)) {
-        setSaveError('Save failed again — the changes are still kept on this device (exact error in the browser console).');
+        setSaveError(result.error ? `Save failed: ${result.error}` : 'Save failed again — the changes are still kept on this device (exact error in the browser console).');
+      } else {
+        setIsModalOpen(false);
       }
+    } catch (err) {
+      console.error('[ServiceManagement] Retry failed:', err);
+      setSaveError('Save failed again — your changes are retained. Please retry.');
     } finally {
+      saveInFlight.current = false;
       setFormSaving(false);
     }
   };
