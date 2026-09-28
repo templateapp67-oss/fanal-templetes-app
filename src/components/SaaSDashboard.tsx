@@ -30,8 +30,8 @@ import { BackupManagerModal } from './BackupManagerModal';
 import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
 import { TikTokIcon } from './TikTokIcon';
 import type { SalonPersistResult, SalonEditorStatePatch } from '../lib/autoSave';
-import { isSalonProfileComplete, getSalonProfileCompletion } from '../lib/profileCompletion';
-import { ProfileCompletionModal, ProfileCompletionBanner } from './ProfileCompletionModal';
+import { isSalonProfileComplete } from '../lib/profileCompletion';
+import { ProfileCompletionModal } from './ProfileCompletionModal';
 
 interface SaaSDashboardProps {
   selectedTemplateId?: SalonProfile['businessType'];
@@ -229,7 +229,6 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   };
 
   const totals = dashboardTotals(appointments, clients);
-  const totalRevenue = totals.revenue;
   const totalBookings = totals.bookings;
 
   const handleSelectAccent = (palKey: AccentPaletteKey) => {
@@ -423,25 +422,8 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 <span>View Salon Preview</span>
               </button>
             )}
-
-            <div className="text-right hidden sm:block border-l border-gray-200 pl-4">
-              <div className="text-xs font-bold text-gray-500 font-mono-caps">Completed Booking Value (all time) (₹ INR)</div>
-              <div 
-                className="font-display font-extrabold text-2xl"
-                style={{ color: currentPrimaryColor }}
-              >
-                ₹{live.loadedAt ? totalRevenue.toLocaleString('en-IN') : '—'}
-              </div>
-            </div>
           </div>
         </div>
-
-        {/* PROFILE COMPLETION BANNER GUARD */}
-        <ProfileCompletionBanner
-          profile={profile}
-          onGoToProfileSetup={() => setActiveTab('website')}
-          className="mb-6"
-        />
 
         {/* TAB NAVIGATION */}
         <div className="flex border-b border-gray-200 mb-6 gap-2 overflow-x-auto">
@@ -545,16 +527,7 @@ export const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
         {activeTab === 'overview' && (
           <div className="flex flex-col gap-6">
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs">
-                <div className="flex justify-between items-center text-gray-500 mb-2">
-                  <span className="text-xs font-bold font-mono-caps">Completed Booking Value (₹)</span>
-                  <span className="material-symbols-outlined text-[#b0004a]">payments</span>
-                </div>
-                <div className="font-display font-extrabold text-2xl">₹{live.loadedAt ? totalRevenue.toLocaleString('en-IN') : '—'}</div>
-                <div className="text-[11px] text-emerald-600 font-bold mt-1">All time · completed bookings, before payment reconciliation</div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs">
                 <div className="flex justify-between items-center text-gray-500 mb-2">
                   <span className="text-xs font-bold font-mono-caps">Appointments</span>

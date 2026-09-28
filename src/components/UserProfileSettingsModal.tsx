@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { SalonProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase, isMockSupabase } from '../lib/supabaseClient';
+import { isMockSupabase } from '../lib/supabaseClient';
+import { readPartnerProfile, resolveOwnerProfileName, savePartnerProfileSettings } from '../lib/readPartnerProfile';
+import { normalizeWhatsApp } from '../lib/partnerProfile';
 
 interface UserProfileSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: SalonProfile;
+  userId?: string;
+  fallbackOwnerName?: string;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   showToast: (msg: string, type?: 'success' | 'error') => void;
   onSave?: (updatedProfile: SalonProfile) => Promise<void> | void;
@@ -16,13 +20,18 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   isOpen,
   onClose,
   profile,
+  userId,
+  fallbackOwnerName,
   setProfile,
   showToast,
   onSave,
 }) => {
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const dirty = React.useRef(false);
+  const ownerId = userId || profile.ownerId;
   const [formData, setFormData] = useState({
-    ownerName: profile.ownerName || '',
+    ownerName: resolveOwnerProfileName(profile.ownerName, fallbackOwnerName),
     ownerPhotoUrl: profile.ownerPhotoUrl || '',
     whatsapp: profile.whatsapp || profile.phone || '',
     dob: profile.dob || '',
@@ -39,26 +48,82 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Re-sync form state from profile whenever the modal opens or the active profile updates
+  // Rehydrate from Supabase whenever this modal opens. Auth metadata is only a
+  // fallback for a missing name; saved contact fields always come from the
+  // authenticated profiles row.
   React.useEffect(() => {
-    if (isOpen) {
-      setFormData({
-        ownerName: profile.ownerName || '',
-        ownerPhotoUrl: profile.ownerPhotoUrl || '',
-        whatsapp: profile.whatsapp || '',
-        dob: profile.dob || '',
-        postalCode: profile.postalCode || '',
-        city: profile.city || '',
-        areaLocality: profile.areaLocality || '',
-      });
-      setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
-      setErrors({});
-    }
-  }, [isOpen, profile]);
+    if (!isOpen) return;
+    let active = true;
+    dirty.current = false;
+    setFormData({
+      ownerName: resolveOwnerProfileName(profile.ownerName, fallbackOwnerName),
+      ownerPhotoUrl: profile.ownerPhotoUrl || '',
+      whatsapp: profile.whatsapp || profile.phone || '',
+      dob: profile.dob || '',
+      postalCode: profile.postalCode || '',
+      city: profile.city || '',
+      areaLocality: profile.areaLocality || '',
+    });
+    setWhatsappNotificationsEnabled(profile.whatsappNotificationsEnabled ?? true);
+    setErrors({});
+
+    if (isMockSupabase) return () => { active = false; };
+    setIsLoadingProfile(true);
+    void (async () => {
+      try {
+        const { data, error } = await readPartnerProfile(ownerId);
+        if (error) throw error;
+        if (!active || !data) return;
+
+        const ownerName = resolveOwnerProfileName(data.ownerName, fallbackOwnerName || profile.ownerName);
+        const loadedForm = {
+          ownerName,
+          ownerPhotoUrl: data.avatar ?? profile.ownerPhotoUrl ?? '',
+          whatsapp: data.whatsapp || data.phone || '',
+          dob: data.dob || '',
+          postalCode: data.postalCode || '',
+          city: data.city || '',
+          areaLocality: data.areaLocality || '',
+        };
+        if (!dirty.current) setFormData(loadedForm);
+        setWhatsappNotificationsEnabled(data.notifications ?? profile.whatsappNotificationsEnabled ?? true);
+
+        // Keep the global profile and Header in sync with the same database
+        // snapshot shown by the form. Preserve unrelated salon/editor fields.
+        setProfile((previous) => ({
+          ...previous,
+          ownerId: data.ownerId || ownerId,
+          ownerName,
+          ownerPhotoUrl: data.avatar ?? previous.ownerPhotoUrl,
+          phone: data.phone ?? previous.phone,
+          whatsapp: data.whatsapp ?? previous.whatsapp,
+          email: data.email ?? previous.email,
+          address: data.address ?? previous.address,
+          state: data.state ?? previous.state,
+          landmark: data.landmark ?? previous.landmark,
+          dob: data.dob ?? '',
+          postalCode: data.postalCode ?? '',
+          city: data.city ?? '',
+          areaLocality: data.areaLocality ?? '',
+          whatsappNotificationsEnabled: data.notifications ?? previous.whatsappNotificationsEnabled ?? true,
+        }));
+      } catch (error: any) {
+        if (active) {
+          console.warn('[UserProfileSettingsModal] Could not load saved profile:', error?.message || error);
+          showToast(error?.message || 'Could not load your saved profile details.', 'error');
+        }
+      } finally {
+        if (active) setIsLoadingProfile(false);
+      }
+    })();
+
+    return () => { active = false; };
+  }, [isOpen, ownerId, fallbackOwnerName]);
 
   if (!isOpen) return null;
 
   const handleChange = (field: string, value: string) => {
+    dirty.current = true;
     let formattedValue = value;
 
     if (field === 'whatsapp') {
@@ -85,6 +150,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    dirty.current = true;
 
     if (file.size > 5 * 1024 * 1024) {
       setErrors((prev) => ({ ...prev, ownerPhotoUrl: 'File size must be under 5MB.' }));
@@ -154,8 +220,8 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     }
     
     const cleanPostal = formData.postalCode.trim();
-    if (cleanPostal && cleanPostal.length !== 6) {
-      newErrors.postalCode = 'Pin code must be exactly 6 digits.';
+    if (cleanPostal && !/^[1-9]\d{5}$/.test(cleanPostal)) {
+      newErrors.postalCode = 'Pin code must be a valid 6-digit Indian PIN code.';
     }
 
     // Validate and sanitize Date of Birth string
@@ -165,7 +231,12 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       if (isNaN(dobParsed)) {
         newErrors.dob = 'Please enter a valid date of birth.';
       } else {
-        validDateStr = new Date(dobParsed).toISOString().slice(0, 10);
+        const normalizedDate = new Date(dobParsed).toISOString().slice(0, 10);
+        if (normalizedDate > new Date().toISOString().slice(0, 10)) {
+          newErrors.dob = 'Date of birth cannot be in the future.';
+        } else {
+          validDateStr = normalizedDate;
+        }
       }
     }
 
@@ -177,13 +248,15 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
     setIsSaving(true);
 
-    const cleanWhatsapp = hasEnteredWhatsapp ? formData.whatsapp.trim() : '';
-    const cleanPhone = rawWhatsapp ? `+${rawWhatsapp}` : '';
+    const cleanWhatsapp = hasEnteredWhatsapp ? normalizeWhatsApp(formData.whatsapp, false) : '';
+    const cleanPhone = cleanWhatsapp;
 
     const updatedProfile: SalonProfile = {
       ...profile,
+      ownerId: ownerId || profile.ownerId,
       ownerName: formData.ownerName.trim(),
       ownerPhotoUrl: formData.ownerPhotoUrl || profile.ownerPhotoUrl,
+      phone: cleanPhone,
       whatsapp: cleanWhatsapp,
       dob: validDateStr || '',
       postalCode: cleanPostal,
@@ -193,47 +266,32 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     };
 
     try {
+      const avatarToPersist = formData.ownerPhotoUrl === '/nexora-salonos-logo.png'
+        ? null
+        : formData.ownerPhotoUrl || null;
       if (!isMockSupabase) {
-        // Resolve active Supabase authenticated session user ID
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-
-        const user = session?.user;
-        if (!user) {
-          throw new Error('No active user session found. Please sign in again.');
-        }
-
-        // Never send every historical column spelling through PostgREST. A
-        // production project can legitimately be missing one legacy alias
-        // (for example `owner_photo_url`), and PostgREST rejects the entire
-        // request before RLS is even evaluated. The RPC owns the small,
-        // validated compatibility boundary and updates only the caller's row.
-        const { error: dbError } = await supabase.rpc('save_my_profile_settings', {
-          p_patch: {
-            ownerName: formData.ownerName.trim(),
-            phone: cleanPhone || null,
-            whatsapp: cleanWhatsapp || null,
-            dob: validDateStr,
-            postalCode: cleanPostal || null,
-            city: formData.city.trim() || null,
-            areaLocality: formData.areaLocality.trim() || null,
-            ownerPhotoUrl: formData.ownerPhotoUrl || null,
-            whatsappNotificationsEnabled,
-          },
+        await savePartnerProfileSettings(ownerId, {
+          ownerName: formData.ownerName.trim(),
+          phone: cleanPhone || null,
+          whatsapp: cleanWhatsapp || null,
+          dob: validDateStr,
+          postalCode: cleanPostal || null,
+          city: formData.city.trim() || null,
+          areaLocality: formData.areaLocality.trim() || null,
+          avatar: avatarToPersist,
+          notifications: whatsappNotificationsEnabled,
         });
-
-        if (dbError) {
-          throw dbError;
-        }
       }
 
-      // Sync local app state / context
-      setProfile(updatedProfile);
+      // Sync local app state / context and let the app's save pipeline update
+      // its user-scoped localStorage snapshot as well.
+      const savedProfile = { ...updatedProfile, ownerPhotoUrl: avatarToPersist || '' };
+      setProfile(savedProfile);
 
       if (onSave) {
-        await onSave(updatedProfile);
+        await onSave(savedProfile);
       } else {
-        showToast('Profile settings saved and persisted successfully!');
+        showToast('Profile updated successfully!');
       }
 
       onClose();
@@ -282,7 +340,16 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSave} className="p-6 overflow-y-auto space-y-5 flex-1">
+        <form onSubmit={handleSave} className="p-6 overflow-y-auto space-y-5 flex-1" aria-busy={isLoadingProfile}>
+          {isLoadingProfile && (
+            <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              Loading saved profile…
+            </div>
+          )}
           {/* Avatar Section */}
           <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
             <div className="relative group shrink-0">
@@ -316,7 +383,10 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 {formData.ownerPhotoUrl && formData.ownerPhotoUrl !== '/nexora-salonos-logo.png' && (
                   <button
                     type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, ownerPhotoUrl: '/nexora-salonos-logo.png' }))}
+                    onClick={() => {
+                      dirty.current = true;
+                      setFormData((prev) => ({ ...prev, ownerPhotoUrl: '/nexora-salonos-logo.png' }));
+                    }}
                     className="px-3 py-2 rounded-xl text-xs font-semibold text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 transition-all cursor-pointer"
                   >
                     Reset to Permanent Logo
@@ -445,7 +515,10 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
               <input
                 type="checkbox"
                 checked={whatsappNotificationsEnabled}
-                onChange={(e) => setWhatsappNotificationsEnabled(e.target.checked)}
+                onChange={(e) => {
+                  dirty.current = true;
+                  setWhatsappNotificationsEnabled(e.target.checked);
+                }}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
@@ -462,9 +535,9 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
             </button>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || isLoadingProfile}
               className={`px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-[#C20E5A] hover:bg-[#A30B4A] shadow-md shadow-[#C20E5A]/20 transition-all active:scale-95 flex items-center gap-2 ${
-                isSaving ? 'opacity-80 cursor-not-allowed' : ''
+                isSaving || isLoadingProfile ? 'opacity-80 cursor-not-allowed' : ''
               }`}
             >
               {isSaving && (

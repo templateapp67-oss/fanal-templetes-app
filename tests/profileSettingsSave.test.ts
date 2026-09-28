@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
-test('profile settings save through the schema-compatible owner RPC', async () => {
+test('profile settings modal uses the verified owner-scoped profiles upsert', async () => {
   const source = await readFile(new URL('../src/components/UserProfileSettingsModal.tsx', import.meta.url), 'utf8');
-  assert.match(source, /rpc\('save_my_profile_settings'/);
-  assert.doesNotMatch(source, /owner_photo_url: formData\.ownerPhotoUrl/);
+  const profileApi = await readFile(new URL('../src/lib/readPartnerProfile.ts', import.meta.url), 'utf8');
+  assert.match(source, /savePartnerProfileSettings\(ownerId/);
+  assert.match(source, /readPartnerProfile\(ownerId\)/);
+  assert.match(profileApi, /\.upsert\(payload, \{ onConflict: 'id' \}\)/);
+  assert.match(profileApi, /\.eq\('id', user\.id\)/);
+  assert.doesNotMatch(source, /rpc\('save_my_profile_settings'/);
 });
 
 test('profile photo migration is additive and keeps profile writes owner-scoped', async () => {
@@ -21,9 +25,11 @@ test('profile photo migration is additive and keeps profile writes owner-scoped'
 test('partner contact modal restores every canonical persisted profile field', async () => {
   const source = await readFile(new URL('../src/components/PartnerProfileModal.tsx', import.meta.url), 'utf8');
   for (const field of ['ownerName', 'whatsapp', 'postalCode', 'city', 'phone', 'email', 'address', 'state', 'landmark', 'dob']) {
-    assert.match(source, new RegExp(`data\\?\\.${field}`));
+    assert.match(source, new RegExp(`data(?:\\?\\.|\\.)?${field}`));
   }
-  assert.match(source, /data\?\.area/);
-  assert.match(source, /rpc\('save_my_profile_settings'/);
-  assert.doesNotMatch(source, /RPC save_partner_profile_details notice/);
+  assert.match(source, /data\.areaLocality/);
+  assert.match(source, /savePartnerProfileSettings\(currentUser/);
+  assert.match(source, /await onSaved\(patch\)/);
+  assert.match(source, /Loading saved profile/);
+  assert.doesNotMatch(source, /rpc\('save_my_profile_settings'/);
 });

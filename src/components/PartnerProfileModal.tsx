@@ -1,4 +1,4 @@
-import { readPartnerProfile } from '../lib/readPartnerProfile';
+import { readPartnerProfile, resolveOwnerProfileName, savePartnerProfileSettings } from '../lib/readPartnerProfile';
 import React, { useEffect, useRef, useState } from 'react';
 import type { SalonProfile } from '../types';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
@@ -6,13 +6,19 @@ import { compressPartnerAvatar, normalizeWhatsApp } from '../lib/partnerProfile'
 import { queueOwnerWrite } from '../lib/ownerEditorState';
 import { AuthModal } from './AuthModal';
 
-export function PartnerProfileModal({ profile, onSaved, onClose, editable = false }: {
-  editable?: boolean; profile: SalonProfile; onSaved: (patch: Partial<SalonProfile>) => void; onClose: () => void;
+export function PartnerProfileModal({ profile, userId, fallbackOwnerName, onSaved, onClose, editable = false }: {
+  editable?: boolean;
+  profile: SalonProfile;
+  userId?: string;
+  fallbackOwnerName?: string;
+  onSaved: (patch: Partial<SalonProfile>) => Promise<void> | void;
+  onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const dirty = useRef(false);
+  const ownerId = userId || profile.ownerId;
   const [form, setForm] = useState({
-    ownerName: profile.ownerName,
+    ownerName: resolveOwnerProfileName(profile.ownerName, fallbackOwnerName),
     whatsapp: profile.whatsapp || '',
     postalCode: profile.postalCode || '',
     city: profile.city || '',
@@ -23,7 +29,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     state: profile.state || '',
     landmark: profile.landmark || '',
     dob: profile.dob || '',
-    notifications: profile.whatsappNotificationsEnabled ?? false
+    notifications: profile.whatsappNotificationsEnabled ?? true
   });
   const DEFAULT_AVATAR_LOGO = '/nexora-salonos-logo.png';
   const [avatar, setAvatar] = useState(profile.ownerPhotoUrl || DEFAULT_AVATAR_LOGO);
@@ -40,63 +46,60 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     if (dirty.current) return;
     setForm(f => ({
       ...f,
-      ownerName: profile.ownerName,
+      ownerName: resolveOwnerProfileName(profile.ownerName, fallbackOwnerName || f.ownerName),
       whatsapp: profile.whatsapp || '',
       postalCode: profile.postalCode || '',
       city: profile.city || '',
-      areaLocality: profile.areaLocality ?? f.areaLocality,
+      areaLocality: profile.areaLocality || '',
       phone: profile.phone || '',
       email: profile.email || '',
       address: profile.address || '',
       state: profile.state || '',
       landmark: profile.landmark || '',
-      dob: profile.dob ?? f.dob,
+      dob: profile.dob || '',
       notifications: profile.whatsappNotificationsEnabled ?? f.notifications,
     }));
     setAvatar(profile.ownerPhotoUrl || DEFAULT_AVATAR_LOGO);
-  }, [profile]);
+  }, [profile, fallbackOwnerName]);
 
   useEffect(() => {
     let active = true;
     setError('');
 
-    // If Supabase is in mock mode or there is no authenticated owner ID yet:
-    // Do not throw an unrecoverable error. The form is already initialized with local profile
-    // values, and the user can view/edit their profile immediately without being blocked.
-    if (isMockSupabase || !profile.ownerId) {
+    // The authenticated Header user id is authoritative. The profile object can
+    // still be hydrating when the modal opens, so it is only a fallback.
+    if (isMockSupabase || !ownerId) {
       setLoading(false);
-      return;
+      return () => { active = false; };
     }
 
     setLoading(true);
     (async () => {
       try {
-        const { data, error: fetchErr } = await readPartnerProfile(profile.ownerId);
+        const { data, error: fetchErr } = await readPartnerProfile(ownerId);
         if (fetchErr) throw fetchErr;
-        if (active) {
+        if (active && data) {
           setForm(f => ({
             ...f,
-            ownerName: data?.ownerName || f.ownerName || '',
-            whatsapp: data?.whatsapp || f.whatsapp || '',
-            postalCode: data?.postalCode || f.postalCode || '',
-            city: data?.city || f.city || '',
-            areaLocality: data?.area || f.areaLocality || '',
-            phone: data?.phone || f.phone || '',
-            email: data?.email || f.email || '',
-            address: data?.address || f.address || '',
-            state: data?.state || f.state || '',
-            landmark: data?.landmark || f.landmark || '',
-            dob: data?.dob || f.dob || '',
-            notifications: typeof data?.notifications === 'boolean' ? data.notifications : f.notifications,
+            ownerName: resolveOwnerProfileName(data.ownerName, fallbackOwnerName || f.ownerName),
+            whatsapp: data.whatsapp ?? '',
+            postalCode: data.postalCode ?? '',
+            city: data.city ?? '',
+            areaLocality: data.areaLocality ?? '',
+            phone: data.phone ?? '',
+            email: data.email ?? '',
+            address: data.address ?? '',
+            state: data.state ?? '',
+            landmark: data.landmark ?? '',
+            dob: data.dob ?? '',
+            notifications: typeof data.notifications === 'boolean' ? data.notifications : f.notifications,
           }));
-          if (data?.avatar) {
-            setAvatar(data.avatar);
-          }
+          setAvatar(current => data.avatar || current || DEFAULT_AVATAR_LOGO);
         }
       } catch (e: any) {
         if (active) {
-          console.warn('[PartnerProfileModal] Cloud profile sync notice:', e.message);
-          setError(e.message || 'Could not load cloud profile details.');
+          console.warn('[PartnerProfileModal] Cloud profile sync notice:', e?.message || e);
+          setError(e?.message || 'Could not load cloud profile details.');
         }
       } finally {
         if (active) setLoading(false);
@@ -104,7 +107,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     })();
 
     return () => { active = false; };
-  }, [loadAttempt, profile.ownerId]);
+  }, [loadAttempt, ownerId, fallbackOwnerName]);
 
   useEffect(() => {
     if (!blob) return;
@@ -117,23 +120,29 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
     event.preventDefault(); setError(''); setBusy(true);
     let uploaded: string | null = null;
     try {
-      const whatsapp = normalizeWhatsApp(form.whatsapp, false);
+      const whatsapp = normalizeWhatsApp(form.whatsapp, true);
       const cleanPostal = form.postalCode.trim();
-      if (cleanPostal && !/^\d{6}$/.test(cleanPostal)) {
+      if (!/^[1-9]\d{5}$/.test(cleanPostal)) {
         throw new Error('Enter a valid 6-digit Indian PIN code.');
       }
-      const ownerName = form.ownerName.trim() || profile.ownerName || 'Salon Owner';
-      const city = form.city.trim() || profile.city || 'Mumbai';
-      const areaLocality = form.areaLocality.trim() || profile.areaLocality || 'Local Area';
-      const dob = form.dob || profile.dob || '';
+      const ownerName = form.ownerName.trim();
+      const city = form.city.trim();
+      const areaLocality = form.areaLocality.trim();
+      const dob = form.dob.trim();
+      if (!ownerName) throw new Error('Full Name is required.');
+      if (!city) throw new Error('City is required.');
+      if (!areaLocality) throw new Error('Area / Locality is required.');
+      if (!dob || Number.isNaN(Date.parse(dob))) throw new Error('Enter a valid Date of Birth.');
+      if (dob > new Date().toISOString().slice(0, 10)) throw new Error('Date of Birth cannot be in the future.');
 
-      let currentUser = null;
+      let currentUser: { id: string } | null = null;
       if (!isMockSupabase) {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          currentUser = user;
-        } catch {
-          currentUser = null;
+        const { data, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        currentUser = data.user;
+        if (!currentUser) throw new Error('No active user session found. Please sign in again.');
+        if (ownerId && currentUser.id !== ownerId) {
+          throw new Error('The active account changed. Reload before editing this profile.');
         }
       }
 
@@ -154,6 +163,7 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
         const result = await supabase.storage.from('partner-avatars').upload(uploaded, image, { contentType: image.type, upsert: false });
         if (result.error) {
           uploaded = null;
+          photo = profile.ownerPhotoUrl || DEFAULT_AVATAR_LOGO;
           console.warn('[PartnerProfileModal] Storage upload warning:', result.error.message);
         } else {
           photo = supabase.storage.from('partner-avatars').getPublicUrl(uploaded).data.publicUrl;
@@ -177,40 +187,50 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
       // validation and used to make an otherwise valid profile look saved.
       const photoToPersist = photo === DEFAULT_AVATAR_LOGO ? null : photo;
 
-      const { notifications, ...shared } = form;
+      const phone = form.phone.trim() ? normalizeWhatsApp(form.phone, false) : '';
       const patch: Partial<SalonProfile> = {
-        ...shared,
+        ownerId: currentUser?.id || ownerId,
         ownerName,
         whatsapp,
+        postalCode: cleanPostal,
         city,
         areaLocality,
-        postalCode: cleanPostal,
+        phone,
+        email: form.email.trim(),
+        address: form.address.trim(),
+        state: form.state.trim(),
+        landmark: form.landmark.trim(),
         ownerPhotoUrl: photoToPersist || '',
         dob,
-        whatsappNotificationsEnabled: notifications,
+        whatsappNotificationsEnabled: form.notifications,
       };
 
-      // Persist through the one canonical profile RPC. Do not swallow an RPC
-      // failure: closing this modal after a failed write is why users had to
-      // fill the same profile again after refresh.
-      if (currentUser && !isMockSupabase) {
-        await queueOwnerWrite(async () => {
-          const result = await supabase.rpc('save_my_profile_settings', {
-            p_patch: {
-              ownerName, phone: patch.phone || null, whatsapp: patch.whatsapp || null,
-              dob: patch.dob || null, postalCode: patch.postalCode || null,
-              city: patch.city || null, areaLocality: patch.areaLocality || null,
-              email: patch.email || null, address: patch.address || null,
-              state: patch.state || null, landmark: patch.landmark || null,
-              ownerPhotoUrl: photoToPersist, whatsappNotificationsEnabled: notifications,
-            },
-          });
-          if (result.error) throw new Error(result.error.message || 'Could not save your profile.');
-        });
+      // Save the caller's row directly. The verified id, owner-only RLS policy,
+      // and unique id conflict target make this an authenticated owner upsert.
+      // A missing/expired session is an error, never a local-only success.
+      if (!isMockSupabase) {
+        if (!currentUser) throw new Error('No active user session found. Please sign in again.');
+        await queueOwnerWrite(() => savePartnerProfileSettings(currentUser!.id, {
+          ownerName,
+          phone: phone || null,
+          whatsapp,
+          dob,
+          postalCode: cleanPostal,
+          city,
+          areaLocality,
+          email: form.email.trim() || null,
+          address: form.address.trim() || null,
+          state: form.state.trim() || null,
+          landmark: form.landmark.trim() || null,
+          avatar: photoToPersist,
+          notifications: form.notifications,
+        }));
       }
 
+      // The parent updates shared React state and its user-scoped local cache.
+      // Awaiting it keeps the success state and toast aligned with persistence.
       uploaded = null;
-      onSaved(patch);
+      await onSaved(patch);
       onClose();
     } catch (e: any) {
       if (uploaded && !isMockSupabase) {
@@ -289,9 +309,10 @@ export function PartnerProfileModal({ profile, onSaved, onClose, editable = fals
             )}
 
             {loading && !error && (
-              <p role="status" className="text-xs text-slate-500 animate-pulse">
-                Loading saved profile…
-              </p>
+              <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-pink-200 border-t-[#C20E5A]" aria-hidden="true" />
+                <span>Loading saved profile…</span>
+              </div>
             )}
 
             <fieldset disabled={!editable || loading || busy} className="space-y-5 disabled:opacity-60">
