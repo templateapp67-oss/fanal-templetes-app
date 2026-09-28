@@ -1439,6 +1439,7 @@ export default function App() {
               subdomain: data.subdomain || slugifySalonName(resolvedBusinessName),
               instagramHandle: data.instagram_handle || (isDifferentUser ? '' : base.instagramHandle),
               homeService: data.home_service ?? base.homeService,
+              vipExperience: data.vip_experience ?? base.vipExperience,
               offers: Array.isArray(data.offers) ? data.offers : [],
               themePreset: data.theme_preset || base.themePreset,
               themeAccentKey: data.theme_accent_key || base.themeAccentKey,
