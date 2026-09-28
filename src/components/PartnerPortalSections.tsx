@@ -97,7 +97,7 @@ export const PartnerReferralCodeSection: React.FC<{
           Your referral code
         </h2>
         <p className="mt-3 text-sm font-bold text-slate-700">
-          Referral code unavailable
+          {GROWTH_PARTNER_REFERRAL_CODE_UNAVAILABLE}
         </p>
         <p className="mt-3 text-xs text-slate-500">
           Your code is managed by the platform and cannot be changed here.

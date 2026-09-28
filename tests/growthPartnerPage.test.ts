@@ -66,7 +66,10 @@ test('growth partner routes resolve per the existing router conventions', () => 
   assert.equal(GROWTH_PARTNER_PATH, '/growth-partner');
   assert.deepEqual(
     [...GROWTH_PARTNER_SECTIONS],
-    ['dashboard', 'referrals', 'customers', 'performance', 'commission', 'profile']
+    // Referral History is a real section of this area too (one row per referred
+    // salon from get_my_partner_referred_salons), registered in the router union
+    // so its tab and its /partner/referral-history URL both resolve.
+    ['dashboard', 'referrals', 'customers', 'referral-history', 'performance', 'commission', 'profile']
   );
   assert.equal(isGrowthPartnerPath('/growth-partner'), true);
   assert.equal(isGrowthPartnerPath('/growth-partner/referrals'), true);

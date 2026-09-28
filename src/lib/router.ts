@@ -185,6 +185,12 @@ export type GrowthPartnerSection =
   | 'dashboard'
   | 'referrals'
   | 'customers'
+  // The referral roll (`referrals`) and the filterable list (`customers`) both
+  // answer "who signed up"; Referral History answers "which salons did they
+  // publish" — one row per referred salon, read from
+  // get_my_partner_referred_salons(). It is a real section of this area too,
+  // not just of the /partner portal namespace.
+  | 'referral-history'
   | 'performance'
   | 'commission'
   | 'profile';
@@ -193,6 +199,7 @@ export const GROWTH_PARTNER_SECTIONS: GrowthPartnerSection[] = [
   'dashboard',
   'referrals',
   'customers',
+  'referral-history',
   'performance',
   'commission',
   'profile',
@@ -282,6 +289,11 @@ export type PartnerPortalSection =
   | 'referral-code'
   | 'referred-users'
   | 'referral-status'
+  // Referral History (/partner/referral-history) — the referred-salons roll
+  // backed by get_my_partner_referred_salons(). Registered in the union, the
+  // URL sections, the sidebar menu and PARTNER_PORTAL_PATHS below: a live menu
+  // entry must resolve its own URL and its own content, never the dashboard.
+  | 'referral-history'
   | 'profile'
   | 'account-settings'
   | 'diagnostics'
@@ -302,6 +314,7 @@ export const PARTNER_PORTAL_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
+  'referral-history',
   'rewards',
   'performance',
   'commission',
@@ -323,6 +336,7 @@ export const PARTNER_PORTAL_MENU_SECTIONS: PartnerPortalSection[] = [
   'referral-code',
   'referred-users',
   'referral-status',
+  'referral-history',
   'rewards',
   'commission',
   'earnings',
@@ -343,6 +357,7 @@ const PARTNER_PORTAL_PATHS: Record<PartnerPortalSection, string> = {
   'referral-code': `${PARTNER_PORTAL_ROOT}/referral`,
   'referred-users': `${PARTNER_PORTAL_ROOT}/referrals`,
   'referral-status': `${PARTNER_PORTAL_ROOT}/referral-status`,
+  'referral-history': `${PARTNER_PORTAL_ROOT}/referral-history`,
   profile: `${PARTNER_PORTAL_ROOT}/profile`,
   'account-settings': `${PARTNER_PORTAL_ROOT}/account-settings`,
   diagnostics: `${PARTNER_PORTAL_ROOT}/diagnostics`,
