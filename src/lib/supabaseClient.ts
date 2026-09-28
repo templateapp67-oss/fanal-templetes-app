@@ -73,6 +73,12 @@ const LOCAL_SUPABASE_GATEWAY =
   getEnvVar('LOCAL_SUPABASE', 'VITE_LOCAL_SUPABASE') === 'true' ||
   viteLocalSupabaseFlag === 'true';
 
+// Browser bundles must use the public Vite values embedded at build time.
+// Serverless functions must prefer their runtime environment: Vercel can inject
+// fresh SUPABASE_URL values without rebuilding the client bundle, and a stale
+// baked VITE_SUPABASE_URL must never shadow the server's current project URL.
+const isBrowser = typeof window !== 'undefined' && typeof process === 'undefined';
+
 const localGatewayOrigin = (): string =>
   typeof window !== 'undefined'
     ? window.location.origin
@@ -80,22 +86,37 @@ const localGatewayOrigin = (): string =>
 
 export const SUPABASE_URL: string =
   clean(
-    staticViteSupabaseUrl ||
-    getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL')
+    isBrowser
+      ? staticViteSupabaseUrl ||
+          getEnvVar('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_URL')
+      : getEnvVar('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL') ||
+          staticViteSupabaseUrl ||
+          ''
   ) ||
   (LOCAL_SUPABASE_GATEWAY ? localGatewayOrigin() : '');
 // Accept the common aliases a deployment may have used for the public key.
 export const SUPABASE_ANON_KEY: string = clean(
-  staticViteSupabaseAnonKey ||
-    getEnvVar(
-      'SUPABASE_ANON_KEY',
-      'VITE_SUPABASE_ANON_KEY',
-      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-      'SUPABASE_KEY',
-      'VITE_SUPABASE_KEY',
-      'SUPABASE_PUBLISHABLE_KEY',
-      'VITE_SUPABASE_PUBLISHABLE_KEY'
-    )
+  isBrowser
+    ? staticViteSupabaseAnonKey ||
+        getEnvVar(
+          'VITE_SUPABASE_ANON_KEY',
+          'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+          'VITE_SUPABASE_PUBLISHABLE_KEY',
+          'SUPABASE_ANON_KEY',
+          'SUPABASE_KEY',
+          'SUPABASE_PUBLISHABLE_KEY'
+        )
+    : getEnvVar(
+        'SUPABASE_ANON_KEY',
+        'SUPABASE_PUBLISHABLE_KEY',
+        'SUPABASE_KEY',
+        'VITE_SUPABASE_ANON_KEY',
+        'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+        'VITE_SUPABASE_KEY',
+        'VITE_SUPABASE_PUBLISHABLE_KEY'
+      ) ||
+        staticViteSupabaseAnonKey ||
+        ''
 );
 export const SUPABASE_SERVICE_ROLE_KEY: string = clean(
   getEnvVar('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY')
