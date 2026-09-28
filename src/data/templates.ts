@@ -1,4 +1,6 @@
 import { CategoryTemplateConfig, BusinessTypeOption } from '../types';
+import { ADDITIONAL_TEMPLATE_SERVICES } from './additionalTemplateServices';
+import { getDefaultVideosForTemplate } from '../templateSocialVideos';
 import { SALON_IMAGES } from '../assets/images';
 import { CATEGORY_STANDARDIZED_DATA as CATEGORY_CONTENT, type CategoryStandardData } from './templateContent';
 
@@ -28,7 +30,7 @@ export interface RegisteredTemplate {
     contact: { address: string; city: string; phone: string; whatsapp: string };
     operatingHours: { opens: string; closes: string };
     offers: [];
-    videos: [];
+    videos: import('../types').SocialVideo[];
   };
   /** Rendering configuration kept for the existing live preview engine. */
   config: CategoryTemplateConfig;
@@ -3475,6 +3477,17 @@ const TEMPLATE_EXPLORER_NAMES: Record<TemplateId, string> = {
 function toRegisteredTemplate(config: CategoryTemplateConfig): RegisteredTemplate {
   const id = config.id as TemplateId;
   const content = CATEGORY_CONTENT[id];
+  if (config.services.length < 5 && ADDITIONAL_TEMPLATE_SERVICES[id]) {
+    config.services = [...config.services, ADDITIONAL_TEMPLATE_SERVICES[id]];
+  }
+  // Enrich the single shared catalogue, so preview and an explicitly imported
+  // template menu have identical images and details.
+  config.services = config.services.map((service, index) => ({
+    ...service,
+    imageUrl: service.imageUrl || content?.gallery[index % (content.gallery.length || 1)]?.url || config.coverImageUrl,
+  }));
+  config.ownerName ||= config.stylists[0]?.name || 'Studio Founder';
+  config.ownerPhotoUrl ||= config.stylists[0]?.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=500&q=80';
   return {
     id,
     // Existing IDs are already URL-safe, stable slugs. Persist and route this
@@ -3496,7 +3509,7 @@ function toRegisteredTemplate(config: CategoryTemplateConfig): RegisteredTemplat
       contact: { address: config.defaultAddress, city: config.defaultCity, phone: config.phone, whatsapp: config.whatsapp },
       operatingHours: { opens: content?.openHourText || '', closes: content?.closeHourText || '' },
       offers: [],
-      videos: [],
+      videos: getDefaultVideosForTemplate(id),
     },
     config,
     content,

@@ -29,13 +29,16 @@ export function useSalonData(
   fallback: Omit<SalonDataPayload, 'salonId' | 'loyaltyConfig'>,
   customerId?: string | null,
 ) {
-  const [remote, setRemote] = useState<SalonDataPayload | null>(null);
+  const normalizedSite = String(siteId || '').trim();
+  const [published, setPublished] = useState<{ site: string; data: SalonDataPayload } | null>(null);
+  // Never render the previous tenant's response while a new site loads.
+  const remote = published?.site === normalizedSite ? published.data : null;
   const [loading, setLoading] = useState(Boolean(siteId));
 
   useEffect(() => {
-    const normalized = String(siteId || '').trim();
+    const normalized = normalizedSite;
     if (!normalized) {
-      setRemote(null);
+      setPublished(null);
       setLoading(false);
       return;
     }
@@ -45,26 +48,28 @@ export function useSalonData(
       .then(async (res) => (res.ok ? res.json() : null))
       .then((body) => {
         if (cancelled || !body?.found || !body?.salon?.profile) return;
-        setRemote({
+        setPublished({ site: normalized, data: {
           salonId: typeof body.salon.salonId === 'string' ? body.salon.salonId : undefined,
           profile: body.salon.profile,
           services: Array.isArray(body.salon.services) ? body.salon.services : [],
           stylists: Array.isArray(body.salon.stylists) ? body.salon.stylists : [],
           selectedTemplateId: typeof body.salon.selectedTemplateId === 'string' ? body.salon.selectedTemplateId : null,
           loyaltyConfig: body.salon.loyaltyConfig && typeof body.salon.loyaltyConfig === 'object' ? body.salon.loyaltyConfig : null,
-        });
+        } });
       })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [siteId]);
+  }, [normalizedSite]);
 
   const data: SalonDataPayload = remote || fallback;
-  const [wallet, setWallet] = useState<SalonLoyaltySnapshot | null>(null);
+  const walletKey = `${normalizedSite}:${remote?.salonId || ''}:${customerId || ''}`;
+  const [walletResult, setWalletResult] = useState<{ key: string; value: SalonLoyaltySnapshot } | null>(null);
+  const wallet = walletResult?.key === walletKey ? walletResult.value : null;
   useEffect(() => {
     const salonId = remote?.salonId;
     if (!salonId || !customerId) {
-      setWallet(null);
+      setWalletResult(null);
       return;
     }
     let cancelled = false;
@@ -76,16 +81,16 @@ export function useSalonData(
       .then(({ data: account }) => {
         if (cancelled || !account) return;
         const tier = Array.isArray(account.loyalty_tiers) ? account.loyalty_tiers[0] : account.loyalty_tiers;
-        setWallet({
+        setWalletResult({ key: walletKey, value: {
           programEnabled: Boolean(remote?.loyaltyConfig?.programEnabled),
           pointsBalance: Number(account.points_balance || 0),
           lifetimePoints: Number(account.lifetime_points || 0),
           tier: typeof tier?.name === 'string' ? tier.name : undefined,
           tierDiscount: Number(tier?.discount_percent || 0) || undefined,
-        });
+        } });
       }, () => undefined);
     return () => { cancelled = true; };
-  }, [remote?.salonId, remote?.loyaltyConfig?.programEnabled, customerId]);
+  }, [remote?.salonId, remote?.loyaltyConfig?.programEnabled, customerId, walletKey]);
 
   const loyalty = useMemo<SalonLoyaltySnapshot | null>(() => {
     if (wallet) return wallet;

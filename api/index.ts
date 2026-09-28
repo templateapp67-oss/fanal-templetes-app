@@ -1,3 +1,4 @@
+import { handleGeocodeRequest } from '../server/geocode.js';
 import { registerReferralAttributionRoutes } from '../server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from '../server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from '../server/ownerDashboard.js';
@@ -172,6 +173,8 @@ async function resolveSalonFromHost(req: any, deadlineAt?: number) {
     return { host, tenant, salon: null, error: err };
   }
 }
+
+app.get('/api/geocode', asyncRoute(handleGeocodeRequest));
 
 app.get(
   "/api/health",

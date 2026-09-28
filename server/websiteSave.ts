@@ -1,17 +1,9 @@
+import { hasRequiredWebsiteProfile, websiteContentError } from '../src/lib/websiteValidation.js';
 import { BackendError, databaseForToken, verifyBackendUser, readDatabase } from './backendContext.js';
 // Authenticated fallback for editor saves. Identity is verified against Supabase
 // Auth, then the caller-scoped workspace RPC enforces ownership and commits
 // contact, catalogue and editor state together.
-import { isMockSupabase, getSupabaseAdmin, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../src/lib/supabaseClient.js";
-import {
-  SALON_SYNC_TABLES,
-  toProfileRow,
-  toServiceDbRow,
-  toStylistDbRow,
-  toLoyaltyConfigDbRow,
-  deleteRowsNotIn,
-  isMissingColumnError,
-} from "../src/lib/salonSync.js";
+import { isMockSupabase, getSupabaseAdmin } from "../src/lib/supabaseClient.js";
 import { isUuid } from "../src/lib/autoSave.js";
 import { SalonProfile, SalonService, Stylist, LoyaltyConfig } from "../src/types.js";
 import {
@@ -19,7 +11,6 @@ import {
   DEFAULT_DB_TIMEOUT_MS,
   responseAlreadyEnded,
 } from './dbGuard.js';
-import { randomUUID } from 'crypto';
 
 export interface WebsiteSaveDeps {
   /** In-memory salon registry used when Supabase is not configured (mock mode). */
@@ -56,7 +47,8 @@ async function verifyCallerIsOwner(
   const admin = getSupabaseAdmin();
   if (!admin) return 'authentication service unavailable';
   try {
-    const { data, error } = await admin.auth.getUser(token);
+    const { data, error } = await runDb(() => admin.auth.getUser(token), { label: 'website save identity', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt: _deadlineAt, retry: false });
+    if (error && ![400, 401, 403].includes(Number((error as any).status))) return 'authentication service unavailable';
     if (error || !data?.user) return 'access token rejected by Supabase Auth';
     if (data.user.id !== ownerId) return 'authenticated user does not own this request';
     return null;
@@ -110,14 +102,14 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
 
       if (!subdomain) {
         syncError('POST /api/website/save rejected — missing essential field "subdomain" (profiles.subdomain).', {
-          tables: [...SALON_SYNC_TABLES],
+          tables: ['salons', 'services', 'staff', 'owner_editor_state'],
         });
         return res.status(400).json({ success: false, error: 'salonData.profile.subdomain is required.' });
       }
       if (!ownerId) {
         syncError(
           'POST /api/website/save rejected — missing essential field "owner_id" (profiles.id + owner_id foreign keys).',
-          { tables: [...SALON_SYNC_TABLES] }
+          { tables: ['salons', 'services', 'staff', 'owner_editor_state'] }
         );
         return res.status(400).json({ success: false, error: "owner_id is required." });
       }
@@ -126,23 +118,6 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
           tables: ["profiles"],
         });
         return res.status(400).json({ success: false, error: "owner_id must be a valid user id (uuid)." });
-      }
-
-      // ------------------------------------------------------------------
-      // Enforce strict profile completion check server-side for save/publish
-      // ------------------------------------------------------------------
-      const profileOwnerName = String(profile?.ownerName || "").trim();
-      const profileBusinessName = String(profile?.businessName || "").trim();
-      const profilePhone = String(profile?.phone || profile?.whatsapp || "").trim();
-      const profileCity = String(profile?.city || "").trim();
-      const profileBusinessType = String(profile?.businessType || "").trim();
-
-      if (!profileOwnerName || !profileBusinessName || !profilePhone || profilePhone.length < 7 || !profileCity || !profileBusinessType) {
-        return res.status(400).json({
-          success: false,
-          code: "PROFILE_INCOMPLETE",
-          error: "Please complete your profile before editing or publishing your website."
-        });
       }
 
       // ------------------------------------------------------------------
@@ -158,7 +133,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
           syncError(`POST /api/website/save rejected (AUTH): ${authError}.`, {
             owner_id: ownerId,
           });
-          return res.status(401).json({ success: false, error: "Unauthorized" });
+          return res.status(authError === 'authentication service unavailable' ? 503 : 401).json({ success: false, error: authError === 'authentication service unavailable' ? 'Authentication is temporarily unavailable. Please retry.' : 'Unauthorized' });
         }
       }
 
@@ -167,6 +142,16 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       if (profile?.ownerId && profile.ownerId !== ownerId) {
         return res.status(403).json({ success: false, code: 'DATA_ACCESS_DENIED',
           error: 'This account cannot save the requested profile.' });
+      }
+
+      if (!/^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(subdomain)) return res.status(400).json({ success: false, code: 'INVALID_WEBSITE_ADDRESS', error: 'Use 2–63 letters, numbers or hyphens for the website address.' });
+
+      // The owner must be authenticated before returning draft validation errors.
+      const contentError = websiteContentError(salonData);
+      if (contentError) return res.status(400).json({ success: false, code: 'INVALID_WEBSITE_CONTENT', error: contentError });
+      if (!hasRequiredWebsiteProfile(profile)) {
+        return res.status(400).json({ success: false, code: 'PROFILE_INCOMPLETE',
+          error: 'Add your salon name, contact number, business category, address and city before publishing.' });
       }
 
       // ------------------------------------------------------------------
@@ -180,6 +165,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
           services,
           stylists,
           loyaltyConfig,
+          selectedTemplateId: salonData.selectedTemplateId,
           customDomain: profile?.customDomain || null,
         };
         console.info(
@@ -189,8 +175,8 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       }
 
       // ------------------------------------------------------------------
-      // Live mode: persist with the ADMIN (service role) client — this is the
-      // only safe way to bypass RLS from the server.
+      // Live mode verifies Auth through the server client, but writes ONLY
+      // through the caller-scoped RPC; there is no RLS-bypass save fallback.
       // ------------------------------------------------------------------
       const admin = getSupabaseAdmin();
       if (!admin) {
@@ -218,7 +204,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
 
       if (
         result.error &&
-        (result.error.code === '42501' ||
+        (
           /select a salon owned by this account/i.test(result.error.message || '') ||
           /nexora_owner_salon_ids/i.test(result.error.message || ''))
       ) {
@@ -242,20 +228,19 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
           code: result.error.code ?? null,
         });
         if (responseAlreadyEnded(res)) return;
-        return res.status(result.error.code === '42501' ? 403 : 503).json({
+        const code = result.error.code;
+        return res.status(code === '42501' ? 403 : code === '23505' ? 409 : code === '22023' || code === '22P02' ? 400 : 503).json({
           success: false,
-          code: result.error.code === '42501' ? 'DATA_ACCESS_DENIED' : 'WEBSITE_SAVE_FAILED',
-          error: 'Your workspace could not be saved. Please retry or contact support.',
+          code: code === '42501' ? 'DATA_ACCESS_DENIED' : code === '23505' ? 'WEBSITE_ADDRESS_CONFLICT' : code === '22023' || code === '22P02' ? 'INVALID_WEBSITE_CONTENT' : 'WEBSITE_SAVE_FAILED',
+          error: code === '23505' ? 'That website address is already in use. Choose another address.' : code === '22023' || code === '22P02' ? 'Check your website content, service details and staff schedule before saving.' : 'Your workspace could not be saved. Please retry or contact support.',
         });
       }
       if (responseAlreadyEnded(res)) return;
-      // `partial` surfaces degraded-but-not-lost saves instead of pretending
-      // every secondary table also persisted.
+      // The snapshot and public catalogue committed in the same transaction.
       return res.json({
         success: true,
         timestamp: Date.now(),
         mode: 'live',
-
       });
     } catch (err: any) {
       // Unreachable in normal operation (every DB call above is wrapped),
@@ -267,344 +252,6 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       return res.status(500).json({ error: "Failed to persist site state" });
     }
   };
-}
-
-/**
- * Fallback persistence using the service-role client for resilient
- * multi-schema compatibility.
- *
- * HISTORY: this used to wrap every write in a try/catch that only
- * console.warn'ed, ignored the `{ error }` object supabase-js returns for
- * PostgREST failures, and returned `{ success: true }` unconditionally — so
- * POST /api/website/save could answer "success" with NOTHING persisted. That
- * is precisely the "SAVE FAILED reported as saved" bug, server-side.
- *
- * Now: every sub-write checks its result; every failure is logged as a
- * structured [SAVE ERROR]; success is true ONLY when the canonical workspace
- * store (owner_editor_state — the table hydration reads back) actually
- * persisted. Secondary stores that fail are reported as `partial` so the
- * client (and an operator grep'ing logs) can tell a degraded save from a
- * clean one.
- */
-interface AdminFallbackStep {
-  step: string;
-  resource: string;
-  ok: boolean;
-  error?: string;
-  supabaseCode?: string | null;
-}
-
-/**
- * PostgREST PGRST204 safe upsert that strips columns missing from schema cache and retries.
- */
-async function resilientAdminUpsert(
-  admin: any,
-  table: string,
-  payload: Record<string, any> | Array<Record<string, any>>,
-  conflictOption?: { onConflict: string }
-): Promise<{ error?: any }> {
-  let currentPayload = Array.isArray(payload)
-    ? payload.map((p) => ({ ...p }))
-    : { ...payload };
-
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const query = admin.from(table).upsert(currentPayload, conflictOption);
-    const res = await query;
-    if (!res.error) return { error: null };
-
-    const errMsg = String(res.error.message || '');
-    const missingCol = isMissingColumnError(errMsg);
-
-    if (missingCol) {
-      if (missingCol === 'id' || missingCol === 'owner_id' || missingCol === 'user_id' || missingCol === 'organization_id') {
-        return { error: res.error };
-      }
-      let removedAny = false;
-      if (Array.isArray(currentPayload)) {
-        currentPayload.forEach((item) => {
-          if (missingCol in item) {
-            delete item[missingCol];
-            removedAny = true;
-          }
-        });
-      } else {
-        if (missingCol in currentPayload) {
-          delete currentPayload[missingCol];
-          removedAny = true;
-        }
-      }
-      if (removedAny) continue;
-    }
-
-    return { error: res.error };
-  }
-
-  return { error: new Error(`Upsert to ${table} failed after stripping unrecognised columns`) };
-}
-
-async function persistWithAdminFallback(
-  admin: any,
-  ownerId: string,
-  subdomain: string,
-  profile: SalonProfile | null,
-  services: SalonService[],
-  stylists: Stylist[],
-  loyaltyConfig: LoyaltyConfig | null,
-  extraState: Record<string, any>
-): Promise<{ success: boolean; error?: string; partial?: string[] }> {
-  const steps: AdminFallbackStep[] = [];
-
-  const extractError = (input: any): { message?: string; code?: string | null } => {
-    if (!input) return {};
-    if (typeof input === 'object' && 'error' in input) {
-      if (!input.error) return {};
-      const err = input.error;
-      return {
-        message: typeof err?.message === 'string' ? err.message : String(err),
-        code: typeof err?.code === 'string' ? err.code : null,
-      };
-    }
-    if (input instanceof Error) {
-      return {
-        message: input.message,
-        code: (input as any).code ? String((input as any).code) : null,
-      };
-    }
-    if (typeof input === 'object' && input !== null) {
-      if (typeof input.message === 'string') {
-        return {
-          message: input.message,
-          code: typeof input.code === 'string' ? input.code : null,
-        };
-      }
-      return {};
-    }
-    return { message: String(input) };
-  };
-
-  const recordStep = (step: string, resource: string, failed?: { message?: string; code?: string | null }) => {
-    steps.push({
-      step, resource,
-      ok: !failed?.message,
-      ...(failed?.message ? { error: failed.message } : {}),
-      ...(failed?.code ? { supabaseCode: failed.code } : {}),
-    });
-    if (failed?.message) {
-      const isUnprovisioned = /schema cache/i.test(failed.message) || /does not exist/i.test(failed.message) || /42P01/i.test(failed.code || '');
-      if (isUnprovisioned) {
-        console.warn(`[Website save] admin fallback "${step}" skipped (unprovisioned in DB schema): ${failed.message}`);
-      } else {
-        console.error('[SAVE ERROR]', {
-          stage: 'cloud-sync',
-          httpStatus: null,
-          supabaseCode: failed.code ?? null,
-          message: `[Website save] admin fallback "${step}" failed: ${failed.message}`.slice(0, 400),
-          resource,
-        });
-      }
-    }
-  };
-
-  const runStep = async (step: string, resource: string, op: () => Promise<any>): Promise<void> => {
-    try {
-      const res = await op();
-      recordStep(step, resource, extractError(res));
-    } catch (e: any) {
-      recordStep(step, resource, extractError(e));
-    }
-  };
-
-  try {
-    const fullEditorState = {
-      ...(profile ? { profile } : {}),
-      ...(services.length > 0 ? { services } : {}),
-      ...(stylists.length > 0 ? { stylists } : {}),
-      ...extraState,
-      ...(loyaltyConfig ? { loyaltyConfig } : {}),
-    };
-
-    // 1. CANONICAL store: owner_editor_state — the row hydration reads back.
-    await runStep('owner_editor_state upsert', 'owner_editor_state', () =>
-      admin.from('owner_editor_state').upsert({
-        owner_id: ownerId,
-        state: fullEditorState,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'owner_id' })
-    );
-
-    const canonical = steps.find((s) => s.step === 'owner_editor_state upsert');
-    if (!canonical?.ok) {
-      syncError('POST /api/website/save admin fallback CANONICAL write failed — refusing to report success for a save that did nothing.', {
-        error: canonical?.error,
-        code: canonical?.supabaseCode,
-      });
-      return {
-        success: false,
-        error: `workspace state store rejected the write (${canonical?.supabaseCode ?? 'unknown'}): ${canonical?.error ?? 'unknown error'}`,
-      };
-    }
-
-    // 2. Ensure organization, organization_members, and salons are linked in normalized schema
-    try {
-      const { data: members, error: memberErr } = await admin
-        .from('organization_members')
-        .select('organization_id, role, status')
-        .eq('user_id', ownerId)
-        .eq('status', 'active')
-        .in('role', ['owner', 'manager']);
-      recordStep('organization membership lookup', 'organization_members', extractError(memberErr));
-
-      let orgId: string | null = null;
-      if (!memberErr && members && members.length > 0) {
-        orgId = members[0].organization_id;
-      } else if (!memberErr) {
-        // Older/direct salon rows may predate organization_members. Preserve
-        // their ownership instead of creating a second salon and then failing
-        // RLS because the normalized relationship is missing.
-        const { data: directSalons, error: directSalonErr } = await admin
-          .from('salons')
-          .select('id, organization_id, slug, name, data')
-          .eq('owner_id', ownerId)
-          .limit(1);
-        if (directSalonErr && !/owner_id.*does not exist/i.test(directSalonErr.message || '')) {
-          recordStep('direct owner salon lookup', 'salons', extractError(directSalonErr));
-        }
-        const directSalon = !directSalonErr && directSalons?.[0] ? directSalons[0] : null;
-        if (directSalon?.organization_id) {
-          orgId = directSalon.organization_id;
-          const { error: linkErr } = await admin.from('organization_members').upsert({
-            id: randomUUID(),
-            organization_id: orgId,
-            user_id: ownerId,
-            role: 'owner',
-            status: 'active',
-          }, { onConflict: 'organization_id,user_id' });
-          recordStep('direct owner membership repair', 'organization_members', extractError(linkErr));
-          if (linkErr) orgId = null;
-        }
-      }
-
-      if (!orgId && !memberErr) {
-        orgId = randomUUID();
-        const orgName = profile?.businessName || 'My Salon';
-        let orgRes = await admin.from('organizations').insert({
-          id: orgId,
-          name: orgName,
-          display_name: orgName,
-        });
-        if (orgRes.error && /display_name.*schema cache/i.test(orgRes.error.message || '')) {
-          orgRes = await admin.from('organizations').insert({
-            id: orgId,
-            name: orgName,
-          });
-        }
-        recordStep('organization insert', 'organizations', extractError(orgRes.error));
-        if (!orgRes.error) {
-          const { error: linkErr } = await admin.from('organization_members').insert({
-            id: randomUUID(),
-            organization_id: orgId,
-            user_id: ownerId,
-            role: 'owner',
-            status: 'active',
-          });
-          recordStep('organization member link', 'organization_members', extractError(linkErr));
-          if (linkErr) orgId = null;
-        } else {
-          orgId = null;
-        }
-      }
-
-      if (orgId) {
-        const { data: existingSalons, error: salonReadErr } = await admin
-          .from('salons')
-          .select('id, slug, name, data')
-          .eq('organization_id', orgId);
-        recordStep('salon lookup', 'salons', extractError(salonReadErr));
-
-        if (!salonReadErr && existingSalons && existingSalons.length > 0) {
-          const targetSalon = existingSalons.find((s: any) => s.slug === subdomain) || existingSalons[0];
-          await runStep('salon update', 'salons', () =>
-            admin.from('salons').update({
-              name: profile?.businessName || targetSalon.name || 'My Salon',
-              slug: subdomain,
-              address: profile?.address || targetSalon.address || 'Not provided',
-              city: profile?.city || targetSalon.city || 'Not provided',
-              phone: profile?.phone || targetSalon.phone || '',
-              description: profile?.about ?? undefined,
-              data: { ...(targetSalon.data || {}), editor_profile: profile },
-              updated_at: new Date().toISOString(),
-            }).eq('id', targetSalon.id)
-          );
-        } else if (!salonReadErr) {
-          await runStep('salon insert', 'salons', () =>
-            admin.from('salons').insert({
-              id: randomUUID(),
-              organization_id: orgId,
-              owner_id: ownerId,
-              name: profile?.businessName || 'My Salon',
-              slug: subdomain,
-              address: profile?.address || 'Not provided',
-              city: profile?.city || 'Not provided',
-              phone: profile?.phone || '',
-              description: profile?.about || '',
-              data: { editor_profile: profile },
-            })
-          );
-        }
-      }
-    } catch (e: any) {
-      recordStep('normalized schema provision', 'organizations/organization_members/salons', extractError(e));
-    }
-
-    // 3. Persist legacy/direct tables (profiles, services, stylists, loyalty_config)
-    if (profile) {
-      await runStep('profile upsert', 'profiles', () =>
-        resilientAdminUpsert(admin, 'profiles', toProfileRow(profile, ownerId), { onConflict: 'id' })
-      );
-    }
-
-    if (Array.isArray(services) && services.length > 0) {
-      const serviceRows = services.map((s, idx) => toServiceDbRow(s, ownerId, idx));
-      await runStep('services upsert', 'services', () =>
-        resilientAdminUpsert(admin, 'services', serviceRows, { onConflict: 'id' })
-      );
-      await runStep('services cleanup', 'services', () =>
-        deleteRowsNotIn(admin, 'services', ownerId, serviceRows.map((r) => r.id))
-      );
-    }
-
-    if (Array.isArray(stylists) && stylists.length > 0) {
-      const stylistRows = stylists.map((st, idx) => toStylistDbRow(st, ownerId, idx));
-      await runStep('stylists upsert', 'stylists', () =>
-        resilientAdminUpsert(admin, 'stylists', stylistRows, { onConflict: 'id' })
-      );
-      await runStep('stylists cleanup', 'stylists', () =>
-        deleteRowsNotIn(admin, 'stylists', ownerId, stylistRows.map((r) => r.id))
-      );
-    }
-
-    if (loyaltyConfig) {
-      await runStep('loyalty config upsert', 'loyalty_config', () =>
-        resilientAdminUpsert(admin, 'loyalty_config', toLoyaltyConfigDbRow(loyaltyConfig, ownerId), { onConflict: 'owner_id' })
-      );
-    }
-
-    const partial = steps
-      .filter((s) => !s.ok && s.step !== 'owner_editor_state upsert')
-      .map((s) => `${s.resource} (${s.step}): ${s.error}${s.supabaseCode ? ` [${s.supabaseCode}]` : ''}`);
-
-    if (partial.length) {
-      console.warn('[Website save] admin fallback persisted the canonical workspace state with PARTIAL secondary failures:', partial);
-    }
-    console.info('[Website save] admin fallback completed:', {
-      canonical: 'owner_editor_state ok',
-      stepCount: steps.length,
-      failedSteps: partial.length,
-    });
-    return partial.length ? { success: true, partial } : { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || String(err) };
-  }
 }
 
 /** Restore the verified caller's private workspace; query-string identities are not trusted. */
@@ -630,21 +277,23 @@ export function handleGetSalonState(deps: WebsiteSaveDeps) {
       }
       if (!data && user?.id) {
         try {
-          const stateRes = await admin.from('owner_editor_state').select('state').eq('owner_id', user.id).maybeSingle();
+          const stateRes = await runDb(() => admin.from('owner_editor_state').select('state').eq('owner_id', user.id).maybeSingle(), { label: 'owner state restore', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt: res.locals?.requestDeadlineAt, retry: false });
           if (stateRes.error) {
-            console.warn('[Website save] owner_editor_state table read failed (recovering as needs_onboarding):', {
+            console.warn('[Website save] owner_editor_state table read failed:', {
               code: stateRes.error.code ?? null,
               message: String(stateRes.error.message ?? '').slice(0, 200),
             });
+            throw new BackendError(503, 'Your saved workspace could not be loaded. Please retry.', 'workspace_load_failed');
           }
           if (stateRes.data?.state) {
             data = stateRes.data.state;
           }
         } catch (err: any) {
-          console.warn('[Website save] owner_editor_state table read threw (recovering as needs_onboarding):', {
+          console.warn('[Website save] owner_editor_state table read threw:', {
             code: err?.code ?? null,
             message: String(err?.message ?? err).slice(0, 200),
           });
+          throw new BackendError(503, 'Your saved workspace could not be loaded. Please retry.', 'workspace_load_failed');
         }
       }
       if (!responseAlreadyEnded(res)) {

@@ -346,6 +346,7 @@ test('the public salon layout reserves dynamic content and uses stable viewport 
   assert.match(preview, /className="flex min-h-20 items-start gap-3 group/, 'the studio address details must reserve their wrapped-address footprint');
   assert.match(mapsView, /\[contain:layout\]/, 'the map fallback must contain its changing address layout');
   assert.match(preview, /data-layout-stable-media/, 'the videos and reels section must reserve space while media loads');
-  assert.match(preview, /min-h-\[320px\][^"\n]*aspect-\[9\/16\]/, 'Shorts cards must keep a fixed 9:16 footprint');
+  const videoCards = await readFile(new URL('../../src/components/WebsiteVideoShowcase.tsx', import.meta.url), 'utf8');
+  assert.match(videoCards, /min-h-\[320px\][^"\n]*aspect-\[9\/16\]/, 'Shorts cards must keep a fixed 9:16 footprint');
   assert.match(preview, /layout-stable-fixed fixed bottom-6 right-6/, 'the floating WhatsApp action must be layout-contained');
 });

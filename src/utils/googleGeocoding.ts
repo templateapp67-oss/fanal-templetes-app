@@ -2,37 +2,12 @@ export interface GeocodeResult {
   lat: number;
   lng: number;
   formattedAddress?: string;
-  source: 'google_js_sdk' | 'google_api' | 'server_api' | 'fallback';
+  source: 'google_js_sdk' | 'google_api' | 'server_api' | 'nominatim' | 'fallback';
 }
 
 const MAPS_API_KEY = String(
   import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || ''
 ).trim();
-
-const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  mumbai: { lat: 19.076, lng: 72.8777 },
-  delhi: { lat: 28.6139, lng: 77.209 },
-  'new delhi': { lat: 28.6139, lng: 77.209 },
-  bengaluru: { lat: 12.9716, lng: 77.5946 },
-  bangalore: { lat: 12.9716, lng: 77.5946 },
-  hyderabad: { lat: 17.385, lng: 78.4867 },
-  chennai: { lat: 13.0827, lng: 80.2707 },
-  kolkata: { lat: 22.5726, lng: 88.3639 },
-  pune: { lat: 18.5204, lng: 73.8567 },
-  ahmedabad: { lat: 23.0225, lng: 72.5714 },
-  jaipur: { lat: 26.9124, lng: 75.7873 },
-  surat: { lat: 21.1702, lng: 72.8311 },
-  lucknow: { lat: 26.8467, lng: 80.9462 },
-  chandigarh: { lat: 30.7333, lng: 76.7794 },
-  gurgaon: { lat: 28.4595, lng: 77.0266 },
-  gurugram: { lat: 28.4595, lng: 77.0266 },
-  noida: { lat: 28.5355, lng: 77.391 },
-  kochi: { lat: 9.9312, lng: 76.2673 },
-  indore: { lat: 22.7196, lng: 75.8577 },
-  nagpur: { lat: 21.1458, lng: 79.0882 },
-  goa: { lat: 15.4909, lng: 73.8278 },
-  panaji: { lat: 15.4909, lng: 73.8278 },
-};
 
 /**
  * Automatically fetches GPS coordinates (latitude, longitude) for a given address.
@@ -47,10 +22,10 @@ export async function geocodeAddressWithGoogleMaps(
 
   // 1. Primary: Try server proxy endpoint (/api/geocode)
   try {
-    const serverRes = await fetch(`/api/geocode?address=${encodeURIComponent(cleanAddress)}`);
+    const serverRes = await fetch(`/api/geocode?address=${encodeURIComponent(cleanAddress)}`, { signal: AbortSignal.timeout(8000) });
     if (serverRes.ok) {
       const serverData = await serverRes.json();
-      if (serverData && serverData.success && typeof serverData.lat === 'number' && typeof serverData.lng === 'number') {
+      if (serverData && serverData.success && typeof serverData.lat === 'number' && typeof serverData.lng === 'number' && Number.isFinite(serverData.lat) && Number.isFinite(serverData.lng) && !['city_fallback', 'default_fallback'].includes(serverData.source)) {
         return {
           lat: serverData.lat,
           lng: serverData.lng,
@@ -73,7 +48,9 @@ export async function geocodeAddressWithGoogleMaps(
     try {
       const geocoder = new (window as any).google.maps.Geocoder();
       const response = await new Promise<any>((resolve) => {
+        const timeout = setTimeout(() => resolve(null), 3500);
         geocoder.geocode({ address: cleanAddress }, (results: any, status: string) => {
+          clearTimeout(timeout);
           if (status === 'OK' && results && results[0]) {
             resolve(results[0]);
           } else {
@@ -105,7 +82,7 @@ export async function geocodeAddressWithGoogleMaps(
         cleanAddress
       )}&key=${MAPS_API_KEY}`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
       const data = await res.json();
 
       if (data.status === 'OK' && data.results && data.results.length > 0) {
@@ -127,7 +104,7 @@ export async function geocodeAddressWithGoogleMaps(
     const fallbackRes = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
         cleanAddress
-      )}`
+      )}`, { signal: AbortSignal.timeout(3500) }
     );
     if (fallbackRes.ok) {
       const fallbackData = await fallbackRes.json();
@@ -136,7 +113,7 @@ export async function geocodeAddressWithGoogleMaps(
           lat: parseFloat(fallbackData[0].lat),
           lng: parseFloat(fallbackData[0].lon),
           formattedAddress: fallbackData[0].display_name,
-          source: 'fallback',
+          source: 'nominatim',
         };
       }
     }
@@ -144,26 +121,7 @@ export async function geocodeAddressWithGoogleMaps(
     console.warn('Client-side Nominatim fetch failed:', err);
   }
 
-  // 5. Local city matching fallback
-  const lower = cleanAddress.toLowerCase();
-  for (const [city, coords] of Object.entries(CITY_COORDINATES)) {
-    if (lower.includes(city)) {
-      return {
-        lat: coords.lat,
-        lng: coords.lng,
-        formattedAddress: cleanAddress,
-        source: 'fallback',
-      };
-    }
-  }
-
-  // 6. Default Mumbai location fallback
-  return {
-    lat: 19.076,
-    lng: 72.8777,
-    formattedAddress: cleanAddress,
-    source: 'fallback',
-  };
+  return null;
 }
 
 /**
@@ -183,7 +141,9 @@ export async function reverseGeocodeWithGoogleMaps(
     try {
       const geocoder = new (window as any).google.maps.Geocoder();
       const response = await new Promise<any>((resolve) => {
+        const timeout = setTimeout(() => resolve(null), 3500);
         geocoder.geocode({ location: { lat, lng } }, (results: any, status: string) => {
+          clearTimeout(timeout);
           if (status === 'OK' && results && results[0]) {
             resolve(results[0]);
           } else {
@@ -205,7 +165,7 @@ export async function reverseGeocodeWithGoogleMaps(
     try {
       const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${MAPS_API_KEY}`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
       const data = await res.json();
 
       if (data.status === 'OK' && data.results && data.results.length > 0) {
@@ -219,7 +179,7 @@ export async function reverseGeocodeWithGoogleMaps(
   // 3. Fallback: OpenStreetMap Nominatim for dev/demo fallback
   try {
     const fallbackRes = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, { signal: AbortSignal.timeout(3500) }
     );
     if (fallbackRes.ok) {
       const fallbackData = await fallbackRes.json();
@@ -231,5 +191,5 @@ export async function reverseGeocodeWithGoogleMaps(
     console.warn('Client-side Nominatim reverse geocode failed:', err);
   }
 
-  return 'Mumbai, Maharashtra, India';
+  return '';
 }

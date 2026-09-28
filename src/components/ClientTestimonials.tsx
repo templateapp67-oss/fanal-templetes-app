@@ -1,3 +1,4 @@
+import { isSafeImageUrl } from '../lib/websiteValidation';
 import React, { useState, useEffect } from 'react';
 import { Star, X, Check, Info } from 'lucide-react';
 import { Testimonial } from '../data/templates';
@@ -92,6 +93,8 @@ export const TestimonialModal: React.FC<TestimonialModalProps> = ({
     }
 
     const finalAvatar = useCustomAvatar ? (customAvatarInput.trim() || TESTIMONIAL_PRESET_AVATARS[0]) : avatarUrl;
+
+    if (!isSafeImageUrl(finalAvatar)) { setFormError('Use a valid http(s) image URL.'); return; }
 
     const saved: Testimonial = {
       id: editingTestimonial?.id || `rev-${Date.now()}`,

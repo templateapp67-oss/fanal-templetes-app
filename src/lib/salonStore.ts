@@ -465,8 +465,8 @@ export function loadSalonState(userId?: string | null, salonId?: string | null):
             }
             return {
               profile,
-              services: Array.isArray(parsed.services) && parsed.services.length > 0 ? parsed.services : null,
-              stylists: Array.isArray(parsed.stylists) && parsed.stylists.length > 0 ? parsed.stylists : null,
+              services: Array.isArray(parsed.services) ? parsed.services : null,
+              stylists: Array.isArray(parsed.stylists) ? parsed.stylists : null,
               loyaltyConfig: parsed.loyaltyConfig && typeof parsed.loyaltyConfig === 'object' ? parsed.loyaltyConfig : DEFAULT_LOYALTY_CONFIG,
               selectedTemplateId: parsed.selectedTemplateId || parsed.profile?.businessType || 1,
             };

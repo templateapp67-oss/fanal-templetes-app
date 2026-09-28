@@ -80,7 +80,7 @@ test('cross-origin POST /api/website/save succeeds end-to-end (preflight + real 
     body: JSON.stringify({
       salonData: {
         ownerId: 'cors-owner-1',
-        profile: { businessName: 'Cors Studio', subdomain: 'cors-studio' },
+        profile: { businessName: 'Cors Studio', subdomain: 'cors-studio', businessType: 'hair_salon', phone: '9876543210', address: 'Studio Road', city: 'Jaipur' },
         services: [],
         stylists: [],
       },
@@ -113,7 +113,7 @@ test('a valid save and its 400 validation still behave after the CORS mount', as
     body: JSON.stringify({
       salonData: {
         ownerId: 'cors-owner-2',
-        profile: { businessName: 'Cors Studio Two', subdomain: 'cors-studio-2' },
+        profile: { businessName: 'Cors Studio Two', subdomain: 'cors-studio-2', businessType: 'hair_salon', phone: '9876543210', address: 'Studio Road', city: 'Jaipur' },
       },
     }),
   });

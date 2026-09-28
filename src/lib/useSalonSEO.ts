@@ -29,7 +29,7 @@ export function useSalonSEO(profile: SalonProfile | undefined, isActive: boolean
 
     // Description mapping (keep within search engine optimization length guidelines 120-160 characters)
     let descText = profile?.seoDescription?.trim() || about;
-    if (profile?.businessName) {
+    if (profile?.businessName && !profile?.seoDescription?.trim()) {
       descText = about.length > 5 
         ? about 
         : `Book appointments, view services and check stylist availability at ${businessName}${city ? ` in ${city}` : ''}.`;

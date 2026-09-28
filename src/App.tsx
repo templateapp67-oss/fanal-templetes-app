@@ -1,3 +1,4 @@
+import { websiteContentError } from './lib/websiteValidation';
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
 import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from './lib/diagnostics';
 import { RLSDiagnosticsModal } from './components/RLSDiagnosticsModal';
@@ -236,6 +237,7 @@ function fromServiceRow(row: any): SalonService {
     name: row.name,
     category: row.category,
     description: row.description,
+    imageUrl: row.image_url || row.imageUrl || undefined,
     icon: row.icon,
     price: Number(row.price ?? 0),
     durationMinutes: row.duration_minutes ?? 45,
@@ -461,10 +463,10 @@ export default function App() {
   }, [user]);
 
   const [services, setServices] = useState<SalonService[]>(
-    initialSaved?.services && Array.isArray(initialSaved.services) && initialSaved.services.length > 0 ? initialSaved.services : (isMockSupabase ? INITIAL_SERVICES : [])
+    initialSaved?.services && Array.isArray(initialSaved.services) ? initialSaved.services : (isMockSupabase ? INITIAL_SERVICES : [])
   );
   const [stylists, setStylists] = useState<Stylist[]>(
-    initialSaved?.stylists && Array.isArray(initialSaved.stylists) && initialSaved.stylists.length > 0 ? initialSaved.stylists : (isMockSupabase ? INITIAL_STYLISTS : [])
+    initialSaved?.stylists && Array.isArray(initialSaved.stylists) ? initialSaved.stylists : (isMockSupabase ? INITIAL_STYLISTS : [])
   );
   const [appointments, setAppointments] = useState<Appointment[]>(isMockSupabase ? INITIAL_APPOINTMENTS : []);
   const [clients, setClients] = useState<ClientRecord[]>(isMockSupabase ? INITIAL_CLIENTS : []);
@@ -1767,6 +1769,12 @@ export default function App() {
         return { published: false, localDraft: false, failed: false };
       }
       const state = salonStateRef.current;
+      const invalidContent = websiteContentError(state);
+      if (invalidContent) {
+        setSaveStatus('error');
+        if (source === 'manual') showToast(invalidContent, 'error');
+        return { published: false, localDraft: false, failed: true };
+      }
       saveStep('authenticated user resolved', { userId: state.user?.id ?? null, mock: isMockSupabase });
 
       // Coalesce auto-saves: if one is already running, remember to run again
@@ -2420,6 +2428,14 @@ export default function App() {
     businessName: previewTemplate.name,
     ownerName: previewTemplate.config.ownerName || 'Nexora Template Team',
     ownerRole: previewTemplate.config.ownerRole,
+    ownerBio: `Meet ${previewTemplate.config.ownerName}, the creative lead behind ${previewTemplate.name}. Every appointment begins with a personal consultation and a treatment tailored to your goals.`,
+    ownerExperience: '10+ years in specialist client care (demo)',
+    ownerQualifications: previewTemplate.content.specialties.join(' • '),
+    socialVideos: previewTemplate.defaultData.videos,
+    gallery: previewTemplate.defaultData.gallery,
+    workingHoursMonFri: `${previewTemplate.defaultData.operatingHours.opens} – ${previewTemplate.defaultData.operatingHours.closes}`,
+    workingHoursSat: `${previewTemplate.defaultData.operatingHours.opens} – ${previewTemplate.defaultData.operatingHours.closes}`,
+    workingHoursSun: 'By appointment',
     phone: previewTemplate.defaultData.contact.phone || '9876543210',
     whatsapp: previewTemplate.defaultData.contact.whatsapp || '9876543210',
     tagline: previewTemplate.tagline,
@@ -2717,6 +2733,7 @@ export default function App() {
             <button type="button" onClick={() => selectTemplateFromExplorer(templatePreviewId)} className="rounded-xl bg-[#C20E5A] px-4 py-2 text-sm font-black text-white hover:bg-[#A30B4A]">Select &amp; Customize This Template</button>
           </div>
           <SalonWebsitePreview
+            key={templatePreviewId}
             profile={previewProfile!}
             services={previewTemplate!.defaultData.services}
             stylists={previewTemplate!.defaultData.staff}
@@ -2781,6 +2798,7 @@ export default function App() {
       {currentView === 'dashboard' && (
         <SaaSDashboard
           key={user?.id || 'signed-out'}
+          selectedTemplateId={selectedTemplateId}
           ownerId={user?.id}
           profile={profile}
           setProfile={setProfile}

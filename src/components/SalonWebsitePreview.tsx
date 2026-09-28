@@ -1,3 +1,8 @@
+import { isWithinPromotionDates } from '../utils/websitePromotions';
+import { WebsiteLocationMap, websiteLocation } from './WebsiteLocationMap';
+import { WebsiteVideoShowcase } from './WebsiteVideoShowcase';
+import { YouTubeVideoEditor } from './YouTubeVideoEditor';
+import { ContentImageField } from './ContentImageField';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSiteUrl } from '../lib/salonStore';
@@ -46,7 +51,7 @@ import {
   RefreshCw, 
   Scissors
 } from 'lucide-react';
-import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer, LookbookPhoto, SocialVideo } from '../types';
+import { SalonProfile, SalonService, Stylist, Appointment, BusinessTypeId, SalonOffer } from '../types';
 import { TEMPLATE_REGISTRY, getTemplateConfig, getTemplateContent, type Testimonial } from '../data/templates';
 import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey, applyPrimaryAccentCssVar, getContrastTextColor, getLuminance } from '../themeAccents';
 import { createBlankSalonProfile } from '../lib/ownerSalonResolution';
@@ -54,17 +59,10 @@ import { BookingModal } from './BookingModal';
 import { InlineEditable } from './InlineEditable';
 import { SidePanelCustomizer, SectionVisibilityState, DEFAULT_SECTION_VISIBILITY } from './SidePanelCustomizer';
 import { InteractiveMapSetup } from './InteractiveMapSetup';
-import { GoogleMapsView } from './GoogleMapsView';
 import { computeHeroAIStyling, extractImageMoodAsync, HeroAIStyling } from '../utils/heroImageMood';
 import { TestimonialModal } from './ClientTestimonials';
-import { formatInstagramUrl, formatFacebookUrl, displaySocialHandle } from '../utils/social';
+import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHandle } from '../utils/social';
 import { getServiceIcon } from './ServiceManagement';
-import {
-  buildYouTubeEmbedUrl,
-  extractYouTubeId,
-  isYouTubeVideoId,
-  YOUTUBE_IFRAME_ALLOW,
-} from '../utils/youtube';
 import { slugifySalonName } from '../lib/salonStore';
 import { useSalonData } from '../lib/useSalonData';
 
@@ -205,81 +203,6 @@ const SalonOfferCard: React.FC<SalonOfferCardProps> = ({ offer, isDarkCanvas }) 
 
 type DeviceMode = 'desktop' | 'tablet' | 'mobile';
 
-/**
- * READ-ONLY location card for the public (customer) site.
- *
- * The owner editor's `InteractiveMapSetup` used to be rendered here for
- * everybody: visitors were shown a "Salon Address & Localization Setup" form
- * with address inputs, a "Use Current Location" button and — because that
- * component falls back to a hard-coded Mumbai address — a salon address the
- * owner never entered. Customers only ever need to SEE the location and get
- * directions, so the public site renders this instead.
- */
-const PublicLocationMap: React.FC<{
-  profile: SalonProfile;
-  googleMapsUrl: string;
-  googleDirectionsUrl: string;
-  accent: string;
-}> = ({ profile, googleMapsUrl, googleDirectionsUrl, accent }) => {
-  const latitude = Number(profile.latitude);
-  const longitude = Number(profile.longitude);
-  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude) && (latitude !== 0 || longitude !== 0);
-  const addressLine = [profile.address, profile.areaLocality, profile.city, profile.postalCode, profile.state]
-    .filter((part) => String(part ?? '').trim())
-    .join(', ');
-
-  if (hasCoordinates) {
-    return (
-      <div className="rounded-xl overflow-hidden">
-        <GoogleMapsView
-          latitude={latitude}
-          longitude={longitude}
-          title={profile.businessName || 'Salon'}
-          address={addressLine}
-          interactive={false}
-          height="360px"
-          accentColor={accent}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 rounded-xl bg-slate-50 p-6 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
-        <MapPin className="h-5 w-5" />
-      </div>
-      <div>
-        <div className="text-sm font-bold text-slate-900">{profile.businessName || 'Salon'}</div>
-        <div className="mt-1 text-xs text-slate-600">
-          {addressLine || 'Address shared on request — call the studio for directions.'}
-        </div>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-        <a
-          href={googleMapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-lg px-3 py-2 text-xs font-bold text-white"
-          style={{ backgroundColor: accent }}
-          title="View on Google Maps"
-        >
-          View on Google Maps
-        </a>
-        <a
-          href={googleDirectionsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
-          title="Get directions"
-        >
-          Get Directions
-        </a>
-      </div>
-    </div>
-  );
-};
-
 export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   profile,
   setProfile: setProfileProp,
@@ -305,7 +228,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Every public template consumes the same published server payload. Props
   // are retained as a graceful initial/fallback render while the API responds.
   const publicSalon = useSalonData(
-    publicView ? profile?.subdomain : null,
+    publicView && !previewMode ? profile?.subdomain : null,
     { profile, services, stylists, selectedTemplateId: selectedTemplateId || null },
     publicView ? user?.id : null,
   );
@@ -317,13 +240,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [internalServices, setInternalServices] = useState<SalonService[]>(resolvedServices);
   const [internalStylists, setInternalStylists] = useState<Stylist[]>(resolvedStylists);
 
-  const activeProfile = (setProfileProp ? resolvedProfile : internalProfile) || createBlankSalonProfile();
+  const activeProfile = (setProfileProp || publicView ? resolvedProfile : internalProfile) || createBlankSalonProfile();
   const setProfile = setProfileProp || setInternalProfile;
 
-  const activeServices = setServicesProp ? resolvedServices : internalServices;
+  const activeServices = setServicesProp || publicView ? resolvedServices : internalServices;
   const setServices = setServicesProp || setInternalServices;
 
-  const activeStylists = setStylistsProp ? resolvedStylists : internalStylists;
+  const activeStylists = setStylistsProp || publicView ? resolvedStylists : internalStylists;
   const setStylists = setStylistsProp || setInternalStylists;
 
   useEffect(() => {
@@ -336,27 +259,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Dynamically update page titles, meta descriptions, canonical URLs, and structured data
   useSalonSEO(activeProfile, true);
 
-  // Google Maps URLs for address click redirection
-  const googleMapsUrl = React.useMemo(() => {
-    const lat = Number(activeProfile.latitude);
-    const lng = Number(activeProfile.longitude);
-    const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-    const fullAddr = [activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode].filter(Boolean).join(', ');
-    const query = activeProfile.businessName ? `${activeProfile.businessName}, ${fullAddr}` : fullAddr;
-    if (hasCoordinates) {
-      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
-    }
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || 'Salon')}`;
-  }, [activeProfile.latitude, activeProfile.longitude, activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode, activeProfile.businessName]);
-
-  const googleDirectionsUrl = React.useMemo(() => {
-    const lat = Number(activeProfile.latitude);
-    const lng = Number(activeProfile.longitude);
-    const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-    const fullAddr = [activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode].filter(Boolean).join(', ');
-    const dest = hasCoordinates ? `${lat},${lng}` : fullAddr;
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest || 'Salon')}`;
-  }, [activeProfile.latitude, activeProfile.longitude, activeProfile.address, activeProfile.city, activeProfile.state, activeProfile.postalCode]);
+  const location = websiteLocation(activeProfile);
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.query)}`;
+  const googleDirectionsUrl = location.directions;
 
   const minPrice = React.useMemo(() => {
     if (!activeServices || !Array.isArray(activeServices) || activeServices.length === 0) return null;
@@ -382,7 +287,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   useEffect(() => {
     if (forcedDeviceMode) setDeviceMode(forcedDeviceMode);
   }, [forcedDeviceMode]);
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [editModeRequested, setIsEditMode] = useState<boolean>(false);
+  const isEditMode = !publicView && editModeRequested;
   const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
 
   // In public (customer) view there is NO owner header, so no top padding and
@@ -416,34 +322,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     }
   }, [selectedTemplateId, activeProfile.businessType]);
 
-  // Synchronize client reviews when category selection changes
-  useEffect(() => {
-    const data = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
-    setActiveReviews(data.reviews || []);
-  }, [selectedCategoryKey]);
 
   // Side Panel Section Visibility
-  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibilityState>(() => ({
-    ...DEFAULT_SECTION_VISIBILITY,
-    ...(activeProfile.sectionVisibility || {}),
-  }));
+  const sectionVisibility: SectionVisibilityState = { ...DEFAULT_SECTION_VISIBILITY, ...activeProfile.sectionVisibility };
+  const setSectionVisibility: React.Dispatch<React.SetStateAction<SectionVisibilityState>> = (next) => {
+    setProfile(p => ({ ...p, sectionVisibility: typeof next === 'function' ? next({ ...DEFAULT_SECTION_VISIBILITY, ...p.sectionVisibility }) : next }));
+  };
 
-  // The customizer used to keep these choices only inside this component.
-  // Mirror them into the owner profile so the normal autosave pipeline stores
-  // them and a public refresh renders the same template sections.
-  useEffect(() => {
-    if (!setProfile || publicView) return;
-    setProfile((current) => {
-      const currentValue = current.sectionVisibility || {};
-      if (JSON.stringify(currentValue) === JSON.stringify(sectionVisibility)) return current;
-      return { ...current, sectionVisibility };
-    });
-  }, [sectionVisibility, setProfile, publicView]);
-
+  const visibleOffers = (activeProfile.offers || []).filter(o => o.isActive !== false && isWithinPromotionDates(o.startDate, o.expiryDate));
   // Promotional Popup Trigger State
   const [showPromoPopup, setShowPromoPopup] = useState<boolean>(false);
   useEffect(() => {
-    const hasActiveOffer = activeProfile.offers && activeProfile.offers.some(o => o.isActive !== false);
+    const hasActiveOffer = visibleOffers.length > 0;
     if (sectionVisibility.promoPopup && hasActiveOffer) {
       const timer = setTimeout(() => {
         setShowPromoPopup(true);
@@ -461,9 +351,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const [selectedAccentKey, setSelectedAccentKey] = useState<AccentPaletteKey>(
     (activeProfile.themeAccentKey as AccentPaletteKey) || DEFAULT_CATEGORY_ACCENTS[selectedCategoryKey] || 'slate'
   );
-  const [isDarkCanvas, setIsDarkCanvas] = useState<boolean>(
-    activeTemplate.themeStyle.isDark || selectedAccentKey === 'obsidian'
-  );
+  const isDarkCanvas = activeProfile.appearance === 'dark' ||
+    (activeProfile.appearance !== 'light' && (activeTemplate.themeStyle.isDark || selectedAccentKey === 'obsidian'));
+  const setIsDarkCanvas = (dark: boolean) => setProfile(p => ({ ...p, appearance: dark ? 'dark' : 'light' }));
 
   // Synchronize accent changes when profile.themeAccentKey changes externally
   useEffect(() => {
@@ -495,11 +385,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [primaryAccentColor, activeAccent]);
 
   // Dynamic Image-Based AI Styling State
-  const resolvedHeroUrl = activeProfile.coverImageUrl || activeTemplate.coverImageUrl || "";
+  const resolvedHeroUrl = activeProfile.coverImageUrl ?? activeTemplate.coverImageUrl ?? "";
   const [heroImageSrc, setHeroImageSrc] = useState<string>(resolvedHeroUrl);
 
   useEffect(() => {
-    setHeroImageSrc(activeProfile.coverImageUrl || activeTemplate.coverImageUrl || "");
+    setHeroImageSrc(activeProfile.coverImageUrl ?? activeTemplate.coverImageUrl ?? "");
   }, [activeProfile.coverImageUrl, activeTemplate.coverImageUrl]);
 
   const [heroAIStyling, setHeroAIStyling] = useState<HeroAIStyling>(() =>
@@ -518,18 +408,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     return () => { isMounted = false; };
   }, [heroImageSrc, primaryAccentColor]);
 
-  const standardData = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
-  const activeGalleryPhotos = (activeProfile.lookbookPhotos?.length
-    ? activeProfile.lookbookPhotos
-    : standardData.gallery || []) as LookbookPhoto[];
+  const baseStandardData = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
+  const standardData = baseStandardData;
+  const activeGalleryPhotos = (activeProfile.gallery ?? activeProfile.lookbookPhotos ?? baseStandardData.gallery).filter(photo => Boolean(photo.url));
 
   // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
   const [isBookingOpen, setIsBookingOpen] = useState<boolean>(false);
-  const [selectedService, setSelectedService] = useState<SalonService>(activeServices[0] || activeTemplate.services[0]);
-  const [selectedStylist, setSelectedStylist] = useState<Stylist>(activeStylists[0] || activeTemplate.stylists[0]);
+  const [selectedService, setSelectedService] = useState<SalonService | undefined>(activeServices[0]);
+  const [selectedStylist, setSelectedStylist] = useState<Stylist | undefined>(activeStylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
-  const [selectedSocialVideo, setSelectedSocialVideo] = useState<SocialVideo | null>(null);
   const pendingBookingRef = useRef<{ service?: SalonService; stylist?: Stylist } | null>(null);
   // True only for a booking started from "My Bookings" → Rebook, so the
   // confirmation page can offer "Book this service again" instead of the
@@ -538,11 +426,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const handledRebookAtRef = useRef<number>(0);
 
   // Dynamic client testimonials state
-  const [activeReviews, setActiveReviews] = useState<Testimonial[]>(() => {
-    const data = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
-    return data.reviews || [];
-  });
+  const activeReviews: Testimonial[] = activeProfile.testimonials ?? baseStandardData.reviews;
+  const setActiveReviews: React.Dispatch<React.SetStateAction<Testimonial[]>> = next => setProfile(p => ({
+    ...p, testimonials: typeof next === 'function' ? next(p.testimonials ?? baseStandardData.reviews) : next,
+  }));
   const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const currentReview = activeReviews[Math.min(testimonialIndex, activeReviews.length - 1)];
 
   useEffect(() => {
     if (activeReviews.length <= 1) return;
@@ -607,33 +496,19 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   };
 
   // Editable section custom headings
-  const [sectionHeadings, setSectionHeadings] = useState<{
-    servicesTitle: string;
-    servicesSubtitle: string;
-    stylistsTitle: string;
-    stylistsSubtitle: string;
-    testimonialsTitle: string;
-    galleryTitle: string;
-    locationTitle: string;
-  }>(() => ({
+  const defaultHeadings = {
     servicesTitle: 'Curated Services & Treatments',
     servicesSubtitle: 'Explore our handcrafted menu with transparent pricing in INR (₹).',
     stylistsTitle: 'Meet Our Master Specialists & Stylists',
-    stylistsSubtitle: 'Dedicated artisans trained in contemporary international and classical Indian beauty traditions.',
-    testimonialsTitle: 'Loved by 1,200+ Verified Clients',
+    stylistsSubtitle: 'Dedicated specialists offering personalized care.',
+    testimonialsTitle: 'Client Experiences',
     galleryTitle: 'Studio Lookbook & Client Transformations',
     locationTitle: 'Visit Our Sanctuary',
-    ...(activeProfile.sectionHeadings || {}),
+  };
+  const sectionHeadings = { ...defaultHeadings, ...Object.fromEntries(Object.entries(activeProfile.sectionHeadings || {}).filter(([, value]) => typeof value === 'string' && value.trim())) };
+  const setSectionHeadings: React.Dispatch<React.SetStateAction<typeof defaultHeadings>> = next => setProfile(p => ({
+    ...p, sectionHeadings: typeof next === 'function' ? next({ ...defaultHeadings, ...p.sectionHeadings }) : next,
   }));
-
-  useEffect(() => {
-    if (!setProfile || publicView) return;
-    setProfile((current) => {
-      const currentValue = current.sectionHeadings || {};
-      if (JSON.stringify(currentValue) === JSON.stringify(sectionHeadings)) return current;
-      return { ...current, sectionHeadings };
-    });
-  }, [sectionHeadings, setProfile, publicView]);
 
   // Top AI Prompt state
   const [topAiPrompt, setTopAiPrompt] = useState<string>('');
@@ -698,20 +573,20 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     }
   };
 
-  const subCategoriesList = ['All', ...(activeTemplate.subCategories || ['Hair', 'Spa', 'Care'])];
+  const subCategoriesList = ['All', ...Array.from(new Set(activeServices.map(s => s.category).filter(Boolean)))];
 
-  const filteredServices = activeSubCategory === 'All'
+  const filteredServices = activeSubCategory === 'All' || !subCategoriesList.includes(activeSubCategory)
     ? activeServices
     : activeServices.filter((s) => s.category === activeSubCategory);
 
   // Keep the pre-selected service / stylist valid when the template changes.
   useEffect(() => {
-    if (activeServices.length && !activeServices.some((s) => s.id === selectedService?.id)) {
+    if (!activeServices.some((s) => s.id === selectedService?.id)) {
       setSelectedService(activeServices[0]);
     }
   }, [activeServices]);
   useEffect(() => {
-    if (activeStylists.length && !activeStylists.some((st) => st.id === selectedStylist?.id)) {
+    if (!activeStylists.some((st) => st.id === selectedStylist?.id)) {
       setSelectedStylist(activeStylists[0]);
     }
   }, [activeStylists]);
@@ -754,8 +629,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       showNotification('Preview Mode: This action is simulated.');
       return;
     }
-    const serviceToBook = srv || activeServices[0] || activeTemplate.services[0];
-    const stylistToBook = stylist || activeStylists[0] || activeTemplate.stylists[0];
+    if (activeProfile.acceptsOnlineBookings === false || activeServices.length === 0) {
+      showNotification('Online booking is currently unavailable. Please contact the studio.');
+      return;
+    }
+    const serviceToBook = activeServices.find(s => s.id === srv?.id) || activeServices[0];
+    const stylistToBook = activeStylists.find(s => s.id === stylist?.id);
 
     if (!user?.id) {
       // Keep the exact service/specialist the visitor chose while the existing
@@ -785,28 +664,30 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     if (!user?.id || !pendingBookingRef.current) return;
     const pending = pendingBookingRef.current;
     pendingBookingRef.current = null;
-    setSelectedService(pending.service || activeServices[0] || activeTemplate.services[0]);
-    setSelectedStylist(pending.stylist || activeStylists[0] || activeTemplate.stylists[0]);
+    if (!activeServices.length || activeProfile.acceptsOnlineBookings === false) return;
+    setSelectedService(activeServices.find(s => s.id === pending.service?.id) || activeServices[0]);
+    setSelectedStylist(activeStylists.find(s => s.id === pending.stylist?.id));
     setIsBookingOpen(true);
-  }, [user?.id, activeServices, activeStylists, activeTemplate.services]);
+  }, [user?.id, activeServices, activeStylists, activeProfile.acceptsOnlineBookings]);
 
   // Rebook from "My Bookings": pre-select the service the customer last had and
   // open the flow. `activeServices` may still be loading when the page mounts,
   // so the request is matched by name once the list arrives and then marked
   // handled — matching the guard the pending-booking effect above uses.
   useEffect(() => {
-    if (!rebookRequest?.at || handledRebookAtRef.current === rebookRequest.at) return;
+    if (!rebookRequest?.at || handledRebookAtRef.current === rebookRequest.at || !activeServices.length || activeProfile.acceptsOnlineBookings === false) return;
     handledRebookAtRef.current = rebookRequest.at;
     const match = activeServices.find((service) => service.name === rebookRequest.serviceName);
-    if (match) setSelectedService(match);
+    setSelectedService(match || activeServices[0]);
     setBookingFromHistory(true);
     setIsBookingOpen(true);
-  }, [rebookRequest, activeServices]);
+  }, [rebookRequest, activeServices, activeProfile.acceptsOnlineBookings]);
 
   // Inline Service Actions
   const handleUpdateServicePrice = (serviceId: string, newPrice: number) => {
+    if (!Number.isFinite(newPrice) || newPrice < 0) { showNotification('Enter a valid non-negative price.'); return; }
     setServices((prev) =>
-      prev.map((s) => (s.id === serviceId ? { ...s, price: Number(newPrice) || s.price } : s))
+      prev.map((s) => (s.id === serviceId ? { ...s, price: newPrice } : s))
     );
     showNotification(`Updated service price to ₹${newPrice}`);
   };
@@ -824,6 +705,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   };
 
   const handleUpdateServiceDuration = (serviceId: string, newDuration: number) => {
+    if (!Number.isInteger(newDuration) || newDuration <= 0) { showNotification('Enter a positive duration in whole minutes.'); return; }
     setServices((prev) =>
       prev.map((s) => (s.id === serviceId ? { ...s, durationMinutes: Number(newDuration) } : s))
     );
@@ -992,23 +874,23 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }[deviceMode];
 
   const themeStyle = activeTemplate.themeStyle;
-  const resolvedPrimaryColor = profile.primaryColor || primaryAccentColor;
-  const resolvedSecondaryColor = profile.secondaryColor || activeAccent.secondaryHex;
+  const resolvedPrimaryColor = activeProfile.primaryColor || primaryAccentColor;
+  const resolvedSecondaryColor = activeProfile.secondaryColor || activeAccent.secondaryHex;
   const contrastTextColor = getContrastTextColor(resolvedPrimaryColor);
   const accentLuminance = getLuminance(resolvedPrimaryColor);
-  const radius = ({ none: '0px', small: '0.5rem', medium: '1rem', large: '1.5rem' }[profile.borderRadius || 'medium']);
-  const headingStyleClass = profile.headingStyle === 'classic'
+  const radius = ({ none: '0px', small: '0.5rem', medium: '1rem', large: '1.5rem' }[activeProfile.borderRadius || 'medium']);
+  const headingStyleClass = activeProfile.headingStyle === 'classic'
     ? '[&_h1]:font-serif [&_h2]:font-serif [&_h3]:font-serif'
-    : profile.headingStyle === 'editorial'
+    : activeProfile.headingStyle === 'editorial'
       ? '[&_h1]:tracking-tight [&_h2]:tracking-tight [&_h3]:tracking-tight'
-      : profile.headingStyle === 'bold'
+      : activeProfile.headingStyle === 'bold'
         ? '[&_h1]:font-black [&_h2]:font-extrabold [&_h3]:font-bold'
         : '';
-  const buttonStyleClass = profile.buttonStyle === 'pill'
+  const buttonStyleClass = activeProfile.buttonStyle === 'pill'
     ? '[&_button]:rounded-full'
-    : profile.buttonStyle === 'square'
+    : activeProfile.buttonStyle === 'square'
       ? '[&_button]:rounded-none'
-      : profile.buttonStyle === 'soft'
+      : activeProfile.buttonStyle === 'soft'
         ? '[&_button]:shadow-sm'
       : '';
 
@@ -1033,13 +915,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   return (
     <div 
-      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${profile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-28 md:pb-16' : 'pt-20 pb-24'}`}
+      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${activeProfile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-28 md:pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': resolvedPrimaryColor,
         '--theme-primary': resolvedPrimaryColor,
         '--theme-secondary': resolvedSecondaryColor,
         '--color-primary': resolvedPrimaryColor,
-        '--brand-background': profile.backgroundColor || (profile.appearance === 'dark' ? '#020617' : '#ffffff'),
+        '--brand-background': activeProfile.backgroundColor || (activeProfile.appearance === 'dark' ? '#020617' : '#ffffff'),
         '--brand-radius': radius,
         '--accent-luminance': accentLuminance.toFixed(4),
         '--accent-text-color': contrastTextColor,
@@ -1392,11 +1274,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* ============================================================ */}
         {/* SECTION: TOP PROMOTIONAL HEADER BANNER */}
         {/* ============================================================ */}
-        {activeProfile.promotionalBanner?.enabled !== false && activeProfile.promotionalBanner?.text && !bannerDismissed && (() => {
+        {activeProfile.promotionalBanner?.enabled !== false && activeProfile.promotionalBanner?.text && isWithinPromotionDates(activeProfile.promotionalBanner.startDate, activeProfile.promotionalBanner.endDate) && !bannerDismissed && (() => {
           const themeStyle = getBannerThemeClasses(activeProfile.promotionalBanner?.themePreset);
           return (
             <div 
               className={`w-full px-4 sm:px-6 py-2.5 transition-all text-xs font-medium flex flex-wrap items-center justify-between gap-2.5 z-20 ${themeStyle.container}`}
+              style={activeProfile.promotionalBanner.themePreset === 'custom' ? { backgroundImage: 'none', backgroundColor: activeProfile.promotionalBanner.customBgColor || '#0f172a', color: activeProfile.promotionalBanner.customTextColor || '#ffffff' } : undefined}
               id="salon-website-promotional-header-banner"
             >
               <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -1663,9 +1546,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 src={heroImageSrc}
                 alt={activeProfile.businessName}
                 onError={(e) => {
-                  if (heroImageSrc !== activeTemplate.coverImageUrl) {
-                    setHeroImageSrc(activeTemplate.coverImageUrl);
-                  }
+                  if (heroImageSrc) setHeroImageSrc('');
                 }}
                 className={`w-full max-w-full h-full object-cover rounded-xl object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
               />
@@ -1863,7 +1744,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           <div className="flex items-center gap-3 font-mono text-[11px]">
             <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              <span>Open Today {standardData.openHourText} – {standardData.closeHourText}</span>
+              <span>{activeProfile.workingHoursMonFri ? `Weekdays: ${activeProfile.workingHoursMonFri}` : 'Contact studio for opening hours'}</span>
             </span>
             <span className="hidden sm:inline text-slate-400">•</span>
             <span className="hidden sm:inline text-slate-500">Walk-ins & Advance Bookings</span>
@@ -1906,6 +1787,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </p>
               </div>
 
+              {activeProfile.foundingYear && <p className="mb-5 text-center text-sm opacity-70">Established {activeProfile.foundingYear}</p>}
               {/* Specialties Badges */}
               <div className="flex flex-wrap justify-center gap-2 mb-10">
                 {(standardData.specialties || []).map((spec, idx) => (
@@ -1939,7 +1821,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
                 <div className="flex-1 text-center sm:text-left">
                   <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
-                    "Every client deserves an uncompromising standard of individual personalization, certified non-toxic products, and medical-grade sterilization in an atmosphere of warmth and calmness."
+                    {activeProfile.ownerBio || `Welcome to ${activeProfile.businessName}. We offer personal consultations and thoughtful care tailored to every guest.`}
                   </p>
                   <div className="mt-2">
                     <span className="font-bold text-sm block">
@@ -1958,6 +1840,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         label="Founder Role"
                       />
                     </span>
+                    {activeProfile.ownerExperience && <p className="mt-2 text-sm">{activeProfile.ownerExperience}</p>}
+                    {activeProfile.ownerQualifications && <p className="mt-1 text-xs opacity-70">{activeProfile.ownerQualifications}</p>}
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold">
+                      {activeProfile.phone && <a href={`tel:${activeProfile.phone}`}>Contact studio: {activeProfile.phone}</a>}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2089,6 +1976,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-slate-200/80'
                   }`}
                 >
+                  {srv.imageUrl && <img src={srv.imageUrl} alt={srv.name} loading="lazy" className="h-48 w-full rounded-xl object-cover" />}
+                  {isEditMode && <ContentImageField label="Service image" value={srv.imageUrl} onChange={imageUrl => setServices(prev => prev.map(s => s.id === srv.id ? { ...s, imageUrl } : s))} />}
                   <div className="flex items-start gap-4 justify-between">
                     <div className="flex items-start gap-3.5 flex-1 min-w-0">
                       {/* Service Icon Container */}
@@ -2235,7 +2124,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* ============================================================ */}
         {/* OFFERS & DISCOUNTS SECTION */}
         {/* ============================================================ */}
-        {sectionVisibility.offers && activeProfile.offers && activeProfile.offers.length > 0 && (
+        {sectionVisibility.offers && visibleOffers.length > 0 && (
           <section className={`p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
           }`} id="offers-section">
@@ -2255,7 +2144,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-              {activeProfile.offers.map((offer) => (
+              {visibleOffers.map((offer) => (
                 <SalonOfferCard key={offer.id} offer={offer} isDarkCanvas={isDarkCanvas} />
               ))}
             </div>
@@ -2492,15 +2381,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-0.5 text-amber-400">
-                        {Array.from({ length: activeReviews[testimonialIndex].rating || 5 }).map((_, i) => (
+                        {Array.from({ length: currentReview.rating || 5 }).map((_, i) => (
                           <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
                         ))}
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400">{activeReviews[testimonialIndex].date}</span>
+                      <span className="text-[10px] font-mono text-slate-400">{currentReview.date}</span>
                     </div>
 
                     <p className={`break-words text-left text-sm italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
-                      "{activeReviews[testimonialIndex].comment}"
+                      "{currentReview.comment}"
                     </p>
                   </div>
 
@@ -2508,26 +2397,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="pt-3 border-t border-slate-200/60 dark:border-neutral-800 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-slate-100 border border-slate-200/80">
-                          {activeReviews[testimonialIndex].avatarUrl ? (
+                          {currentReview.avatarUrl ? (
                             <img 
-                              src={activeReviews[testimonialIndex].avatarUrl} 
-                              alt={activeReviews[testimonialIndex].name} 
+                              src={currentReview.avatarUrl}
+                              alt={currentReview.name}
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
                             />
                           ) : (
                             <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
-                              {activeReviews[testimonialIndex].name.charAt(0)}
+                              {currentReview.name.charAt(0)}
                             </div>
                           )}
                         </div>
                         <div>
-                          <div className="font-bold text-xs">{activeReviews[testimonialIndex].name}</div>
-                          <div className="text-[10px] text-slate-400">{activeReviews[testimonialIndex].location || activeProfile.city} • Verified</div>
+                          <div className="font-bold text-xs">{currentReview.name}</div>
+                          <div className="text-[10px] text-slate-400">{currentReview.location || activeProfile.city} • Verified</div>
                         </div>
                       </div>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 max-w-[120px] truncate">
-                        {activeReviews[testimonialIndex].serviceName || 'Custom Service'}
+                        {currentReview.serviceName || 'Custom Service'}
                       </span>
                     </div>
 
@@ -2535,7 +2424,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-150 dark:border-neutral-800 flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleEditTestimonial(activeReviews[testimonialIndex])}
+                          onClick={() => handleEditTestimonial(currentReview)}
                           className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-amber-700 hover:bg-amber-50 bg-white border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Edit3 className="w-3 h-3" />
@@ -2543,7 +2432,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteTestimonial(activeReviews[testimonialIndex].id)}
+                          onClick={() => handleDeleteTestimonial(currentReview.id)}
                           className="px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50 hover:border-rose-200 bg-white border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -2621,159 +2510,17 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* 7.5 Social Proof & Reels Showcase */}
-        {sectionVisibility.gallery && (
-          <section data-layout-stable-media className={`layout-stable-media min-h-[42rem] p-6 md:min-h-[46rem] md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
+        {sectionVisibility.gallery && ((activeProfile.socialVideos?.length || 0) > 0 || isEditMode) && (
+          <section data-layout-stable-media className={`layout-stable-media min-h-[42rem] p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
             <div className="max-w-7xl mx-auto">
-                <h2 className={`text-2xl md:text-3xl font-extrabold mb-2 ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>Featured Videos &amp; Reels</h2>
-                <p className={`text-sm mb-8 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>Client transformations and salon showcases from YouTube.</p>
-                {/* SHORTS — Vertical 9:16 Carousel */}
-                <div className="mb-10">
-                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkCanvas ? 'text-white' : 'text-slate-800'}`}>
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                    Featured Shorts
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ml-2 ${isDarkCanvas ? 'bg-neutral-800 text-neutral-300' : 'bg-rose-50 text-rose-700'}`}>
-                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length || 0} / 14
-                    </span>
-                  </h3>
-                  <div className="min-h-[352px] overflow-x-auto pb-4 -mx-2 px-2 [contain:layout]">
-                    <div className="flex gap-3 min-w-max sm:min-w-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                      {(activeProfile.socialVideos || [])
-                        .filter((video) => video.categoryTag === 'SHORT')
-                        .map((video) => {
-                          // Use the clean stored id when present; otherwise
-                          // recover it from the original URL so embeds keep
-                          // working for videos added before normalization.
-                          const playerVideoId = isYouTubeVideoId(video.videoId)
-                            ? video.videoId
-                            : extractYouTubeId(video.youtubeUrl) || '';
-                          // Build the iframe src from the clean parsed video id
-                          // (never from a raw URL replace) so Shorts links with
-                          // ?si=… and watch links with &feature=shared render.
-                          const embedSrc = buildYouTubeEmbedUrl(playerVideoId, { autoplay: false });
-                          return (
-                          <div
-                            key={video.id}
-                            className="relative min-h-[320px] aspect-[9/16] rounded-2xl overflow-hidden border border-slate-200 shadow-xs group cursor-pointer w-[220px] sm:w-auto shrink-0 sm:shrink hover:shadow-md transition-all [contain:layout_paint]"
-                            onMouseEnter={(e) => {
-                              const iframe = e.currentTarget.querySelector('iframe');
-                              if (iframe && iframe.src) {
-                                try {
-                                  const url = new URL(iframe.src);
-                                  url.searchParams.set('autoplay', '1');
-                                  url.searchParams.set('mute', '1');
-                                  url.searchParams.set('loop', '1');
-                                  if (playerVideoId) url.searchParams.set('playlist', playerVideoId);
-                                  iframe.src = url.toString();
-                                } catch {}
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              const iframe = e.currentTarget.querySelector('iframe');
-                              if (iframe && iframe.src) {
-                                try {
-                                  const url = new URL(iframe.src);
-                                  url.searchParams.set('autoplay', '0');
-                                  url.searchParams.delete('mute');
-                                  url.searchParams.delete('loop');
-                                  url.searchParams.delete('playlist');
-                                  iframe.src = url.toString();
-                                } catch {}
-                              }
-                            }}
-                            onClick={() => setSelectedSocialVideo(video)}
-                          >
-                            {embedSrc ? (
-                              <iframe
-                                src={embedSrc}
-                                className="block h-full min-h-[320px] w-full aspect-[9/16]"
-                                title={video.title}
-                                allow={YOUTUBE_IFRAME_ALLOW}
-                                allowFullScreen
-                              />
-                            ) : (
-                              <div className="w-full aspect-[9/16] bg-slate-950 flex items-center justify-center text-white/50 text-[10px] font-mono px-3 text-center">
-                                Unavailable video
-                              </div>
-                            )}
-                            <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-[10px] font-bold text-white flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                              SHORT
-                            </div>
-                            <div className="absolute bottom-3 left-3 right-3 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 rounded-lg">
-                              <h4 className="text-[11px] font-bold text-white truncate leading-snug">{video.title}</h4>
-                              <p className="text-[9px] text-white/80 truncate">{video.transformationTag || 'Transformation'}</p>
-                            </div>
-                          </div>
-                          );
-                        })}
-                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'SHORT').length === 0 && (
-                        <div className="w-[220px] sm:w-auto shrink-0 sm:shrink flex items-center justify-center h-[320px] border border-dashed border-slate-200 rounded-2xl text-xs text-slate-400">
-                          No Shorts added yet.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* LONG VIDEOS — Horizontal 16:9 Grid */}
-                <div>
-                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkCanvas ? 'text-white' : 'text-slate-800'}`}>
-                    <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                    Featured Showcases
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ml-2 ${isDarkCanvas ? 'bg-neutral-800 text-neutral-300' : 'bg-sky-50 text-sky-700'}`}>
-                      {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length || 0} / 14
-                    </span>
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {(activeProfile.socialVideos || [])
-                      .filter((video) => video.categoryTag === 'LONG' || video.categoryTag === 'SHOWCASE')
-                      .map((video) => {
-                        const playerVideoId = isYouTubeVideoId(video.videoId)
-                          ? video.videoId
-                          : extractYouTubeId(video.youtubeUrl) || '';
-                        return (
-                        <div
-                          key={video.id}
-                          className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-lg transition-all cursor-pointer bg-white"
-                          onClick={() => setSelectedSocialVideo(video)}
-                        >
-                          <div className="relative">
-                            <img src={video.thumbnailUrl || (playerVideoId ? `https://img.youtube.com/vi/${playerVideoId}/maxresdefault.jpg` : '')} alt={video.title} className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
-                            <div className="absolute top-2 left-2 bg-sky-600/90 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs">
-                              {video.categoryTag || 'SHOWCASE'}
-                            </div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg">
-                                <span className="material-symbols-outlined text-xl">play_arrow</span>
-                              </span>
-                            </div>
-                          </div>
-                          <div className="p-3 bg-white">
-                            <h4 className="font-bold text-xs text-slate-900 truncate leading-snug">{video.title}</h4>
-                            <p className="text-[10px] text-slate-500 truncate mt-0.5">{video.channelTitle || 'YouTube'}</p>
-                            <div className="flex items-center justify-between mt-2 text-[9px] font-mono text-slate-400">
-                              <span>{video.transformationTag || 'Showcase'}</span>
-                              <span className="text-sky-600 font-bold">{video.views || '12.4k views'}</span>
-                            </div>
-                          </div>
-                        </div>
-                        );
-                      })}
-                    {(activeProfile.socialVideos || []).filter((v) => v.categoryTag === 'LONG' || v.categoryTag === 'SHOWCASE').length === 0 && (
-                      <div className="col-span-full flex min-h-[220px] items-center justify-center text-center text-xs text-slate-400 py-8 border border-dashed border-slate-200 rounded-2xl [contain:layout]">
-                        No showcase videos added yet. Add transformation reels from the editor.
-                      </div>
-                    )}
-                  </div>
-                </div>
+              <h2 className="text-2xl md:text-3xl font-extrabold mb-2">Featured Videos &amp; Reels</h2>
+              <p className="text-sm opacity-70 mb-8">Studio stories, signature treatments and transformations on film.</p>
+              {isEditMode && <div className="mb-6"><YouTubeVideoEditor profile={activeProfile} setProfile={setProfile} templateId={selectedCategoryKey} /></div>}
+              <WebsiteVideoShowcase videos={activeProfile.socialVideos ?? []} dark={isDarkCanvas} />
             </div>
           </section>
         )}
 
-        {/* ============================================================ */}
-        {/* 7. LOCATION, MAP & WORKING HOURS CARD */}
-        {/* ============================================================ */}
         {sectionVisibility.location && (
           <section id="location-section" className="scroll-mt-16 px-4 py-6 sm:p-6 md:p-12 bg-slate-50 border-t border-slate-100">
             <div data-layout-stable-contact className="grid grid-cols-1 lg:min-h-[36rem] lg:grid-cols-2 gap-6 [contain:layout]">
@@ -2836,10 +2583,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div>
                       <div className="font-bold text-slate-900 text-sm">Operating Hours</div>
                       <div className="text-slate-900 font-mono text-[11.5px] mt-0.5 font-semibold">
-                        Monday – Saturday: {standardData.openHourText} – {standardData.closeHourText}
+                        Monday – Friday: {activeProfile.workingHoursMonFri || (previewMode ? `${standardData.openHourText} – ${standardData.closeHourText}` : 'Contact studio for hours')}
                       </div>
                       <div className="text-slate-900 font-mono text-[11.5px] font-semibold mt-0.5">
-                        Sunday: 10:00 AM – 07:00 PM (By Advance Booking)
+                        Saturday: {activeProfile.workingHoursSat || 'Contact studio for hours'}<br />Sunday: {activeProfile.workingHoursSun || 'Contact studio for hours'}
                       </div>
                     </div>
                   </div>
@@ -2854,6 +2601,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         {activeProfile.phone || activeProfile.whatsapp}
                       </div>
                       
+                      {activeProfile.email && <a href={`mailto:${activeProfile.email}`} className="mt-2 block text-xs underline">{activeProfile.email}</a>}
+                      {activeProfile.homeService?.enabled && <p className="mt-2 text-xs">Home visits: ₹{activeProfile.homeService.baseCharge} travel charge within {activeProfile.homeService.radiusLimitKm} km. Contact the studio to arrange.</p>}
                       {/* Social Links in Contact Section */}
                       <div className="flex items-center gap-2 mt-3">
                         {activeProfile.instagramHandle && (
@@ -2929,13 +2678,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
               {/* Map card — read-only for visitors, editable in the owner editor. */}
               <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 min-h-[380px] shadow-xs">
-                {publicView ? (
-                  <PublicLocationMap
-                    profile={activeProfile}
-                    googleMapsUrl={googleMapsUrl}
-                    googleDirectionsUrl={googleDirectionsUrl}
-                    accent={activeAccent.primaryHex}
-                  />
+                {!isEditMode ? (
+                  <WebsiteLocationMap profile={activeProfile} />
                 ) : (
                   <InteractiveMapSetup 
                     profile={activeProfile}
@@ -2966,7 +2710,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               {/* ... social links remain the same ... */}
               {activeProfile.instagramHandle && (
                 <a
-                  href={`https://instagram.com/${activeProfile.instagramHandle.replace('@', '')}`}
+                  href={formatInstagramUrl(activeProfile.instagramHandle)}
                   target="_blank"
                   rel="noreferrer"
                   className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
@@ -2978,7 +2722,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
               {activeProfile.facebookPage && (
                 <a
-                  href={activeProfile.facebookPage}
+                  href={formatFacebookUrl(activeProfile.facebookPage)}
                   target="_blank"
                   rel="noreferrer"
                   className="w-8 h-8 rounded-full border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
@@ -3000,6 +2744,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </a>
               )}
 
+              {(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl) && <a href={formatTikTokUrl(activeProfile.tiktokProfile || activeProfile.tiktokHandle || activeProfile.tiktokUrl)} target="_blank" rel="noreferrer" className="text-xs font-bold underline">TikTok</a>}
               {activeProfile.whatsapp && (
                 <a
                   href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}
@@ -3038,7 +2783,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       </div>
 
       {/* Floating Instant WhatsApp Button */}
-      {sectionVisibility.whatsappFloat && (
+      {sectionVisibility.whatsappFloat && activeProfile.whatsapp?.replace(/\D/g, '') && (
         <a
           href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20book%20an%20appointment.`}
           target="_blank"
@@ -3089,7 +2834,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       )}
 
       {/* Booking Modal Flow */}
-      <BookingModal
+      {activeServices.length > 0 && activeProfile.acceptsOnlineBookings !== false && <BookingModal
         isOpen={isBookingOpen}
         onClose={() => {
           setIsBookingOpen(false);
@@ -3121,25 +2866,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           });
         }}
         loyalty={publicSalon.loyalty}
-      />
-
-      {selectedSocialVideo && (() => {
-        const videoId = isYouTubeVideoId(selectedSocialVideo.videoId)
-          ? selectedSocialVideo.videoId
-          : extractYouTubeId(selectedSocialVideo.youtubeUrl) || '';
-        const src = buildYouTubeEmbedUrl(videoId, { autoplay: true });
-        return (
-          <div className="fixed inset-0 z-[70] grid min-h-dvh place-items-center bg-slate-950/90 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Video preview: ${selectedSocialVideo.title}`} onClick={() => setSelectedSocialVideo(null)}>
-            <div className="w-full max-w-4xl overflow-hidden rounded-3xl bg-black shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 text-white">
-                <p className="min-w-0 truncate text-sm font-bold">{selectedSocialVideo.title}</p>
-                <button type="button" onClick={() => setSelectedSocialVideo(null)} className="min-h-11 min-w-11 rounded-xl bg-white/10 px-3 text-sm font-bold hover:bg-white/20">Close</button>
-              </div>
-              {src ? <iframe src={src} title={selectedSocialVideo.title} className="block aspect-video w-full" allow={YOUTUBE_IFRAME_ALLOW} allowFullScreen /> : <div className="grid aspect-video place-items-center p-8 text-sm text-white/70">This video is unavailable.</div>}
-            </div>
-          </div>
-        );
-      })()}
+      />}
 
       {/* Gallery Lightbox Modal */}
       {selectedGalleryPhoto && (() => {
@@ -3306,7 +3033,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
       {/* Dynamic Promotional Popup Overlay */}
       {showPromoPopup && (() => {
-        const featuredOffer = activeProfile.offers?.find(o => o.isActive !== false);
+        const featuredOffer = visibleOffers[0];
         if (!featuredOffer) return null;
 
         let daysLeftText = '';

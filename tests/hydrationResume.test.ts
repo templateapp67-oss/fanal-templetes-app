@@ -234,10 +234,8 @@ test('Phase 12 — Template switching code preserves canonical business data and
 
   // 4. App.tsx handleSelectTemplate updates in-memory state without rebuilding DB records
   assert.match(appCode, /const handleSelectTemplate = \(catId: BusinessTypeId\) =>/);
-  assert.match(appCode, /mergeTemplatePreservingUserData\(prev, catId/);
-  assert.match(appCode, /mergeTemplateServices\(prev, catId/);
-  assert.match(appCode, /mergeTemplateStylists\(prev, catId/);
+  assert.match(appCode, /setSelectedTemplateId\(catId\)/);
 
   const selectTmplFunc = appCode.slice(appCode.indexOf('const handleSelectTemplate ='), appCode.indexOf('const handleSelectCategory ='));
-  assert.doesNotMatch(selectTmplFunc, /ensure_owner_workspace/, 'Template change must not provision or rebuild DB records');
+  assert.doesNotMatch(selectTmplFunc, /ensure_owner_workspace|setProfile|setServices|setStylists/, 'Template change must not provision or rebuild DB records');
 });

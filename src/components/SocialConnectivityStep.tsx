@@ -1,3 +1,4 @@
+import { YouTubeVideoEditor } from './YouTubeVideoEditor';
 import React, { useState, useEffect, useRef } from 'react';
 import { SalonProfile, SocialVideo, VideoCategoryTag } from '../types';
 import { getDefaultVideosForTemplate } from '../templateSocialVideos';
@@ -120,6 +121,7 @@ export function extractYouTubeId(url: string): string | null {
 }
 
 interface SocialConnectivityStepProps {
+  templateId?: SalonProfile['businessType'];
   profile: SalonProfile;
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   onBack?: () => void;
@@ -131,6 +133,7 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
   setProfile,
   onBack,
   onContinue,
+  templateId,
 }) => {
   // Profiles state
   const [instagram, setInstagram] = useState<string>(profile.instagramHandle || '');
@@ -145,13 +148,8 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
   const [isTtConnected, setIsTtConnected] = useState<boolean>(!!profile.tiktokProfile);
 
   // Videos state: initialize with profile videos or template-specific defaults
-  const [videos, setVideos] = useState<SocialVideo[]>(() => {
-    if (profile.socialVideos && profile.socialVideos.length > 0) {
-      return profile.socialVideos;
-    }
-    const templateDefaults = getDefaultVideosForTemplate(profile.businessType);
-    return templateDefaults.length > 0 ? templateDefaults : DEFAULT_SHOWCASE_VIDEOS;
-  });
+  const videos = profile.socialVideos ?? [];
+  const setVideos = (next: SocialVideo[]) => setProfile(p => ({ ...p, socialVideos: next }));
 
   // Modal / Form state for Add Social Video
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
@@ -684,138 +682,7 @@ export const SocialConnectivityStep: React.FC<SocialConnectivityStepProps> = ({
             )}
           </div>
 
-          {/* SUB-SECTION 3: VIDEO MANAGEMENT (OWNER VIEW) */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
-              <div>
-                <h3 className="font-display font-bold text-base text-gray-900 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-red-600 text-lg">play_circle</span>
-                  <span>Video Management (Owner View)</span>
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Manage your website video gallery & showcase transformations
-                </p>
-              </div>
-
-              {/* Dynamic Counters Breakdown (e.g., 0 yours · 10 showcase) */}
-              <div className="inline-flex items-center gap-2 bg-gray-100 border border-gray-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold text-gray-800 shrink-0">
-                <span className="text-[#b0004a]">{ownerCount} yours</span>
-                <span className="text-gray-300">·</span>
-                <span className="text-purple-700">{showcaseCount} showcase</span>
-              </div>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
-              <button
-                type="button"
-                onClick={() => setActiveTabFilter('ALL')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  activeTabFilter === 'ALL'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                All Videos ({videos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTabFilter('YOURS')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  activeTabFilter === 'YOURS'
-                    ? 'bg-[#b0004a] text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Yours ({ownerCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTabFilter('SHOWCASE')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  activeTabFilter === 'SHOWCASE'
-                    ? 'bg-purple-700 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Showcase ({showcaseCount})
-              </button>
-            </div>
-
-            {/* Managed Video List */}
-            <div className="flex flex-col gap-3 max-h-[420px] overflow-y-auto pr-1">
-              {filteredVideos.length === 0 ? (
-                <div className="p-8 text-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200 text-xs">
-                  No videos found in this view. Click <strong>+ Add Social Video</strong> above to paste a YouTube link!
-                </div>
-              ) : (
-                filteredVideos.map((vid) => (
-                  <div
-                    key={vid.id}
-                    className="p-3 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-gray-300 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {/* Thumbnail */}
-                      <div className="w-20 h-14 rounded-lg bg-gray-900 relative overflow-hidden shrink-0 border border-gray-200">
-                        <img
-                          src={vid.thumbnailUrl}
-                          alt={vid.title}
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-white text-lg drop-shadow-xs">play_arrow</span>
-                        </div>
-                        {vid.isOwnerVideo && (
-                          <span className="absolute top-1 left-1 bg-[#b0004a] text-white text-[9px] font-mono font-bold px-1 rounded">
-                            YOURS
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Video Info */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                          {/* Tag Category Badge */}
-                          <span
-                            className={`text-[9px] font-mono font-extrabold uppercase px-2 py-0.5 rounded text-white ${
-                              vid.categoryTag === 'SHORT'
-                                ? 'bg-rose-600'
-                                : vid.categoryTag === 'SHOWCASE'
-                                ? 'bg-sky-600'
-                                : 'bg-purple-600'
-                            }`}
-                          >
-                            {vid.categoryTag}
-                          </span>
-                          <span className="text-[10px] text-gray-500 font-mono">
-                            {vid.channelTitle || 'YouTube'}
-                          </span>
-                        </div>
-                        <h4 className="font-bold text-xs text-gray-900 truncate">
-                          {vid.title}
-                        </h4>
-                        <p className="text-[10px] text-gray-500 truncate mt-0.5">
-                          {vid.transformationTag || 'Transformation Reel'} · {vid.views || '1.2k views'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Manage Button */}
-                    <div className="shrink-0 self-end sm:self-center">
-                      <button
-                        type="button"
-                        onClick={() => setManagingVideo(vid)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 text-gray-800 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                      >
-                        <span className="material-symbols-outlined text-sm">settings</span>
-                        <span>MANAGE</span>
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <YouTubeVideoEditor profile={profile} setProfile={setProfile} templateId={templateId} />
         </div>
         </div>
 

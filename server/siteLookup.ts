@@ -1,3 +1,4 @@
+import { applyPublicWebsiteContent, mergeServicePresentation, scopedWebsiteSnapshot } from './websiteContent.js';
 // ============================================================================
 // Multi-tenant site resolution and mapping (shared by dev server.ts and
 // Vercel serverless api/index.ts).
@@ -213,6 +214,7 @@ export function mapServiceRow(row: any): SalonService {
     name: row.name,
     category: row.category || 'General',
     description: row.description || '',
+    imageUrl: row.image_url || row.imageUrl || undefined,
     icon: row.icon || 'sparkles',
     price,
     durationMinutes: row.duration_minutes ?? 45,
@@ -257,8 +259,6 @@ export function mapStylistRow(row: any): Stylist {
 // Nothing here can widen access: the read is scoped to the salon's own owner
 // and every failure degrades to "no fallback".
 // ---------------------------------------------------------------------------
-
-const MAX_PUBLIC_FALLBACK_ITEMS = 200;
 
 async function readOwnerEditorState(
   deps: SiteLookupDeps,
@@ -314,67 +314,6 @@ function publicLoyaltyConfig(row: any, editorState: any): any | null {
   };
 }
 
-function textOrEmpty(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function publicServicesFromEditorState(raw: unknown): SalonService[] {
-  if (!Array.isArray(raw)) return [];
-  const out: SalonService[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const row = item as Record<string, any>;
-    const name = textOrEmpty(row.name);
-    const id = textOrEmpty(row.id) || `svc-${out.length + 1}`;
-    if (!name) continue;
-    const price = Number(row.price);
-    const duration = Number(row.durationMinutes);
-    out.push({
-      id,
-      name: name.slice(0, 200),
-      category: textOrEmpty(row.category) || 'General',
-      description: typeof row.description === 'string' ? row.description.slice(0, 2000) : '',
-      icon: textOrEmpty(row.icon) || 'sparkles',
-      price: Number.isFinite(price) && price >= 0 ? price : 0,
-      durationMinutes: Number.isFinite(duration) && duration > 0 ? duration : 45,
-      popular: row.popular === true,
-      showDuration: row.showDuration !== false,
-    });
-    if (out.length >= MAX_PUBLIC_FALLBACK_ITEMS) break;
-  }
-  return out;
-}
-
-function publicStylistsFromEditorState(raw: unknown): Stylist[] {
-  if (!Array.isArray(raw)) return [];
-  const out: Stylist[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const row = item as Record<string, any>;
-    const name = textOrEmpty(row.name);
-    if (!name) continue;
-    out.push({
-      id: textOrEmpty(row.id) || `st-${out.length + 1}`,
-      name: name.slice(0, 120),
-      role: textOrEmpty(row.role) || 'Service Provider',
-      avatarUrl: textOrEmpty(row.avatarUrl),
-      bio: typeof row.bio === 'string' ? row.bio.slice(0, 2000) : '',
-      // A public visitor must never see a staff member's private number.
-      phone: '',
-      specialties: Array.isArray(row.specialties) ? row.specialties.filter((s: unknown) => typeof s === 'string').slice(0, 20) : [],
-      assignedServices: Array.isArray(row.assignedServices) ? row.assignedServices.filter((s: unknown) => typeof s === 'string').slice(0, 200) : [],
-      rating: Number.isFinite(Number(row.rating)) ? Number(row.rating) : 5,
-      commissionRate: 0,
-      status: (textOrEmpty(row.status) || 'Available') as Stylist['status'],
-      accessRole: 'Service Provider (Assigned)',
-      hidePhone: true,
-      schedule: [],
-    });
-    if (out.length >= MAX_PUBLIC_FALLBACK_ITEMS) break;
-  }
-  return out;
-}
-
 /**
  * Fill only the EMPTY public text/media fields from the editor draft.
  * A published value is never replaced, and identity/contact columns that the
@@ -383,7 +322,7 @@ function publicStylistsFromEditorState(raw: unknown): Stylist[] {
 function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): SalonProfile {
   if (!draft || typeof draft !== 'object') return profile;
   const source = draft as Record<string, any>;
-  const merged: SalonProfile = { ...profile };
+  const merged: SalonProfile = applyPublicWebsiteContent(profile, source);
   const fill = (key: keyof SalonProfile, value: unknown) => {
     const current = (merged as Record<string, any>)[key];
     if (current !== undefined && current !== null && String(current).trim() !== '') return;
@@ -392,9 +331,6 @@ function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): Salo
   };
   fill('tagline', source.tagline);
   fill('about', source.about);
-  fill('coverImageUrl', source.coverImageUrl);
-  fill('ownerPhotoUrl', source.ownerPhotoUrl);
-  fill('logoUrl', source.logoUrl);
   fill('instagramHandle', source.instagramHandle);
   fill('facebookPage', source.facebookPage);
   fill('youtubeChannel', source.youtubeChannel);
@@ -402,20 +338,12 @@ function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): Salo
   fill('themeAccentKey', source.themeAccentKey);
   fill('themePreset', source.themePreset);
   fill('areaLocality', source.areaLocality);
-  if (profile.latitude === undefined && Number.isFinite(Number(source.latitude))) {
+  if (profile.latitude === undefined && typeof source.latitude === 'number' && Number.isFinite(source.latitude) && Math.abs(source.latitude) <= 90) {
     merged.latitude = Number(source.latitude);
   }
-  if (profile.longitude === undefined && Number.isFinite(Number(source.longitude))) {
+  if (profile.longitude === undefined && typeof source.longitude === 'number' && Number.isFinite(source.longitude) && Math.abs(source.longitude) <= 180) {
     merged.longitude = Number(source.longitude);
   }
-  if ((!Array.isArray(merged.socialVideos) || merged.socialVideos.length === 0) && Array.isArray(source.socialVideos)) {
-    merged.socialVideos = source.socialVideos;
-  }
-  if ((!Array.isArray(merged.lookbookPhotos) || merged.lookbookPhotos.length === 0) && Array.isArray(source.lookbookPhotos)) {
-    merged.lookbookPhotos = source.lookbookPhotos;
-  }
-  if (!merged.promotionalBanner && source.promotionalBanner) merged.promotionalBanner = source.promotionalBanner;
-  if ((!Array.isArray(merged.offers) || merged.offers.length === 0) && Array.isArray(source.offers)) merged.offers = source.offers;
   return merged;
 }
 
@@ -504,15 +432,11 @@ export async function lookupSalon(
     const catalogueSalonId = salonRow.__catalogue_salon_id || salonRow.id;
     const ownerId = await resolvePublishedOwnerId(deps, salonRow, deadlineAt);
 
-    const [servicesRes, staffRes, legacyStylistsRes, hoursRes, ownerEditorState, loyaltyRes] = await Promise.all([
+    const [servicesRes, staffRes, hoursRes, rawEditorState, loyaltyRes] = await Promise.all([
       runDb(() => deps.db.from('services').select('*').eq('salon_id', catalogueSalonId).eq('is_active', true).or('is_bookable_online.is.true,is_bookable_online.is.null').order('display_order'),
         { label: 'public salon services', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       runDb(() => deps.db.from('staff').select('id,name,full_name,role_title,bio,avatar_path,profile_photo_url,employment_status,staff_services(service_id,is_active)').eq('salon_id', catalogueSalonId).eq('is_active', true).eq('is_public', true),
         { label: 'public salon staff', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
-      ownerId
-        ? runDb(() => deps.db.from('stylists').select('id,name,role,avatar_url,bio,specialties,assigned_services,rating,status,sort_order').eq('owner_id', ownerId).order('sort_order'),
-          { label: 'public dashboard team', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt })
-        : Promise.resolve({ data: [], error: null }),
       runDb(() => deps.db.from('salon_hours').select('day_of_week,opens_at,closes_at,is_closed').eq('salon_id',catalogueSalonId),
         { label: 'public salon hours', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt }),
       readOwnerEditorState(deps, ownerId, deadlineAt),
@@ -521,32 +445,27 @@ export async function lookupSalon(
           { label: 'public loyalty programme', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false })
         : Promise.resolve({ data: null, error: null }),
     ]);
-    // This project supports the normalized schema as well as legacy owner_id
-    // catalogue rows. A missing optional normalized table/column must not turn
-    // a published website into a 500; its persisted editor snapshot below is
-    // the safe compatibility fallback.
+    // Optional legacy schema gaps may render an empty, unbookable catalogue.
+    // Never fabricate bookable services/staff from private editor draft IDs.
     if (hoursRes.error && !isIgnorableLookupSchemaError(hoursRes.error)) return { found: false, salon: null, error: hoursRes.error };
     if (servicesRes.error && !isIgnorableLookupSchemaError(servicesRes.error)) return { found: false, salon: null, error: servicesRes.error };
     if (staffRes.error && !isIgnorableLookupSchemaError(staffRes.error)) return { found: false, salon: null, error: staffRes.error };
 
+    const editorState = scopedWebsiteSnapshot(rawEditorState, catalogueSalonId, salonRow.slug || sub) || scopedWebsiteSnapshot(salonRow.data?.editor_state, catalogueSalonId, salonRow.slug || sub);
+    const presentationServices = salonRow.data?.editor_services ?? editorState?.services;
     const catalogueServices = (servicesRes.data || []).map(mapServiceRow);
     const catalogueStylists = (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
       assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) }));
-    const editorState = ownerEditorState || salonRow.data?.editor_state || null;
-    const profile = { ...mapProfileRow(salonRow), ownerId: undefined, ...publicHours(hoursRes.data || []) };
+    const profile = { ...applyPublicWebsiteContent(mapProfileRow(salonRow), salonRow.data?.editor_profile), ownerId: undefined, ...publicHours(hoursRes.data || []) };
 
     return { found: true, salon: {
-      // The editor draft is the fallback, never the primary source: the
-      // normalized catalogue is what the booking engine and RLS-protected
-      // reads use, so it wins whenever it has rows. Only when the public
-      // catalogue is empty — a salon saved before the catalogue mirror
-      // existed, or one whose services were never mirrored — does the owner's
-      // own saved draft fill the site, instead of a template with no content.
       salonId: catalogueSalonId,
+      // Bookings use the normalized catalogue. Never resurrect hidden/retired
+      // services or private staff from a stale editor draft when it is empty.
       profile: fillProfileFromEditorState(profile, editorState?.profile),
-      services: catalogueServices.length ? catalogueServices : publicServicesFromEditorState(editorState?.services),
-      stylists: catalogueStylists.length ? catalogueStylists : (legacyStylistsRes.data || []).length ? (legacyStylistsRes.data || []).map(mapStylistRow) : publicStylistsFromEditorState(editorState?.stylists),
-      selectedTemplateId: typeof editorState?.selectedTemplateId === 'string' ? editorState.selectedTemplateId : null,
+      services: mergeServicePresentation(catalogueServices, presentationServices, catalogueSalonId),
+      stylists: catalogueStylists,
+      selectedTemplateId: typeof salonRow.data?.selected_template_id === 'string' ? salonRow.data.selected_template_id : (typeof editorState?.selectedTemplateId === 'string' ? editorState.selectedTemplateId : null),
       loyaltyConfig: publicLoyaltyConfig(loyaltyRes.data, editorState),
     } };
   } catch (error) {

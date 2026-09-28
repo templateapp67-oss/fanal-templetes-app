@@ -1,3 +1,4 @@
+import { hasRequiredWebsiteProfile, isValidContactPhone } from './websiteValidation';
 import type { SalonProfile } from '../types';
 import { supabase, isMockSupabase } from './supabaseClient';
 
@@ -34,15 +35,7 @@ export const CORE_PROFILE_FIELDS: Array<{ key: keyof SalonProfile; label: string
  * Returns true only when all core operational details are filled.
  */
 export function isSalonProfileComplete(profile: Partial<SalonProfile> | null | undefined): boolean {
-  if (!profile || typeof profile !== 'object') return false;
-  const name = typeof profile.businessName === 'string' ? profile.businessName.trim() : '';
-  const rawPhone = typeof profile.phone === 'string' ? profile.phone : (profile as any).phone_number;
-  const phone = typeof rawPhone === 'string' ? rawPhone.trim() : '';
-  const cat = typeof profile.businessType === 'string' ? profile.businessType.trim() : '';
-  const address = typeof profile.address === 'string' ? profile.address.trim() : '';
-  const city = typeof profile.city === 'string' ? profile.city.trim() : '';
-
-  return name.length > 0 && phone.length >= 7 && cat.length > 0 && address.length > 0 && city.length > 0;
+  return hasRequiredWebsiteProfile(profile);
 }
 
 /** Alias for isSalonProfileComplete */
@@ -74,7 +67,7 @@ export function getSalonProfileCompletion(profile: Partial<SalonProfile> | null 
     if (field.key === 'phone' && !val && (profile as any).phone_number) {
       val = (profile as any).phone_number;
     }
-    const isPresent = typeof val === 'string' ? val.trim().length > 0 : Boolean(val);
+    const isPresent = field.key === 'phone' ? isValidContactPhone(val) : (typeof val === 'string' ? val.trim().length > 0 : Boolean(val));
     if (isPresent) {
       completedCount++;
     } else {

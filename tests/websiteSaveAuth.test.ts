@@ -120,8 +120,8 @@ function savePayload(ownerId: string) {
   return {
     salonData: {
       ownerId,
-      profile: { subdomain: 'auth-test-salon', name: 'Auth Test Salon' },
-      services: [{ id: 'svc-1', name: 'Haircut', price: 500, duration: 30 }],
+      profile: { subdomain: 'auth-test-salon', businessName: 'Auth Test Salon', ownerName: 'Test Owner', businessType: 'hair_salon', phone: '9876543210', address: 'Studio Road', city: 'Jaipur' },
+      services: [{ id: 'svc-1', name: 'Haircut', price: 500, durationMinutes: 30 }],
       stylists: [],
       loyaltyConfig: null,
     },
@@ -181,7 +181,7 @@ test('live mode + caller is really owner_id → 200, caller-authorized workspace
   assert.equal(authCalls[0].apikey, SERVICE_KEY);
   assert.equal(authCalls[0].authorization, `Bearer owner-a-token`);
 
-  // And the write went through PostgREST with the service-role apikey.
+  // The write uses the caller-scoped RPC, never a service-role bypass.
   assert.ok(restCalls.length >= 1, 'profile upsert must reach PostgREST');
   assert.equal(restCalls.length, 1);
   assert.equal(restCalls[0].path, '/rest/v1/rpc/save_owner_editor_state');
@@ -203,7 +203,7 @@ test('production salon state route restores only the verified caller, ignoring s
   const response = await fetch(baseUrl+'/api/salon/state?owner_id='+OWNER_B,{headers:{Authorization:'Bearer owner-a-token'}});
   assert.equal(response.status,200);
   const body:any=await response.json();
-  assert.equal(body.data.profile.name,'Auth Test Salon');
+  assert.equal(body.data.profile.businessName,'Auth Test Salon');
 });
 
 test('production salon save alias uses the same authenticated transaction as website save', async () => {

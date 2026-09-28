@@ -168,6 +168,7 @@ export interface SocialVideo {
   thumbnailUrl: string;
   categoryTag: VideoCategoryTag;
   isOwnerVideo: boolean; // true if added by owner ("yours"), false for default ("showcase")
+  isDemo?: boolean;
   views?: string;
   transformationTag?: string;
 }
@@ -229,6 +230,9 @@ export interface SalonProfile {
   businessName: string;
   ownerName: string;
   ownerRole: string;
+  ownerBio?: string;
+  ownerExperience?: string;
+  ownerQualifications?: string;
   phone: string;
   whatsapp: string;
   email: string;
@@ -261,7 +265,11 @@ export interface SalonProfile {
   tiktokUrl?: string;
   googleBusinessUrl?: string;
   socialVideos?: SocialVideo[];
-  /** Dashboard-managed portfolio images. Template artwork is used only when this is empty. */
+  testimonials?: Array<{ id: string; name: string; location: string; rating: number; serviceName: string; comment: string; avatarUrl: string; date: string }>;
+  gallery?: Array<{ id: string; url: string; title: string; tag: string }>;
+  sectionVisibility?: Partial<Record<'header' | 'hero' | 'metrics' | 'about' | 'services' | 'offers' | 'promoPopup' | 'stylists' | 'testimonials' | 'gallery' | 'location' | 'whatsappFloat', boolean>>;
+  sectionHeadings?: Record<string, string>;
+  /** Dashboard-managed portfolio images. An explicit empty list stays empty. */
   lookbookPhotos?: LookbookPhoto[];
   requireDeposit: boolean;
   depositPercentage: number;
@@ -289,10 +297,6 @@ export interface SalonProfile {
   customFaviconUrl?: string;
   socialShareImageUrl?: string;
   seoKeywords?: string;
-  /** Per-template visibility choices saved with the owner's published site. */
-  sectionVisibility?: Record<string, boolean>;
-  /** Owner-customized template section titles saved with the published site. */
-  sectionHeadings?: Record<string, string>;
   seoTitle?: string;
   seoDescription?: string;
   headingFont?: string;
@@ -301,6 +305,7 @@ export interface SalonProfile {
 
 export interface SalonService {
   id: string;
+  imageUrl?: string;
   name: string;
   category: string;
   durationMinutes: number;
