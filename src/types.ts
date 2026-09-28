@@ -172,6 +172,15 @@ export interface SocialVideo {
   transformationTag?: string;
 }
 
+/** A published portfolio image managed from the salon dashboard. */
+export interface LookbookPhoto {
+  id: string;
+  url: string;
+  title?: string;
+  tag?: string;
+  alt?: string;
+}
+
 export interface HomeServiceConfig {
   enabled: boolean;
   baseCharge: number;
@@ -252,6 +261,8 @@ export interface SalonProfile {
   tiktokUrl?: string;
   googleBusinessUrl?: string;
   socialVideos?: SocialVideo[];
+  /** Dashboard-managed portfolio images. Template artwork is used only when this is empty. */
+  lookbookPhotos?: LookbookPhoto[];
   requireDeposit: boolean;
   depositPercentage: number;
   themeAccentKey?: string;
@@ -278,6 +289,10 @@ export interface SalonProfile {
   customFaviconUrl?: string;
   socialShareImageUrl?: string;
   seoKeywords?: string;
+  /** Per-template visibility choices saved with the owner's published site. */
+  sectionVisibility?: Record<string, boolean>;
+  /** Owner-customized template section titles saved with the published site. */
+  sectionHeadings?: Record<string, string>;
   seoTitle?: string;
   seoDescription?: string;
   headingFont?: string;
