@@ -7,6 +7,7 @@ import { isMockSupabase, supabase } from '../lib/supabaseClient';
 import { clearAllLocalUserState } from '../lib/salonStore';
 import { useReferralCode } from '../lib/hooks/useReferralCode';
 import { getMyGrowthReferral } from '../lib/growthPartner';
+import { resolveOwnerProfileName } from '../lib/readPartnerProfile';
 
 interface HeaderProps {
   currentView: AppView;
@@ -15,8 +16,9 @@ interface HeaderProps {
   user: any;
   setUser: (user: any) => void;
   profile: SalonProfile;
-  onProfileSaved: (patch: Partial<SalonProfile>) => void;
+  onProfileSaved: (patch: Partial<SalonProfile>) => Promise<void> | void;
   openAuth: (mode: 'login' | 'signup') => void;
+  onOpenProfileSettings?: () => void;
 }
 
 const HeaderReferralWidget: React.FC = () => {
@@ -251,7 +253,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Nexora Partner</span>
                 <span className="text-sm font-bold text-[#C20E5A]">
-                  {profile.ownerName || user.user_metadata?.full_name || 'Owner'}
+                  {resolveOwnerProfileName(profile.ownerName, user.user_metadata?.full_name) || 'Owner'}
                 </span>
               </div>
               <button
@@ -344,7 +346,16 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
       </div>
-      {profileOpen && <PartnerProfileModal editable profile={profile} onSaved={onProfileSaved} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && (
+        <PartnerProfileModal
+          editable
+          profile={profile}
+          userId={user?.id}
+          fallbackOwnerName={user?.user_metadata?.full_name || ''}
+          onSaved={onProfileSaved}
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
     </header>
   );
 };

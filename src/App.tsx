@@ -2249,6 +2249,29 @@ export default function App() {
     [persistSalonState]
   );
 
+  const commitProfileSettings = useCallback(async (updatedProfile: SalonProfile) => {
+    const current = salonStateRef.current;
+    const nextState = {
+      profile: updatedProfile,
+      services: current.services,
+      stylists: current.stylists,
+      loyaltyConfig: current.loyaltyConfig,
+      selectedTemplateId: current.selectedTemplateId,
+    };
+    // Update the account-scoped browser cache synchronously as well as React
+    // state. This protects an immediate refresh even if the full editor save
+    // pipeline is still hydrating or temporarily unavailable.
+    const local = saveSalonState(nextState, current.user?.id || updatedProfile.ownerId, updatedProfile.ownerId);
+    if (!local.ok) console.warn('[Profile] Local profile cache update failed:', local.error);
+    setProfile(updatedProfile);
+    salonStateRef.current = { ...current, profile: updatedProfile };
+    // The profile upsert has already been acknowledged at this point. Confirm
+    // that durable write now; the broader owner-editor sync continues in the
+    // background and must not delay closing the profile dialog.
+    showToast('Profile updated successfully!');
+    void persistSalonState({ source: 'auto', explicitState: { profile: updatedProfile } });
+  }, [persistSalonState, showToast]);
+
   useEffect(() => {
     const accentKey = (profile.themeAccentKey as AccentPaletteKey) || 'slate';
     const pal = ACCENT_PALETTES[accentKey];
@@ -2699,13 +2722,12 @@ export default function App() {
         salonName={profile.businessName}
         user={user}
         setUser={setUser}
-        onProfileSaved={(patch) => {
-          // PHASE 11: no immediate "saved" toast. The patch is published
-          // through the real save pipeline and the toast reports the actual
-          // outcome (cloud save / local draft / Save failed + retry).
-          const merged: SalonProfile = { ...profile, ...patch };
-          setProfile(merged);
-          void persistChange('Profile saved successfully. Contact & Location updated.', { profile: merged });
+        onProfileSaved={async (patch) => {
+          // The modal only calls this after the authenticated profile upsert
+          // succeeds. Publish that saved profile into shared React state and
+          // the user-scoped cache without requiring a reload.
+          const merged: SalonProfile = { ...salonStateRef.current.profile, ...patch };
+          await commitProfileSettings(merged);
         }}
         profile={profile}
         openAuth={(mode) => {
@@ -2942,15 +2964,12 @@ export default function App() {
         isOpen={isProfileSettingsOpen}
         onClose={() => setIsProfileSettingsOpen(false)}
         profile={profile}
+        userId={user?.id}
+        fallbackOwnerName={user?.user_metadata?.full_name || ''}
         setProfile={setProfile}
         showToast={showToast}
         onSave={async (updated) => {
-          setProfile(updated);
-          // PHASE 11: the "saved successfully" toast is emitted by the save
-          // engine ONLY after the cloud (or service-role API) accepted the
-          // state; a failed publish shows "Save failed" with the summarized
-          // server error instead, and the exact error in the console.
-          void persistChange('User profile settings saved successfully!', { profile: updated });
+          await commitProfileSettings(updated);
         }}
       />
 
