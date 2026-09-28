@@ -28,6 +28,7 @@ import {
   Minus
 } from 'lucide-react';
 import { SalonProfile, SalonService, Stylist, Appointment } from '../types';
+import type { SalonLoyaltySnapshot } from '../lib/useSalonData';
 import { payAdvanceWithRazorpay, type PaymentGatewayMode, type RazorpayOutcome } from '../lib/razorpayCheckout';
 import {
   buildBookingDraft,
@@ -89,6 +90,8 @@ export interface BookingModalProps {
    * duplicate "Book Another Service".
    */
   fromHistory?: boolean;
+  /** Public loyalty summary for this signed-in customer at this salon. */
+  loyalty?: SalonLoyaltySnapshot | null;
 }
 
 type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
@@ -128,6 +131,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   user,
   onRequireAuth,
   fromHistory = false,
+  loyalty = null,
 }) => {
   // Safe resolved values.
   //
@@ -1363,6 +1367,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
         {/* MODAL BODY (SCROLLABLE) */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col gap-4">
+
+          {loyalty?.programEnabled && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-amber-950">
+              <div className="min-w-0">
+                <p className="text-xs font-black">{loyalty.tier ? `${loyalty.tier} rewards` : 'Salon rewards active'}</p>
+                <p className="text-[11px] text-amber-800">{loyalty.pointsBalance !== undefined ? `${loyalty.pointsBalance.toLocaleString('en-IN')} points available` : 'Points and tier discounts apply at checkout.'}</p>
+              </div>
+              {loyalty.tierDiscount ? <span className="shrink-0 rounded-lg bg-amber-200 px-2 py-1 text-[10px] font-black">{loyalty.tierDiscount}% OFF</span> : <Sparkles className="h-5 w-5 shrink-0 text-amber-600" />}
+            </div>
+          )}
 
           {/* Interrupted-payment draft found for THIS salon (e.g. the tab
               reloaded while the UPI app was open). Offered, never forced. */}
