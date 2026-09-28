@@ -16,10 +16,23 @@ import {
   User,
 } from 'lucide-react';
 import {
-  fetchMyPartnerReferredSalons,
-  type ReferredSalon,
+  fetchMyPartnerReferrals,
   type GrowthPartner,
 } from '../lib/growthPartner';
+
+type ReferredSalon = {
+  id: string;
+  name: string;
+  city: string | null;
+  owner_name: string | null;
+  owner_email: string | null;
+  phone: string | null;
+  partner_code: string | null;
+  status: 'active' | 'completed' | 'onboarding';
+  joined_at: string | null;
+  created_at: string | null;
+  slug: string | null;
+};
 import { formatPartnerDate } from '../lib/partnerPresentation';
 
 interface PartnerReferralHistoryPageProps {
@@ -50,8 +63,29 @@ export const PartnerReferralHistoryPage: React.FC<PartnerReferralHistoryPageProp
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchMyPartnerReferredSalons();
-      setSalons(data);
+      // Use the session-scoped, RLS-backed referral RPC. It returns masked
+      // contact data only; never query raw auth/profile details from the page.
+      const result = await fetchMyPartnerReferrals({ status: 'all', limit: 100, offset: 0 });
+      setSalons(result.rows.map((row) => {
+        const joinedAt = row.joined_at || row.referral_clicked_at || null;
+        return {
+          id: row.referral_id || row.ref,
+          name: row.display_name || row.ref,
+          city: null,
+          owner_name: row.display_name,
+          owner_email: row.masked_contact,
+          phone: null,
+          partner_code: row.referral_code,
+          status: row.template_completed_at
+            ? 'completed'
+            : row.template_started_at
+              ? 'active'
+              : 'onboarding',
+          joined_at: joinedAt,
+          created_at: joinedAt,
+          slug: null,
+        };
+      }));
     } catch (err: any) {
       console.error('Error fetching referred salons:', err);
       setError(err?.message || 'Could not load referred salons. Please try again.');

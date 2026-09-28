@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 const env = parse(readFileSync(process.argv[2], 'utf8'));
 const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-assert.equal(new URL(url).hostname,'qwaehqsmodekbgvnaavz.supabase.co');
+assert.equal(new URL(url).hostname,'zilwgiuiygqqardzutxi.supabase.co');
 const admin = createClient(url,env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
 const client = createClient(url,env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
 const id = randomUUID();
