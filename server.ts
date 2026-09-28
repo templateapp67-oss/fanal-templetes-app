@@ -65,6 +65,7 @@ import {
   ApiInvalidStateError,
 } from "./server/safeError";
 import { lookupSalon, normalizeSiteIdentifier } from "./server/siteLookup";
+import { publicSocialShellHandler } from "./server/publicSocialShell";
 import { handleReengageClients } from "./server/geminiReengagement";
 import { handleGeocodeRequest } from "./server/geocode";
 
@@ -626,6 +627,11 @@ async function startServer() {
       });
     }
   }));
+
+  // Crawler-ready HTML for a public salon home page. The Vercel middleware
+  // (middleware.ts) calls the same route on the serverless deployment; it is
+  // registered here so `npm run dev` can exercise the identical code path.
+  app.get("/api/public-shell", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(publicSocialShellHandler));
 
   // ==========================================================================
   // CANONICAL GROWTH PARTNER API ROUTES

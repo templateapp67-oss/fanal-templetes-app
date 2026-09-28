@@ -1,5 +1,7 @@
-import { parseSeoKeywords } from './seoKeywords';
-import type { SalonProfile } from '../types';
+// `.js` extension required: this module is shared with the Node/API graph
+// (server/publicSocialPage.ts), which is loaded as native ESM.
+import { parseSeoKeywords } from './seoKeywords.js';
+import type { SalonProfile } from '../types.js';
 
 export function socialMetadata(profile: Partial<SalonProfile>, pageUrl: string) {
   const page = new URL(pageUrl);

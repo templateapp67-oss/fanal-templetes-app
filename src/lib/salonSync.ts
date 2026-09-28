@@ -1,4 +1,4 @@
-import { getTikTokValue } from '../utils/social';
+import { getTikTokValue } from '../utils/social.js';
 // ============================================================================
 // Frontend → Supabase sync mappers.
 //
