@@ -233,6 +233,11 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // CORS for cross-origin API callers (split dev on different ports, preview
+  // hosts, custom domains). Same-origin traffic (no Origin header) is
+  // untouched. Mounted BEFORE express.json and the routes so OPTIONS preflights
+  // and body-parser errors (e.g. 413 Payload Too Large) always include CORS headers.
+  app.use(nexoraCors);
   // `verify` stashes the RAW bytes of every JSON body. The Razorpay webhook
   // signature is an HMAC over exactly those bytes — re-serializing req.body
   // would change key order/spacing and every signature check would fail.
@@ -244,11 +249,16 @@ async function startServer() {
       },
     })
   );
-  // CORS for cross-origin API callers (split dev on different ports, preview
-  // hosts, custom domains). Same-origin traffic (no Origin header) is
-  // untouched. Mounted before the routes so OPTIONS preflights for
-  // /api/* (incl. /api/website/save) get a 204 instead of a 404.
-  app.use(nexoraCors);
+  app.use((err: any, _req: any, res: any, next: any) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
+      return res.status(413).json({
+        success: false,
+        code: 'PAYLOAD_TOO_LARGE',
+        error: 'Website content is too large; please use smaller or fewer inline images.',
+      });
+    }
+    return next(err);
+  });
   registerReferralAttributionRoutes(app, (name, args) => db.rpc(name, args));
 
   // Server-side Geocoding Proxy Route (prevents client-side CORS errors)

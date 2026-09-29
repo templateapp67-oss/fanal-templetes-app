@@ -196,10 +196,30 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         ...(Array.isArray(salonData.clients) ? { clients: salonData.clients } : {}),
         ...(salonData.selectedTemplateId !== undefined ? { selectedTemplateId: salonData.selectedTemplateId } : {}),
       };
+      const hasEmptyGallery =
+        profile &&
+        Array.isArray(profile.gallery) &&
+        profile.gallery.some((item: any) => !String(item?.url ?? '').trim());
+      const hasEmptyLookbook =
+        profile &&
+        Array.isArray(profile.lookbookPhotos) &&
+        profile.lookbookPhotos.some((item: any) => !String(item?.url ?? '').trim());
+      const sanitizedProfile =
+        hasEmptyGallery || hasEmptyLookbook
+          ? {
+              ...profile,
+              ...(hasEmptyGallery
+                ? { gallery: profile.gallery.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
+                : {}),
+              ...(hasEmptyLookbook
+                ? { lookbookPhotos: profile.lookbookPhotos.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
+                : {}),
+            }
+          : profile;
       // Use the same transaction as the editor. Never write salon fields into identity profiles.
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       let result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
-        p_state: { profile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+        p_state: { profile: sanitizedProfile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
       }), { label: 'atomic owner workspace save', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
 
       if (
@@ -216,7 +236,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
             retry: false,
           });
           result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
-            p_state: { profile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+            p_state: { profile: sanitizedProfile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
           }), { label: 'atomic owner workspace save (retry)', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
         } catch (provisionErr) {
           console.warn('[Website save] ensure_owner_workspace retry skipped or failed:', provisionErr);
@@ -226,13 +246,16 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       if (result.error) {
         syncError('Owner workspace transaction failed; refusing service-role fallback', {
           code: result.error.code ?? null,
+          message: result.error.message ?? null,
         });
         if (responseAlreadyEnded(res)) return;
         const code = result.error.code;
         return res.status(code === '42501' ? 403 : code === '23505' ? 409 : code === '22023' || code === '22P02' ? 400 : 503).json({
           success: false,
           code: code === '42501' ? 'DATA_ACCESS_DENIED' : code === '23505' ? 'WEBSITE_ADDRESS_CONFLICT' : code === '22023' || code === '22P02' ? 'INVALID_WEBSITE_CONTENT' : 'WEBSITE_SAVE_FAILED',
-          error: code === '23505' ? 'That website address is already in use. Choose another address.' : code === '22023' || code === '22P02' ? 'Check your website content, service details and staff schedule before saving.' : 'Your workspace could not be saved. Please retry or contact support.',
+          dbCode: code ?? null,
+          details: result.error.message ?? undefined,
+          error: code === '23505' ? 'That website address is already in use. Choose another address.' : code === '22023' || code === '22P02' ? (result.error.message || 'Check your website content, service details and staff schedule before saving.') : 'Your workspace could not be saved. Please retry or contact support.',
         });
       }
       if (responseAlreadyEnded(res)) return;

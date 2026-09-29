@@ -24,7 +24,8 @@
 // ============================================================================
 
 const ALLOWED_METHODS = 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
-const ALLOWED_HEADERS = 'Content-Type, Authorization, apikey, X-Client-Info';
+const ALLOWED_HEADERS =
+  'Content-Type, Authorization, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Cache-Control, Pragma, X-Requested-With';
 const PREFLIGHT_MAX_AGE = '86400'; // let browsers cache the preflight for 24h
 
 export function nexoraCors(req: any, res: any, next: any): void {

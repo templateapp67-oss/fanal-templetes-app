@@ -260,7 +260,46 @@ async function submitPartnerApplication(
   } catch (thrown) {
     settled = { data: null, error: thrown };
   }
-  // (5) Classify every failure — never replace it with a catch-all sentence.
+  // (5) Fallback to direct RLS-scoped INSERT if the RPC is not in PostgREST's
+  //     schema cache yet, but the table + RLS policies exist on the project.
+  if (
+    settled.error &&
+    typeof (client as any).from === 'function' &&
+    /PGRST202|PGRST203|42883|could not find the function/i.test(
+      `${(settled.error as any)?.code ?? ''} ${(settled.error as any)?.message ?? ''}`
+    )
+  ) {
+    try {
+      const { data: sessionData } = await client.auth.getSession();
+      const uid = sessionData?.session?.user?.id;
+      if (uid) {
+        const directInsert = await (client as any)
+          .from('growth_partner_applications')
+          .insert({
+            user_id: uid,
+            full_name: validated.values.fullName,
+            phone: validated.values.phone,
+            status: 'pending',
+            kyc_status: 'submitted',
+            kyc_document_type: validated.values.kycDocumentType,
+            kyc_document_reference: validated.values.kycDocumentReference,
+            kyc_submitted_at: new Date().toISOString(),
+          })
+          .select('id, status, kyc_status, created_at')
+          .single();
+        if (!directInsert?.error && directInsert?.data) {
+          return normalizeApplicationResult(directInsert.data);
+        }
+        if (directInsert?.error) {
+          settled = { data: null, error: directInsert.error };
+        }
+      }
+    } catch {
+      // Keep the original RPC error if the direct table fallback also fails.
+    }
+  }
+
+  // (6) Classify every failure — never replace it with a catch-all sentence.
   if (settled.error) throw toPartnerApplicationError(settled.error);
   return normalizeApplicationResult(settled.data);
 }

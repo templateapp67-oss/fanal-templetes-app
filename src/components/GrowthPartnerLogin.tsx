@@ -32,9 +32,12 @@ import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
 import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
 import {
   isValidIndianMobile,
+  KYC_DOCUMENT_TYPES,
   kycDocumentSpec,
   normalizeKycReference,
+  normalizePhone,
   PARTNER_APPLICATION_MESSAGES,
+  restrictKycReferenceInput,
   sanitizePersonName,
 } from '../lib/partnerApplicationValidation';
 
@@ -273,6 +276,7 @@ export const GrowthPartnerSignupForm: React.FC<{
   const [kycDocumentReference, setKycDocumentReference] = useState('');
   const [localFieldErrors, setLocalFieldErrors] = useState<GrowthPartnerSignupFieldErrors>({});
 
+  const spec = kycDocumentSpec(kycDocumentType);
   const fieldErrors = { ...localFieldErrors, ...propsFieldErrors };
 
   const handleFieldChange = <K extends keyof GrowthPartnerSignupFieldErrors>(
@@ -317,13 +321,14 @@ export const GrowthPartnerSignupForm: React.FC<{
     if (Object.keys(errors).length > 0) {
       return;
     }
+    const cleanPhone = submitted.phone.trim() ? normalizePhone(submitted.phone) : '';
     onSubmit({
-      fullName: submitted.fullName.trim(),
-      phone: submitted.phone.trim(),
+      fullName: sanitizePersonName(submitted.fullName),
+      phone: cleanPhone,
       email: submitted.email.trim(),
       password: submitted.password,
-      kycDocumentType: submitted.kycDocumentType,
-      kycDocumentReference: submitted.kycDocumentReference.trim(),
+      kycDocumentType: submitted.kycDocumentType.trim().toLowerCase(),
+      kycDocumentReference: normalizeKycReference(submitted.kycDocumentType, submitted.kycDocumentReference),
     });
   };
 
@@ -387,6 +392,7 @@ export const GrowthPartnerSignupForm: React.FC<{
               onChange={(e) => {
                 const val = e.target.value;
                 setKycDocumentType(val);
+                setKycDocumentReference((prev) => restrictKycReferenceInput(val, prev));
                 if (localFieldErrors.kycDocumentType) {
                   setLocalFieldErrors((prev) => {
                     const next = { ...prev };
@@ -403,11 +409,11 @@ export const GrowthPartnerSignupForm: React.FC<{
               }`}
             >
               <option value="">Select document</option>
-              <option value="pan">PAN</option>
-              <option value="aadhaar">Aadhaar</option>
-              <option value="passport">Passport</option>
-              <option value="driving_license">Driving licence</option>
-              <option value="business_registration">Business registration</option>
+              {KYC_DOCUMENT_TYPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
             {fieldErrors.kycDocumentType && (
               <p id="growth-partner-kyc-type-error" role="alert" className="mt-1.5 text-xs font-semibold text-rose-600">
@@ -419,11 +425,25 @@ export const GrowthPartnerSignupForm: React.FC<{
             id="growth-partner-kyc-reference"
             label="KYC reference number"
             value={kycDocumentReference}
+            inputMode={spec?.inputMode}
+            maxLength={spec?.maxLength}
             error={fieldErrors.kycDocumentReference}
-            onChange={handleFieldChange('kycDocumentReference', setKycDocumentReference)}
+            onChange={(val) =>
+              handleFieldChange('kycDocumentReference', setKycDocumentReference)(
+                restrictKycReferenceInput(kycDocumentType, val)
+              )
+            }
             disabled={busy}
-            placeholder="Reference only; do not upload document here"
+            placeholder={spec ? spec.placeholder : 'Reference only; do not upload document here'}
           />
+          {spec && !fieldErrors.kycDocumentReference ? (
+            <p className="-mt-2 text-xs text-slate-500">
+              {spec.hint}
+              {spec.value === 'aadhaar' && kycDocumentReference.trim()
+                ? ` (${normalizeKycReference('aadhaar', kycDocumentReference).length}/12 digits)`
+                : ''}
+            </p>
+          ) : null}
           {formError && <FormAlert tone="error">{formError}</FormAlert>}
           {success && <FormAlert tone="success">{success}</FormAlert>}
           <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>

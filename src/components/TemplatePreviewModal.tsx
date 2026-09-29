@@ -79,10 +79,10 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         </div>
 
         {/* Visual Preview Container */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-6 bg-slate-100 flex flex-col items-center">
+        <div className="flex-1 w-full max-w-full box-border overflow-y-auto overflow-x-hidden p-2 sm:p-6 bg-slate-100 flex flex-col items-center">
           <div
-            className={`transition-all duration-300 w-full bg-white rounded-2xl overflow-hidden shadow-lg border border-slate-300/80 ${
-              deviceView === 'mobile' ? 'max-w-[375px]' : deviceView === 'tablet' ? 'max-w-[768px]' : 'max-w-full'
+            className={`transition-all duration-300 w-full box-border bg-white rounded-2xl overflow-hidden shadow-lg border border-slate-300/80 ${
+              deviceView === 'mobile' ? 'max-w-[390px]' : deviceView === 'tablet' ? 'max-w-[768px]' : 'max-w-full'
             }`}
           >
             {/* Browser / Phone Chrome Header */}
@@ -99,11 +99,11 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
             </div>
 
             {/* Template Hero Image Banner */}
-            <div className="relative aspect-[16/9] w-full bg-slate-950 overflow-hidden">
+            <div className="relative aspect-[16/9] w-full max-w-full box-border bg-slate-950 overflow-hidden">
               <img
                 src={template.coverImageUrl}
                 alt={template.title}
-                className="w-full h-full object-cover"
+                className="w-full max-w-full h-full object-cover box-border"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
@@ -112,7 +112,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
                 <span className="text-xs uppercase tracking-widest text-emerald-400 font-bold mb-1">
                   {template.paletteLabel || 'Luxury Collection'}
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold font-display leading-tight">
+                <h2 className="text-2xl sm:text-3xl font-extrabold font-display leading-tight break-words hyphens-auto">
                   {template.title}
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-200 line-clamp-2 mt-1 font-light">
@@ -122,9 +122,9 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
             </div>
 
             {/* Demo Content Showcase */}
-            <div className="p-4 sm:p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-6 w-full max-w-full box-border">
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 break-words hyphens-auto">
                   About This Salon Experience
                 </h3>
                 <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-200/60">
@@ -135,14 +135,14 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
               {/* Sample Services Pill List */}
               {template.services && template.services.length > 0 && (
                 <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 break-words hyphens-auto">
                     Signature Services Included ({template.services.length})
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-full box-border">
                     {template.services.slice(0, 4).map((s: any, idx: number) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs"
+                        className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs w-full max-w-full box-border"
                       >
                         <span className="font-bold text-slate-800 truncate mr-2">{s.name}</span>
                         <span className="font-bold text-emerald-700 whitespace-nowrap">
@@ -161,7 +161,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         <div className="p-3 sm:p-4 sm:px-6 bg-white border-t border-slate-200 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
           <button
             onClick={onClose}
-            className="min-h-11 w-full sm:w-auto px-5 py-2.5 rounded-xl font-bold text-xs text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="min-h-[48px] w-full md:w-auto px-5 py-2.5 rounded-xl font-bold text-xs text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -169,7 +169,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
             onClick={() => {
               onSelect(template.id);
             }}
-            className="min-h-11 w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="min-h-[48px] w-full md:w-auto px-6 py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>Select This Template</span>
             <span className="material-symbols-outlined text-sm">arrow_forward</span>

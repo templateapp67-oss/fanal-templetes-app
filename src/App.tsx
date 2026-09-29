@@ -1949,7 +1949,7 @@ export default function App() {
           // hydrate preserves a local draft; neither cloud write path can run
           // until the existing workspace has loaded for this account.
           if (sessionOk) {
-            if (hydratedForUserRef.current && hydrationUserRef.current !== liveOwnerId) {
+            if (hydrationUserRef.current !== liveOwnerId) {
               hydratedForUserRef.current = false;
               hydrationUserRef.current = liveOwnerId;
             }
@@ -1972,7 +1972,7 @@ export default function App() {
         //     freshly refreshed token when the direct sync was rejected as
         //     unauthenticated (the token may have expired between the
         //     pre-flight and the write).
-        saveStep('tenant resolved', { ownerId: liveOwnerId || null, sessionOk, workspaceReady: canCleanUpCloudRows, mock: isMockSupabase });
+        saveStep('tenant resolved', { ownerId: liveOwnerId || null, sessionOk, workspaceReady: canCleanUpCloudRows || source === 'manual', mock: isMockSupabase });
         {
           // Warn-only validation: the RPC and the server route are the
           // authoritative validators (they reject malformed state with 4xx /
@@ -2009,7 +2009,7 @@ export default function App() {
             // cache to hide the problem).
             selectedTemplateId: state.selectedTemplateId,
           },
-          workspaceReady: canCleanUpCloudRows,
+          workspaceReady: canCleanUpCloudRows || source === 'manual',
           deleteRemoved: canCleanUpCloudRows,
           isMockMode: isMockSupabase,
           authenticated: sessionOk && !!liveOwnerId,
@@ -2807,12 +2807,16 @@ export default function App() {
       )}
 
       {currentView === 'templates' && templatePreviewId && (
-        <div className="min-h-dvh bg-slate-950 pt-20">
-          <div className="fixed left-3 right-3 top-24 z-[60] flex items-center justify-between gap-3 rounded-2xl bg-white/95 p-3 shadow-lg backdrop-blur sm:left-6 sm:right-6">
-            <button type="button" onClick={() => navigate(templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query }))} className="text-sm font-black text-slate-700 hover:text-[#C20E5A]">← Back to Explorer</button>
-            <div className="hidden min-w-0 items-center gap-2 text-sm sm:flex"><span className="truncate font-black">{previewTemplate?.name}</span><span className="rounded-full bg-rose-50 px-2 py-1 text-xs font-bold capitalize text-[#C20E5A]">{previewTemplate?.category}</span></div>
-            <div className="flex items-center rounded-xl bg-slate-100 p-1">{(['desktop', 'tablet', 'mobile'] as const).map((device) => <button key={device} type="button" onClick={() => setTemplatePreviewDevice(device)} className={`rounded-lg px-2 py-1.5 text-[10px] font-black capitalize sm:px-3 sm:text-xs ${templatePreviewDevice === device ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{device}</button>)}</div>
-            <button type="button" onClick={() => selectTemplateFromExplorer(templatePreviewId)} className="rounded-xl bg-[#C20E5A] px-4 py-2 text-sm font-black text-white hover:bg-[#A30B4A]">Select &amp; Customize This Template</button>
+        <div className="min-h-dvh w-full max-w-full box-border overflow-x-hidden bg-slate-950 pt-16 sm:pt-20">
+          <div className="sticky top-16 sm:top-20 z-[55] w-full max-w-full box-border border-b border-slate-200/80 bg-white/95 px-3 py-2.5 shadow-md backdrop-blur sm:px-6 sm:py-3">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2.5">
+              <div className="flex min-w-0 items-center gap-3">
+                <button type="button" onClick={() => navigate(templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query }))} className="min-h-[40px] inline-flex items-center text-xs sm:text-sm font-black text-slate-700 hover:text-[#C20E5A]">← Back to Explorer</button>
+                <div className="hidden min-w-0 items-center gap-2 text-sm sm:flex"><span className="truncate font-black">{previewTemplate?.name}</span><span className="rounded-full bg-rose-50 px-2 py-1 text-xs font-bold capitalize text-[#C20E5A]">{previewTemplate?.category}</span></div>
+              </div>
+              <div className="flex items-center rounded-xl bg-slate-100 p-1">{(['desktop', 'tablet', 'mobile'] as const).map((device) => <button key={device} type="button" onClick={() => setTemplatePreviewDevice(device)} className={`min-h-[36px] rounded-lg px-2.5 py-1.5 text-[11px] font-black capitalize sm:px-3 sm:text-xs ${templatePreviewDevice === device ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{device}</button>)}</div>
+              <button type="button" onClick={() => selectTemplateFromExplorer(templatePreviewId)} className="w-full md:w-auto min-h-[48px] inline-flex items-center justify-center rounded-xl bg-[#C20E5A] px-5 py-2.5 text-sm font-black text-white shadow-sm hover:bg-[#A30B4A]">Select &amp; Customize This Template</button>
+            </div>
           </div>
           {templatePreviewId === 'luxury_hair_salon' ? <VipBlackGoldFullExperience /> : <SalonWebsitePreview
             key={templatePreviewId}

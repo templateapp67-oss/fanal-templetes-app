@@ -204,6 +204,74 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.growth_partner_applications'::regclass
+       and conname = 'growth_partner_applications_kyc_reference_format_check'
+  ) then
+    if exists (
+      select 1 from public.growth_partner_applications
+       where kyc_document_type is not null
+         and kyc_document_reference is not null
+         and not (
+           (lower(btrim(kyc_document_type)) = 'aadhaar' and kyc_document_reference ~ '^[0-9]{12}$')
+           or (lower(btrim(kyc_document_type)) = 'pan' and kyc_document_reference ~ '^[A-Z]{5}[0-9]{4}[A-Z]$')
+           or (
+             lower(btrim(kyc_document_type)) in ('passport', 'driving_license', 'business_registration')
+             and kyc_document_reference ~ '^[A-Z0-9]{6,20}$'
+           )
+         )
+    ) then
+      raise notice 'skipped growth_partner_applications_kyc_reference_format_check: non-conforming KYC references exist';
+    else
+      alter table public.growth_partner_applications
+        add constraint growth_partner_applications_kyc_reference_format_check
+        check (
+          kyc_document_type is null
+          or kyc_document_reference is null
+          or (lower(btrim(kyc_document_type)) = 'aadhaar' and kyc_document_reference ~ '^[0-9]{12}$')
+          or (lower(btrim(kyc_document_type)) = 'pan' and kyc_document_reference ~ '^[A-Z]{5}[0-9]{4}[A-Z]$')
+          or (
+            lower(btrim(kyc_document_type)) in ('passport', 'driving_license', 'business_registration')
+            and kyc_document_reference ~ '^[A-Z0-9]{6,20}$'
+          )
+        );
+    end if;
+  end if;
+end $$;
+
+create or replace function public.trg_normalize_growth_partner_application()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.full_name is not null then
+    new.full_name := regexp_replace(btrim(new.full_name), '\s+', ' ', 'g');
+  end if;
+  if new.phone is not null then
+    new.phone := public.normalize_partner_phone(new.phone);
+  end if;
+  if new.kyc_document_type is not null then
+    new.kyc_document_type := nullif(lower(btrim(new.kyc_document_type)), '');
+  end if;
+  if new.kyc_document_reference is not null then
+    new.kyc_document_reference := public.normalize_partner_kyc_reference(
+      new.kyc_document_type,
+      new.kyc_document_reference
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_growth_partner_applications_normalize on public.growth_partner_applications;
+create trigger trg_growth_partner_applications_normalize
+before insert or update on public.growth_partner_applications
+for each row
+execute function public.trg_normalize_growth_partner_application();
+
 -- ---------------------------------------------------------------------------
 -- 3. Indexes
 -- ---------------------------------------------------------------------------

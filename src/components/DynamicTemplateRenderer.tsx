@@ -15,6 +15,7 @@ export interface DynamicTemplateConfig {
 interface DynamicTemplateRendererProps {
   config: DynamicTemplateConfig;
   activeSection: TemplatePreviewSection;
+  deviceMode?: 'desktop' | 'tablet' | 'mobile';
 }
 
 /**
@@ -24,7 +25,7 @@ interface DynamicTemplateRendererProps {
  */
 const templateMap: Partial<Record<BusinessTypeId, React.ComponentType<DynamicTemplateRendererProps>>> = {};
 
-const DefaultTemplate: React.FC<DynamicTemplateRendererProps> = ({ config }) => (
+const DefaultTemplate: React.FC<DynamicTemplateRendererProps> = ({ config, deviceMode = 'desktop' }) => (
   <SalonWebsitePreview
     profile={config.profile}
     services={config.services}
@@ -34,11 +35,11 @@ const DefaultTemplate: React.FC<DynamicTemplateRendererProps> = ({ config }) => 
     siteUrl={config.siteUrl}
     publicView
     previewMode
-    forcedDeviceMode="desktop"
+    forcedDeviceMode={deviceMode}
   />
 );
 
-export function DynamicTemplateRenderer({ config, activeSection }: DynamicTemplateRendererProps) {
+export function DynamicTemplateRenderer({ config, activeSection, deviceMode = 'desktop' }: DynamicTemplateRendererProps) {
   const TemplateComponent = templateMap[config.templateId] ?? DefaultTemplate;
-  return <TemplateComponent config={config} activeSection={activeSection} />;
+  return <TemplateComponent config={config} activeSection={activeSection} deviceMode={deviceMode} />;
 }

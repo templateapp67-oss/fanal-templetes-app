@@ -74,6 +74,8 @@ import { toPartnerApplicationError } from '../lib/partnerApplicationErrors';
 import {
   KYC_DOCUMENT_TYPES,
   kycDocumentSpec,
+  normalizeKycReference,
+  restrictKycReferenceInput,
   validatePartnerApplication,
   type PartnerApplicationFieldErrors,
 } from '../lib/partnerApplicationValidation';
@@ -887,9 +889,11 @@ export const PartnerApplicationForm: React.FC<{
             value={kycDocumentType}
             onChange={(event) => {
               const value = event.target.value;
+              const nextRef = restrictKycReferenceInput(value, kycDocumentReference);
               setKycDocumentType(value);
+              setKycDocumentReference(nextRef);
               clearFieldError('kycDocumentType');
-              revalidate({ kycDocumentType: value, kycDocumentReference });
+              revalidate({ kycDocumentType: value, kycDocumentReference: nextRef });
             }}
             disabled={busy}
             aria-invalid={fieldErrors.kycDocumentType ? true : undefined}
@@ -914,17 +918,25 @@ export const PartnerApplicationForm: React.FC<{
           id="partner-apply-kyc-reference"
           label="KYC reference number"
           value={kycDocumentReference}
+          inputMode={spec?.inputMode}
+          maxLength={spec?.maxLength}
           onChange={(value) => {
-            setKycDocumentReference(value);
+            const nextValue = restrictKycReferenceInput(kycDocumentType, value);
+            setKycDocumentReference(nextValue);
             clearFieldError('kycDocumentReference');
-            revalidate({ kycDocumentReference: value });
+            revalidate({ kycDocumentReference: nextValue });
           }}
           disabled={busy}
           error={fieldErrors.kycDocumentReference}
           placeholder={spec ? spec.placeholder : 'Reference only; do not upload a document here'}
         />
         {spec && !fieldErrors.kycDocumentReference ? (
-          <p className="-mt-2 text-xs text-slate-500">{spec.hint}</p>
+          <p className="-mt-2 text-xs text-slate-500">
+            {spec.hint}
+            {spec.value === 'aadhaar' && kycDocumentReference.trim()
+              ? ` (${normalizeKycReference('aadhaar', kycDocumentReference).length}/12 digits)`
+              : ''}
+          </p>
         ) : null}
 
         {error ? (
@@ -1420,10 +1432,13 @@ export const PartnerPortalLogin: React.FC<{
           setAttempt((value) => value + 1);
         }
         if (result.applicationError) {
-          // The account was created and the visitor is signed in, so the only
-          // honest message names both facts AND the real reason the
-          // application was not stored (invalid KYC, duplicate, …).
+          // The account was created and the visitor is signed in, so switch to
+          // the signed-in application view and surface the exact field/reason.
+          setMode('apply');
           setFormError(`Account created, but your application was not submitted. ${result.applicationError.message}`);
+          if (result.applicationError.kind === 'validation' && result.applicationError.field) {
+            setApplicationFieldErrors({ [result.applicationError.field]: result.applicationError.message });
+          }
           return;
         }
         setSignupSuccess(

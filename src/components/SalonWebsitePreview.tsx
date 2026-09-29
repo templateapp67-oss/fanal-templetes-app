@@ -7,6 +7,7 @@ import { WebsiteLocationMap, websiteLocation } from './WebsiteLocationMap';
 import { WebsiteVideoShowcase } from './WebsiteVideoShowcase';
 import { YouTubeVideoEditor } from './YouTubeVideoEditor';
 import { ContentImageField } from './ContentImageField';
+import { MobileBottomNav } from './MobileBottomNav';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSiteUrl } from '../lib/salonStore';
@@ -877,11 +878,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     }, 600);
   };
 
-  // Device width class
+  // Device width class — responsive across Desktop, Tablet, and Mobile toggles
   const deviceWidthClass = {
     desktop: 'w-full',
-    tablet: 'max-w-[768px] w-full mx-auto shadow-2xl rounded-2xl border-2 border-slate-300',
-    mobile: 'max-w-[390px] w-full mx-auto overflow-hidden shadow-2xl rounded-3xl border-[8px] border-gray-900 bg-white relative'
+    tablet: 'max-w-[768px] w-full mx-auto md:my-6 md:shadow-2xl md:rounded-2xl md:border-2 md:border-slate-300',
+    mobile: 'max-w-[390px] w-full mx-auto sm:my-6 overflow-hidden sm:shadow-2xl sm:rounded-3xl sm:border-[8px] sm:border-gray-900 bg-white relative'
   }[deviceMode];
 
   const themeStyle = activeTemplate.themeStyle;
@@ -912,7 +913,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [resolvedPrimaryColor]);
 
   useEffect(() => {
-    if (!publicView || typeof IntersectionObserver === 'undefined') return;
+    if (typeof IntersectionObserver === 'undefined') return;
     const targets = ['home', 'services', 'location']
       .map((id) => document.getElementById(`${id}-section`))
       .filter((element): element is HTMLElement => Boolean(element));
@@ -926,7 +927,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   return (
     <div 
-      className={`min-h-dvh w-full max-w-full overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${activeProfile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-28 md:pb-16' : 'pt-20 pb-24'}`}
+      className={`min-h-dvh w-full max-w-full box-border overflow-x-hidden overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${activeProfile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-24 md:pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': resolvedPrimaryColor,
         '--theme-primary': resolvedPrimaryColor,
@@ -944,7 +945,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       onClickCapture={(event) => {
         if (!previewMode) return;
         const target = event.target as HTMLElement;
-        if (target.closest('a')) {
+        const anchor = target.closest('a');
+        if (anchor) {
+          const href = anchor.getAttribute('href') || '';
+          if (href.startsWith('#')) {
+            return;
+          }
           event.preventDefault();
           event.stopPropagation();
           showNotification('Preview Mode: This action is simulated.');
@@ -1270,7 +1276,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
       <div 
-        className={`mt-8 w-full max-w-full min-w-0 box-border overflow-x-hidden p-2 transition-all duration-300 sm:p-4 ${deviceWidthClass} min-h-[800px] [&_*]:max-w-full ${
+        className={`${publicView ? 'mt-0 p-0' : 'mt-4 p-0 sm:p-2'} w-full max-w-full min-w-0 box-border overflow-x-hidden transition-all duration-300 ${deviceWidthClass} min-h-[800px] [&_*]:max-w-full [&_*]:box-border ${
           isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
         }`}
         style={{
@@ -1397,28 +1403,28 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
         {sectionVisibility.header && (
-          <header className={`sticky top-0 z-30 flex min-w-0 flex-row items-center justify-between gap-2 p-2 sm:p-4 w-full overflow-hidden border-b transition-colors ${
+          <header className={`sticky top-0 z-30 flex min-w-0 flex-wrap sm:flex-nowrap items-center justify-between gap-2 px-3 py-2.5 sm:p-4 w-full max-w-full box-border overflow-hidden border-b transition-colors ${
             isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
           }`}>
-            <div className="flex min-w-0 max-w-full items-center gap-3">
+            <div className="flex min-w-0 max-w-full flex-1 items-center gap-2.5 sm:gap-3">
               {activeProfile.logoUrl ? (
                 <div className="relative group shrink-0">
                   <img 
                     src={activeProfile.logoUrl} 
                     alt={activeProfile.businessName} 
-                    className="h-11 max-w-[170px] object-contain rounded-xl shadow-xs transition-transform group-hover:scale-105" 
+                    className="h-10 sm:h-11 max-w-[140px] sm:max-w-[170px] object-contain rounded-xl shadow-xs transition-transform group-hover:scale-105" 
                   />
                 </div>
               ) : (
                 <div 
-                  className="w-11 h-11 rounded-xl flex items-center justify-center font-bold shadow-xs text-white shrink-0"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center font-bold shadow-xs text-white shrink-0"
                   style={{ backgroundColor: activeAccent.primaryHex }}
                 >
-                  <span className="material-symbols-outlined text-2xl">{activeTemplate.icon}</span>
+                  <span className="material-symbols-outlined text-xl sm:text-2xl">{activeTemplate.icon}</span>
                 </div>
               )}
-              <div>
-                <div className={`font-bold text-lg md:text-xl tracking-tight leading-snug ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
+              <div className="min-w-0 flex-1">
+                <div className={`font-bold text-base sm:text-lg md:text-xl tracking-tight leading-snug break-words hyphens-auto ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
                   <InlineEditable
                     value={activeProfile.businessName}
                     onSave={(val) => setProfile((p) => ({ ...p, businessName: String(val) }))}
@@ -1431,9 +1437,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <Award className="w-3 h-3" /> VIP Black & Gold
                   </div>
                 )}
-                <div className={`text-[11px] flex items-center gap-1 font-mono ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                <div className={`text-[11px] flex items-center gap-1 font-mono min-w-0 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
                   <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                  <span className="truncate max-w-[180px] sm:max-w-md text-xs">
+                  <span className="truncate max-w-[170px] sm:max-w-md text-xs">
                     <InlineEditable
                       value={activeProfile.address}
                       onSave={(val) => setProfile((p) => ({ ...p, address: String(val) }))}
@@ -1464,7 +1470,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
             </div>
 
-            <div className="flex min-w-0 max-w-full items-center gap-1 sm:gap-3 text-xs flex-wrap justify-center">
+            <div className="flex w-full sm:w-auto min-w-0 max-w-full items-center justify-between sm:justify-end gap-2 sm:gap-3 text-xs flex-wrap">
               {/* SOCIAL MEDIA HEADER LINKS (Instagram, Facebook, TikTok) */}
               {(() => {
                 const instagramUrl = formatInstagramUrl(siteConfig.social_links.instagram);
@@ -1472,7 +1478,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 const tiktokUrl = formatTikTokUrl(siteConfig.social_links.tiktok);
 
                 return (
-                  <div className="flex items-center gap-1 sm:gap-3 text-xs flex-wrap mr-1 sm:mr-2" id="header-social-media-links">
+                  <div className="flex items-center gap-1 sm:gap-2 text-xs flex-wrap" id="header-social-media-links">
                     {instagramUrl ? (
                       <a
                         href={instagramUrl}
@@ -1548,10 +1554,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <button
                 type="button"
                 onClick={() => handleOpenBooking()}
-                className="font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer text-white hover:opacity-90"
+                className="w-full md:w-auto min-h-[48px] font-bold text-xs sm:text-sm px-4 sm:px-5 py-2.5 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-white hover:opacity-90"
                 style={{ backgroundColor: activeAccent.primaryHex }}
               >
-                <CalendarCheck className="w-4 h-4" />
+                <CalendarCheck className="w-4 h-4 shrink-0" />
                 <span>Book Appointment</span>
               </button>
             </div>
@@ -1562,7 +1568,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
         {sectionVisibility.hero && (
-          <section id="home-section" className="relative w-full max-w-full min-w-0 overflow-hidden transition-all bg-slate-950 text-white min-h-[480px] md:min-h-[540px] flex items-center scroll-mt-16">
+          <section id="home-section" className="relative w-full max-w-full min-w-0 box-border overflow-hidden transition-all bg-slate-950 text-white min-h-[460px] md:min-h-[540px] flex items-center scroll-mt-16">
+            <div id="book" className="scroll-mt-20" />
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
             <div className="absolute inset-0 z-0 overflow-hidden">
               <img
@@ -1571,7 +1578,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 onError={(e) => {
                   if (heroImageSrc) setHeroImageSrc('');
                 }}
-                className={`w-full max-w-full h-full object-cover rounded-xl object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
+                className={`w-full max-w-full box-border h-full object-cover object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
               />
               {/* Dynamic Overlay Ambient Tint (Gentle ~15-25% mask max) */}
               <div 
@@ -1586,10 +1593,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Hero Content Container with Dynamic Backdrop Glassmorphism */}
-            <div className="relative z-10 px-4 sm:px-6 md:px-12 py-10 md:py-16 max-w-4xl w-full mx-auto my-auto">
-              <div className={`${heroAIStyling.cardBackingClass} transition-all duration-500`}>
+            <div className="relative z-10 px-4 sm:px-6 md:px-12 py-8 sm:py-10 md:py-16 max-w-4xl w-full box-border mx-auto my-auto">
+              <div className={`w-full max-w-full box-border ${heroAIStyling.cardBackingClass} transition-all duration-500`}>
                 {/* Category badge & highlight tags */}
-                <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2 max-w-full mb-4 min-h-[2rem]">
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 max-w-full mb-4 min-h-[2rem]">
                   <span 
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs transition-colors"
                     style={{ 
@@ -1626,7 +1633,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                 {/* Tagline / Heading */}
                 <h1 
-                  className="text-xl sm:text-3xl md:text-5xl font-bold leading-tight break-words text-center sm:text-left text-balance transition-colors duration-300"
+                  className="text-2xl sm:text-4xl lg:text-5xl font-bold leading-tight break-words hyphens-auto text-center sm:text-left text-balance transition-colors duration-300"
                   style={{ 
                     color: heroAIStyling.headingColor,
                     textShadow: heroAIStyling.textShadow
@@ -1643,7 +1650,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                 {/* Description */}
                 <p 
-                  className="text-sm md:text-base mt-4 leading-relaxed max-w-2xl transition-colors duration-300"
+                  className="text-sm md:text-base mt-4 leading-relaxed max-w-2xl break-words text-center sm:text-left transition-colors duration-300"
                   style={{ 
                     color: heroAIStyling.subtitleColor,
                     textShadow: heroAIStyling.textShadow !== 'none' ? '0 1px 4px rgba(0,0,0,0.7)' : 'none'
@@ -1661,19 +1668,19 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                 {/* Quick Metrics Bar */}
                 {sectionVisibility.metrics && (
-                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t ${heroAIStyling.metricsBorderColor} text-xs transition-colors`}>
-                    <div className="min-h-[3rem] flex flex-col justify-center">
-                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Services from</div>
+                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t w-full max-w-full box-border ${heroAIStyling.metricsBorderColor} text-xs transition-colors`}>
+                    <div className="min-h-[3rem] min-w-0 flex flex-col justify-center">
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase truncate`}>Services from</div>
                       {isLoading ? (
                         <div className="h-6 w-16 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
                       ) : (
-                        <div className={`text-xl font-bold font-mono ${heroAIStyling.metricsValueColor}`}>
+                        <div className={`text-lg sm:text-xl font-bold font-mono ${heroAIStyling.metricsValueColor}`}>
                           {minPrice !== null ? `₹${minPrice}` : '₹—'}
                         </div>
                       )}
                     </div>
-                    <div className="min-h-[3rem] flex flex-col justify-center">
-                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Lead Specialist</div>
+                    <div className="min-h-[3rem] min-w-0 flex flex-col justify-center">
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase truncate`}>Lead Specialist</div>
                       {isLoading ? (
                         <div className="h-5 w-24 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
                       ) : (
@@ -1687,22 +1694,22 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </div>
                       )}
                     </div>
-                    <div className="min-h-[3rem] flex flex-col justify-center">
-                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Specialty</div>
+                    <div className="min-h-[3rem] min-w-0 flex flex-col justify-center">
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase truncate`}>Specialty</div>
                       {isLoading ? (
                         <div className="h-5 w-20 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
                       ) : (
                         <div className="text-sm font-bold truncate">{activeTemplate.subCategories[0] || 'Artistry'}</div>
                       )}
                     </div>
-                    <div className="min-h-[3rem] flex flex-col justify-center">
-                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase`}>Client Rating</div>
+                    <div className="min-h-[3rem] min-w-0 flex flex-col justify-center">
+                      <div className={`${heroAIStyling.metricsLabelColor} font-mono text-[10px] uppercase truncate`}>Client Rating</div>
                       {isLoading ? (
                         <div className="h-5 w-28 bg-slate-200/50 animate-pulse rounded-lg mt-1" />
                       ) : (
-                        <div className="text-sm font-bold flex items-center gap-1 text-amber-400">
-                          <Star className="w-3.5 h-3.5 fill-amber-400" />
-                          <span>{standardData.averageRating} ({standardData.totalReviewCount}+ Reviews)</span>
+                        <div className="text-xs sm:text-sm font-bold flex items-center gap-1 text-amber-400 truncate">
+                          <Star className="w-3.5 h-3.5 fill-amber-400 shrink-0" />
+                          <span className="truncate">{standardData.averageRating} ({standardData.totalReviewCount}+)</span>
                         </div>
                       )}
                     </div>
@@ -1710,28 +1717,28 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 )}
 
                 {/* Primary Action Buttons */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 mt-8">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 mt-8 w-full max-w-full box-border">
                   <button
                     type="button"
                     onClick={() => handleOpenBooking()}
-                    className="w-full sm:w-auto font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
+                    className="w-full md:w-auto min-h-[48px] font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
                     style={{ 
                       backgroundColor: heroAIStyling.primaryBtnBg,
                       color: heroAIStyling.primaryBtnText 
                     }}
                   >
-                    <span>{isVipTemplate ? `Request ${vipLabel}` : 'Book Now'}</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>{isVipTemplate ? `Request ${vipLabel}` : 'Book Appointment'}</span>
+                    <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
 
                   <a
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
                     target="_blank"
                     rel="noreferrer"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-3.5 rounded-xl border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                    className="w-full md:w-auto min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-5 py-3.5 rounded-2xl border border-emerald-400/30 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
                   >
-                    <MessageSquare className="w-4 h-4" />
-                    <span>WhatsApp Us ({activeProfile.whatsapp})</span>
+                    <MessageSquare className="w-4 h-4 shrink-0" />
+                    <span className="truncate">WhatsApp Us ({activeProfile.whatsapp})</span>
                   </a>
                 </div>
               </div>
@@ -1788,10 +1795,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className={`p-6 md:p-12 border-b ${
+            className={`w-full max-w-full box-border px-4 py-6 sm:p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-white border-slate-200'
           }`}>
-            <div className="max-w-4xl mx-auto">
+            <div className="w-full max-w-4xl box-border mx-auto">
               {/* Header */}
               <div className="text-center mb-8">
                 <span 
@@ -1800,10 +1807,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 >
                   About Our Sanctuary
                 </span>
-                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight break-words hyphens-auto">
                   Artistry, Certified Hygiene & Pure Craftsmanship
                 </h2>
-                <p className={`text-xs md:text-sm mt-2 max-w-2xl mx-auto leading-relaxed ${
+                <p className={`text-xs md:text-sm mt-2 max-w-2xl mx-auto leading-relaxed break-words ${
                   isDarkCanvas ? 'text-neutral-400' : 'text-slate-600'
                 }`}>
                   <InlineEditable
@@ -1826,14 +1833,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       isDarkCanvas ? 'bg-neutral-900 border-neutral-800 text-neutral-200' : 'bg-slate-50 border-slate-200 text-slate-800'
                     }`}
                   >
-                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
                     <span>{spec}</span>
                   </span>
                 ))}
               </div>
 
               {/* Founder / Lead Stylist Quote Card */}
-              <div className={`p-6 rounded-2xl border mb-10 flex flex-col sm:flex-row items-center gap-5 ${
+              <div className={`w-full max-w-full box-border p-4 sm:p-6 rounded-2xl border mb-10 flex flex-col sm:flex-row items-center gap-5 ${
                 isDarkCanvas ? 'bg-neutral-900/70 border-neutral-800' : 'bg-slate-50 border-slate-200'
               }`}>
                 <div className="relative shrink-0">
@@ -1841,19 +1848,19 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <img
                       src={activeProfile.ownerPhotoUrl || '/nexora-salonos-logo.png'}
                       alt={displayOwnerName}
-                      className="w-full h-full object-cover bg-slate-950"
+                      className="w-full max-w-full box-border h-full object-cover bg-slate-950"
                     />
                   </div>
                   <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-xs">
                     Lead
                   </span>
                 </div>
-                <div className="flex-1 text-center sm:text-left">
-                  <p className={`text-xs italic leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
+                <div className="flex-1 min-w-0 text-center sm:text-left">
+                  <p className={`text-xs italic leading-relaxed break-words ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-700'}`}>
                     {activeProfile.ownerBio || `Welcome to ${activeProfile.businessName}. We offer personal consultations and thoughtful care tailored to every guest.`}
                   </p>
                   <div className="mt-2">
-                    <span className="font-bold text-sm block">
+                    <span className="font-bold text-sm block break-words">
                       <InlineEditable
                         value={displayOwnerName}
                         onSave={(val) => setProfile((p) => ({ ...p, ownerName: String(val) }))}
@@ -1871,7 +1878,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </span>
                     {activeProfile.ownerExperience && <p className="mt-2 text-sm">{activeProfile.ownerExperience}</p>}
                     {activeProfile.ownerQualifications && <p className="mt-1 text-xs opacity-70">{activeProfile.ownerQualifications}</p>}
-                    <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold">
+                    <div className="mt-3 flex flex-wrap justify-center sm:justify-start gap-3 text-xs font-semibold">
                       {activeProfile.phone && <a href={`tel:${activeProfile.phone}`}>Contact studio: {activeProfile.phone}</a>}
                     </div>
                   </div>
@@ -1879,11 +1886,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
 
               {/* 4 Hygiene & Quality Certification Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-full box-border">
                 {(standardData.certifications || []).map((cert, idx) => (
                   <div
                     key={idx}
-                    className={`p-4 rounded-xl border flex items-start gap-3.5 transition-all ${
+                    className={`w-full max-w-full box-border p-4 rounded-xl border flex items-start gap-3.5 transition-all ${
                       isDarkCanvas ? 'bg-neutral-900/50 border-neutral-800 hover:border-neutral-700' : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
                     }`}
                   >
@@ -1893,9 +1900,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     >
                       <span className="material-symbols-outlined text-lg">{cert.icon}</span>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-xs md:text-sm">{cert.title}</h3>
-                      <p className={`text-xs mt-1 leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-xs md:text-sm break-words hyphens-auto">{cert.title}</h3>
+                      <p className={`text-xs mt-1 leading-relaxed break-words ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
                         {cert.description}
                       </p>
                     </div>
@@ -1911,12 +1918,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 3. SERVICES & PRICING MENU SECTION (100% INLINE EDITABLE) */}
         {/* ============================================================ */}
         {sectionVisibility.services && (
-          <section className={`px-4 py-6 sm:p-6 md:p-12 border-b ${
+          <section className={`w-full max-w-full box-border px-4 py-6 sm:p-6 md:p-12 border-b scroll-mt-16 ${
             isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
           }`} id="services-section">
+            <div id="services" className="scroll-mt-20" />
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
                   <span 
                     className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
                     style={{ backgroundColor: `${activeAccent.primaryHex}18`, color: activeAccent.primaryHex }}
@@ -1926,7 +1934,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   <span className="text-xs text-slate-400 font-mono">({filteredServices.length} Treatments)</span>
                 </div>
 
-                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight mt-1 break-words hyphens-auto">
                   <InlineEditable
                     value={sectionHeadings.servicesTitle}
                     onSave={(val) => setSectionHeadings((prev) => ({ ...prev, servicesTitle: String(val) }))}
@@ -1936,7 +1944,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   />
                 </h2>
 
-                <p className={`text-xs md:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
+                <p className={`text-xs md:text-sm mt-1 break-words ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
                   <InlineEditable
                     value={sectionHeadings.servicesSubtitle}
                     onSave={(val) => setSectionHeadings((prev) => ({ ...prev, servicesSubtitle: String(val) }))}
@@ -1949,8 +1957,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
 
             {/* Elegant Tabbed Navigation Bar for Categories */}
-            <div className="mt-8 mb-8 border-b border-slate-100 dark:border-neutral-800 pb-2 flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            <div className="mt-6 sm:mt-8 mb-6 sm:mb-8 border-b border-slate-100 dark:border-neutral-800 pb-2 flex items-center justify-between gap-4 flex-wrap w-full max-w-full box-border">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 max-w-full">
                 {subCategoriesList.map((subCat) => {
                   const isActive = activeSubCategory === subCat;
                   return (
@@ -1993,39 +2001,39 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             {/* Services Grid */}
             <div
               key={activeSubCategory}
-              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+              className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-full box-border"
             >
               {filteredServices.map((srv, idx) => (
                 <div
                   key={`${activeSubCategory}-${srv.id}`}
                   style={{ animationDelay: `${Math.min(idx * 50, 400)}ms` }}
-                  className={`animate-service-enter p-5 rounded-2xl border transition-all duration-300 ease-out flex flex-col justify-between gap-4 group cursor-pointer hover:-translate-y-1 hover:shadow-lg ${
+                  className={`animate-service-enter w-full max-w-full box-border p-4 sm:p-5 rounded-2xl border transition-all duration-300 ease-out flex flex-col justify-between gap-4 group cursor-pointer hover:-translate-y-1 hover:shadow-lg ${
                     isDarkCanvas
                       ? 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700 hover:shadow-black/50'
                       : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-slate-200/80'
                   }`}
                 >
-                  <img src={srv.imageUrl || serviceImageFallback(selectedCategoryKey)} alt={srv.name} loading="lazy" className="h-48 w-full rounded-xl object-cover"
+                  <img src={srv.imageUrl || serviceImageFallback(selectedCategoryKey)} alt={srv.name} loading="lazy" className="h-44 sm:h-48 w-full max-w-full box-border rounded-xl object-cover"
                     onError={event => { const img = event.currentTarget; const fallback = serviceImageFallback(selectedCategoryKey); if (!img.src.endsWith('/service-placeholder.svg')) img.src = img.src === fallback ? '/service-placeholder.svg' : fallback; }} />
                   {isEditMode && <ContentImageField label="Service image" value={srv.imageUrl} onChange={imageUrl => setServices(prev => prev.map(s => s.id === srv.id ? { ...s, imageUrl } : s))} />}
                   {isEditMode && <div className="grid grid-cols-2 gap-2"><ServicePriceFields service={srv} onChange={patch => setServices(prev => prev.map(s => s.id === srv.id ? { ...s, ...patch } : s))} /></div>}
-                  <div className="flex items-start gap-4 justify-between">
-                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4 justify-between w-full max-w-full box-border">
+                    <div className="flex items-start gap-3 sm:gap-3.5 flex-1 min-w-0 w-full">
                       {/* Service Icon Container */}
                       <div 
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-1 ${
+                        className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 border transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-1 ${
                           isDarkCanvas
                             ? 'bg-neutral-800/50 border-neutral-700/60 text-white'
                             : 'bg-slate-50 border-slate-100'
                         }`}
                         style={{ color: activeAccent.primaryHex }}
                       >
-                        {React.createElement(getServiceIcon(srv.icon), { className: "w-6 h-6 shrink-0 transition-transform duration-300 group-hover:scale-105" })}
+                        {React.createElement(getServiceIcon(srv.icon), { className: "w-5 h-5 sm:w-6 sm:h-6 shrink-0 transition-transform duration-300 group-hover:scale-105" })}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className={`font-extrabold text-base md:text-lg leading-snug transition-colors duration-200 ${
+                          <h3 className={`font-extrabold text-base md:text-lg leading-snug break-words hyphens-auto transition-colors duration-200 ${
                             isDarkCanvas ? 'text-white group-hover:text-emerald-300' : 'text-slate-900 group-hover:text-emerald-700'
                           }`}>
                             <InlineEditable
@@ -2046,7 +2054,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           )}
                         </div>
 
-                        <p className={`text-xs mt-1.5 leading-relaxed font-medium ${
+                        <p className={`text-xs mt-1.5 leading-relaxed font-medium break-words ${
                           isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'
                         }`}>
                           <InlineEditable
@@ -2061,8 +2069,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </div>
 
                     {/* Price & Duration Elegant Badge System */}
-                    <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
-                      <div className="flex items-center gap-2 justify-end flex-wrap">
+                    <div className="w-full sm:w-auto text-left sm:text-right shrink-0 flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-neutral-800/60">
+                      <div className="flex items-center gap-2 sm:justify-end flex-wrap w-full sm:w-auto justify-between">
                         <div className={`text-lg md:text-xl font-extrabold font-mono transition-transform duration-200 origin-right group-hover:scale-105 ${
                           isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
                         }`}>
@@ -2109,7 +2117,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                   {/* Actions Bar inside Card */}
-                  <div className={`flex items-center justify-between pt-3 border-t text-xs ${
+                  <div className={`flex flex-wrap items-center justify-between gap-2 pt-3 border-t text-xs ${
                     isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'
                   }`}>
                     <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border transition-colors duration-200 ${
@@ -2120,7 +2128,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       Category: {srv.category}
                     </span>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                       {isEditMode && (
                         <>
                           {/* Visual toggle switch for showDuration */}
@@ -2140,12 +2148,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         href={bookingWhatsapp ? `https://wa.me/${bookingWhatsapp}?text=${encodeURIComponent(`Hello ${activeProfile.businessName}, I would like to book ${srv.name} (${srv.durationMinutes} mins) for ₹${srv.price}.`)}` : '#location-section'}
                         target={bookingWhatsapp ? '_blank' : undefined} rel={bookingWhatsapp ? 'noopener noreferrer' : undefined}
                         onClick={event => { if (previewMode) { event.preventDefault(); showNotification('Preview Mode: This action is simulated.'); } }}
-                        className="font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 hover:opacity-90"
+                        className="w-full md:w-auto min-h-[48px] font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 hover:opacity-90"
                         style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
-                      ><MessageSquare className="w-3.5 h-3.5" />{bookingWhatsapp ? 'Book on WhatsApp' : 'Contact to book'}</a> : <button
+                      ><MessageSquare className="w-3.5 h-3.5 shrink-0" />{bookingWhatsapp ? 'Book on WhatsApp' : 'Contact to book'}</a> : <button
                         type="button"
                         onClick={() => handleOpenBooking(srv)}
-                        className="font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-xs transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer hover:opacity-95 hover:shadow-md group-hover:shadow-sm"
+                        className="w-full md:w-auto min-h-[48px] font-extrabold px-4 py-2.5 rounded-xl text-xs shadow-xs transition-all duration-200 hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer hover:opacity-95 hover:shadow-md group-hover:shadow-sm"
                         style={{ backgroundColor: activeAccent.primaryHex, color: 'var(--accent-text-color, #ffffff)' }}
                       >
                         <CalendarCheck className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
@@ -2520,17 +2528,17 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-full box-border">
               {activeGalleryPhotos.map((photo, idx) => (
                 <div
                   key={idx}
                   onClick={() => setSelectedGalleryPhoto(photo.url)}
-                  className="group relative rounded-xl overflow-hidden aspect-4/3 cursor-pointer shadow-md hover:shadow-xl border border-slate-100 dark:border-neutral-800 transition-all duration-300"
+                  className="group relative w-full max-w-full box-border rounded-xl overflow-hidden aspect-4/3 cursor-pointer shadow-md hover:shadow-xl border border-slate-100 dark:border-neutral-800 transition-all duration-300"
                 >
                   <img
                     src={photo.url}
                     alt={photo.title || 'Salon Gallery Photo'}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
+                    className="w-full max-w-full box-border h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
                     referrerPolicy="no-referrer"
                   />
                   <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-between p-3.5 text-white">
@@ -2554,9 +2562,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
         {/* 7.5 Social Proof & Reels Showcase */}
         {sectionVisibility.gallery && ((activeProfile.socialVideos?.length || 0) > 0 || isEditMode) && (
-          <section data-layout-stable-media className={`layout-stable-media min-h-[42rem] p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-            <div className="max-w-7xl mx-auto">
-              <h2 className="text-2xl md:text-3xl font-extrabold mb-2">Featured Videos &amp; Reels</h2>
+          <section data-layout-stable-media className={`layout-stable-media min-h-[42rem] w-full max-w-full box-border px-4 py-6 sm:p-6 md:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
+            <div className="max-w-7xl w-full box-border mx-auto">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold mb-2 break-words hyphens-auto">Featured Videos &amp; Reels</h2>
               <p className="text-sm opacity-70 mb-8">Studio stories, signature treatments and transformations on film.</p>
               {isEditMode && <div className="mb-6"><YouTubeVideoEditor profile={activeProfile} setProfile={setProfile} templateId={selectedCategoryKey} /></div>}
               <WebsiteVideoShowcase videos={activeProfile.socialVideos ?? []} dark={isDarkCanvas} />
@@ -2565,10 +2573,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {sectionVisibility.location && (
-          <section id="location-section" className="scroll-mt-16 px-4 py-6 sm:p-6 md:p-12 bg-slate-50 border-t border-slate-100">
+          <section id="location-section" className="scroll-mt-16 w-full max-w-full box-border px-4 py-6 sm:p-6 md:p-12 bg-slate-50 border-t border-slate-100">
+            <div id="location" className="scroll-mt-20" />
             <div data-layout-stable-contact className="grid grid-cols-1 lg:min-h-[36rem] lg:grid-cols-2 gap-6 [contain:layout]">
               {/* Location details */}
-              <div className="flex flex-col justify-between gap-4">
+              <div className="flex flex-col justify-between gap-4 w-full max-w-full box-border min-w-0">
                 <div>
                   <span 
                     className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
@@ -2576,7 +2585,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   >
                     Find Us
                   </span>
-                  <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-1 text-slate-900">
+                  <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight mt-1 text-slate-900 break-words hyphens-auto">
                     <InlineEditable
                       value={sectionHeadings.locationTitle}
                       onSave={(val) => setSectionHeadings((prev) => ({ ...prev, locationTitle: String(val) }))}
@@ -2585,12 +2594,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       tag="span"
                     />
                   </h2>
-                  <p className="text-xs md:text-sm mt-1 leading-relaxed text-slate-700">
+                  <p className="text-xs md:text-sm mt-1 leading-relaxed text-slate-700 break-words">
                     Conveniently located in the heart of {activeProfile.city}. Free parking and valet available for salon clients.
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-3 text-xs">
+                <div className="flex flex-col gap-3 text-xs w-full max-w-full box-border">
                   <a
                     href={googleMapsUrl}
                     target="_blank"
@@ -2601,18 +2610,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
                       <MapPin className="w-4 h-4" />
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 flex items-center gap-1.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 flex flex-wrap items-center gap-1.5">
                         <span>Studio Address</span>
                         <span className="text-[11px] font-medium text-emerald-600 font-sans inline-flex items-center gap-0.5">
                           (View on Google Maps ↗)
                         </span>
                       </div>
-                      <div className="text-slate-900 font-medium text-xs mt-0.5 group-hover:underline underline-offset-2 decoration-emerald-500/50">
+                      <div className="text-slate-900 font-medium text-xs mt-0.5 break-words group-hover:underline underline-offset-2 decoration-emerald-500/50">
                         {activeProfile.address}, {activeProfile.city} - {activeProfile.postalCode}
                       </div>
                       {(activeProfile.landmark || standardData.landmark) && (
-                        <div className="text-[11px] text-slate-800 mt-1 font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block">
+                        <div className="text-[11px] text-slate-800 mt-1 font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block break-words">
                           Landmark: {activeProfile.landmark || standardData.landmark}
                         </div>
                       )}
@@ -2623,12 +2632,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
                       <Clock className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="font-bold text-slate-900 text-sm">Operating Hours</div>
-                      <div className="text-slate-900 font-mono text-[11.5px] mt-0.5 font-semibold">
+                      <div className="text-slate-900 font-mono text-[11.5px] mt-0.5 font-semibold break-words">
                         Monday – Friday: {activeProfile.workingHoursMonFri || (previewMode ? `${standardData.openHourText} – ${standardData.closeHourText}` : 'Contact studio for hours')}
                       </div>
-                      <div className="text-slate-900 font-mono text-[11.5px] font-semibold mt-0.5">
+                      <div className="text-slate-900 font-mono text-[11.5px] font-semibold mt-0.5 break-words">
                         Saturday: {activeProfile.workingHoursSat || 'Contact studio for hours'}<br />Sunday: {activeProfile.workingHoursSun || 'Contact studio for hours'}
                       </div>
                     </div>
@@ -2638,16 +2647,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
                       <Phone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="font-bold text-slate-900 text-sm">Phone & Instant WhatsApp</div>
                       <div className="text-slate-900 font-mono font-semibold text-xs mt-0.5">
                         {activeProfile.phone || activeProfile.whatsapp}
                       </div>
                       
-                      {activeProfile.email && <a href={`mailto:${activeProfile.email}`} className="mt-2 block text-xs underline">{activeProfile.email}</a>}
+                      {activeProfile.email && <a href={`mailto:${activeProfile.email}`} className="mt-2 block text-xs underline break-all">{activeProfile.email}</a>}
                       {activeProfile.homeService?.enabled && <p className="mt-2 text-xs">Home visits: ₹{activeProfile.homeService.baseCharge} travel charge within {activeProfile.homeService.radiusLimitKm} km. Contact the studio to arrange.</p>}
                       {/* Social Links in Contact Section */}
-                      <div className="flex items-center gap-2 mt-3">
+                      <div className="flex items-center gap-2 mt-3 flex-wrap">
                         {activeProfile.instagramHandle && (
                           <a 
                             href={formatInstagramUrl(siteConfig.social_links.instagram)}
@@ -2686,11 +2695,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center gap-3">
+                <div className="pt-3 border-t border-slate-200 flex flex-col md:flex-row flex-wrap items-stretch md:items-center gap-2.5 sm:gap-3 w-full max-w-full box-border">
                   <button
                     type="button"
                     onClick={() => handleOpenBooking()}
-                    className="font-bold text-xs px-5 py-2.5 rounded-xl text-white shadow-xs cursor-pointer hover:opacity-90 transition-opacity"
+                    className="w-full md:w-auto min-h-[48px] font-bold text-xs sm:text-sm px-5 py-3 rounded-xl text-white shadow-xs cursor-pointer hover:opacity-90 transition-opacity flex items-center justify-center"
                     style={{ backgroundColor: activeAccent.primaryHex }}
                   >
                     Schedule Your Appointment
@@ -2700,10 +2709,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     href={googleDirectionsUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
+                    className="w-full md:w-auto min-h-[48px] text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
                     title="Get directions on Google Maps"
                   >
-                    <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                    <Navigation className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                     <span>Get Directions</span>
                   </a>
 
@@ -2711,16 +2720,16 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
+                    className="w-full md:w-auto min-h-[48px] text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span>WhatsApp Inquiry</span>
                   </a>
                 </div>
               </div>
 
               {/* Map card — read-only for visitors, editable in the owner editor. */}
-              <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 min-h-[380px] shadow-xs">
+              <div className="w-full max-w-full box-border rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 min-h-[340px] sm:min-h-[380px] shadow-xs">
                 {!isEditMode ? (
                   <WebsiteLocationMap profile={activeProfile} />
                 ) : (
@@ -2735,12 +2744,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* 8. FOOTER WITH DYNAMIC SOCIAL LINKS */}
-        <footer className={`py-8 px-6 md:px-12 border-t text-center ${
+        <footer className={`w-full max-w-full box-border py-8 px-4 sm:px-6 md:px-12 border-t text-center ${
           isDarkCanvas ? 'bg-[#0b0b0e] border-neutral-900 text-neutral-400' : 'bg-slate-50 border-slate-200 text-slate-500'
         }`}>
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="text-left">
-              <span className={`font-extrabold text-sm tracking-tight ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
+          <div className="max-w-7xl w-full box-border mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="text-center md:text-left">
+              <span className={`font-extrabold text-sm tracking-tight break-words ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}>
                 {activeProfile.businessName}
               </span>
               <p className={`text-[10px] mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-400'}`}>
@@ -2750,7 +2759,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
             {/* Social Links Bar */}
             <div className="flex items-center gap-2 flex-wrap justify-center">
-              {/* ... social links remain the same ... */}
               {activeProfile.instagramHandle && (
                 <a
                   href={formatInstagramUrl(siteConfig.social_links.instagram)}
@@ -2823,6 +2831,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           )}
         </footer>
 
+        {/* Native Mobile Bottom Navigation Bar inside preview frame when Mobile device mode is active */}
+        <MobileBottomNav
+          activeSection={mobileNavActive}
+          onNavigateSection={scrollToMobileSection}
+          onQuickBook={() => handleOpenBooking()}
+          whatsappNumber={activeProfile.whatsapp}
+          phoneNumber={activeProfile.phone}
+          businessName={activeProfile.businessName}
+          accentColor={activeAccent.primaryHex}
+          forceShowInPreview={deviceMode === 'mobile'}
+        />
+
       </div>
 
       {/* Floating Instant WhatsApp Button */}
@@ -2831,7 +2851,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20book%20an%20appointment.`}
           target="_blank"
           rel="noreferrer"
-          className="layout-stable-fixed fixed bottom-6 right-6 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+          className="layout-stable-fixed fixed bottom-6 right-6 mb-16 md:mb-0 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
           title="Chat on WhatsApp"
         >
           <MessageSquare className="w-5 h-5 fill-white" />
@@ -2839,41 +2859,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             WhatsApp Booking
           </span>
         </a>
-      )}
-
-      {publicView && !previewMode && (
-        <nav
-          aria-label="Salon quick actions"
-          className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-slate-200/80 bg-white/95 px-1 pt-1 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden [padding-bottom:calc(env(safe-area-inset-bottom)+0.25rem)]"
-        >
-          {[
-            { id: 'home' as const, label: 'Home', icon: Home, onClick: () => scrollToMobileSection('home') },
-            { id: 'services' as const, label: 'Services', icon: List, onClick: () => scrollToMobileSection('services') },
-            { id: 'book' as const, label: 'Book Now', icon: CalendarCheck, onClick: () => handleOpenBooking() },
-            { id: 'location' as const, label: 'Location', icon: MapPin, onClick: () => scrollToMobileSection('location') },
-          ].map((item) => {
-            const active = item.id === mobileNavActive || item.id === 'book';
-            const Icon = item.icon;
-            return (
-              <button key={item.id} type="button" onClick={item.onClick} className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold transition-all active:scale-95 ${active ? 'text-[var(--primary-accent)]' : 'text-slate-500'}`}>
-                {active && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-[var(--primary-accent)] shadow-[0_0_10px_var(--primary-accent)]" />}
-                <Icon className="h-5 w-5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-          {activeProfile.whatsapp ? (
-            <a href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold text-emerald-600 active:scale-95">
-              <MessageSquare className="h-5 w-5" />
-              <span>WhatsApp</span>
-            </a>
-          ) : (
-            <a href={`tel:${activeProfile.phone?.replace(/\D/g, '') || ''}`} className="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold text-slate-700 active:scale-95">
-              <PhoneCall className="h-5 w-5" />
-              <span>Call</span>
-            </a>
-          )}
-        </nav>
       )}
 
       {/* Booking Modal Flow */}

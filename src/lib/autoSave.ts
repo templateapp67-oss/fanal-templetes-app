@@ -407,6 +407,32 @@ export function summarizeSaveError(detail: string): string {
   if (d.includes('invalid input syntax for type uuid')) {
     return 'Database rejected a record id (uuid mismatch).';
   }
+  if (
+    d.includes('payload_too_large') ||
+    d.includes('entity.too.large') ||
+    d.includes('website content is too large') ||
+    /\b413\b/.test(d)
+  ) {
+    return 'Website content is too large — please use smaller or fewer inline images and try saving again.';
+  }
+  if (
+    d.includes('invalid gallery image') ||
+    d.includes('invalid profile image') ||
+    d.includes('invalid service') ||
+    d.includes('use a valid youtube link') ||
+    d.includes('check your website content') ||
+    d.includes('invalid_website_content') ||
+    d.includes('22023')
+  ) {
+    return 'Some website content (such as an empty gallery image, invalid URL, or service detail) could not be validated. Please check your entries and save again.';
+  }
+  if (
+    d.includes('your workspace could not be saved') ||
+    d.includes('select a salon owned by this account') ||
+    d.includes('website_save_failed')
+  ) {
+    return 'Database workspace save failed — please apply the latest Supabase workspace SQL migration and retry. Your edits are kept on this device.';
+  }
 
   // 1b) The session itself is gone (expired/revoked access token, refresh token
   // rejected). Checked BEFORE the generic permission branch: a stale JWT is
@@ -838,6 +864,8 @@ export interface WebsiteApiOptions {
    * the service role bypasses RLS). Omitted in mock mode.
    */
   accessToken?: string;
+  /** Hard timeout in ms for the HTTP request (default 20000ms on real fetch). */
+  timeoutMs?: number;
 }
 
 /**
@@ -874,6 +902,15 @@ export async function saveViaWebsiteApi(
   }
 
   const startTime = Date.now();
+  const useAbortTimeout = !options.fetchImpl || typeof options.timeoutMs === 'number';
+  const timeoutMs = options.timeoutMs ?? 20000;
+  const controller =
+    useAbortTimeout && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => {
+        controller.abort(new Error(`POST ${path} timed out after ${timeoutMs}ms`));
+      }, timeoutMs)
+    : null;
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -882,20 +919,43 @@ export async function saveViaWebsiteApi(
     if (options.accessToken) {
       headers.Authorization = `Bearer ${options.accessToken}`;
     }
-    const res = await fetchImpl(path, {
+    const rawProfile: any = payload.profile;
+    const hasEmptyGallery =
+      rawProfile &&
+      Array.isArray(rawProfile.gallery) &&
+      rawProfile.gallery.some((item: any) => !String(item?.url ?? '').trim());
+    const hasEmptyLookbook =
+      rawProfile &&
+      Array.isArray(rawProfile.lookbookPhotos) &&
+      rawProfile.lookbookPhotos.some((item: any) => !String(item?.url ?? '').trim());
+    const sanitizedProfile =
+      hasEmptyGallery || hasEmptyLookbook
+        ? {
+            ...rawProfile,
+            ...(hasEmptyGallery
+              ? { gallery: rawProfile.gallery.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
+              : {}),
+            ...(hasEmptyLookbook
+              ? { lookbookPhotos: rawProfile.lookbookPhotos.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
+              : {}),
+          }
+        : rawProfile;
+    const requestInit: RequestInit = {
       method: 'POST',
       headers,
       body: JSON.stringify({
         salonData: {
           ownerId: payload.ownerId,
-          profile: payload.profile,
+          profile: sanitizedProfile,
           services: payload.services,
           stylists: payload.stylists,
           loyaltyConfig: payload.loyaltyConfig,
           selectedTemplateId: payload.selectedTemplateId,
         },
       }),
-    });
+      ...(controller ? { signal: controller.signal } : {}),
+    };
+    const res = await fetchImpl(path, requestInit);
 
     const elapsedMs = Date.now() - startTime;
     let body: any = null;
@@ -947,6 +1007,8 @@ export async function saveViaWebsiteApi(
       error: err,
     });
     return { ok: false, error: describeError(err) };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 

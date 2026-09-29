@@ -70,6 +70,11 @@ const app = express();
 // Vercel rewrites and direct function invocations do not always preserve the
 // `/api` prefix in req.url. Normalize that shape before Express matches routes.
 app.use(normalizeApiRequestUrl);
+// CORS for cross-origin API callers (different preview/custom/subdomain
+// host). Same-origin traffic (no Origin header) passes through untouched.
+// Mounted BEFORE express.json and the routes so OPTIONS preflights and body-parser
+// errors (such as 413 Payload Too Large) always include CORS headers.
+app.use(nexoraCors);
 // `verify` keeps the RAW body bytes around: the Razorpay webhook signature is
 // an HMAC over exactly what was sent, so the parsed object cannot be re-used.
 app.use(
@@ -80,11 +85,16 @@ app.use(
     },
   })
 );
-// CORS for cross-origin API callers (different preview/custom/subdomain
-// host). Same-origin traffic (no Origin header) passes through untouched.
-// Must sit BEFORE the routes so OPTIONS preflights never hit the JSON-404
-// catch-all — that is exactly the "404 / blocked by CORS" failure mode.
-app.use(nexoraCors);
+app.use((err: any, _req: any, res: any, next: any) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
+    return res.status(413).json({
+      success: false,
+      code: 'PAYLOAD_TOO_LARGE',
+      error: 'Website content is too large; please use smaller or fewer inline images.',
+    });
+  }
+  return next(err);
+});
 registerReferralAttributionRoutes(app);
 
 /** Owner email for booking notifications, resolved from the profiles row. */

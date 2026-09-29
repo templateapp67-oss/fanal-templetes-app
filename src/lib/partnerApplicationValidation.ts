@@ -52,6 +52,10 @@ export interface KycDocumentSpec {
   placeholder: string;
   /** Help copy rendered with the field. */
   hint: string;
+  /** Mobile keyboard mode for the input. */
+  inputMode: 'numeric' | 'text';
+  /** Maximum input length (including optional spaces/hyphens). */
+  maxLength: number;
   /** Format the reference must match AFTER normalization. */
   pattern: RegExp;
   /** Exact error copy shown when the pattern does not match. */
@@ -71,6 +75,8 @@ export const KYC_DOCUMENT_TYPES: readonly KycDocumentSpec[] = [
     label: 'PAN',
     placeholder: 'ABCDE1234F',
     hint: '10 characters — 5 letters, 4 digits, 1 letter.',
+    inputMode: 'text',
+    maxLength: 12,
     pattern: /^[A-Z]{5}[0-9]{4}[A-Z]$/,
     invalidMessage: 'Invalid PAN. Enter it as ABCDE1234F.',
     normalize: upperSeparators,
@@ -80,6 +86,8 @@ export const KYC_DOCUMENT_TYPES: readonly KycDocumentSpec[] = [
     label: 'Aadhaar',
     placeholder: '1234 5678 9012',
     hint: 'Exactly 12 digits. Spaces and dashes are ignored.',
+    inputMode: 'numeric',
+    maxLength: 14,
     pattern: /^[0-9]{12}$/,
     invalidMessage: 'Invalid Aadhaar number. Enter the 12 digits from your Aadhaar card.',
     normalize: stripSeparators,
@@ -89,6 +97,8 @@ export const KYC_DOCUMENT_TYPES: readonly KycDocumentSpec[] = [
     label: 'Passport',
     placeholder: 'A1234567',
     hint: '6–20 letters or digits.',
+    inputMode: 'text',
+    maxLength: 24,
     pattern: /^[A-Z0-9]{6,20}$/,
     invalidMessage: 'Invalid passport number. Use 6-20 letters or digits.',
     normalize: upperSeparators,
@@ -98,6 +108,8 @@ export const KYC_DOCUMENT_TYPES: readonly KycDocumentSpec[] = [
     label: 'Driving licence',
     placeholder: 'RJ0520210001234',
     hint: '6–20 letters or digits.',
+    inputMode: 'text',
+    maxLength: 24,
     pattern: /^[A-Z0-9]{6,20}$/,
     invalidMessage: 'Invalid driving licence number. Use 6-20 letters or digits.',
     normalize: upperSeparators,
@@ -107,11 +119,42 @@ export const KYC_DOCUMENT_TYPES: readonly KycDocumentSpec[] = [
     label: 'Business registration',
     placeholder: 'UDYAMRJ0000000',
     hint: '6–20 letters or digits.',
+    inputMode: 'text',
+    maxLength: 24,
     pattern: /^[A-Z0-9]{6,20}$/,
     invalidMessage: 'Invalid business registration number. Use 6-20 letters or digits.',
     normalize: upperSeparators,
   },
 ];
+
+/**
+ * Restrict live input characters based on the selected KYC document type while
+ * preserving user-typed separators (`1234-5678-9012` or `1234 5678 9012`).
+ */
+export function restrictKycReferenceInput(documentType: unknown, rawValue: unknown): string {
+  const raw = String(rawValue ?? '');
+  const spec = kycDocumentSpec(documentType);
+  if (!spec) return raw.slice(0, PARTNER_APPLICATION_KYC_MAX);
+
+  if (spec.value === 'aadhaar') {
+    // Allow only digits, spaces, and hyphens; cap at 14 chars (e.g. 1234 5678 9012 or 13-digit paste to trigger clear validation error).
+    return raw.replace(/[^\d\s-]/g, '').slice(0, 16);
+  }
+
+  if (spec.value === 'pan') {
+    return raw.toUpperCase().replace(/[^A-Z0-9\s-]/g, '').slice(0, 12);
+  }
+
+  return raw.toUpperCase().replace(/[^A-Z0-9\s\-_/.]/g, '').slice(0, 24);
+}
+
+/**
+ * Format a 12-digit Aadhaar string into standard 4-4-4 display (`1234 5678 9012`).
+ */
+export function formatAadhaarDisplay(value: unknown): string {
+  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 12);
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+}
 
 /**
  * The spec for a document type, or null when the value is not one the backend
