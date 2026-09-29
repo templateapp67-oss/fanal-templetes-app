@@ -387,8 +387,8 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               />
             </div>
           </div>
-
           </>}
+
           {/* ========================================================= */}
           {/* SECTION 2: BASIC INFORMATION (2-COLUMN GRID) */}
           {/* ========================================================= */}

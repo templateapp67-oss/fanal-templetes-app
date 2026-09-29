@@ -165,12 +165,12 @@ test('the login resolver maps (session, backend role) to exactly one state', () 
   assert.equal(login({ userId: '' }), 'signed-out');
   // 4. Normal user (zero partner rows from RLS) → unauthorized.
   assert.equal(login({ partnerRow: null }), 'unauthorized');
-  // Legacy pending rows fall back to open enrollment while the migration
-  // provisions them; the UI must never restore the manual-review lock screen.
-  assert.equal(login({ partnerRow: null, applicationStatus: 'pending' }), 'unauthorized');
-  // A decided application that produced no partner row is still unauthorized.
+  // A completed application waits for admin approval; it is never a client
+  // side access grant.
+  assert.equal(login({ partnerRow: null, applicationStatus: 'pending' }), 'pending');
+  // A rejected application remains closed for that account.
   assert.equal(login({ partnerRow: null, applicationStatus: 'approved' }), 'unauthorized');
-  assert.equal(login({ partnerRow: null, applicationStatus: 'rejected' }), 'unauthorized');
+  assert.equal(login({ partnerRow: null, applicationStatus: 'rejected' }), 'rejected');
   // An active partner row wins over any application status.
   assert.equal(login({ applicationStatus: 'pending' }), 'granted');
   // 5. Inactive partner → denied (not granted).

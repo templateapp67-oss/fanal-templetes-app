@@ -47,15 +47,15 @@ test('an authenticated existing user can submit the secure partner application R
   }]);
 });
 
-test('open-enrollment migration provisions only the authenticated caller and removes manual approval', () => {
-  const migration = readFileSync(new URL('../supabase/migrations/20260922085236_enable_growth_partner_open_enrollment.sql', import.meta.url), 'utf8');
+test('approval migration stores only the authenticated caller application and never self-provisions dashboard access', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20260928124707_require_partner_application_approval.sql', import.meta.url), 'utf8');
   assert.match(migration, /actor uuid := auth\.uid\(\)/);
-  assert.match(migration, /provision_growth_partner\(actor\)/);
+  assert.match(migration, /status = 'pending'/);
+  assert.match(migration, /kyc_status = 'submitted'/);
+  assert.doesNotMatch(migration, /provision_growth_partner\(/);
   assert.doesNotMatch(migration, /p_user_id/);
-  assert.match(migration, /status = 'approved'/);
   assert.match(migration, /revoke all on function[\s\S]*from public, anon/);
   assert.match(migration, /grant execute on function[\s\S]*to authenticated/);
-  assert.match(migration, /where status = 'pending'[\s\S]*provision_growth_partner\(application\.user_id\)/);
 });
 
 test('both portal and owner-dashboard partner entry render open enrollment for unauthorized users', () => {

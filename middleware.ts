@@ -14,6 +14,11 @@
 // the SPA. That is exactly what PR #121 shipped: the matcher gained '/' and
 // the handler gained the import, so the app's home page went down.
 //
+// PR #123 restored the site by making this file a no-op. This is the
+// edge-safe implementation it asked for: the file still has no imports, and
+// the metadata now renders in the Node/API runtime behind GET
+// /api/public-shell instead of at the edge.
+//
 // The rendered HTML is produced by the Node/API runtime behind
 // GET /api/public-shell (server/publicSocialShell.ts), which reuses the same
 // server/publicSocialPage.ts code the Express server uses. This file keeps to

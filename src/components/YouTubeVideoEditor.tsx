@@ -34,7 +34,7 @@ export function YouTubeVideoEditor({ profile, setProfile, templateId }: {
   };
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h3 className="font-bold">Featured Videos, Reels & Showcases</h3>
+      <div><h3 className="font-bold">Featured Videos, Reels & Showcases</h3><p className="mt-1 text-xs text-slate-500">Add the same website videos here or from your SaaS Dashboard.</p></div>
       <button type="button" onClick={() => { setError(''); setDraft({ title: '', youtubeUrl: '', categoryTag: 'SHORT', description: '' }); }} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">+ Add YouTube video</button>
     </div>
     <p className="text-xs text-slate-500">YouTube links only. Edit the title, description, link and placement. Save your website to publish changes.</p>
