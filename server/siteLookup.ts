@@ -15,6 +15,7 @@ export const DEMO_SUBDOMAINS = new Set([
   'mirakistudio',
   'demo',
   'test',
+  'khushi-salon',
 ]);
 
 export function slugifySalonName(name: string): string {
@@ -29,7 +30,13 @@ export function slugifySalonName(name: string): string {
 
 /** Trim and case-normalize a public site identifier without inventing a slug. */
 export function normalizeSiteIdentifier(identifier: unknown): string {
-  return String(identifier ?? '').trim().toLowerCase();
+  const raw = String(identifier ?? '').trim();
+  if (!raw) return '';
+  // URLSearchParams has already decoded normal browser URLs. This extra decode
+  // only covers programmatic callers that send an encoded identifier directly.
+  let decoded = raw;
+  try { decoded = decodeURIComponent(raw); } catch { /* malformed encoding stays harmless */ }
+  return decoded.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '').slice(0, 62);
 }
 
 function isIgnorableLookupSchemaError(error: any): boolean {
@@ -95,6 +102,43 @@ export const defaultDemoSalon: {
     { id: 'hs-st-3', name: 'Kavita Deshmukh', role: 'Hair Texture & Scalp Specialist', avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80', bio: 'Trichology-trained scalp and hair botox specialist focusing on restorative therapies.', phone: '+91 98000 00004', specialties: ['Hair Botox', 'Scalp Analysis', 'Thermal Tongs'], assignedServices: ['hs-5', 'hs-6', 'hs-9'], rating: 4.89, commissionRate: 25, status: 'Available', accessRole: 'Service Provider (Assigned)', hidePhone: false, schedule: [] },
   ],
 };
+
+/**
+ * Public links must remain viewable when the database is unavailable or a
+ * pre-provisioned template has not yet been saved to a tenant row. This is
+ * intentionally static, contains no tenant data, and is marked for a visible
+ * browser banner. It is never used for owner/editor state or booking writes.
+ */
+export function createSystemPreviewSalon(identifier: string, reason: 'database_unavailable' | 'not_published') {
+  const slug = normalizeSiteIdentifier(identifier) || 'salon-preview';
+  const clone = JSON.parse(JSON.stringify(defaultDemoSalon));
+  const displayName = slug === 'khushi-salon'
+    ? 'KHUSHI SALON'
+    : slug.split('-').filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Nexora Salon Preview';
+  clone.profile = {
+    ...clone.profile,
+    businessName: displayName,
+    subdomain: slug,
+    businessType: 'luxury_hair_salon',
+    themePreset: slug === 'khushi-salon' ? 'obsidian_gold' : clone.profile.themePreset,
+    themeAccentKey: slug === 'khushi-salon' ? 'gold' : clone.profile.themeAccentKey,
+    tagline: slug === 'khushi-salon'
+      ? 'Organic Care, Luxury Hair Rituals & Personalised Styling'
+      : clone.profile.tagline,
+    about: slug === 'khushi-salon'
+      ? 'KHUSHI SALON brings together organic scalp care, restorative hair rituals and luxury styling in a calm, personalised studio experience.'
+      : clone.profile.about,
+  };
+  if (slug === 'khushi-salon') {
+    clone.services = clone.services.filter((service: any) => /cut|balayage|keratin|botox|scalp/i.test(service.name));
+  }
+  return {
+    ...clone,
+    selectedTemplateId: slug === 'khushi-salon' ? 'luxury_hair_salon' : 'hair_salon',
+    isPreviewFallback: true,
+    previewReason: reason,
+  };
+}
 
 export interface SiteLookupDeps {
   db: SupabaseClient<any, any, any>;
@@ -349,8 +393,9 @@ function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): Salo
 
 /**
  * Resolve a salon and its catalogue by subdomain or custom domain.
- * Live reads use the normalized salon catalogue and propagate database failures.
- * Demo presets are available only in explicit mock mode.
+ * Live reads use the normalized salon catalogue. A read failure or missing
+ * pre-provisioned slug returns static preview data rather than a broken public
+ * page; the returned payload is explicitly marked as a preview fallback.
  */
 export async function lookupSalon(
   deps: SiteLookupDeps,
@@ -362,8 +407,8 @@ export async function lookupSalon(
   if (!sub) return { found: false, salon: null };
 
   if (deps.isMockSupabase) {
-    const s = deps.mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? defaultDemoSalon : null);
-    return { found: !!s, salon: s || null };
+    const s = deps.mockSalons[sub] || (DEMO_SUBDOMAINS.has(sub) ? createSystemPreviewSalon(sub, 'not_published') : null);
+    return { found: !!s, salon: s || createSystemPreviewSalon(sub, 'not_published') };
   }
 
   try {
@@ -390,7 +435,7 @@ export async function lookupSalon(
       const salonRes = await runSalonLookup(column, `public salon lookup (${column})`);
       if (salonRes.error) {
         if (isIgnorableLookupSchemaError(salonRes.error)) continue;
-        return { found: false, salon: null, error: salonRes.error };
+        return { found: true, salon: createSystemPreviewSalon(sub, 'database_unavailable') };
       }
       if (salonRes.data) {
         salonRow = { ...salonRes.data, __resolved_public_slug: sub };
@@ -411,7 +456,7 @@ export async function lookupSalon(
       );
       if (websiteRes.error) {
         if (!isIgnorableLookupSchemaError(websiteRes.error)) {
-          return { found: false, salon: null, error: websiteRes.error };
+          return { found: true, salon: createSystemPreviewSalon(sub, 'database_unavailable') };
         }
       } else if (websiteRes.data) {
         const websiteRow: any = websiteRes.data;
@@ -428,7 +473,7 @@ export async function lookupSalon(
       }
     }
 
-    if (!salonRow) return { found: false, salon: null };
+    if (!salonRow) return { found: true, salon: createSystemPreviewSalon(sub, 'not_published') };
     const catalogueSalonId = salonRow.__catalogue_salon_id || salonRow.id;
     const ownerId = await resolvePublishedOwnerId(deps, salonRow, deadlineAt);
 
@@ -447,9 +492,9 @@ export async function lookupSalon(
     ]);
     // Optional legacy schema gaps may render an empty, unbookable catalogue.
     // Never fabricate bookable services/staff from private editor draft IDs.
-    if (hoursRes.error && !isIgnorableLookupSchemaError(hoursRes.error)) return { found: false, salon: null, error: hoursRes.error };
-    if (servicesRes.error && !isIgnorableLookupSchemaError(servicesRes.error)) return { found: false, salon: null, error: servicesRes.error };
-    if (staffRes.error && !isIgnorableLookupSchemaError(staffRes.error)) return { found: false, salon: null, error: staffRes.error };
+    if (hoursRes.error && !isIgnorableLookupSchemaError(hoursRes.error)) return { found: true, salon: createSystemPreviewSalon(sub, 'database_unavailable') };
+    if (servicesRes.error && !isIgnorableLookupSchemaError(servicesRes.error)) return { found: true, salon: createSystemPreviewSalon(sub, 'database_unavailable') };
+    if (staffRes.error && !isIgnorableLookupSchemaError(staffRes.error)) return { found: true, salon: createSystemPreviewSalon(sub, 'database_unavailable') };
 
     const editorState = scopedWebsiteSnapshot(rawEditorState, catalogueSalonId, salonRow.slug || sub) || scopedWebsiteSnapshot(salonRow.data?.editor_state, catalogueSalonId, salonRow.slug || sub);
     const presentationServices = salonRow.data?.editor_services ?? editorState?.services;
@@ -469,7 +514,8 @@ export async function lookupSalon(
       loyaltyConfig: publicLoyaltyConfig(loyaltyRes.data, editorState),
     } };
   } catch (error) {
-    return { found: false, salon: null, error };
+    console.warn('[Public site] Falling back to system preview after tenant lookup failure.', { site: sub, message: String((error as any)?.message || error).slice(0, 160) });
+    return { found: true, salon: createSystemPreviewSalon(sub, 'database_unavailable') };
   }
 }
 

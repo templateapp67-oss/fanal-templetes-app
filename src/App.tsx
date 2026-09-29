@@ -551,7 +551,7 @@ export default function App() {
     try {
       const params = new URLSearchParams(search || '');
       return {
-        requestedSite: (params.get('site') || params.get('subdomain') || params.get('tenant') || '').trim(),
+        requestedSite: (params.get('site') || params.get('subdomain') || params.get('tenant') || params.get('template') || '').trim(),
         isPublicParam: params.get('view') === 'public' || params.has('public'),
       };
     } catch {
@@ -585,6 +585,8 @@ export default function App() {
     stylists?: Stylist[];
     lookupFailed?: boolean;
     error?: string | null;
+    /** Static, non-tenant demo data shown only when a public lookup cannot resolve. */
+    isPreviewFallback?: boolean;
     /** The owner's chosen website template, so the public site opens it. */
     selectedTemplateId?: string | null;
   } | null>(null);
@@ -720,6 +722,7 @@ export default function App() {
               services: data.salon?.services || services,
               stylists: data.salon?.stylists || stylists,
               selectedTemplateId: typeof data.salon?.selectedTemplateId === 'string' ? data.salon.selectedTemplateId : null,
+              isPreviewFallback: data.salon?.isPreviewFallback === true,
             });
             return;
           }
@@ -760,6 +763,7 @@ export default function App() {
             profile: profile,
             services: services,
             stylists: stylists,
+            isPreviewFallback: true,
           });
           return;
         }
@@ -777,6 +781,7 @@ export default function App() {
             services: data.salon?.services || services,
             stylists: data.salon?.stylists || stylists,
             selectedTemplateId: typeof data.salon?.selectedTemplateId === 'string' ? data.salon.selectedTemplateId : null,
+            isPreviewFallback: data.salon?.isPreviewFallback === true,
           });
         } else if (!result.ok && data?.isTenant) {
           setSiteTenant({
@@ -2723,6 +2728,11 @@ export default function App() {
   if (isPublicSite) {
     return (
       <div className="min-h-dvh bg-surface text-on-surface">
+        {siteTenant?.isPreviewFallback && (
+          <div className="sticky top-0 z-[80] border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-semibold text-amber-950">
+            Viewing Demo / Live Preview Mode — this site’s saved database content is temporarily unavailable.
+          </div>
+        )}
         <SalonWebsitePreview
           profile={publicProfile}
           services={publicServices}

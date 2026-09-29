@@ -69,7 +69,7 @@ import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHa
 import { getServiceIcon } from './ServiceManagement';
 import { slugifySalonName } from '../lib/salonStore';
 import { useSalonData } from '../lib/useSalonData';
-import { getStylistBio } from './StaffPortfolioEditor';
+import { enrichStylist, getStylistBio, getStylistPortfolioWorks } from './StaffPortfolioEditor';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -774,8 +774,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     );
   };
 
+  const handleUpdateStylist = (stylistId: string, patch: Partial<Stylist>) => {
+    setStylists((prev) => prev.map((st) => st.id === stylistId ? { ...st, ...patch } : st));
+  };
+
   const handleAddNewStylist = () => {
-    const newSt: Stylist = {
+    const newSt = enrichStylist({
       id: `st-${Date.now()}`,
       name: 'Specialist Artisan',
       role: 'Senior Hair & Beauty Expert',
@@ -784,7 +788,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       specialties: ['Precision Styling', 'Color Artistry', 'Scalp Detox'],
       bio: 'A senior beauty specialist who combines a detailed consultation with personalised service and aftercare.',
       portfolioUrl: '#gallery-section'
-    };
+    });
     setStylists((prev) => [...prev, newSt]);
     showNotification(`Specialist "${newSt.name}" added to roster!`);
   };
@@ -2256,7 +2260,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               viewport={{ once: true }}
               className="grid w-full min-w-0 grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3"
             >
-              {activeStylists.map((st) => (
+              {activeStylists.map((rawSt) => {
+                const st = enrichStylist(rawSt);
+                const portfolioWorks = getStylistPortfolioWorks(st);
+                return (
                 <motion.div
                   variants={{
                     hidden: { opacity: 0, y: 10 },
@@ -2300,6 +2307,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                             type="number"
                             label="Rating"
                           />
+                          <span className="text-[9px] opacity-75">({st.reviewCount})</span>
                         </div>
                       </div>
 
@@ -2312,6 +2320,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         />
                       </p>
 
+                      <p className={`mt-1 text-[10px] font-bold uppercase tracking-wide ${isDarkCanvas ? 'text-neutral-500' : 'text-slate-400'}`}>
+                        <InlineEditable value={st.credentials ?? ''} onSave={(val) => handleUpdateStylist(st.id, { credentials: String(val) })} isEditingActive={isEditMode} label="Credentials and experience" />
+                      </p>
+
                       <div className={`flex items-center gap-1.5 text-[11px] font-bold mt-1.5 ${isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'}`}>
                         <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
                         <span>Accepting Online Bookings</span>
@@ -2320,8 +2332,19 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                   <p className={`-mt-1 text-xs leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'}`}>
-                    {getStylistBio(st)}
+                    <InlineEditable value={getStylistBio(st)} onSave={(val) => handleUpdateStylist(st.id, { bio: String(val) })} isEditingActive={isEditMode} label="Professional biography" />
                   </p>
+
+                  <div className={`rounded-xl border px-3 py-2.5 ${isDarkCanvas ? 'border-neutral-700 bg-neutral-950/60' : 'border-slate-100 bg-slate-50'}`} style={{ borderLeftColor: activeAccent.primaryHex, borderLeftWidth: 3 }}>
+                    <p className={`text-[10px] font-black uppercase tracking-wider ${isDarkCanvas ? 'text-neutral-500' : 'text-slate-400'}`}>Signature masterwork</p>
+                    <p className={`mt-0.5 text-xs font-bold ${isDarkCanvas ? 'text-white' : 'text-slate-900'}`}><InlineEditable value={st.signatureWork ?? ''} onSave={(val) => handleUpdateStylist(st.id, { signatureWork: String(val) })} isEditingActive={isEditMode} label="Signature masterwork" /></p>
+                    <p className={`mt-1 text-[11px] italic leading-relaxed ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>“<InlineEditable value={st.quote ?? ''} onSave={(val) => handleUpdateStylist(st.id, { quote: String(val) })} isEditingActive={isEditMode} label="Personal quote" />”</p>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-2"><p className={`text-[10px] font-black uppercase tracking-wider ${isDarkCanvas ? 'text-neutral-500' : 'text-slate-400'}`}>Signature portfolio works ({portfolioWorks.length})</p>{st.verified && <span className="inline-flex items-center gap-1 text-[10px] font-bold" style={{ color: activeAccent.primaryHex }}><ShieldCheck className="h-3 w-3" />Verified specialist</span>}</div>
+                    <div className="grid grid-cols-3 gap-2">{portfolioWorks.slice(0, 3).map(work => <a key={work.id} href={st.portfolioUrl || '#gallery-section'} className="group overflow-hidden rounded-lg border border-black/5" title={work.title}><img src={work.imageUrl} alt={`${st.name} — ${work.title}`} className="h-16 w-full object-cover transition-transform duration-300 group-hover:scale-110 sm:h-20" /><span className={`block truncate px-1.5 py-1 text-[9px] font-bold ${isDarkCanvas ? 'bg-neutral-800 text-neutral-200' : 'bg-white text-slate-600'}`}>{work.title}</span></a>)}</div>
+                  </div>
 
                   {/* Specialties tags */}
                   <div className={`pt-2.5 border-t flex flex-wrap gap-1.5 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
@@ -2368,7 +2391,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                 </motion.div>
-              ))}
+              );})}
             </motion.div>
           </motion.section>
         )}
@@ -2719,7 +2742,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
               </div>
 
-              {/* Map card — read-only for visitors, editable in the owner editor. */}
+              {/* Map card �� read-only for visitors, editable in the owner editor. */}
               <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 min-h-[380px] shadow-xs">
                 {!isEditMode ? (
                   <WebsiteLocationMap profile={activeProfile} />

@@ -2,7 +2,7 @@ import React from 'react';
 import { SalonWebsitePreview } from './SalonWebsitePreview';
 import type { Appointment, BusinessTypeId, SalonProfile, SalonService, Stylist } from '../types';
 
-export type TemplatePreviewSection = 'hero' | 'services' | 'gallery' | 'contact' | 'brand' | 'seo' | 'social';
+export type TemplatePreviewSection = 'hero' | 'services' | 'gallery' | 'stylists' | 'contact' | 'brand' | 'seo' | 'social';
 
 export interface DynamicTemplateConfig {
   templateId: BusinessTypeId;
