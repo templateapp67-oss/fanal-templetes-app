@@ -5,6 +5,16 @@ import {
   type GrowthPartner,
   type GrowthPartnerGate,
 } from './growthPartner';
+import {
+  PartnerApplicationError,
+  PARTNER_APPLICATION_ERROR_MESSAGES,
+  toPartnerApplicationError,
+} from './partnerApplicationErrors';
+import {
+  validatePartnerApplication,
+  type PartnerApplicationFieldErrors,
+  type PartnerApplicationInput,
+} from './partnerApplicationValidation';
 import { GROWTH_PARTNER_LOGIN_PATH, isGrowthPartnerLoginPath } from './router';
 
 // ============================================================================
@@ -48,11 +58,69 @@ export interface GrowthPartnerAuthClient {
   rpc?: (name: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }>;
 }
 
+// ---------------------------------------------------------------------------
+// Growth Partner APPLICATION submission
+//
+// One write path, used by both entry points (sign-up and the signed-in
+// "Become a Growth Partner" form), so the two can never drift:
+//
+//   1. validate + sanitize every field (`validatePartnerApplication`) — an
+//      invalid Aadhaar number or phone never reaches the network,
+//   2. prove a live session exists (`auth.getSession()`), because the backend
+//      derives the row's owner from the JWT (`auth.uid()`) and an expired
+//      session would otherwise be reported as a generic failure,
+//   3. refuse a duplicate application BEFORE the write, using the caller's own
+//      application row (RLS-scoped read) — a rejected applicant may reapply,
+//   4. call the RPC with the sanitized values only. No user id, no partner id
+//      and no status ever travel from the browser: the database decides those,
+//   5. map ANY failure to a classified, actionable error
+//      (`toPartnerApplicationError`) instead of the old catch-all sentence.
+// ---------------------------------------------------------------------------
+
+/** The stored application, as the RPC reports it. */
+export interface GrowthPartnerApplicationResult {
+  id: string | null;
+  status: string;
+  kycStatus: string | null;
+  createdAt: string | null;
+  /** Present only on projects whose enrollment approves applications at once. */
+  referralCode?: string | null;
+}
+
+export interface SubmitPartnerApplicationOptions {
+  /**
+   * Read of the caller's own application row, used to refuse a duplicate before
+   * the write. Injectable: the portal already has the row in state, and tests
+   * decide where it comes from. Omit it and the check is skipped — the database
+   * still refuses the duplicate, so skipping is never unsafe, only slower.
+   */
+  fetchApplicationRow?: () => PromiseLike<{ status?: string | null } | null> | { status?: string | null } | null;
+  /**
+   * Verify a live session before writing (default true). Sign-up passes false:
+   * the session was just minted by `auth.signUp` on the same client.
+   */
+  requireSession?: boolean;
+  /** Skip the duplicate pre-check (rarely needed; the DB is authoritative). */
+  allowResubmission?: boolean;
+}
+
 /** Create an Auth account, then submit a pending partner application. */
+export interface SignUpGrowthPartnerResult {
+  confirmed: boolean;
+  viewer?: GrowthPartnerViewer;
+  application?: GrowthPartnerApplicationResult;
+  /**
+   * Set when the account was created but the application was not stored. The
+   * account exists, so this is NOT thrown: the caller shows "account created"
+   * together with the real reason (invalid KYC, duplicate, missing migration…).
+   */
+  applicationError?: PartnerApplicationError;
+}
+
 export async function signUpGrowthPartner(
   client: GrowthPartnerAuthClient,
   input: { email: string; password: string; fullName: string; phone?: string; kycDocumentType: string; kycDocumentReference: string }
-): Promise<{ confirmed: boolean; viewer?: GrowthPartnerViewer }> {
+): Promise<SignUpGrowthPartnerResult> {
   if (!client.auth.signUp) throw new Error('Signup is unavailable. Please try again later.');
   const { data, error } = await client.auth.signUp({
     email: input.email.trim(), password: input.password,
@@ -68,29 +136,149 @@ export async function signUpGrowthPartner(
     throw new Error('This email already has an account. Please use Sign in instead.');
   }
   if (!data.session) return { confirmed: false };
-  if (!client.rpc) throw new Error('Signup is unavailable. Please try again later.');
-  const { error: applicationError } = await client.rpc('submit_growth_partner_application', {
-    p_full_name: input.fullName.trim(), p_phone: input.phone?.trim() || null,
-    p_kyc_document_type: input.kycDocumentType, p_kyc_document_reference: input.kycDocumentReference.trim(),
-  });
-  if (applicationError) throw new Error('Account created, but the partner application could not be submitted. Please sign in and try again.');
-  return { confirmed: true, viewer: viewerFromUser(data.session.user ?? data.user) };
+  try {
+    // The session was just minted by this client, so no second read is needed
+    // before the write; a brand-new account cannot have an application yet.
+    const application = await submitPartnerApplication(
+      client,
+      {
+        fullName: input.fullName,
+        phone: input.phone,
+        kycDocumentType: input.kycDocumentType,
+        kycDocumentReference: input.kycDocumentReference,
+      },
+      { requireSession: false, allowResubmission: true }
+    );
+    return { confirmed: true, viewer: viewerFromUser(data.session.user ?? data.user), application };
+  } catch (thrown) {
+    // The account exists and is signed in: report the application outcome with
+    // the real reason instead of failing the whole sign-up.
+    return {
+      confirmed: true,
+      viewer: viewerFromUser(data.session.user ?? data.user),
+      applicationError: toPartnerApplicationError(thrown),
+    };
+  }
 }
 
 /** Submit an application for an account that is already authenticated. */
 export async function submitGrowthPartnerApplication(
   client: GrowthPartnerAuthClient,
-  input: { fullName: string; phone?: string; kycDocumentType: string; kycDocumentReference: string }
-): Promise<{ status: string; referral_code?: string }> {
-  if (!client.rpc) throw new Error('Applications are unavailable. Please try again later.');
-  const { data, error } = await client.rpc('submit_growth_partner_application', {
-    p_full_name: input.fullName.trim(),
-    p_phone: input.phone?.trim() || null,
-    p_kyc_document_type: input.kycDocumentType,
-    p_kyc_document_reference: input.kycDocumentReference.trim(),
-  });
-  if (error) throw new Error('Your application could not be submitted. Please try again.');
-  return { status: String(data?.status || 'pending'), referral_code: data?.referral_code };
+  input: PartnerApplicationInput,
+  options: SubmitPartnerApplicationOptions = {}
+): Promise<GrowthPartnerApplicationResult> {
+  return submitPartnerApplication(client, input, options);
+}
+
+async function submitPartnerApplication(
+  client: GrowthPartnerAuthClient,
+  input: PartnerApplicationInput,
+  options: SubmitPartnerApplicationOptions
+): Promise<GrowthPartnerApplicationResult> {
+  // (1) Validate + sanitize. `values` is null unless every field passed, so an
+  //     invalid field can never reach the network — and the error still names
+  //     the field, so the form marks the right input.
+  const validated = validatePartnerApplication(input);
+  if (!validated.values) {
+    const field = (Object.keys(validated.errors) as Array<keyof PartnerApplicationFieldErrors>)[0];
+    throw new PartnerApplicationError(
+      'validation',
+      validated.message || 'Check your application details and try again.',
+      field ? { field } : {}
+    );
+  }
+
+  // (2) A live session is what attaches the row to the caller (`auth.uid()`):
+  //     the RPC never receives a user id, it reads the JWT. Check it here so an
+  //     expired session prompts a sign-in instead of a dead-end failure.
+  //
+  //     A session read that THROWS is not evidence of a missing session — it is
+  //     usually the same transport failure the write would hit — so it is left
+  //     for the write's own answer to classify (network, not "signed out").
+  if (options.requireSession !== false && typeof client.auth?.getSession === 'function') {
+    let sessionUserId: unknown = null;
+    let sessionLookupFailed = false;
+    try {
+      const { data } = await client.auth.getSession();
+      sessionUserId = data?.session?.user?.id ?? null;
+    } catch {
+      sessionLookupFailed = true;
+    }
+    if (!sessionLookupFailed && !sessionUserId) {
+      throw new PartnerApplicationError('session', PARTNER_APPLICATION_ERROR_MESSAGES.session);
+    }
+  }
+
+  // (3) Duplicate guard: this user already has an application under review (or
+  //     already approved). A REJECTED applicant may reapply, which is why the
+  //     status — not mere existence — decides.
+  if (!options.allowResubmission && typeof options.fetchApplicationRow === 'function') {
+    const existing = await Promise.resolve()
+      .then(() => options.fetchApplicationRow?.())
+      .catch(() => null);
+    const status = String(existing?.status ?? '').trim().toLowerCase();
+    if (status === 'pending') {
+      throw new PartnerApplicationError('duplicate', PARTNER_APPLICATION_ERROR_MESSAGES.duplicate, {
+        code: '23505',
+      });
+    }
+    if (status === 'approved') {
+      throw new PartnerApplicationError('approved', PARTNER_APPLICATION_ERROR_MESSAGES.approved, {
+        code: '23505',
+      });
+    }
+  }
+
+  // (4) The write. Identity and status are decided by the database: the payload
+  //     carries no user id, no partner id and no status field.
+  if (!client.rpc) {
+    throw new PartnerApplicationError('schema', PARTNER_APPLICATION_ERROR_MESSAGES.unavailable);
+  }
+  // The payload is written inline on purpose: tests/growthPartnerContract.test.ts
+  // reads every `.rpc('<name>', { … })` call out of this file and asserts that
+  // no identity (user_id / partner_id) is ever sent — the backend derives it
+  // from auth.uid(). Keeping it visible keeps that guarantee checkable.
+  //
+  // postgrest-js RESOLVES with `{ error }` for a database refusal but REJECTS
+  // for a transport failure (and can throw synchronously). Both shapes are
+  // funnelled into the same classifier — otherwise a dropped connection would
+  // escape as a raw driver error, which is exactly how this path used to end up
+  // showing one generic sentence for everything.
+  let settled: { data?: unknown; error?: unknown } = {};
+  try {
+    settled = await Promise.resolve(
+      client.rpc('submit_growth_partner_application', {
+        p_full_name: validated.values.fullName,
+        p_phone: validated.values.phone,
+        p_kyc_document_type: validated.values.kycDocumentType,
+        p_kyc_document_reference: validated.values.kycDocumentReference,
+      })
+    ).then(
+      (result) => result ?? {},
+      (thrown) => ({ data: null, error: thrown })
+    );
+  } catch (thrown) {
+    settled = { data: null, error: thrown };
+  }
+  // (5) Classify every failure — never replace it with a catch-all sentence.
+  if (settled.error) throw toPartnerApplicationError(settled.error);
+  return normalizeApplicationResult(settled.data);
+}
+
+/** Normalize the RPC payload; unknown shapes degrade to null, never to guesses. */
+function normalizeApplicationResult(data: unknown): GrowthPartnerApplicationResult {
+  const payload = (data ?? {}) as Record<string, unknown>;
+  const value = (key: string): string | null => {
+    const raw = payload[key];
+    return typeof raw === 'string' && raw.trim() ? raw : null;
+  };
+  return {
+    id: value('id'),
+    status: value('status') ?? 'pending',
+    kycStatus: value('kyc_status'),
+    createdAt: value('created_at'),
+    referralCode: value('referral_code'),
+  };
 }
 
 /** The authenticated viewer identity (id + email), never a role. */

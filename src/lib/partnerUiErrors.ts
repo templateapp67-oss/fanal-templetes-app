@@ -1,7 +1,27 @@
 /** Exact, reviewed UI copy only; rejected promises can contain arbitrary driver text. */
 const SAFE_MESSAGES = new Set([
   "Your account is suspended. Contact support for help.",
-  "Account created, but the partner application could not be submitted. Please sign in and try again.",
+  // --- Growth Partner application submission (partnerApplicationErrors.ts) ---
+  // Specific, actionable copy: the old flow replaced every failure with
+  // "Application failed. Please try again.", which told the user nothing.
+  "Check your application details and try again.",
+  "Enter a valid 10-digit mobile number.",
+  "Enter your full name as it appears on your KYC document.",
+  "Enter your full name.",
+  "Enter your KYC reference number.",
+  "Invalid Aadhaar number. Enter the 12 digits from your Aadhaar card.",
+  "Invalid PAN. Enter it as ABCDE1234F.",
+  "Invalid passport number. Use 6-20 letters or digits.",
+  "Invalid driving licence number. Use 6-20 letters or digits.",
+  "Invalid business registration number. Use 6-20 letters or digits.",
+  "Select a KYC document type.",
+  "That KYC document is already registered. Check the number and try again.",
+  "We could not submit your application. Please try again.",
+  "Applications are unavailable right now. Please try again later.",
+  "Partner applications are not set up on this project yet. Apply supabase/migrations/20261030000000_partner_applications_hardening.sql, then try again.",
+  "You have already submitted an application.",
+  "Your Growth Partner application is already approved. Sign in to open your dashboard.",
+  "Your session expired. Please sign in again.",
   "Cannot process image.",
   "Choose a JPG, PNG or WebP image no larger than 5 MB.",
   "Choose a JPG, PNG or WebP image.",
