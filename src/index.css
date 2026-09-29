@@ -152,21 +152,31 @@
     user-select: none;
   }
 
-  img,
+  img {
+    max-width: 100%;
+    height: auto;
+    box-sizing: border-box;
+  }
+
   video,
   iframe {
     max-width: 100%;
+    box-sizing: border-box;
   }
 
   input,
   select,
   textarea {
     max-width: 100%;
+    box-sizing: border-box;
   }
 
   h1, h2, h3, h4, h5, h6, .font-display {
     font-family: var(--font-display);
     text-shadow: var(--heading-text-shadow, 0 1px 3px rgba(0, 0, 0, 0.45));
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
   }
 
   .font-mono-caps {
@@ -226,6 +236,7 @@
 /* Keep fixed UI on its own paint layer so it cannot invalidate page layout. */
 .layout-stable-fixed {
   contain: layout paint;
+  transform: translateZ(0);
   will-change: transform;
 }
 

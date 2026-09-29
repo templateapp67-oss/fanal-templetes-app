@@ -123,8 +123,8 @@ function fieldFor(message: string): PartnerApplicationError['field'] | undefined
   if (/aadhaar|pan\b|passport|driving licence|driving license|business registration/i.test(message)) {
     return 'kycDocumentReference';
   }
-  if (/document type/i.test(message)) return 'kycDocumentType';
   if (/KYC document reference|KYC reference/i.test(message)) return 'kycDocumentReference';
+  if (/document type/i.test(message)) return 'kycDocumentType';
   return undefined;
 }
 
@@ -225,16 +225,39 @@ export function toPartnerApplicationError(error: unknown): PartnerApplicationErr
     });
   }
 
-  // 8. Backend validation: pass through the reviewed server copy (22023 and
-  //    friends), keeping the field it belongs to.
-  if (code === '22023' || code === '22007' || code === '22P02' || SERVER_VALIDATION_MESSAGES.has(message)) {
-    const safe = SERVER_VALIDATION_MESSAGES.has(message)
-      ? message
-      : 'Check your application details and try again.';
+  // 8. Backend validation: pass through the reviewed server copy (22023, 23514
+  //    check constraints, and friends), keeping the field it belongs to.
+  if (
+    code === '22023' ||
+    code === '22007' ||
+    code === '22P02' ||
+    code === '23514' ||
+    SERVER_VALIDATION_MESSAGES.has(message) ||
+    SERVER_VALIDATION_MESSAGES.has(message.replace(/\.$/, ''))
+  ) {
+    const trimmed = message.replace(/\.$/, '');
+    let safe = 'Check your application details and try again.';
+    if (SERVER_VALIDATION_MESSAGES.has(message) || SERVER_VALIDATION_MESSAGES.has(trimmed)) {
+      safe = message;
+    } else if (/invalid aadhaar|aadhaar_format|kyc_reference.*aadhaar/i.test(message)) {
+      safe = 'Invalid Aadhaar number. Enter the 12 digits from your Aadhaar card.';
+    } else if (/invalid pan\b|pan_format|kyc_reference.*pan/i.test(message)) {
+      safe = 'Invalid PAN. Enter it as ABCDE1234F.';
+    } else if (/invalid passport/i.test(message)) {
+      safe = 'Invalid passport number. Use 6-20 letters or digits.';
+    } else if (/invalid driving licen[cs]e/i.test(message)) {
+      safe = 'Invalid driving licence number. Use 6-20 letters or digits.';
+    } else if (/invalid business registration/i.test(message)) {
+      safe = 'Invalid business registration number. Use 6-20 letters or digits.';
+    } else if (/kyc_reference_check|kyc_reference_format_check|kyc_document_reference_check/i.test(message)) {
+      safe = 'Invalid KYC reference number for the selected document type.';
+    } else if (/kyc_document_type_check/i.test(message)) {
+      safe = 'Select a valid KYC document type';
+    }
     return new PartnerApplicationError('validation', safe, {
       code,
       status,
-      field: fieldFor(message),
+      field: fieldFor(safe !== 'Check your application details and try again.' ? safe : message),
       cause: error,
     });
   }

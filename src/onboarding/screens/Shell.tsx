@@ -40,8 +40,10 @@ export const Field: React.FC<{
   placeholder?: string;
   disabled?: boolean;
   error?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  maxLength?: number;
   onChange: (value: string) => void;
-}> = ({ id, label, type = 'text', value, autoComplete, placeholder, disabled, error, onChange }) => (
+}> = ({ id, label, type = 'text', value, autoComplete, placeholder, disabled, error, inputMode, maxLength, onChange }) => (
   <div>
     <label htmlFor={id} className="block text-sm font-bold text-slate-800">
       {label}
@@ -54,6 +56,8 @@ export const Field: React.FC<{
       autoComplete={autoComplete}
       placeholder={placeholder}
       disabled={disabled}
+      inputMode={inputMode}
+      maxLength={maxLength}
       onChange={(event) => onChange(event.target.value)}
       aria-invalid={error ? true : undefined}
       aria-describedby={error ? `${id}-error` : undefined}

@@ -29,6 +29,26 @@ export function isMissingOwnerWorkspaceError(errors: string[] | undefined): bool
     || /nexora_owner_salon_ids/i.test(joined);
 }
 
+function sanitizeEditorProfileForSave<T extends Record<string, any> | undefined>(profile: T): T {
+  if (!profile || typeof profile !== 'object') return profile;
+  const hasEmptyGallery =
+    Array.isArray(profile.gallery) &&
+    profile.gallery.some((item: any) => !String(item?.url ?? '').trim());
+  const hasEmptyLookbook =
+    Array.isArray(profile.lookbookPhotos) &&
+    profile.lookbookPhotos.some((item: any) => !String(item?.url ?? '').trim());
+  if (!hasEmptyGallery && !hasEmptyLookbook) return profile;
+  return {
+    ...profile,
+    ...(hasEmptyGallery
+      ? { gallery: profile.gallery.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
+      : {}),
+    ...(hasEmptyLookbook
+      ? { lookbookPhotos: profile.lookbookPhotos.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
+      : {}),
+  };
+}
+
 async function writeOwnerEditorState(
   db: SupabaseClient,
   payload: SalonSyncPayload
@@ -36,9 +56,10 @@ async function writeOwnerEditorState(
   // One RPC call with the caller's current token. Returns the raw error (if
   // any) instead of throwing so the caller can decide whether an auth retry
   // is worth it.
+  const sanitizedProfile = sanitizeEditorProfileForSave(payload.profile as any);
   const callSaveRpc = async (): Promise<unknown | null> => {
     const { error } = await db.rpc('save_owner_editor_state', { p_state: {
-      profile: payload.profile, services: payload.services,
+      profile: sanitizedProfile, services: payload.services,
       stylists: payload.stylists, loyaltyConfig: payload.loyaltyConfig,
       ...(payload.appointments !== undefined ? { appointments: payload.appointments } : {}),
       ...(payload.clients !== undefined ? { clients: payload.clients } : {}),

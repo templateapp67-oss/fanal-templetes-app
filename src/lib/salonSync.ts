@@ -350,8 +350,19 @@ export async function resilientClientUpsert(
     const missingCol = isMissingColumnError(errMsg);
 
     if (missingCol) {
-      if (missingCol === 'id' || missingCol === 'owner_id' || missingCol === 'user_id' || missingCol === 'organization_id') {
+      if (missingCol === 'owner_id' || missingCol === 'user_id' || missingCol === 'organization_id') {
         return { error: res.error };
+      }
+      if (missingCol === 'id') {
+        const sample = Array.isArray(currentPayload) ? currentPayload[0] : currentPayload;
+        const fallbackConflict =
+          sample && typeof sample === 'object'
+            ? (['owner_id', 'user_id', 'slug', 'subdomain'] as const).find((k) => k in sample && sample[k] != null)
+            : undefined;
+        if (!fallbackConflict) {
+          return { error: res.error };
+        }
+        conflictOption = { onConflict: fallbackConflict };
       }
       let removedAny = false;
       if (Array.isArray(currentPayload)) {
