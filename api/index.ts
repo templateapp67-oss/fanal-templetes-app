@@ -495,6 +495,43 @@ Return strictly valid JSON in this format:
     }
     return res.status(200).json(parsed);
   }));
++
+// Premium brand tagline generator. The response is deliberately a bare JSON
+// array so callers can render the five options without parsing prose.
+app.post("/api/generate-taglines", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
+    const { salonName, businessName, templateId, templateVibe, city } = req.body || {};
+    const resolvedSalonName = typeof salonName === 'string' && salonName.trim() ? salonName.trim() : String(businessName || '').trim();
+    if (resolvedSalonName.length < 2) throw new ApiValidationError('salonName is required (min 2 characters).', { field: 'salonName' });
+    if (typeof templateId !== 'string' || templateId.trim().length < 2) throw new ApiValidationError('templateId is required.', { field: 'templateId' });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new ApiUnavailableError('AI generation is not configured on this server. Set GEMINI_API_KEY.', 'ai_unavailable');
+    try {
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const prompt = `You are an expert brand strategist for Nexora SalonOS.
+
+Context:
+- Salon Name: ${resolvedSalonName}
+- Selected Template ID: ${templateId}
+- Active Vibe / Mood: ${String(templateVibe || 'Premium salon')}
+- Location: ${String(city || 'India')}
+
+Task:
+Generate 5 high-converting, premium taglines/catchphrases for the salon owner.
+- Match the vibe of the selected template precisely.
+- Keep them punchy, short (under 8 words), and elegant.
+- Mix angles in this exact order: 1 Luxury/VIP, 1 Craftsmanship/Artistry, 1 Trust/Care, 1 Modern Minimal, and 1 Local Premium.
+
+Return ONLY a valid JSON array of exactly 5 strings. Do not include markdown, labels, or any other keys.`;
+      const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
+      const parsed = JSON.parse(response.text || '[]');
+      if (!Array.isArray(parsed) || parsed.length !== 5 || parsed.some(item => typeof item !== 'string' || !item.trim())) throw new ApiServerError('AI provider returned an invalid tagline list.');
+      return res.status(200).json(parsed.map(item => item.trim()));
+    } catch (err) {
+      if (err instanceof Error && typeof (err as any).status === 'number' && (err as any).status >= 400 && (err as any).status < 600) throw err;
+      throw new ApiServerError('Failed to generate taglines with AI. Please try again.', err);
+    }
+  }));
+
 app.post("/api/generate-promo-image", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
     // Phase 12 hardened: no 200-with-error, validates aspectRatio.
     const { prompt, serviceName, category, style, aspectRatio = "1:1" } = req.body || {};

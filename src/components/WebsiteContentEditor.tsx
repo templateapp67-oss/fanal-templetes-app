@@ -100,6 +100,9 @@ export function WebsiteContentEditor({ profile, setProfile, services, setService
       businessName={profile.businessName}
       businessType={profile.businessType}
       ownerName={profile.ownerName}
+      templateId={templateId || profile.businessType}
+      templateVibe={template?.config.themePreset}
+      city={profile.city}
       onApply={(bio, tagline) => {
         upd({ ownerBio: bio, tagline: profile.tagline || tagline });
         setBioGeneratorOpen(false);

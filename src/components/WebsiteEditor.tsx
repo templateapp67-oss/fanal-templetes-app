@@ -1847,6 +1847,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         businessName={profile.businessName}
         businessType={profile.businessType}
         ownerName={profile.ownerName}
+        templateId={selectedTemplateId || profile.businessType}
+        templateVibe={getTemplateById(selectedTemplateId || profile.businessType)?.config.themePreset}
+        city={profile.city}
         onApply={(bio, tagline) => {
           upd({ about: bio, tagline });
           showToast?.('AI Bio & Tagline generated and applied!');
