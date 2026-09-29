@@ -2486,7 +2486,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 6. STUDIO GALLERY & LOOKBOOK PHOTOS */}
         {/* ============================================================ */}
         {sectionVisibility.gallery && (
-          <section className={`p-6 md:p-12 border-b ${
+          <section id="gallery-section" className={`p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-slate-50/50 border-slate-200'
           }`}>
             <div className="flex items-end justify-between mb-6">
