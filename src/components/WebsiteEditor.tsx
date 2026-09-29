@@ -1562,7 +1562,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
         <div data-preview-section="gallery"><WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} /></div>
 
-        <div data-preview-section="stylists"><StaffPortfolioEditor stylists={stylists} setStylists={setStylists} /></div>
+        <div data-preview-section="stylists"><StaffPortfolioEditor stylists={stylists} setStylists={setStylists} salonName={profile.businessName || 'KHUSHI SALON'} businessType={profile.businessType?.replace(/_/g, ' ') || 'Organic Care, Luxury Hair Salon'} /></div>
 
         {/* ===== 4. SERVICES & PRICING ===== */}
         <section data-preview-section="services" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
