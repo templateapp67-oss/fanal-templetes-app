@@ -190,7 +190,7 @@ app.get(
 );
 
 app.get("/api/site", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(async (req, res) => {
-  const querySite = normalizeSiteIdentifier(req.query?.site || req.query?.subdomain || req.query?.tenant || '');
+  const querySite = normalizeSiteIdentifier(req.query?.site || req.query?.subdomain || req.query?.tenant || req.query?.template || '');
   if (querySite) {
     const { found, salon, error } = await lookupSalon(
       { db: admin || db, isMockSupabase, mockSalons },
