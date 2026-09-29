@@ -6,6 +6,9 @@ interface AIBioModalProps {
   businessName: string;
   businessType: string;
   ownerName: string;
+  templateId?: string;
+  templateVibe?: string;
+  city?: string;
   onApply: (bio: string, tagline: string) => void;
 }
 
@@ -15,6 +18,9 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
   businessName,
   businessType,
   ownerName,
+  templateId,
+  templateVibe,
+  city,
   onApply,
 }) => {
   const [vibe, setVibe] = useState<string>('Luxury & Botanical');
@@ -33,23 +39,37 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/generate-bio', {
+      const payload = {
+        businessName: businessName || 'Our Salon',
+        businessType,
+        ownerName: ownerName || 'Salon Founder',
+        templateId: templateId || businessType,
+        templateVibe: templateVibe || vibe,
+        city: city || '',
+        vibe,
+        specialties,
+        targetCustomers,
+        storyTone,
+      };
+      const [response, taglineResponse] = await Promise.all([
+        fetch('/api/generate-bio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessName: businessName || 'Our Salon',
-          businessType,
-          ownerName: ownerName || 'Salon Founder',
-          vibe,
-          specialties,
-          targetCustomers,
-          storyTone
+        body: JSON.stringify(payload)
+        }),
+        fetch('/api/generate-taglines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         })
-      });
+      ]);
 
       if (response.ok) {
         const data = await response.json();
-        const options = Array.isArray(data.taglines) && data.taglines.length ? data.taglines : [data.tagline];
+        const generatedTaglines = taglineResponse.ok ? await taglineResponse.json() : null;
+        const options = Array.isArray(generatedTaglines) && generatedTaglines.length
+          ? generatedTaglines
+          : Array.isArray(data.taglines) && data.taglines.length ? data.taglines : [data.tagline];
         setTaglineOptions(options);
         setSelectedTagline(options[0]);
         setGeneratedBio(data.bio);
@@ -63,9 +83,9 @@ export const AIBioModal: React.FC<AIBioModalProps> = ({
 
     // High quality fallback auto-composition
     setTimeout(() => {
-      const generatedTagline = `Redefining ${businessType.replace('_', ' ')} with ${targetCustomers.toLowerCase()} care.`;
+      const generatedTagline = `${businessName || 'Your'} ${targetCustomers} Care, Beautifully Refined`;
       const generatedBio = `Welcome to ${businessName || 'our studio'}, founded by ${ownerName || 'our team'}. We have created a warm, welcoming space where every guest can slow down, feel comfortable, and enjoy genuinely personalised care. Our specialists offer ${specialties || 'exceptional salon services'}, combining thoughtful technique, honest guidance, and attention to every detail. We take time to understand your needs, explain each step, and shape every treatment around your comfort and goals. Whether you are here for a fresh look, restorative care, or a moment of self-care, our promise is to make you feel heard, respected, and confident. With a ${vibe.toLowerCase()} atmosphere and a passion for authentic service, we believe every visit should leave you feeling renewed, cared for, and beautifully yourself.`;
-      const options = [generatedTagline, `Your ${targetCustomers.toLowerCase()} destination for beautiful, confident results.`, `Where expert ${specialties.split(',')[0].trim()} meets effortless self-care.`, `Elevate your everyday with thoughtfully crafted beauty.`, `Feel renewed. Look radiant. Love your time with us.`];
+      const options = [generatedTagline, 'Artistry That Feels Effortlessly You', 'Trusted Care, Beautiful Results', 'Modern Beauty, Thoughtfully Crafted', `${city || 'Your City'}’s Premium Beauty Destination`];
       setTaglineOptions(options);
       setSelectedTagline(options[0]);
       setGeneratedBio(generatedBio);
