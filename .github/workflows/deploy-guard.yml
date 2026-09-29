@@ -47,6 +47,10 @@ jobs:
       - name: Production build (vite build + server bundle)
         run: npm run build
 
+      # middlewareEdgeSafety pins the root middleware invariant: Vercel builds
+      # middleware.ts per-file for the Edge runtime, so a single local import
+      # makes the module fail to LOAD and every matched route answers
+      # 500 MIDDLEWARE_INVOCATION_FAILED (see MIDDLEWARE_500_FIX.md).
       - name: Router / partner-section registry tests
         run: >
           node --import ./scripts/testEnv.mjs --import tsx --test
@@ -56,3 +60,5 @@ jobs:
           tests/partnerPortalShell.test.ts
           tests/growthPartnerPage.test.ts
           tests/growthPartnerShell.test.ts
+          tests/middlewareEdgeSafety.test.ts
+          tests/partnerEdgeRouting.test.ts

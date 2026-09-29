@@ -1,7 +1,11 @@
-import { resolveTenantFromHost } from '../src/lib/tenant';
-import { injectSocialMetadata } from '../src/lib/socialMetadata';
+// Relative imports in the Node/API graph MUST carry the `.js` extension: this
+// module is transpiled file-by-file and loaded as native ESM (package.json has
+// "type": "module"), so an extensionless specifier fails at runtime with
+// ERR_MODULE_NOT_FOUND. See server/publicSocialShell.ts for the caller.
+import { resolveTenantFromHost } from '../src/lib/tenant.js';
+import { injectSocialMetadata } from '../src/lib/socialMetadata.js';
 
-/** Vercel edge-compatible public HTML rendering. No cookies/JWTs are forwarded. */
+/** Public HTML rendering for the API runtime. No cookies/JWTs are forwarded. */
 export async function renderPublicSocialPage(request: Request, fetcher: typeof fetch = fetch): Promise<Response | undefined> {
   const url = new URL(request.url);
   const site = url.searchParams.get('site') || '';

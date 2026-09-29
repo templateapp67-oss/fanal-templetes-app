@@ -53,6 +53,7 @@ import {
   ApiInvalidStateError,
 } from "../server/safeError.js";
 import { lookupSalon, normalizeSiteIdentifier } from "../server/siteLookup.js";
+import { publicSocialShellHandler } from "../server/publicSocialShell.js";
 import {
   handleRazorpayConfig,
   handleCreateRazorpayOrder,
@@ -295,6 +296,11 @@ app.get("/api/site/:subdomain", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyn
     });
   }
 }));
+
+// Crawler-ready HTML for a public salon home page. Called by the Vercel
+// middleware (root middleware.ts), which must stay import-free and therefore
+// cannot render the metadata itself. See server/publicSocialShell.ts.
+app.get("/api/public-shell", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(publicSocialShellHandler));
 
 // ============================================================================
 // BOOKINGS + NOTIFICATIONS (read/update) — shared with server.ts via
