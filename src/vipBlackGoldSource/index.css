@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@300;400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-luxury-gold: #D4AF37;
+  --color-warm-gold-glow: rgba(212, 175, 55, 0.15);
+}
+
+/* Elegant gold scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+::-webkit-scrollbar-thumb {
+  background: #D4AF37;
+  border-radius: 3px;
+}
+
+/* Custom premium ambient glowing helpers */
+.gold-glow-radial {
+  background: radial-gradient(circle at 50% 50%, rgba(212, 175, 55, 0.1) 0%, rgba(5, 5, 5, 0) 70%);
+}
+
+.gold-glow-radial-strong {
+  background: radial-gradient(circle at 50% 40%, rgba(212, 175, 55, 0.18) 0%, rgba(5, 5, 5, 0) 60%);
+}
+
+.subtle-grid-overlay {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(212, 175, 55, 0.02) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(212, 175, 55, 0.02) 1px, transparent 1px);
+}
+
+@keyframes gold-pulse {
+  0%, 100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(1.03);
+  }
+}
+
+.animate-gold-pulse {
+  animation: gold-pulse 6s infinite ease-in-out;
+}
+
+/* High contrast luxury borders */
+.luxury-border {
+  border: 1px solid rgba(212, 175, 55, 0.15);
+}
+.luxury-border-active {
+  border: 1px solid rgba(212, 175, 55, 0.6);
+}
+
+/* Glassmorphism slate cards */
+.glass-slate-card {
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(212, 175, 55, 0.12);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.03);
+}
+
+.metallic-button {
+  background: linear-gradient(135deg, #0f0f0f 0%, #1c1c1c 50%, #292929 100%);
+  border: 1px solid #D4AF37;
+  color: #D4AF37;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.metallic-button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(212, 175, 55, 0.15) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: skewX(-25deg);
+  transition: 0.75s;
+}
+
+.metallic-button:hover::after {
+  left: 125%;
+}
+
+.metallic-button-strong {
+  background: linear-gradient(135deg, #D4AF37 0%, #AA820A 50%, #E8C85B 100%);
+  color: #000;
+  font-weight: 600;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+}
+
+.metallic-button-strong:hover {
+  box-shadow: 0 0 35px rgba(212, 175, 55, 0.65);
+  transform: translateY(-2px);
+}
+
+/* Subtle Golden Shimmer Animation for QR Display Card */
+@keyframes qr-gold-shimmer {
+  0% {
+    transform: translateX(-150%) skewX(-25deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
+  }
+  75% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateX(220%) skewX(-25deg);
+    opacity: 0;
+  }
+}
+
+@keyframes qr-card-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 35px rgba(212, 175, 55, 0.25), inset 0 0 15px rgba(212, 175, 55, 0.08);
+    border-color: rgba(212, 175, 55, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 60px rgba(212, 175, 55, 0.5), 0 0 20px rgba(245, 208, 106, 0.3), inset 0 0 25px rgba(212, 175, 55, 0.2);
+    border-color: #F5D06A;
+  }
+}
+
+.qr-shimmer-active {
+  position: relative;
+  overflow: hidden;
+  animation: qr-card-glow-pulse 3s ease-in-out infinite;
+}
+
+.qr-shimmer-active::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(212, 175, 55, 0.06) 44%,
+    rgba(245, 208, 106, 0.28) 50%,
+    rgba(212, 175, 55, 0.06) 56%,
+    transparent 65%
+  );
+  animation: qr-gold-shimmer 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+  z-index: 30;
+}
