@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createServer as createHttpServer } from 'node:http';
 import { injectSocialMetadata } from './src/lib/socialMetadata';
 import { registerReferralAttributionRoutes } from './server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from './server/customerAvailability.js';
@@ -232,6 +233,12 @@ async function resolveOwnerEmail(ownerId: string | null | undefined, deadlineAt?
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+  // ONE HTTP server for the whole dev runtime. Vite runs in middleware mode, so
+  // the HMR WebSocket must be attached to this server: otherwise Vite starts a
+  // standalone socket on port 24678, which a proxied preview (single exposed
+  // port, wss on 443) can never reach and the browser reports
+  // "WebSocket closed without opened.".
+  const httpServer = createHttpServer(app);
 
   // CORS for cross-origin API callers (split dev on different ports, preview
   // hosts, custom domains). Same-origin traffic (no Origin header) is
@@ -1213,8 +1220,17 @@ Return strictly JSON with the following keys:
   };
 
   if (process.env.NODE_ENV !== "production") {
+    // `hmr.server` attaches Vite's HMR socket to the SAME HTTP server that
+    // serves the app (and that the preview proxy exposes). Without it, Vite
+    // picks its own port (24678) and every browser load logs "WebSocket closed
+    // without opened." — HMR never connects and edits need a manual reload.
+    // `DISABLE_HMR=true` (build/agent runs that must not hot-reload at all)
+    // still switches HMR off completely.
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
+      },
       appType: "spa",
     });
     app.use(publicSocialHtml(async url => vite.transformIndexHtml(url, await readFile(path.join(process.cwd(), 'index.html'), 'utf8'))));
@@ -1228,7 +1244,7 @@ Return strictly JSON with the following keys:
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Nexora Salon OS running on http://0.0.0.0:${PORT}`);
   });
 }

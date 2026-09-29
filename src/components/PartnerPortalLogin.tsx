@@ -770,6 +770,8 @@ export const PartnerApplicationForm: React.FC<{
 
   const spec = kycDocumentSpec(kycDocumentType);
 
+  // Merge external (server) field errors with local validation errors.
+  // Server errors take precedence so the user sees exactly what the backend rejected.
   const fieldErrors: PartnerApplicationFieldErrors = {
     ...localErrors,
     ...(externalFieldErrors ?? {}),
@@ -1488,13 +1490,18 @@ export const PartnerPortalLogin: React.FC<{
       },
       (error: unknown) => {
         const failure = toPartnerApplicationError(error);
-        setFormError(failure.message);
-        setApplicationNeedsSignIn(failure.kind === 'session');
-        // A validation refusal names the field it belongs to; keep the typed
-        // values so the user fixes one field instead of re-entering the form.
+        // For validation errors, prefer the original server message for the field
+        // so the user sees the exact reason (e.g., "Invalid Aadhaar number...")
+        // instead of a generic fallback. Only show form-level error for non-validation
+        // failures (session, network, schema, etc.) or when no specific field is identified.
         if (failure.kind === 'validation' && failure.field) {
           setApplicationFieldErrors({ [failure.field]: failure.message });
+          // Don't set a generic form error for validation failures — the inline
+          // field error is more actionable. Only set formError for non-field errors.
+        } else {
+          setFormError(failure.message);
         }
+        setApplicationNeedsSignIn(failure.kind === 'session');
       }
     ).finally(() => setBusy(false));
   };

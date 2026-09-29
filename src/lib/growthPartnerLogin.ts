@@ -356,35 +356,50 @@ function messageOf(error: unknown): string {
  * Map a Supabase Auth failure to safe copy (never raw database/driver text).
  * The invalid-credentials shape is pinned so a wrong password is always
  * reported as exactly that — never with account-existence hints.
+ *
+ * IMPORTANT: This function handles AUTHENTICATION errors only (wrong password,
+ * unconfirmed email, banned account, network issues).
+ * Partner authorization failures (not a partner, pending, rejected, inactive)
+ * are handled separately in resolveGrowthPartnerLogin after successful auth.
  */
 export function toGrowthPartnerLoginError(error: unknown): Error {
   const message = messageOf(error);
+  const code = (error as {code?: string})?.code;
+
   if (
-    (error as {code?: string})?.code === 'email_provider_disabled' ||
+    code === 'email_provider_disabled' ||
     /email (signups|logins) are disabled|email provider.*disabled/i.test(message)
   ) {
     return new Error('Email sign-in is disabled in Supabase. Enable the Email provider in Authentication → Providers → Email.');
   }
-  if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) {
+  if (code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) {
     return new Error('Your account is suspended. Contact support for help.');
   }
-  if (/invalid login credentials|invalid email or password|invalid grant/i.test(message)) {
+  // Specific auth failures — keep generic to prevent enumeration
+  if (/invalid login credentials|invalid email or password|invalid grant|auth.*failed|wrong password|incorrect password/i.test(message)) {
     return new Error('Invalid email or password. Please try again.');
   }
   if (/user already registered|already registered|already exists/i.test(message)) {
     return new Error('This email already has an account. Please use Sign in instead.');
   }
-  if (/email not confirmed/i.test(message)) {
+  if (/email not confirmed|email.*not.*verified|verify.*email/i.test(message)) {
     return new Error('Please verify your email, then log in.');
   }
   if (/rate limit|too many|over request/i.test(message)) {
     return new Error('Too many attempts. Please wait a moment and try again.');
   }
-  if (/failed to fetch|network|fetch failed|connection/i.test(message)) {
+  if (/failed to fetch|network|fetch failed|connection|timeout/i.test(message)) {
     return new Error('Network error. Check your connection and try again.');
   }
   return new Error('Login failed. Please try again.');
 }
+
+// NOTE: authorization outcomes are NOT errors classified here. A signed-in
+// account that is not an active partner is a STATE the login page renders
+// (`resolveGrowthPartnerLogin` → 'unauthorized' | 'pending' | 'rejected' |
+// 'inactive'), each with its own dedicated screen and copy, because those cases
+// are not retryable failures and must never be presented as "wrong password".
+// This module only classifies the AUTH failures below.
 
 /**
  * Map an auth user to the viewer the login route uses. One mapper for both the

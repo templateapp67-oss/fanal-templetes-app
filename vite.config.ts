@@ -45,8 +45,13 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // The HMR socket is attached to the app's own Express/HTTP server in
+      // server.ts (`hmr.server`). That keeps it on the single port the preview
+      // proxy exposes and lets the client derive host and protocol from the
+      // page URL (wss on 443 behind https). Pinning host/port/clientPort here
+      // would override that and put the browser back to a socket it cannot
+      // reach — the "WebSocket closed without opened." error. This config only
+      // toggles HMR on or off.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

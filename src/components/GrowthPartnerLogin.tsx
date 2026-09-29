@@ -277,7 +277,9 @@ export const GrowthPartnerSignupForm: React.FC<{
   const [localFieldErrors, setLocalFieldErrors] = useState<GrowthPartnerSignupFieldErrors>({});
 
   const spec = kycDocumentSpec(kycDocumentType);
-  const fieldErrors = { ...localFieldErrors, ...propsFieldErrors };
+  // Merge local (client-side) and external (server-side) field errors.
+  // Server errors take precedence so the user sees exactly what the backend rejected.
+  const fieldErrors = { ...localFieldErrors, ...(propsFieldErrors ?? {}) };
 
   const handleFieldChange = <K extends keyof GrowthPartnerSignupFieldErrors>(
     key: K,
@@ -739,6 +741,11 @@ export const GrowthPartnerLogin: React.FC<{
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  // Field-level errors for the sign-up form. They live here (not only inside the
+  // form) so a rejection the SERVER reports — e.g. an invalid Aadhaar number
+  // refused by the RPC — can mark the exact input instead of surfacing as one
+  // generic sentence at the top of the form.
+  const [signupFieldErrors, setSignupFieldErrors] = useState<GrowthPartnerSignupFieldErrors>({});
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [signup, setSignup] = useState(false);
@@ -874,6 +881,7 @@ export const GrowthPartnerLogin: React.FC<{
     setLoadError(null);
     setFormError('');
     setFieldErrors({});
+    setSignupFieldErrors({});
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -913,11 +921,14 @@ export const GrowthPartnerLogin: React.FC<{
         errors.kycDocumentReference ||
         'Please check the form for errors.';
       setFormError(specificError);
+      // Also set field-level errors so each invalid input is marked inline.
+      setSignupFieldErrors(errors);
       return;
     }
     setBusy(true);
     setFormError('');
     setSignupSuccess('');
+    setSignupFieldErrors({});
     void signUpGrowthPartner(sb, input)
       .then(
         (result) => {
@@ -928,9 +939,13 @@ export const GrowthPartnerLogin: React.FC<{
           if (result.applicationError) {
             // The account exists and the visitor is signed in: report the real
             // reason the application was not stored instead of a catch-all.
-            setFormError(
-              `Account created, but your application was not submitted. ${result.applicationError.message}`
-            );
+            // If the application error has a specific field, set it as a field error
+            // so it appears inline on that field instead of just a generic form error.
+            if (result.applicationError.kind === 'validation' && result.applicationError.field) {
+              setSignupFieldErrors({ [result.applicationError.field]: result.applicationError.message });
+            } else {
+              setFormError(`Account created, but your application was not submitted. ${result.applicationError.message}`);
+            }
             return;
           }
           setSignupSuccess(
@@ -947,7 +962,7 @@ export const GrowthPartnerLogin: React.FC<{
   if (state === 'mock-mode') return <GrowthPartnerLoginMockNotice onBack={onBack} />;
   if (state === 'loading' || state === 'granted') return <GrowthPartnerLoginVerifying />;
   if (state === 'signed-out' && signup)
-    return <GrowthPartnerSignupForm busy={busy} formError={formError} success={signupSuccess} accentHex={accentHex} onSubmit={handleSignup} onBack={() => { setSignup(false); setFormError(''); }} />;
+    return <GrowthPartnerSignupForm busy={busy} formError={formError} success={signupSuccess} accentHex={accentHex} fieldErrors={signupFieldErrors} onSubmit={handleSignup} onBack={() => { setSignup(false); setFormError(''); setSignupFieldErrors({}); }} />;
   if (state === 'signed-out')
     return (
       <GrowthPartnerLoginForm
@@ -960,7 +975,7 @@ export const GrowthPartnerLogin: React.FC<{
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
         onSubmit={handleSubmit}
-        onSwitchToSignup={() => { setSignup(true); setFormError(''); }}
+        onSwitchToSignup={() => { setSignup(true); setFormError(''); setSignupFieldErrors({}); }}
       />
     );
   if (state === 'pending')
