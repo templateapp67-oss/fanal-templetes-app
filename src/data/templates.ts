@@ -1745,7 +1745,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
   // 16. VIP Black & Gold — reusable premium design for every business type.
   luxury_hair_salon: {
     id: 'luxury_hair_salon',
-    title: 'VIP Black & Gold — Signature Studio',
+    title: 'VIP Black & Gold — All-Purpose Signature',
     shortName: 'VIP Black & Gold',
     tagline: 'An all-purpose premium experience for beauty, grooming, wellness and signature services',
     about: 'VIP Black & Gold is Nexora’s all-purpose premium website design. Its onyx-and-champagne-gold visual system adapts to your own services, team, photos, offers and booking settings—whether you run a salon, barber shop, spa, skin clinic, nail studio, tattoo studio or wellness business.',
@@ -1753,17 +1753,17 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     layoutStyle: 'haute_luxe',
     paletteLabel: 'Onyx & Champagne Gold Theme',
     themePreset: 'onyx_champagne_gold',
-    subCategories: ['Signature Services', 'Premium Care', 'Curated Experiences', 'Private Appointments'],
-    defaultCity: 'New Delhi',
-    defaultAddress: 'Lavelle Road, South Extension II, Near ITC Maurya',
-    defaultPostalCode: '110049',
-    phone: '+91 98108 55672',
-    whatsapp: '+91 98108 55672',
-    ownerName: 'Aarav Malhotra',
-    ownerRole: 'Founder & Creative Director',
-    ownerPhotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
-    coverImageUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=80',
-    instagramHandle: '@maisoneclat.delhi',
+    subCategories: ['Beauty & Grooming', 'Wellness & Care', 'Private Appointments', 'Signature Experiences'],
+    defaultCity: 'Your City',
+    defaultAddress: 'Your premium studio address',
+    defaultPostalCode: '000000',
+    phone: '',
+    whatsapp: '',
+    ownerName: 'Your Brand',
+    ownerRole: 'Founder & Experience Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1400&q=85',
+    instagramHandle: '',
     themeStyle: {
       heroBackground: 'bg-[#101014]',
       heroTextColor: 'text-[#f6f1e7]',
@@ -1777,72 +1777,72 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
       buttonBg: 'bg-[#a0824a] hover:bg-[#8a6d3c]',
       buttonText: 'text-white',
       priceColor: 'text-[#8a6d3c]',
-      isDark: false,
-      headerBanner: 'bg-[#faf7f0] border-b border-[#e6d9bd]'
+      isDark: true,
+      headerBanner: 'bg-[#11100d] border-b border-[#a0824a]'
     },
     services: [
       {
         id: 'lhx-1',
-        name: 'Precision Sculpt & Hair Design',
-        category: 'Precision Sculpting',
+        name: 'Signature Consultation & Personal Plan',
+        category: 'VIP Consultation',
         durationMinutes: 60,
-        price: 4500,
-        description: 'Every cut opens with a bespoke hair-mapping consultation where the master artist reads your face geometry, density, and growth patterns before sculpting begins. Haute-styling techniques—dry-cut architecture, razor-pointing, and thermal memory styling sealed with Kérastase Élixir Ultime—deliver a precision silhouette with long-lasting shape and mirror-finish gloss.',
-        icon: 'content_cut',
+        price: 1500,
+        description: 'Start with a private consultation. Your specialist understands your goals, recommends the right service plan and creates an experience tailored to your salon, grooming, beauty, wellness or studio needs.',
+        icon: 'diamond',
         popular: true
       },
       {
         id: 'lhx-2',
-        name: 'Balayage & French Glossing',
-        category: 'Color & Glossing',
-        durationMinutes: 180,
-        price: 12000,
-        description: 'Hand-painted balayage is artfully mapped to your face and skin undertones, then sealed with a Kérastase Gloss Absolu tonal gloss that wraps every strand in liquid-light shine. The couture finish keeps dimension luminous and the gloss long-lasting for up to eight weeks after your visit.',
-        icon: 'brush',
+        name: 'Premium Signature Experience',
+        category: 'Featured Service',
+        durationMinutes: 90,
+        price: 3500,
+        description: 'A premium, customisable service experience designed around your craft. Replace this with your hero salon, barber, spa, skin, nail, tattoo or wellness service after selecting the template.',
+        icon: 'workspace_premium',
         popular: true
       },
       {
         id: 'lhx-3',
-        name: 'Olaplex Bond Repair Spa',
-        category: 'Bond Repair & Care',
+        name: 'Private VIP Appointment',
+        category: 'Concierge Care',
         durationMinutes: 90,
-        price: 6500,
-        description: 'A personalized hair-mapping diagnosis pinpoints broken disulfide bonds, then Olaplex No. 1, No. 2, and No. 3 rebuild strength from within the fiber in a haute-styling molecular repair ritual. The session closes with a Kérastase rescue mask and silk pressing, leaving every strand fortified, elastic, and resilient.',
-        icon: 'auto_awesome'
+        price: 5000,
+        description: 'Enjoy focused one-to-one attention, flexible timing and a refined private setting. Ideal for premium makeovers, grooming, wellness rituals and specialist sessions.',
+        icon: 'person_pin_circle'
       },
       {
         id: 'lhx-4',
-        name: 'Keratin Smoothing Treatment',
-        category: 'Smoothing & Gloss',
-        durationMinutes: 150,
-        price: 15000,
-        description: 'Following a strand-by-strand hair-mapping assessment, a Kérastase-infused formaldehyde-light keratin complex is bonded into the fiber with couture-grade flat-iron sealing, erasing up to 95% of frizz from root to tip. The result is long-lasting strength and a liquid gloss that keeps hair smooth, bouncy, and mirror-shine for up to four months.',
-        icon: 'auto_fix_high'
+        name: 'Membership & Aftercare',
+        category: 'VIP Benefits',
+        durationMinutes: 30,
+        price: 2500,
+        description: 'Create your own loyalty, aftercare or membership offer here. This universal VIP section is ready for every business type and is fully editable in the dashboard.',
+        icon: 'card_membership'
       }
     ],
     stylists: [
       {
         id: 'lhx-st-1',
-        name: 'Aarav Malhotra',
-        role: 'Creative Director & Master Stylist',
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
-        specialties: ['Precision Dry Cutting', 'Face-Geometry Mapping', 'Haute Styling'],
+        name: 'Your Lead Specialist',
+        role: 'Experience Director',
+        avatarUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Personalised Care', 'Premium Consultations', 'Signature Experiences'],
         rating: 4.99
       },
       {
         id: 'lhx-st-2',
-        name: 'Ishita Kapoor',
-        role: 'Director of Color & Gloss',
+        name: 'Your Senior Specialist',
+        role: 'Senior Specialist',
         avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
-        specialties: ['French Balayage', 'Tonal Glossing', 'Kérastase Color'],
+        specialties: ['Custom Services', 'Client Care', 'Premium Results'],
         rating: 4.96
       },
       {
         id: 'lhx-st-3',
-        name: 'Zoya Fernandes',
-        role: 'Senior Keratin & Texture Stylist',
+        name: 'Your VIP Concierge',
+        role: 'Client Concierge',
         avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
-        specialties: ['Keratin Smoothing', 'Thermal Sculpting', 'Olaplex Rituals'],
+        specialties: ['Private Bookings', 'Membership Care', 'Guest Experience'],
         rating: 4.92
       }
     ]
