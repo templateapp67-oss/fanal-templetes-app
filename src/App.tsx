@@ -2849,6 +2849,8 @@ export default function App() {
           setProfile={setProfile}
           services={services}
           setServices={setServices}
+          stylists={stylists}
+          setStylists={setStylists}
           saveStatus={saveStatus}
           lastSavedAt={lastSavedAt}
           onComplete={handleWizardComplete}

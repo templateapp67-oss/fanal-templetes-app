@@ -69,6 +69,7 @@ import { formatInstagramUrl, formatFacebookUrl, formatTikTokUrl, displaySocialHa
 import { getServiceIcon } from './ServiceManagement';
 import { slugifySalonName } from '../lib/salonStore';
 import { useSalonData } from '../lib/useSalonData';
+import { getStylistBio } from './StaffPortfolioEditor';
 
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
@@ -780,7 +781,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       role: 'Senior Hair & Beauty Expert',
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
       rating: 4.9,
-      specialties: ['Precision Styling', 'Color Artistry', 'Scalp Detox']
+      specialties: ['Precision Styling', 'Color Artistry', 'Scalp Detox'],
+      bio: 'A senior beauty specialist who combines a detailed consultation with personalised service and aftercare.',
+      portfolioUrl: '#gallery-section'
     };
     setStylists((prev) => [...prev, newSt]);
     showNotification(`Specialist "${newSt.name}" added to roster!`);
@@ -2316,6 +2319,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     </div>
                   </div>
 
+                  <p className={`-mt-1 text-xs leading-relaxed ${isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'}`}>
+                    {getStylistBio(st)}
+                  </p>
+
                   {/* Specialties tags */}
                   <div className={`pt-2.5 border-t flex flex-wrap gap-1.5 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
                     {st.specialties && st.specialties.map((spec, i) => (
@@ -2333,7 +2340,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
 
                   {/* Book / Manage */}
-                  <div className={`w-full min-w-0 pt-2.5 border-t flex items-center justify-between gap-2 ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
+                  <div className={`w-full min-w-0 pt-2.5 border-t flex flex-col items-stretch gap-2 sm:flex-row ${isDarkCanvas ? 'border-neutral-800' : 'border-slate-100'}`}>
                     {isEditMode && (
                       <button
                         type="button"
@@ -2348,7 +2355,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleOpenBooking(undefined, st)}
-                      className="min-h-11 w-full min-w-0 whitespace-nowrap text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                      className="min-h-11 w-full min-w-0 flex-1 whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-extrabold shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
                       style={{
                         backgroundColor: isDarkCanvas ? '#ffffff' : activeAccent.primaryHex,
                         color: isDarkCanvas ? '#0f172a' : 'var(--accent-text-color, #ffffff)',
@@ -2357,6 +2364,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <span>Select for Service</span>
                       <ChevronRight className="w-4 h-4 shrink-0" />
                     </button>
+                    {st.portfolioUrl && <a href={st.portfolioUrl} target={st.portfolioUrl.startsWith('#') ? undefined : '_blank'} rel={st.portfolioUrl.startsWith('#') ? undefined : 'noreferrer'} className={`inline-flex min-h-11 items-center justify-center rounded-xl border px-3 py-2.5 text-xs font-bold ${isDarkCanvas ? 'border-neutral-700 text-white hover:bg-neutral-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>Portfolio</a>}
                   </div>
 
                 </motion.div>

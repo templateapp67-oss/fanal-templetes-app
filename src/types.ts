@@ -361,6 +361,8 @@ export interface Stylist {
   hidePhone?: boolean;
   assignedServices?: string[];
   bio?: string;
+  /** Public portfolio destination; defaults to the website gallery. */
+  portfolioUrl?: string;
   schedule?: DaySchedule[];
 }
 

@@ -44,7 +44,7 @@ import {
   Type,
 } from 'lucide-react';
 import { CURATED_GOOGLE_FONTS } from '../utils/fontHelper';
-import { SalonProfile, SalonService, BusinessTypeId } from '../types';
+import { SalonProfile, SalonService, BusinessTypeId, Stylist } from '../types';
 import { getTemplateConfig, getTemplateById } from '../data/templates';
 import { getSiteUrl, slugifySalonName } from '../lib/salonStore';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
@@ -61,6 +61,7 @@ import { generateFaviconDataUrls } from '../lib/useSalonFavicon';
 import { generateSocialSharePlaceholder } from '../utils/socialShareGenerator';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/imageUploadHelper';
+import { StaffPortfolioEditor } from './StaffPortfolioEditor';
 import { LiveTemplatePreview } from './LiveTemplatePreview';
 import type { TemplatePreviewSection } from './DynamicTemplateRenderer';
 
@@ -69,6 +70,8 @@ interface WebsiteEditorProps {
   setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   services: SalonService[];
   setServices: React.Dispatch<React.SetStateAction<SalonService[]>>;
+  stylists: Stylist[];
+  setStylists: React.Dispatch<React.SetStateAction<Stylist[]>>;
   saveStatus: SaveStatus;
   /** Timestamp of the last successful (auto or manual) save. */
   lastSavedAt?: number | null;
@@ -97,6 +100,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   setProfile,
   services,
   setServices,
+  stylists,
+  setStylists,
   saveStatus,
   lastSavedAt,
   onComplete,
@@ -1556,6 +1561,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         <div data-preview-section="gallery"><WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} /></div>
+
+        <StaffPortfolioEditor stylists={stylists} setStylists={setStylists} />
 
         {/* ===== 4. SERVICES & PRICING ===== */}
         <section data-preview-section="services" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
