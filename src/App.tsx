@@ -38,7 +38,7 @@ import { TemplateExplorer } from './components/TemplateExplorer';
 import { WebsiteEditor } from './components/WebsiteEditor';
 import { QuickWebsiteLaunch } from './components/QuickWebsiteLaunch';
 import { SalonWebsitePreview } from './components/SalonWebsitePreview';
-import { VipBlackGoldSourcePreview } from './components/VipBlackGoldSourcePreview';
+import { VipBlackGoldFullExperience } from './components/VipBlackGoldFullExperience';
 import { SaaSDashboard } from './components/SaaSDashboard';
 import { AuthModal } from './components/AuthModal';
 import { UserProfileSettingsModal } from './components/UserProfileSettingsModal';
@@ -2814,7 +2814,7 @@ export default function App() {
             <div className="flex items-center rounded-xl bg-slate-100 p-1">{(['desktop', 'tablet', 'mobile'] as const).map((device) => <button key={device} type="button" onClick={() => setTemplatePreviewDevice(device)} className={`rounded-lg px-2 py-1.5 text-[10px] font-black capitalize sm:px-3 sm:text-xs ${templatePreviewDevice === device ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{device}</button>)}</div>
             <button type="button" onClick={() => selectTemplateFromExplorer(templatePreviewId)} className="rounded-xl bg-[#C20E5A] px-4 py-2 text-sm font-black text-white hover:bg-[#A30B4A]">Select &amp; Customize This Template</button>
           </div>
-          {templatePreviewId === 'luxury_hair_salon' ? <VipBlackGoldSourcePreview /> : <SalonWebsitePreview
+          {templatePreviewId === 'luxury_hair_salon' ? <VipBlackGoldFullExperience /> : <SalonWebsitePreview
             key={templatePreviewId}
             profile={previewProfile!}
             services={previewTemplate!.defaultData.services}
