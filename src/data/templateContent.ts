@@ -506,26 +506,26 @@ export const CATEGORY_STANDARDIZED_DATA: Record<BusinessTypeId, CategoryStandard
 
   luxury_hair_salon: {
     foundingYear: '2015',
-    foundingNarrative: 'Maison Éclat began as a private hair atelier in Delhi’s South Extension, serving a select clientele with haute-couture cuts, hand-painted color, and Kérastase- and Olaplex-driven repair rituals that treat every head of hair as a couture canvas.',
-    specialties: ['Haute-Couture Precision Cutting', 'French Balayage & Tonal Glossing', 'Olaplex Molecular Bond Repair', 'Long-Lasting Keratin Glossing'],
+    foundingNarrative: 'VIP Black & Gold is a premium all-purpose showcase designed for ambitious beauty, grooming, wellness and specialist brands. It is intentionally neutral: your own services, people, gallery and story replace these demo details after selection.',
+    specialties: ['Personalised VIP Consultations', 'Premium Signature Services', 'Private Appointments', 'Membership & Aftercare'],
     certifications: [
-      { icon: 'verified', title: 'Kérastase Institute Certified Artists', description: 'Every stylist trained on the Kérastase Studio Paris cutting, color, and care curriculum.' },
-      { icon: 'auto_awesome', title: 'Olaplex Bond Builder Protocol', description: 'Bond repair performed to the clinical Olaplex in-salon treatment protocol.' },
-      { icon: 'face_retouching_natural', title: 'Bespoke Hair-Mapping Consultation', description: 'Face geometry, density, and fiber diagnostics mapped before every cut or color.' },
-      { icon: 'workspace_premium', title: 'Private Atelier Appointments', description: 'One client at a time in a private suite, with champagne service on request.' }
+      { icon: 'workspace_premium', title: 'All-Purpose VIP Layout', description: 'A premium black-and-gold website system for every service business.' },
+      { icon: 'auto_awesome', title: 'Signature Service Ready', description: 'Replace demo services with your own hero offers in the dashboard.' },
+      { icon: 'verified', title: 'Trusted Client Care', description: 'Present your standards, credentials and premium experience with confidence.' },
+      { icon: 'diamond', title: 'Private VIP Appointments', description: 'Highlight concierge booking, memberships and high-touch client care.' }
     ],
     gallery: [
-      { id: 'lhx-g1', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80', title: 'Precision Sculpt at the Styling Station', tag: 'Precision Cut' },
-      { id: 'lhx-g2', url: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=800&q=80', title: 'Hand-Painted Balayage & Tonal Gloss', tag: 'Balayage' },
-      { id: 'lhx-g3', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80', title: 'Champagne Private Hair Atelier', tag: 'Atelier Interior' },
-      { id: 'lhx-g4', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Olaplex Bond Repair Immersion', tag: 'Bond Repair' },
-      { id: 'lhx-g5', url: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=800&q=80', title: 'Keratin Smoothing Steam Suite', tag: 'Keratin' },
-      { id: 'lhx-g6', url: 'https://images.unsplash.com/photo-1512290900672-1f55b9e07506?auto=format&fit=crop&w=800&q=80', title: 'Luxe Treatment Bed & Gloss Ritual', tag: 'Glossing' }
+      { id: 'lhx-g1', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80', title: 'Private Premium Suite', tag: 'VIP Space' },
+      { id: 'lhx-g2', url: 'https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=800&q=80', title: 'Signature Client Experience', tag: 'Signature Care' },
+      { id: 'lhx-g3', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80', title: 'Wellness & Relaxation', tag: 'Wellness' },
+      { id: 'lhx-g4', url: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=800&q=80', title: 'Beauty & Personal Care', tag: 'Beauty' },
+      { id: 'lhx-g5', url: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80', title: 'Premium Grooming', tag: 'Grooming' },
+      { id: 'lhx-g6', url: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80', title: 'Signature Detail', tag: 'Custom Service' }
     ],
     reviews: [
-      { id: 'lhx-r1', name: 'Rhea Bedi', location: 'New Delhi', rating: 5, serviceName: 'Balayage & French Glossing', comment: 'The hair-mapping consultation felt like a couture fitting. Three months on, my balayage still carries that glassy, liquid gloss.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
-      { id: 'lhx-r2', name: 'Ansh Verma', location: 'Gurugram', rating: 5, serviceName: 'Olaplex Bond Repair Spa', comment: 'My bleached hair was practically thread. After the hair-mapping bond audit and the Olaplex ritual, it feels stronger than it has in years.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '5 days ago' },
-      { id: 'lhx-r3', name: 'Nidhi Saxena', location: 'Mumbai', rating: 5, serviceName: 'Precision Sculpt & Hair Design', comment: 'The dry cut was surgical — every strand mapped to my face geometry. I have never worn my hair with this much confidence.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
+      { id: 'lhx-r1', name: 'Rhea Bedi', location: 'New Delhi', rating: 5, serviceName: 'VIP Consultation', comment: 'The experience felt personal from the first consultation to the final follow-up. This is exactly the premium standard I expect.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80', date: '2 days ago' },
+      { id: 'lhx-r2', name: 'Ansh Verma', location: 'Gurugram', rating: 5, serviceName: 'Private VIP Appointment', comment: 'Private, calm and thoughtfully managed. Every detail felt tailored to me rather than a generic service.', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80', date: '5 days ago' },
+      { id: 'lhx-r3', name: 'Nidhi Saxena', location: 'Mumbai', rating: 5, serviceName: 'Premium Signature Experience', comment: 'A refined luxury experience that can work beautifully for any premium beauty, wellness or grooming brand.', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80', date: '1 week ago' }
     ],
     totalReviewCount: 980,
     averageRating: 4.98,
