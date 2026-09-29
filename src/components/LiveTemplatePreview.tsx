@@ -11,6 +11,7 @@ const SECTION_TARGETS: Record<TemplatePreviewSection, string> = {
   hero: '#home-section',
   services: '#services-section',
   gallery: '#gallery-section',
+  stylists: '#team-section',
   contact: '#location-section',
   brand: '#home-section',
   seo: '#home-section',

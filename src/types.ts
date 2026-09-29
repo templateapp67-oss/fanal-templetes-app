@@ -363,6 +363,12 @@ export interface Stylist {
   bio?: string;
   /** Public portfolio destination; defaults to the website gallery. */
   portfolioUrl?: string;
+  credentials?: string;
+  reviewCount?: number;
+  signatureWork?: string;
+  quote?: string;
+  portfolioWorks?: Array<{ id: string; title: string; imageUrl: string; caption?: string }>;
+  verified?: boolean;
   schedule?: DaySchedule[];
 }
 

@@ -126,7 +126,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
   const handleEditorFocus = (event: React.FocusEvent<HTMLDivElement>) => {
     const section = (event.target as HTMLElement).closest<HTMLElement>('[data-preview-section]')?.dataset.previewSection;
-    if (section && ['hero', 'services', 'gallery', 'contact', 'brand', 'seo', 'social'].includes(section)) {
+    if (section && ['hero', 'services', 'gallery', 'stylists', 'contact', 'brand', 'seo', 'social'].includes(section)) {
       setActivePreviewSection(section as TemplatePreviewSection);
     }
   };
@@ -1562,7 +1562,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
         <div data-preview-section="gallery"><WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} /></div>
 
-        <StaffPortfolioEditor stylists={stylists} setStylists={setStylists} />
+        <div data-preview-section="stylists"><StaffPortfolioEditor stylists={stylists} setStylists={setStylists} /></div>
 
         {/* ===== 4. SERVICES & PRICING ===== */}
         <section data-preview-section="services" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
