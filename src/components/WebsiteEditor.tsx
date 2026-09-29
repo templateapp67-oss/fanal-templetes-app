@@ -61,6 +61,8 @@ import { generateFaviconDataUrls } from '../lib/useSalonFavicon';
 import { generateSocialSharePlaceholder } from '../utils/socialShareGenerator';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/imageUploadHelper';
+import { LiveTemplatePreview } from './LiveTemplatePreview';
+import type { TemplatePreviewSection } from './DynamicTemplateRenderer';
 
 interface WebsiteEditorProps {
   profile: SalonProfile;
@@ -115,6 +117,14 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const [profileCompletion, setProfileCompletion] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading');
   const [completionRetry, setCompletionRetry] = useState(0);
   const [isSyncingProfile, setIsSyncingProfile] = useState(false);
+  const [activePreviewSection, setActivePreviewSection] = useState<TemplatePreviewSection>('hero');
+
+  const handleEditorFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+    const section = (event.target as HTMLElement).closest<HTMLElement>('[data-preview-section]')?.dataset.previewSection;
+    if (section && ['hero', 'services', 'gallery', 'contact', 'brand', 'seo', 'social'].includes(section)) {
+      setActivePreviewSection(section as TemplatePreviewSection);
+    }
+  };
 
   // Auto-fill "Contact & Location" fields from User Profile data (profiles table / readPartnerProfile)
   const loadProfileContactDetails = React.useCallback(async (forceSync = false) => {
@@ -471,7 +481,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
 
   return (
     <div className="min-h-dvh w-full max-w-full overflow-x-clip pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
-      <div className="w-full max-w-full sm:max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-6 min-w-0">
+      <div className="w-full max-w-full sm:max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-6 min-w-0" onFocusCapture={handleEditorFocus}>
 
         {/* Session expired / permission-safe notice. Shown only when the save
             engine decided the cloud session must be re-established; the local
@@ -576,8 +586,18 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </div>
 
+        <LiveTemplatePreview
+          config={{
+            templateId: selectedTemplateId || profile.businessType,
+            profile,
+            services,
+            siteUrl,
+          }}
+          activeSection={activePreviewSection}
+        />
+
         {/* ===== 1. SALON DETAILS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
+        <section data-preview-section="hero" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <Store className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Salon Details</h2>
@@ -664,7 +684,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 2. CONTACT & LOCATION ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
+        <section data-preview-section="contact" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-2">
               <UserRound className="w-4 h-4 text-[#C20E5A]" />
@@ -873,7 +893,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== FAVICON & BRANDING ASSETS GENERATOR ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-favicon-generator-section">
+        <section data-preview-section="brand" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-favicon-generator-section">
           <div className="flex items-center gap-2 mb-1">
             <Settings className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Favicon &amp; Brand Assets Generator</h2>
@@ -1127,7 +1147,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== UNIVERSAL BRAND SYSTEM — USED BY EVERY TEMPLATE ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-brand-system-section">
+        <section data-preview-section="brand" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-brand-system-section">
           <div className="flex items-center gap-2 mb-1">
             <Settings className="w-4 h-4 text-[#059669]" />
             <h2 className="font-display font-bold text-base">Universal Brand System</h2>
@@ -1174,7 +1194,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== TYPOGRAPHY & GOOGLE FONTS CUSTOMIZER ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-fonts-section">
+        <section data-preview-section="brand" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-fonts-section">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Type className="w-4 h-4 text-[#C20E5A]" />
@@ -1274,7 +1294,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== SOCIAL SHARE IMAGE (OG:IMAGE) MANAGER ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-social-share-section">
+        <section data-preview-section="social" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-social-share-section">
           <div className="flex items-center gap-2 mb-1">
             <Share2 className="w-4 h-4 text-[#C20E5A]" />
             <h2 className="font-display font-bold text-base">Social Share Image (og:image)</h2>
@@ -1357,7 +1377,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== ADVANCED SEO KEYWORDS ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-seo-keywords-section">
+        <section data-preview-section="seo" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6" id="website-editor-seo-keywords-section">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#C20E5A]" />
@@ -1416,7 +1436,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         </section>
 
         {/* ===== 3. SOCIAL MEDIA (INSTAGRAM, FACEBOOK, TIKTOK) ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6" id="website-editor-social-media-section">
+        <section data-preview-section="social" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6" id="website-editor-social-media-section">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Share2 className="w-4 h-4 text-[#C20E5A]" />
@@ -1535,10 +1555,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
-        <WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} />
+        <div data-preview-section="gallery"><WebsiteContentEditor profile={profile} setProfile={setProfile} services={services} setServices={setServices} templateId={selectedTemplateId} /></div>
 
         {/* ===== 4. SERVICES & PRICING ===== */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
+        <section data-preview-section="services" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-[#C20E5A]" />
@@ -1641,7 +1661,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
-        <section className="bg-white border border-gray-200 rounded-2xl p-6">
+        <section data-preview-section="contact" className="bg-white border border-gray-200 rounded-2xl p-6">
           <h2 className="font-bold">Opening Hours</h2>
           <p className="text-sm mt-2">Manage your daily opening times and weekly off in SaaS Dashboard → Appointments → Salon Opening Hours. Bookings use those saved hours.</p>
         </section>
