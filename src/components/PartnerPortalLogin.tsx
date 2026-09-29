@@ -70,6 +70,13 @@ import {
   type PartnerPortalLoginState,
 } from '../lib/partnerPortalAuth';
 import { clearAuthSessionLifetime } from '../lib/authRememberStorage';
+import { toPartnerApplicationError } from '../lib/partnerApplicationErrors';
+import {
+  KYC_DOCUMENT_TYPES,
+  kycDocumentSpec,
+  validatePartnerApplication,
+  type PartnerApplicationFieldErrors,
+} from '../lib/partnerApplicationValidation';
 import { PARTNER_DASHBOARD_PATH } from '../lib/router';
 import brandedLogo from '../assets/nexora-salonos-logo.png';
 import partnerHero from '../assets/nexora-partner-hero.jpg';
@@ -703,39 +710,315 @@ export const PartnerPortalFailure: React.FC<{
 
 type PartnerPortalMode = 'login' | 'signup' | 'apply' | 'forgot' | 'set-password';
 
-const ExistingUserApplicationForm: React.FC<{
+/** Title of the screen a successful submission lands on (spec copy). */
+export const PARTNER_APPLICATION_PENDING_TITLE = 'Application Pending Approval';
+export const PARTNER_APPLICATION_PENDING_BODY =
+  'Your Growth Partner application is with our team. You will get access to the dashboard as soon as it is approved — no need to apply again.';
+
+/**
+ * The signed-in "Become a Growth Partner" application form.
+ *
+ * What changed (the "Application failed. Please try again." report):
+ *   • every field is validated BEFORE the request, with the same rules the
+ *     database enforces — a 10-digit phone, a 12-digit Aadhaar number, a real
+ *     PAN/Passport format — so the user is told "Invalid Aadhaar number"
+ *     instead of a whole-form failure;
+ *   • the submit button is disabled and shows a spinner while the request is
+ *     pending, and every field is disabled with it, which makes a double
+ *     submission impossible (the backend refuses duplicates too);
+ *   • the server's answer is classified, so the alert says "You have already
+ *     submitted an application", "Network error…" or "Your session expired…"
+ *     with a sign-in action — never a generic failure;
+ *   • the typed values survive a failed submit: nothing is cleared, only the
+ *     offending field is marked.
+ */
+export const PartnerApplicationForm: React.FC<{
   busy: boolean;
-  error: string;
-  accentHex: string;
+  /** Form-level message (server/network/session failure). */
+  error?: string;
+  /** Field-level messages from the last attempt. */
+  fieldErrors?: PartnerApplicationFieldErrors;
+  /** True when the last failure means the session is gone. */
+  needsSignIn?: boolean;
+  accentHex?: string;
+  logoSrc?: string;
   onSubmit: (input: { fullName: string; phone: string; kycDocumentType: string; kycDocumentReference: string }) => void;
   onBack: () => void;
-}> = ({ busy, error, accentHex, onSubmit, onBack }) => {
+  /** Sign in again (offered when `needsSignIn`). */
+  onSignIn: () => void;
+}> = ({
+  busy,
+  error = '',
+  fieldErrors: externalFieldErrors,
+  needsSignIn = false,
+  accentHex = '#C20E5A',
+  logoSrc,
+  onSubmit,
+  onBack,
+  onSignIn,
+}) => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [kycDocumentType, setKycDocumentType] = useState('');
   const [kycDocumentReference, setKycDocumentReference] = useState('');
+  // Re-validate on every keystroke only AFTER an attempt, so a pristine form
+  // never shows errors while the user is still typing.
+  const [submitted, setSubmitted] = useState(false);
+  const [localErrors, setLocalErrors] = useState<PartnerApplicationFieldErrors>({});
+
+  const spec = kycDocumentSpec(kycDocumentType);
+
+  const fieldErrors: PartnerApplicationFieldErrors = {
+    ...localErrors,
+    ...(externalFieldErrors ?? {}),
+  };
+
+  const clearFieldError = (field: keyof PartnerApplicationFieldErrors) => {
+    setLocalErrors((previous) => {
+      if (!previous[field]) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    // The guard that makes a double submission impossible even if the disabled
+    // button is somehow activated (double-click, Enter keypress, autofill).
+    if (busy) return;
+    setSubmitted(true);
+    // The submitted form controls are the source of truth: browser autofill can
+    // fill the DOM without dispatching a React change event.
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const values = {
+      fullName: String(form.get('partner-apply-name') ?? fullName),
+      phone: String(form.get('partner-apply-phone') ?? phone),
+      kycDocumentType: String(form.get('partner-apply-kyc-type') ?? kycDocumentType),
+      kycDocumentReference: String(form.get('partner-apply-kyc-reference') ?? kycDocumentReference),
+    };
+    setFullName(values.fullName);
+    setPhone(values.phone);
+    setKycDocumentType(values.kycDocumentType);
+    setKycDocumentReference(values.kycDocumentReference);
+
+    const validated = validatePartnerApplication(values);
+    setLocalErrors(validated.errors);
+    if (!validated.ok) return;
+    onSubmit({
+      fullName: values.fullName,
+      phone: values.phone,
+      kycDocumentType: values.kycDocumentType,
+      kycDocumentReference: values.kycDocumentReference,
+    });
+  };
+
+  // Live re-validation after the first attempt.
+  const revalidate = (next: {
+    fullName?: string;
+    phone?: string;
+    kycDocumentType?: string;
+    kycDocumentReference?: string;
+  }) => {
+    if (!submitted) return;
+    const result = validatePartnerApplication({
+      fullName: next.fullName ?? fullName,
+      phone: next.phone ?? phone,
+      kycDocumentType: next.kycDocumentType ?? kycDocumentType,
+      kycDocumentReference: next.kycDocumentReference ?? kycDocumentReference,
+    });
+    setLocalErrors(result.errors);
+  };
+
+  const inputClass = (invalid?: string) =>
+    `mt-1.5 w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-slate-500 disabled:opacity-60 ${
+      invalid ? 'border-rose-400' : 'border-slate-200'
+    }`;
+
   return (
     <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
-      <form className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4" onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit({ fullName, phone, kycDocumentType, kycDocumentReference });
-      }}>
-        <PartnerBrandMark />
+      <form
+        className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4"
+        aria-busy={busy || undefined}
+        onSubmit={handleSubmit}
+      >
+        <PartnerBrandMark logoSrc={logoSrc} />
         <h1 className="text-2xl font-bold text-slate-900">Become a Growth Partner</h1>
-        <p className="text-sm text-slate-600">Use your current account to submit a Growth Partner application.</p>
-        <Field id="partner-apply-name" label="Full name" value={fullName} onChange={setFullName} disabled={busy} />
-        <Field id="partner-apply-phone" label="Phone (optional)" value={phone} onChange={setPhone} disabled={busy} />
+        <p className="text-sm text-slate-600">
+          Use your current account to submit a Growth Partner application. Access starts after approval.
+        </p>
+
+        <Field
+          id="partner-apply-name"
+          label="Full name"
+          value={fullName}
+          onChange={(value) => {
+            setFullName(value);
+            clearFieldError('fullName');
+            revalidate({ fullName: value });
+          }}
+          disabled={busy}
+          error={fieldErrors.fullName}
+          autoComplete="name"
+        />
+
+        <Field
+          id="partner-apply-phone"
+          label="Phone (optional)"
+          value={phone}
+          onChange={(value) => {
+            setPhone(value);
+            clearFieldError('phone');
+            revalidate({ phone: value });
+          }}
+          disabled={busy}
+          error={fieldErrors.phone}
+          autoComplete="tel"
+          placeholder="9876543210"
+        />
+
         <div>
-          <label htmlFor="partner-apply-kyc-type" className="block text-sm font-bold text-slate-800">KYC document type</label>
-          <select id="partner-apply-kyc-type" value={kycDocumentType} onChange={(event) => setKycDocumentType(event.target.value)} disabled={busy} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-            <option value="">Select document</option><option value="pan">PAN</option><option value="aadhaar">Aadhaar</option><option value="passport">Passport</option><option value="driving_license">Driving licence</option><option value="business_registration">Business registration</option>
+          <label htmlFor="partner-apply-kyc-type" className="block text-sm font-bold text-slate-800">
+            KYC document type
+          </label>
+          <select
+            id="partner-apply-kyc-type"
+            name="partner-apply-kyc-type"
+            value={kycDocumentType}
+            onChange={(event) => {
+              const value = event.target.value;
+              setKycDocumentType(value);
+              clearFieldError('kycDocumentType');
+              revalidate({ kycDocumentType: value, kycDocumentReference });
+            }}
+            disabled={busy}
+            aria-invalid={fieldErrors.kycDocumentType ? true : undefined}
+            aria-describedby={fieldErrors.kycDocumentType ? 'partner-apply-kyc-type-error' : undefined}
+            className={inputClass(fieldErrors.kycDocumentType)}
+          >
+            <option value="">Select document</option>
+            {KYC_DOCUMENT_TYPES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
+          {fieldErrors.kycDocumentType ? (
+            <p id="partner-apply-kyc-type-error" role="alert" className="mt-1.5 text-xs font-semibold text-rose-600">
+              {fieldErrors.kycDocumentType}
+            </p>
+          ) : null}
         </div>
-        <Field id="partner-apply-kyc-reference" label="KYC reference number" value={kycDocumentReference} onChange={setKycDocumentReference} disabled={busy} />
-        {error ? <FormAlert tone="error">{error}</FormAlert> : null}
-        <SubmitButton busy={busy} busyLabel="Submitting…" accentHex={accentHex}>Submit application</SubmitButton>
-        <button type="button" onClick={onBack} disabled={busy} className="w-full text-sm font-bold text-slate-500">Back</button>
+
+        <Field
+          id="partner-apply-kyc-reference"
+          label="KYC reference number"
+          value={kycDocumentReference}
+          onChange={(value) => {
+            setKycDocumentReference(value);
+            clearFieldError('kycDocumentReference');
+            revalidate({ kycDocumentReference: value });
+          }}
+          disabled={busy}
+          error={fieldErrors.kycDocumentReference}
+          placeholder={spec ? spec.placeholder : 'Reference only; do not upload a document here'}
+        />
+        {spec && !fieldErrors.kycDocumentReference ? (
+          <p className="-mt-2 text-xs text-slate-500">{spec.hint}</p>
+        ) : null}
+
+        {error ? (
+          <div role="alert" className="space-y-2">
+            <FormAlert tone="error">{error}</FormAlert>
+            {needsSignIn ? (
+              <button
+                type="button"
+                onClick={onSignIn}
+                disabled={busy}
+                className="w-full py-2.5 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
+                Sign in
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={busy}
+          aria-disabled={busy || undefined}
+          className="w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+          style={{ backgroundColor: accentHex }}
+        >
+          {busy ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              Submitting…
+            </>
+          ) : (
+            'Submit application'
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          disabled={busy}
+          className="w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer disabled:opacity-60"
+        >
+          Back
+        </button>
       </form>
+    </main>
+  );
+};
+
+/**
+ * Shown immediately after a successful submission: the application exists and
+ * is waiting for review. It is a real state of the record (status `pending`),
+ * not a local promise — the "Check status" action re-reads it from the backend.
+ */
+export const PartnerApplicationPending: React.FC<{
+  submittedAt?: string | null;
+  busy?: boolean;
+  onCheckStatus?: () => void;
+  onBack?: () => void;
+}> = ({ submittedAt, busy = false, onCheckStatus, onBack }) => {
+  const submittedLabel = (() => {
+    if (!submittedAt) return '';
+    const parsed = new Date(submittedAt);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+  })();
+  return (
+    <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
+      <StateCard
+        icon={<Hourglass className="w-7 h-7 text-slate-400" />}
+        title={PARTNER_APPLICATION_PENDING_TITLE}
+        body={PARTNER_APPLICATION_PENDING_BODY}
+      >
+        {submittedLabel ? (
+          <p className="mt-3 text-xs text-slate-500" data-testid="partner-application-submitted">
+            Submitted {submittedLabel}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => onCheckStatus?.()}
+          disabled={busy}
+          className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+        >
+          <span className="inline-flex items-center gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" />}
+            Check application status
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-800 transition-opacity hover:opacity-90"
+        >
+          Back to app
+        </button>
+      </StateCard>
     </main>
   );
 };
@@ -805,6 +1088,12 @@ export const PartnerPortalLogin: React.FC<{
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState('');
+  // Application submission outcome: 'pending' renders the "Application Pending
+  // Approval" screen after a successful write (the record really is pending).
+  const [applicationOutcome, setApplicationOutcome] = useState<'idle' | 'pending'>('idle');
+  const [applicationSubmittedAt, setApplicationSubmittedAt] = useState<string | null>(null);
+  const [applicationFieldErrors, setApplicationFieldErrors] = useState<PartnerApplicationFieldErrors>({});
+  const [applicationNeedsSignIn, setApplicationNeedsSignIn] = useState(false);
 
   // Forgot-password state.
   const [forgotEmail, setForgotEmail] = useState<string>(() => readRememberedPartnerEmail());
@@ -1130,6 +1419,13 @@ export const PartnerPortalLogin: React.FC<{
           setSessionUser(result.viewer);
           setAttempt((value) => value + 1);
         }
+        if (result.applicationError) {
+          // The account was created and the visitor is signed in, so the only
+          // honest message names both facts AND the real reason the
+          // application was not stored (invalid KYC, duplicate, …).
+          setFormError(`Account created, but your application was not submitted. ${result.applicationError.message}`);
+          return;
+        }
         setSignupSuccess(
           result.confirmed
             ? 'Application submitted. Dashboard access will be enabled after approval.'
@@ -1140,20 +1436,51 @@ export const PartnerPortalLogin: React.FC<{
     ).finally(() => setBusy(false));
   };
 
+  /**
+   * Submit the signed-in application.
+   *
+   * The failure path is the fix for the reported bug: instead of replacing
+   * every error with "Application failed. Please try again.", the thrown value
+   * is classified and rendered as the message the user can act on — with a
+   * sign-in action for an expired session, a field marker for a validation
+   * refusal, and the pending screen for a duplicate that turns out to be an
+   * application this account already has.
+   */
   const handleExistingUserApplication = (input: { fullName: string; phone: string; kycDocumentType: string; kycDocumentReference: string }) => {
-    if (!input.fullName.trim() || !input.kycDocumentType || !input.kycDocumentReference.trim()) {
-      setFormError('Enter your name and KYC details to submit the application.');
-      return;
-    }
+    if (busy) return;
     setBusy(true);
     setFormError('');
-    void submitGrowthPartnerApplication(sb, input).then(
+    setApplicationFieldErrors({});
+    setApplicationNeedsSignIn(false);
+    void submitGrowthPartnerApplication(
+      sb,
+      input,
+      // The duplicate pre-check reads the caller's OWN application row through
+      // the same source the gate used, so a stale screen cannot submit twice.
+      { fetchApplicationRow: readApplicationRow }
+    ).then(
       (result) => {
-        setApplication({ id: 'submitted', status: result.status, kyc_status: 'submitted', created_at: new Date().toISOString() });
+        setApplication({
+          id: result.id ?? 'submitted',
+          status: result.status || 'pending',
+          kyc_status: result.kycStatus ?? 'submitted',
+          created_at: result.createdAt ?? new Date().toISOString(),
+        });
+        setApplicationSubmittedAt(result.createdAt ?? new Date().toISOString());
+        setApplicationOutcome('pending');
         setMode('login');
         setAttempt((value) => value + 1);
       },
-      (error: Error) => setFormError(safePartnerErrorMessage(error, 'Application failed. Please try again.'))
+      (error: unknown) => {
+        const failure = toPartnerApplicationError(error);
+        setFormError(failure.message);
+        setApplicationNeedsSignIn(failure.kind === 'session');
+        // A validation refusal names the field it belongs to; keep the typed
+        // values so the user fixes one field instead of re-entering the form.
+        if (failure.kind === 'validation' && failure.field) {
+          setApplicationFieldErrors({ [failure.field]: failure.message });
+        }
+      }
     ).finally(() => setBusy(false));
   };
 
@@ -1197,8 +1524,51 @@ export const PartnerPortalLogin: React.FC<{
 
   if (state === 'loading' || state === 'granted') return <PartnerPortalVerifying logoSrc={logoSrc} />;
 
+  // A successful submission lands on its own screen ("Application Pending
+  // Approval") instead of dropping the user back to a form they could resubmit.
+  // "Check application status" re-reads the row from the backend.
+  if (applicationOutcome === 'pending') {
+    return (
+      <PartnerApplicationPending
+        submittedAt={applicationSubmittedAt}
+        busy={busy}
+        onCheckStatus={() => {
+          setApplicationOutcome('idle');
+          setMode('login');
+          setAttempt((value) => value + 1);
+        }}
+        onBack={onBack}
+      />
+    );
+  }
+
   if (state === 'unauthorized' && mode === 'apply') {
-    return <ExistingUserApplicationForm busy={busy} error={formError} accentHex={accentHex} onSubmit={handleExistingUserApplication} onBack={() => { setMode('login'); setFormError(''); }} />;
+    return (
+      <PartnerApplicationForm
+        busy={busy}
+        error={formError}
+        fieldErrors={applicationFieldErrors}
+        needsSignIn={applicationNeedsSignIn}
+        accentHex={accentHex}
+        logoSrc={logoSrc}
+        onSubmit={handleExistingUserApplication}
+        onBack={() => {
+          setMode('login');
+          setFormError('');
+          setApplicationFieldErrors({});
+          setApplicationNeedsSignIn(false);
+        }}
+        onSignIn={() => {
+          setApplicationOutcome('idle');
+          setMode('login');
+          setFormError('');
+          setApplicationFieldErrors({});
+          setApplicationNeedsSignIn(false);
+          setSessionUser(null);
+          setAttempt((value) => value + 1);
+        }}
+      />
+    );
   }
 
   if (state === 'signed-out' && mode === 'signup') {

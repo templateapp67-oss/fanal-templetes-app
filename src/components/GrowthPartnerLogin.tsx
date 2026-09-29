@@ -30,6 +30,13 @@ import {
 import { GROWTH_PARTNER_PATH } from '../lib/router';
 import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
 import { logPasswordLengths } from '../lib/authPasswordDiagnostics';
+import {
+  isValidIndianMobile,
+  kycDocumentSpec,
+  normalizeKycReference,
+  PARTNER_APPLICATION_MESSAGES,
+  sanitizePersonName,
+} from '../lib/partnerApplicationValidation';
 
 // ============================================================================
 // Growth Partner LOGIN route — `/growth-partner/login`.
@@ -166,6 +173,17 @@ export interface GrowthPartnerSignupFieldErrors {
   kycDocumentReference?: string;
 }
 
+/**
+ * Validate the sign-up form.
+ *
+ * The KYC rules are not re-written here: they come from the shared
+ * `validatePartnerApplication` (src/lib/partnerApplicationValidation.ts), the
+ * same module the signed-in "Become a Growth Partner" form uses and the same
+ * rules the database enforces. That is what stops the two forms (and the two
+ * sides of the wire) from drifting apart — before, neither checked the Aadhaar
+ * or phone format at all, so malformed KYC was accepted and then reported as
+ * "Application failed".
+ */
 export function validateGrowthPartnerSignupInput(
   input: Partial<GrowthPartnerSignupInput>
 ): GrowthPartnerSignupFieldErrors {
@@ -190,14 +208,34 @@ export function validateGrowthPartnerSignupInput(
     errors.password = 'Password must be at least 8 characters.';
   }
 
-  const kycType = input.kycDocumentType?.trim() ?? '';
-  if (!kycType) {
-    errors.kycDocumentType = 'Select a KYC document type.';
+  // Name, phone and KYC use the SHARED application rules (the same ones the
+  // signed-in application form and the database apply), so a value refused here
+  // is exactly the value the backend would refuse — and the message names the
+  // field instead of blaming the whole form.
+  if (!errors.fullName && sanitizePersonName(fullName).length < 2) {
+    errors.fullName = PARTNER_APPLICATION_MESSAGES.nameTooShort;
   }
 
-  const kycRef = input.kycDocumentReference?.trim() ?? '';
-  if (!kycRef) {
-    errors.kycDocumentReference = 'Enter your KYC reference number.';
+  const phone = String(input.phone ?? '').trim();
+  if (phone && !isValidIndianMobile(phone)) {
+    errors.phone = PARTNER_APPLICATION_MESSAGES.phoneInvalid;
+  }
+
+  const spec = kycDocumentSpec(input.kycDocumentType);
+  if (!spec) {
+    errors.kycDocumentType = PARTNER_APPLICATION_MESSAGES.kycTypeRequired;
+    // Still report an empty reference: an untouched form shows what is missing
+    // on both fields at once instead of one message per submit.
+    if (!String(input.kycDocumentReference ?? '').trim()) {
+      errors.kycDocumentReference = PARTNER_APPLICATION_MESSAGES.kycReferenceRequired;
+    }
+  } else {
+    const reference = normalizeKycReference(spec.value, input.kycDocumentReference);
+    if (!reference) {
+      errors.kycDocumentReference = PARTNER_APPLICATION_MESSAGES.kycReferenceRequired;
+    } else if (!spec.pattern.test(reference)) {
+      errors.kycDocumentReference = spec.invalidMessage;
+    }
   }
 
   return errors;
@@ -850,6 +888,7 @@ export const GrowthPartnerLogin: React.FC<{
         errors.fullName ||
         errors.email ||
         errors.password ||
+        errors.phone ||
         errors.kycDocumentType ||
         errors.kycDocumentReference ||
         'Please check the form for errors.';
@@ -865,6 +904,14 @@ export const GrowthPartnerLogin: React.FC<{
           if (result.viewer) {
             setSessionUser(result.viewer);
             setAttempt((value) => value + 1);
+          }
+          if (result.applicationError) {
+            // The account exists and the visitor is signed in: report the real
+            // reason the application was not stored instead of a catch-all.
+            setFormError(
+              `Account created, but your application was not submitted. ${result.applicationError.message}`
+            );
+            return;
           }
           setSignupSuccess(
             result.confirmed

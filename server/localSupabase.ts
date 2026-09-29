@@ -132,6 +132,13 @@ export const LOCAL_GROWTH_CHAIN = [
   '20261016000000_partner_portal_strict_role_check.sql',
   '20261017000000_profile_completion_rpc.sql',
   '20261018000000_profile_completion_editor_gate.sql',
+  // Growth Partner application hardening (20261030). Validates Aadhaar / PAN /
+  // phone formats, refuses duplicate applications with 23505 (HTTP 409), adds
+  // the partner_applications view and pins the RLS policies the gate relies on.
+  // Without it the local gateway accepts an 11-digit Aadhaar and silently
+  // overwrites an existing application — the exact behaviour the production fix
+  // removes, so the local stack must not keep reproducing it.
+  '20261030000000_partner_applications_hardening.sql',
 ];
 
 /**

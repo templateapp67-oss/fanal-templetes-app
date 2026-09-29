@@ -42,6 +42,28 @@ export function logPartnerResponseDrift(
   } catch { /* logging must not break the safe response */ }
 }
 
+/**
+ * The exact validation copy the Growth Partner RPCs raise (SQLSTATE 22023 /
+ * 23505). PostgREST returns a `RAISE EXCEPTION` message verbatim, so the local
+ * gateway does too — but only for these reviewed strings, so no SQL, no table
+ * name and no policy name can ever reach the browser.
+ */
+const PARTNER_RPC_FIELD_MESSAGES = new Set([
+  'Full name is required',
+  'Enter your full name as it appears on your KYC document',
+  'Select a valid KYC document type',
+  'KYC document reference is required',
+  'Invalid Aadhaar number. Enter the 12 digits from your Aadhaar card',
+  'Invalid PAN. Enter it as ABCDE1234F',
+  'Invalid passport number. Use 6-20 letters or digits',
+  'Invalid driving licence number. Use 6-20 letters or digits',
+  'Invalid business registration number. Use 6-20 letters or digits',
+  'Enter a valid 10-digit mobile number',
+  'Application already submitted',
+  'KYC document already used',
+  'Growth Partner access is already active',
+]);
+
 /** Fixed response copy; detailed payloads and SQL names never cross the gateway. */
 export function safeGatewayFailure(error: unknown): string {
   const value = error as {message?: string; code?: string};
@@ -54,5 +76,12 @@ export function safeGatewayFailure(error: unknown): string {
   if (/Growth Partner access required/i.test(message)) return 'Growth Partner access required';
   if (/Unknown referral filter/i.test(message)) return 'Unknown referral filter';
   if (value?.code === '42501') return 'Permission denied';
+  // 22023 = invalid_parameter_value. The Growth Partner RPCs raise it with
+  // field-level copy ("Invalid Aadhaar number. …"), and PostgREST returns a
+  // raised message verbatim, so the local gateway must too: masking it here is
+  // what used to flatten every application error into one generic sentence.
+  if (value?.code === '22023' || value?.code === '23505') {
+    return PARTNER_RPC_FIELD_MESSAGES.has(message) ? message : 'The request could not be completed. Please try again.';
+  }
   return 'The request could not be completed. Please try again.';
 }
