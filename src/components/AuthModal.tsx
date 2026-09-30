@@ -18,7 +18,7 @@ interface AuthModalProps {
   onClose: () => void;
   initialMode?: 'login' | 'signup';
   /** Customer auth uses the same flow without asking for salon-owner fields. */
-  purpose?: 'owner' | 'customer';
+  purpose?: 'owner' | 'customer' | 'admin';
   onSuccess: (user: any) => void;
 }
 
@@ -33,6 +33,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isCustomer = purpose === 'customer';
+  // Staff sign-in for the /admin surface. An admin account is provisioned by
+  // the Super Admin (onboarding link → approval), so this modal is login-only
+  // and never writes salon-owner state.
+  const isAdmin = purpose === 'admin';
+  const isOwner = purpose === 'owner';
 
   // Form Fields
   const [email, setEmail] = useState('');
@@ -45,14 +50,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setMode(initialMode);
+      // The admin surface has no self-signup: staff accounts come from the
+      // Super Admin's onboarding link, so the mode is always login there.
+      setMode(isAdmin ? 'login' : initialMode);
       setError(null);
       const stored = getStoredReferralCode();
       if (stored) {
         setReferralCode(stored);
       }
     }
-  }, [isOpen, initialMode]);
+  }, [isOpen, initialMode, isAdmin]);
 
   useEffect(() => {
     const handleEvent = (e: Event) => {
@@ -145,13 +152,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           id: 'mock-user-123',
           email: submitted.email,
           user_metadata: {
-            full_name: submitted.fullName || (isCustomer ? 'Customer' : 'Salon Owner'),
-            ...(isCustomer ? {} : { salon_name: submitted.salonName || 'My Salon' }),
-            ...(isCustomer ? {} : { phone_number: submitted.phoneNumber || '' }),
-            ...(isCustomer ? {} : { city: submitted.city || '' }),
+            full_name: submitted.fullName || (isAdmin ? 'Staff Member' : isCustomer ? 'Customer' : 'Salon Owner'),
+            ...(isOwner
+              ? {
+                  salon_name: submitted.salonName || 'My Salon',
+                  phone_number: submitted.phoneNumber || '',
+                  city: submitted.city || '',
+                }
+              : {}),
           }
         };
-        if (!isCustomer) {
+        if (isOwner) {
           setStoredAuthenticatedProfile({
             salonName: submitted.salonName || 'My Salon',
             phone: submitted.phoneNumber || '',
@@ -203,7 +214,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             return;
           }
 
-          if (!isCustomer) {
+          if (isOwner) {
             setStoredAuthenticatedProfile({
               salonName: submitted.salonName || (data.user.user_metadata?.salon_name as string),
               phone: submitted.phoneNumber || (data.user.user_metadata?.phone_number as string),
@@ -241,7 +252,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (signInError) throw signInError;
         if (data.user) {
           const uMeta = data.user.user_metadata || {};
-          if (!isCustomer && (uMeta.salon_name || uMeta.phone_number || uMeta.city)) {
+          if (isOwner && (uMeta.salon_name || uMeta.phone_number || uMeta.city)) {
             setStoredAuthenticatedProfile({
               salonName: uMeta.salon_name,
               phone: uMeta.phone_number,
@@ -295,14 +306,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="p-6 sm:p-10 overflow-y-auto flex-1 custom-scrollbar">
               <div className="text-center mb-8">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#C20E5A]/10 text-[#C20E5A] mb-4">
-                  <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>spa</span>
+                  <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>{isAdmin ? 'admin_panel_settings' : 'spa'}</span>
                 </div>
                 <h2 className="text-3xl font-display font-bold text-gray-900 tracking-tight">
-                  {mode === 'login' ? 'Welcome Back' : isCustomer ? 'Create your booking account' : 'Join Nexora'}
+                  {mode === 'login' ? (isAdmin ? 'Nexora Admin' : 'Welcome Back') : isCustomer ? 'Create your booking account' : 'Join Nexora'}
                 </h2>
                 <p className="text-gray-500 mt-2 text-sm">
                   {mode === 'login'
-                    ? (isCustomer ? 'Sign in to continue your appointment booking' : 'Manage your salon with luxury and ease')
+                    ? (isAdmin
+                        ? 'Sign in with your staff account to open the admin panel'
+                        : isCustomer
+                          ? 'Sign in to continue your appointment booking'
+                          : 'Manage your salon with luxury and ease')
                     : (isCustomer ? 'Sign up once to book appointments with this salon' : 'The ultimate platform for luxury salon owners')}
                 </p>
               </div>
@@ -335,7 +350,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           placeholder="John Doe"
                         />
                       </div>
-                      {!isCustomer && (
+                      {isOwner && (
                         <div>
                           <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Salon Name</label>
                           <input
@@ -351,7 +366,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         </div>
                       )}
                     </div>
-                    {!isCustomer && (
+                    {isOwner && (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Phone</label>
@@ -448,24 +463,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>
                   ) : (
                     <>
-                      <span>{mode === 'login' ? (isCustomer ? 'Continue to booking' : 'Enter Dashboard') : (isCustomer ? 'Create booking account' : 'Create My Salon')}</span>
+                      <span>{mode === 'login' ? (isAdmin ? 'Open Admin Panel' : isCustomer ? 'Continue to booking' : 'Enter Dashboard') : (isCustomer ? 'Create booking account' : 'Create My Salon')}</span>
                       <span className="material-symbols-outlined text-xl">arrow_forward</span>
                     </>
                   )}
                 </button>
               </form>
 
-              <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-                <p className="text-sm text-gray-500">
-                  {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
-                  <button
-                    onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-                    className="ml-2 font-bold text-[#C20E5A] hover:underline"
-                  >
-                    {mode === 'login' ? 'Create one' : 'Log in here'}
-                  </button>
-                </p>
-              </div>
+              {/* Staff accounts are created by the Super Admin through the
+                  onboarding-link flow, so the admin sign-in form offers no
+                  self-signup — just the credentials the staff member was
+                  given. */}
+              {!isAdmin && (
+                <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+                  <p className="text-sm text-gray-500">
+                    {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
+                    <button
+                      onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                      className="ml-2 font-bold text-[#C20E5A] hover:underline"
+                    >
+                      {mode === 'login' ? 'Create one' : 'Log in here'}
+                    </button>
+                  </p>
+                </div>
+              )}
             </div>
           </motion.div>
         </div>
