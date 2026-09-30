@@ -567,6 +567,124 @@ test('only a Super Admin can export, and the export is recorded', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// 6b. First Super Admin claim (20261101000200) — the /admin bootstrap
+// ---------------------------------------------------------------------------
+test('the first signed-in account can claim Super Admin once; nobody else can, and it is audited', async () => {
+  const portal = await adminDatabase();
+  try {
+    const signUp = async (email: string, fullName?: string) => {
+      const inserted = await portal.query(
+        `insert into auth.users(id,email,encrypted_password,email_confirmed_at,raw_user_meta_data)
+         values (gen_random_uuid(), $1, 'test-only', now(), $2::jsonb) returning id`,
+        [email, JSON.stringify(fullName ? { full_name: fullName } : {})]
+      );
+      return inserted.rows[0].id as string;
+    };
+    const owner = await signUp('founder@nexora.example', 'Asha Founder');
+    const second = await signUp('second@nexora.example');
+
+    // Signed out: both RPCs are refused at the grant level.
+    await assert.rejects(() => portal.rpc(null, 'admin_setup_state', []), /permission denied/i);
+    await assert.rejects(() => portal.rpc(null, 'claim_first_super_admin', []), /permission denied/i);
+
+    // Fresh project: claimable, and not yet staff.
+    assert.deepEqual(await portal.rpc(owner, 'admin_setup_state', []), { has_admin: false, claimable: true });
+    assert.equal((await portal.rpc(owner, 'get_my_admin_access', [])).is_admin, false);
+
+    // No auth.uid() (service_role without a subject): refused with the sign-in message.
+    await assert.rejects(
+      () => portal.rpc(null, 'claim_first_super_admin', [], { admin: true }),
+      /Sign in with a Nexora account first, then claim admin access\./
+    );
+
+    // The claim makes the caller a real Super Admin.
+    const claim = await portal.rpc(owner, 'claim_first_super_admin', []);
+    assert.deepEqual(claim, { role: 'super_admin', claimed: true });
+    const access = await portal.rpc(owner, 'get_my_admin_access', []);
+    assert.equal(access.is_admin, true);
+    assert.equal(access.role, 'super_admin');
+    assert.equal(access.can_manage_money, true);
+    const row = await portal.query(
+      `select email, full_name, role::text as role, is_active, work_area from public.admin_members where user_id = $1`,
+      [owner]
+    );
+    assert.deepEqual(row.rows, [
+      { email: 'founder@nexora.example', full_name: 'Asha Founder', role: 'super_admin', is_active: true, work_area: null },
+    ]);
+
+    // The project is no longer claimable.
+    assert.deepEqual(await portal.rpc(second, 'admin_setup_state', []), { has_admin: true, claimable: false });
+
+    // A second account is refused and gains nothing.
+    await assert.rejects(
+      () => portal.rpc(second, 'claim_first_super_admin', []),
+      /A Super Admin already exists on this project/
+    );
+    assert.equal((await portal.rpc(second, 'get_my_admin_access', [])).is_admin, false);
+    const count = await portal.query(`select count(*)::int as n from public.admin_members`);
+    assert.equal(count.rows[0].n, 1);
+
+    // The owner repeating the claim is idempotent: no second row, no second audit entry.
+    assert.deepEqual(await portal.rpc(owner, 'claim_first_super_admin', []), { role: 'super_admin', claimed: false });
+    assert.equal((await portal.query(`select count(*)::int as n from public.admin_members`)).rows[0].n, 1);
+
+    // Exactly one audit row, attributed to the claimer.
+    const audit = await portal.query(
+      `select action, actor_id, actor_role, target_type, target_id from public.partner_audit_logs where action = 'first_super_admin_claimed'`
+    );
+    assert.equal(audit.rows.length, 1);
+    assert.deepEqual(audit.rows[0], {
+      action: 'first_super_admin_claimed',
+      actor_id: owner,
+      actor_role: 'super_admin',
+      target_type: 'admin_member',
+      target_id: owner,
+    });
+  } finally {
+    await portal.close();
+  }
+});
+
+test('the claim still works (full-name fallback) and is not blocked by a failing audit write', async () => {
+  const portal = await adminDatabase();
+  try {
+    const inserted = await portal.query(
+      `insert into auth.users(id,email,encrypted_password,email_confirmed_at)
+       values (gen_random_uuid(), 'nameless@nexora.example', 'test-only', now()) returning id`
+    );
+    const userId = inserted.rows[0].id;
+    // Make every audit insert fail: the claim must still succeed.
+    await portal.query(`alter table public.partner_audit_logs add constraint audit_always_fails check (false) not valid`);
+    const claim = await portal.rpc(userId, 'claim_first_super_admin', []);
+    assert.deepEqual(claim, { role: 'super_admin', claimed: true });
+    const row = await portal.query(`select full_name from public.admin_members where user_id = $1`, [userId]);
+    assert.equal(row.rows[0].full_name, 'Super Admin');
+  } finally {
+    await portal.close();
+  }
+});
+
+test('an existing staff member is never turned into a claimer, and a deactivated admin reopens the claim', async () => {
+  const portal = await adminDatabase();
+  try {
+    const manager = await seedAdmin(portal, { email: 'area@nexora.example', role: 'area_manager', area: 'Jhotwara' });
+    // Already staff -> idempotent result, role untouched.
+    assert.deepEqual(await portal.rpc(manager, 'claim_first_super_admin', []), { role: 'area_manager', claimed: false });
+    assert.equal((await portal.rpc(manager, 'get_my_admin_access', [])).role, 'area_manager');
+
+    // An INACTIVE row does not count: claimable is "no ACTIVE admin".
+    await portal.query(`update public.admin_members set is_active = false where user_id = $1`, [manager]);
+    assert.deepEqual(await portal.rpc(manager, 'admin_setup_state', []), { has_admin: false, claimable: true });
+    // The same account re-claiming reuses its row (no unique-index collision).
+    assert.deepEqual(await portal.rpc(manager, 'claim_first_super_admin', []), { role: 'super_admin', claimed: true });
+    const rows = await portal.query(`select role::text as role, is_active, work_area from public.admin_members`);
+    assert.deepEqual(rows.rows, [{ role: 'super_admin', is_active: true, work_area: null }]);
+  } finally {
+    await portal.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 7. Install safety
 // ---------------------------------------------------------------------------
 test('the admin migrations install on the schema this repository ships, and are idempotent', async () => {
@@ -605,7 +723,7 @@ test('the admin migrations install on the schema this repository ships, and are 
     // Re-applying both files is a no-op (they must be safe to re-run on the
     // user's project, which is how they will be applied).
     const core = LOCAL_GROWTH_CHAIN.filter((file) => file.startsWith('20261101'));
-    assert.equal(core.length, 2);
+    assert.equal(core.length, 3);
     for (const file of core) {
       const sql = (await import('node:fs')).readFileSync(`supabase/migrations/${file}`, 'utf8');
       await portal.db.exec(sql);

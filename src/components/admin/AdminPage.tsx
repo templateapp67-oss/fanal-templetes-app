@@ -7,9 +7,13 @@
 //   1. `/admin/onboard-manager` — PUBLIC. The candidate has no session; the link
 //      token is the authorization. Rendered before any auth check runs.
 //   2. signed in AND an active admin_members row — the panels, scoped by role.
-//   3. signed in but NOT staff — an explicit refusal. Not a redirect to a login
-//      screen (that would be confusing for a salon owner) and never a blank
-//      page: the panel says which account is signed in and what to do.
+//   3. signed in but NOT staff — never a blank page and never a redirect to a
+//      login screen (confusing for a salon owner). The panel says which account
+//      is signed in and, depending on the project, shows one of:
+//        a. schema missing  — how to apply supabase/apply_admin_management.sql;
+//        b. no Super Admin yet — a one-click "Claim Super Admin access" button
+//           (claim_first_super_admin(); SQL refuses it once any admin exists);
+//        c. otherwise — the plain staff-only refusal.
 //
 // The role is read from SQL (`get_my_admin_access()`), so it cannot be raised by
 // editing the URL, localStorage or a request body.
@@ -17,10 +21,13 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  claimFirstSuperAdmin,
+  fetchAdminSetupState,
   fetchMyAdminAccess,
   NO_ADMIN_ACCESS,
   type AdminAccess,
   type AdminApiError,
+  type AdminSetupState,
 } from '../../lib/adminApi';
 import {
   adminPath,
@@ -114,6 +121,11 @@ export function AdminPage({ path, search, navigate, user, onLogout, onRequireAut
   const [access, setAccess] = useState<AdminAccess>(NO_ADMIN_ACCESS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [schemaMissing, setSchemaMissing] = useState(false);
+  const [setup, setSetup] = useState<AdminSetupState | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const params = (() => {
     try {
@@ -134,23 +146,54 @@ export function AdminPage({ path, search, navigate, user, onLogout, onRequireAut
     if (!user) {
       setLoading(false);
       setAccess(NO_ADMIN_ACCESS);
+      setSetup(null);
+      setSchemaMissing(false);
       return;
     }
     setLoading(true);
-    fetchMyAdminAccess()
-      .then((value) => {
-        if (!cancelled) setAccess(value);
-      })
-      .catch((failure: AdminApiError) => {
-        if (!cancelled) setError(failure?.message || 'Your access could not be verified.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    setError(null);
+    (async () => {
+      let resolved: AdminAccess = NO_ADMIN_ACCESS;
+      let missing = false;
+      let state: AdminSetupState | null = null;
+      try {
+        resolved = await fetchMyAdminAccess();
+      } catch (failure) {
+        const err = failure as AdminApiError;
+        if (err?.code === 'schema_not_applied') missing = true;
+        if (!cancelled) setError(err?.message || 'Your access could not be verified.');
+      }
+      // Only a signed-in NON-staff account needs to know whether the project
+      // can still be bootstrapped; staff never see the setup card.
+      if (!resolved.isAdmin && !missing) {
+        state = await fetchAdminSetupState();
+        if (!state.schemaApplied) missing = true;
+      }
+      if (cancelled) return;
+      setAccess(resolved);
+      setSchemaMissing(missing);
+      setSetup(state);
+      setLoading(false);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, reloadKey]);
+
+  const onClaim = useCallback(async () => {
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      await claimFirstSuperAdmin();
+      // Re-read access from SQL (the source of truth) instead of trusting the
+      // claim response: the panel opens only if get_my_admin_access agrees.
+      setReloadKey((key) => key + 1);
+    } catch (failure) {
+      setClaimError((failure as AdminApiError)?.message || 'The claim could not be completed.');
+    } finally {
+      setClaiming(false);
+    }
+  }, []);
 
   const onNavigate = useCallback(
     (next: AdminSection) => {
@@ -195,7 +238,93 @@ export function AdminPage({ path, search, navigate, user, onLogout, onRequireAut
     );
   }
 
-  // 3. Signed in, but not staff.
+  // 3a. The admin schema was never applied to this project.
+  if (!access.isAdmin && schemaMissing) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-xl items-center justify-center p-6">
+        <div
+          data-testid="admin-schema-missing"
+          className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center"
+        >
+          <h1 className="text-lg font-semibold text-amber-900">Admin setup is not finished yet</h1>
+          <p className="mt-2 text-sm text-amber-800">
+            The admin tables and functions have not been applied to this Supabase project, so nobody can sign in to
+            the panel yet.
+          </p>
+          <ol className="mt-3 space-y-1 text-left text-sm text-amber-900">
+            <li>
+              1. Open <strong>Supabase Dashboard → SQL Editor</strong>.
+            </li>
+            <li>
+              2. Paste the whole file <code className="rounded bg-amber-100 px-1">supabase/apply_admin_management.sql</code>{' '}
+              and press <strong>Run</strong>.
+            </li>
+            <li>3. Come back to this page and reload — you will be able to claim Super Admin access.</li>
+          </ol>
+          <div className="mt-4 flex justify-center gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900"
+              onClick={() => setReloadKey((key) => key + 1)}
+            >
+              Check again
+            </button>
+            {onLogout ? (
+              <button
+                type="button"
+                className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-semibold text-white"
+                onClick={onLogout}
+              >
+                Switch account
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 3b. Signed in, not staff, and the project has no Super Admin yet.
+  if (!access.isAdmin && setup?.claimable) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-xl items-center justify-center p-6">
+        <div data-testid="admin-claim-card" className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900">No Super Admin exists on this project yet.</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            You are signed in as <strong>{user.email || 'this account'}</strong>. Claiming makes this account the
+            project&apos;s Super Admin. It works only once — after that, new staff join through onboarding links.
+          </p>
+          {claimError ? (
+            <p role="alert" data-testid="admin-claim-error" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {claimError}
+            </p>
+          ) : null}
+          <div className="mt-4 flex justify-center gap-2">
+            <button
+              type="button"
+              data-testid="admin-claim-setup"
+              disabled={claiming}
+              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              onClick={onClaim}
+            >
+              {claiming ? 'Claiming…' : 'Claim Super Admin access'}
+            </button>
+            {onLogout ? (
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                onClick={onLogout}
+              >
+                Switch account
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 3c. Signed in, but not staff.
   if (!access.isAdmin) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-xl items-center justify-center p-6">

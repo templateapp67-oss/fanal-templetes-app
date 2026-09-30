@@ -12,8 +12,9 @@ routes, the client, and the tests. A deployment has to add three things:
 1. **A live Supabase connection** (`.env`) — without it the API answers
    `503 backend_unavailable` for every write and the panel renders the
    *"needs a live connection"* state.
-2. **The two admin migrations**, applied after the Growth Partner / portal set.
-3. **At least one `super_admin` row** — every admin route is fail-closed
+2. **The three admin migrations**, applied after the Growth Partner / portal set.
+3. **At least one `super_admin` row** — created by the one-click claim on
+   `/admin` (section 3), or by hand. Every admin route is fail-closed
    (`admin_members` is the only source of truth; a signed-in non-staff account
    gets the "Nexora staff accounts" refusal, never a silent success).
 
@@ -49,22 +50,24 @@ supabase db push        # applies supabase/migrations/ in filename order
 
 **No CLI / no linking?** Paste one file into the SQL Editor instead —
 **`supabase/apply_admin_management.sql`** is the byte-for-byte concatenation of
-both migrations (2.6k lines) plus the prerequisites, the verification query and
+all three migrations (~2.7k lines) plus the prerequisites, the verification query and
 the next step in its header. Run that query afterwards; on this schema it must
 return:
 
 | `admin_tables` | `admin_role_enum` | `admin_rpcs` | `buckets` | `reward_tiers` |
 | --- | --- | --- | --- | --- |
-| 6 | 1 | 21 | 2 | 3 |
+| 6 | 1 | 23 | 2 | 3 |
 
-The bundle is generated — after editing either migration, run
-`node scripts/bundle-admin-sql.mjs` so the two never drift. It is safe to paste
+The bundle is generated — after editing or adding any `20261101*` migration, run
+`node scripts/bundle-admin-sql.mjs` (it picks every `20261101*.sql` up
+automatically, sorted) so the bundle never drifts. It is safe to paste
 twice (every statement is idempotent).
 
 | Order | File | Contains |
 | --- | --- | --- |
 | 1 | `supabase/migrations/20261101000000_admin_management_core.sql` | `admin_role` enum, `admin_members`, `manager_onboarding_links`, `manager_onboarding_applications`, `partner_audit_logs`, `private` RBAC helpers, RLS, the `manager-documents` bucket + policies, the audit trigger |
 | 2 | `supabase/migrations/20261101000100_admin_partner_operations.sql` | directory / report / moderation / bank / payout / audit / export RPCs, the reward tiers seed, `get_manager_onboarding_link` + `submit_manager_onboarding_application` |
+| 3 | `supabase/migrations/20261101000200_admin_first_super_admin_claim.sql` | `admin_setup_state()` + `claim_first_super_admin()` — the one-time "Claim Super Admin access" bootstrap |
 
 Both files are idempotent (`if not exists`, `create or replace`, guarded
 `do $$` blocks), so re-running them is safe.
@@ -103,6 +106,20 @@ npx node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit \
 ---
 
 ## 3. First Super Admin
+
+**One click (recommended).** After the migrations are applied, open `/admin`,
+sign in with the account that should own the project and press **Claim Super
+Admin access**. The button calls `public.claim_first_super_admin()`, which works
+exactly once: it is serialized with an advisory lock and refused
+(`55006 A Super Admin already exists…`) as soon as any *active* `admin_members`
+row exists. A repeat by the same owner is a harmless no-op and the claim is
+written to `partner_audit_logs` as `first_super_admin_claimed`.
+`public.admin_setup_state()` (`{has_admin, claimable}`) is what tells the page
+whether to show the button. If the schema is missing, `/admin` shows the
+"paste `supabase/apply_admin_management.sql` into the SQL Editor" guidance
+instead.
+
+**Manual fallback.**
 
 `public.current_admin_role()` resolves the caller like this, in order:
 
@@ -282,6 +299,10 @@ npx node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit \
 # Routes: anonymous refusal, role gates, approval identity, CSV escaping
 npx node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit \
   --disable-warning=ExperimentalWarning tests/adminRoutesApi.test.ts
+
+# First Super Admin claim: real clicks in jsdom (and its SQL tests above)
+npx node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit \
+  --disable-warning=ExperimentalWarning tests/dom/adminClaimSetupFlow.test.ts
 
 # Public form: real clicks in jsdom — dead links, validation, submission
 npx node --import ./scripts/testEnv.mjs --import tsx --test --test-force-exit \

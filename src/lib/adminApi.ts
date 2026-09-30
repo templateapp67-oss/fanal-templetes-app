@@ -249,6 +249,57 @@ export async function fetchMyAdminAccess(): Promise<AdminAccess> {
 }
 
 // ---------------------------------------------------------------------------
+// First Super Admin setup (self-bootstrapping /admin)
+// ---------------------------------------------------------------------------
+export interface AdminSetupState {
+  /** True while no ACTIVE admin_members row exists — the claim button may show. */
+  claimable: boolean;
+  /** An active admin already exists on this project. */
+  hasAdmin: boolean;
+  /** False when the admin schema (get_my_admin_access & co.) is not installed. */
+  schemaApplied: boolean;
+}
+
+function isSchemaMissing(error: unknown): boolean {
+  const code = (error as AdminApiError | undefined)?.code;
+  return code === 'schema_not_applied' || code === 'PGRST202';
+}
+
+/**
+ * Can this project still be bootstrapped from the UI? Never throws: anything
+ * other than a clear "yes, claimable" answer means the claim button stays hidden
+ * (`claimable: false`). A missing schema is reported separately so the panel can
+ * tell the operator to apply supabase/apply_admin_management.sql.
+ */
+export async function fetchAdminSetupState(): Promise<AdminSetupState> {
+  try {
+    const raw = await callRpc<any>('admin_setup_state', {});
+    const hasAdmin = raw?.has_admin === true;
+    return { claimable: raw?.claimable === true && !hasAdmin, hasAdmin, schemaApplied: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { claimable: false, hasAdmin: false, schemaApplied: false };
+    // Transport failure / timeout / auth trouble: do not offer the claim.
+    return { claimable: false, hasAdmin: false, schemaApplied: true };
+  }
+}
+
+export interface ClaimResult {
+  role: AdminRole | null;
+  /** False when the caller was already staff (idempotent repeat). */
+  claimed: boolean;
+}
+
+/**
+ * One-time claim of the first Super Admin seat for the signed-in account. The
+ * SQL function is the authority: it refuses once any active admin exists, so a
+ * stale or forged button cannot take over a configured project.
+ */
+export async function claimFirstSuperAdmin(): Promise<ClaimResult> {
+  const raw = await callRpc<any>('claim_first_super_admin', {});
+  return { role: (raw?.role as AdminRole) ?? null, claimed: raw?.claimed === true };
+}
+
+// ---------------------------------------------------------------------------
 // Onboarding links
 // ---------------------------------------------------------------------------
 export interface OnboardingLink {
