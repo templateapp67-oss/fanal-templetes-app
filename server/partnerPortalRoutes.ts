@@ -161,8 +161,18 @@ async function callerToken(deps: PartnerPortalRouteDeps, req: Request): Promise<
   const { token, user } = await verifyBackendUser(deps.db, req);
   const call = deps.callRpc ?? ((bearer: string, name: string, payload: Record<string, unknown>) => databaseForToken(bearer).rpc(name, payload));
   const role = await call(token, 'get_my_growth_partner', {});
-  if (role.error || !role.data || role.data.user_id !== user.id ||
-      role.data.status !== 'approved' || role.data.is_active !== true) {
+  // The same two generations the client gate handles (src/lib/growthPartner.ts):
+  // the approval-gate generation returns a row only for an approved partner, but
+  // the compatibility generation returns `{ user_id, referral_code, is_active }`
+  // with no `status` and treats `status = 'active'` as a live partner. Demanding
+  // `status === 'approved'` here refused every valid active partner at the API
+  // while the UI happily rendered the portal. An explicit lifecycle value other
+  // than approved/active still fails closed, and the RPC/RLS guard remains the
+  // authority — this is only the pre-flight so an anonymous probe is refused
+  // before a handler parses its body.
+  const status = String(role.data?.status ?? '').trim().toLowerCase();
+  const liveStatus = !status || status === 'approved' || status === 'active';
+  if (role.error || !role.data || role.data.user_id !== user.id || !liveStatus || role.data.is_active === false) {
     throw new BackendError(403, 'Partner access required.', 'partner_access_required');
   }
   return token;

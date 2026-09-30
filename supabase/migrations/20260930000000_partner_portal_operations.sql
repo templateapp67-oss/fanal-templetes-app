@@ -45,6 +45,16 @@ create table if not exists public.partner_payout_requests (
   updated_at timestamptz not null default now(),
   check ((status = 'paid') = (paid_at is not null))
 );
+-- A project that already carries the loose `partner_payout_requests` shape
+-- (20261010000000_growth_partner_core_schema.sql creates it with `if not exists`,
+-- so this file's CREATE above is skipped there) has neither timestamp column.
+-- `cancel_my_partner_payout_request` and `admin_mark_partner_payout_paid` write
+-- `updated_at`, so without this every cancel/paid transition would fail with
+-- 42703 on that project. The columns are additive and safe on both shapes; the
+-- stricter CHECKs stay in the CREATE above, and the ₹500 floor plus one-open-slot
+-- rules are enforced by the RPCs and the partial index below either way.
+alter table public.partner_payout_requests add column if not exists created_at timestamptz not null default now();
+alter table public.partner_payout_requests add column if not exists updated_at timestamptz not null default now();
 create unique index if not exists partner_payout_requests_one_open_per_partner on public.partner_payout_requests(partner_id) where status in ('pending','in_review');
 create index if not exists partner_payout_requests_partner_requested_idx on public.partner_payout_requests(partner_id, requested_at desc, id desc);
 
@@ -142,8 +152,17 @@ language plpgsql stable security definer set search_path='' as $$
 declare v_partner uuid; begin
   if exists (select 1 from information_schema.columns
               where table_schema='public' and table_name='growth_partners' and column_name='status') then
+    -- `status` has two live vocabularies. The signup/approval flow
+    -- (20260911094853) writes 'approved', but the column's own default — and
+    -- what provision_growth_partner() gets by omitting the field — is 'active'.
+    -- The client gate accepts both (see src/lib/growthPartner.ts); a stricter
+    -- server test would refuse every provisioned partner, which is exactly how
+    -- a working partner ended up with "Active Growth Partner required" on every
+    -- portal section. Anything else ('pending', 'rejected', 'suspended',
+    -- 'inactive') still fails closed, and `is_active` remains the admin switch.
     select gp.id into v_partner from public.growth_partners gp
-     where gp.user_id=(select auth.uid()) and gp.is_active and gp.status='approved';
+     where gp.user_id=(select auth.uid()) and gp.is_active
+       and lower(coalesce(nullif(btrim(gp.status),''),'active')) in ('approved','active');
   else
     select gp.id into v_partner from public.growth_partners gp
      where gp.user_id=(select auth.uid()) and gp.is_active;
@@ -290,7 +309,7 @@ returns jsonb language plpgsql stable security definer set search_path='' as $$
 declare v_rows jsonb; v_active text := 'gp.is_active'; begin
   if exists (select 1 from information_schema.columns
               where table_schema='public' and table_name='growth_partners' and column_name='status') then
-    v_active := 'gp.is_active and gp.status=''approved''';
+    v_active := 'gp.is_active and lower(coalesce(nullif(btrim(gp.status),''''),''active'')) in (''approved'',''active'')';
   end if;
   execute format($q$
     with totals as (select e.partner_id,sum(e.amount_paise) filter(where e.status not in ('reversed','held'))::bigint earnings_paise from public.partner_earnings e group by e.partner_id),

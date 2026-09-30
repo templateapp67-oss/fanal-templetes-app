@@ -78,7 +78,7 @@ export const PartnerWithdrawalsPage: React.FC<{ accentHex?: string }> = ({ accen
   const cancel = usePartnerAction((requestId: string) => cancelPartnerPayoutRequest(requestId));
 
   // `available_paise` is ALREADY net of every payout request the desk has not
-  // refused — open ones and paid ones (20260919120000 redefined the read that
+  // refused — open ones and paid ones (20260930000200 redefined the read that
   // way, because a paid payout used to leave the wallet offering the same money
   // again). So the page must not subtract the open amount a second time; it
   // shows it beside the cleared figure to explain where the difference went.

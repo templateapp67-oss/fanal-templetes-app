@@ -1,7 +1,7 @@
 -- Phase 1 follow-up: the reads + one client write the promoted portal sections
 -- still had no contract for.
 --
--- 20260918035349_partner_portal_operations.sql owns the tables, the ledger
+-- 20260930000000_partner_portal_operations.sql owns the tables, the ledger
 -- rules and the payout/notification/asset/ticket RPCs. The portal sections that
 -- were "Coming soon" slots (Earnings, Withdrawals, Marketing Materials, Partner
 -- Levels, Leaderboards, Notifications, Support) now render live pages, and four
@@ -169,7 +169,8 @@ $$;
 -- the wallet jumped back to ₹1,500, and a second ₹1,500 request passed the
 -- ceiling check: the same commission could be withdrawn over and over. Fixed
 -- here, by forward `create or replace`, rather than by editing
--- 20260918035349 (deployed projects have already run that file — history is not
+-- the operations migration (20260930000000, named 20260918035349 before the
+-- ordering fix) — deployed projects have already run that file, history is not
 -- rewritten; this is the same convention
 -- 20260919_growth_partner_area_contract_alignment.sql uses to fix an older one).
 --
@@ -213,7 +214,7 @@ declare v_partner uuid := public.my_active_partner_id(); v_available bigint; v_i
 end $$;
 
 -- ── Marketing Materials: the bucket the library rows point at ──────────────
--- `partner_marketing_assets` (20260918035349) defaults `storage_bucket` to
+-- `partner_marketing_assets` (20260930000000) defaults `storage_bucket` to
 -- 'partner-marketing-assets' but never created that bucket, so the library
 -- could list assets whose files had nowhere to live. Private, like
 -- `partner-support` — and deliberately with NO storage policy for

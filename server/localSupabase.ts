@@ -64,24 +64,36 @@ export const LOCAL_GROWTH_CHAIN = [
   // Marketing Materials, Partner Levels, Leaderboards, Notifications, Support.
   // Previously missing from the local gateway, which caused:
   // "Your tickets could not load. The partner operations schema is not applied..."
-  // NOTE: These must run AFTER 20260928/29 because:
-  //   - growth_partners.id is added in 20260928 (operations references it)
-  //   - partner_referrals and partner_referral_events are created in 28/29
-  //     (operations has FKs to them)
-  // GROWTH_PARTNER_SETUP.md §3 explicitly says 28/29 must precede portal sections.
-  // The timestamp 20260918 is misleading — logical dependency order is 28,29,18,19.
-  '20260918035349_partner_portal_operations.sql',
-  '20260918070000_partner_account_settings.sql',
-  '20260919120000_partner_portal_section_reads.sql',
+  //
+  // These files were named `20260918035349`/`20260919120000` and therefore sorted
+  // BEFORE `20260928`/`20260929` — the two migrations that create the objects
+  // they depend on (`growth_partners.id`, `partner_referrals`,
+  // `partner_referral_events`). Any runner that applies migrations in file-name
+  // order (`supabase db push`, `supabase migration up`, an alphabetical script)
+  // therefore failed them with "column \"id\" referenced in foreign key
+  // constraint does not exist", left NO portal schema behind, and every portal
+  // section — the asset library included — answered PGRST202, which the UI
+  // reports as "The partner operations schema is not applied to this project
+  // yet." They are now named `20260930000000…`/`20260930000400…`, i.e. after
+  // every dependency and before `20260930_partner_dashboard_metrics.sql`.
+  // Nothing else changed: the files are idempotent, so a project that already
+  // ran them simply re-runs them (and a project that failed them finally gets
+  // the schema).
+  //
+  // tests/migrationOrder.test.ts applies this whole chain in FILE-NAME order and
+  // fails if any migration errors or if the portal schema is absent.
+  '20260930000000_partner_portal_operations.sql',
+  '20260930000100_partner_account_settings.sql',
+  '20260930000200_partner_portal_section_reads.sql',
   // Account Settings v2 — structured social links, bank/PAN fields,
   // notification toggles, the security log + deactivation requests and the
   // security RPCs the /partner/account-settings page renders.
-  '20260919130000_partner_account_security_settings.sql',
+  '20260930000300_partner_account_security_settings.sql',
   // Flushes PostgREST's schema cache after those RPCs. Without it a project
-  // that applied 20260919130000 while PostgREST was running keeps answering
+  // that applied 20260930000300 while PostgREST was running keeps answering
   // PGRST202 for get_my_partner_security_overview — the
   // "Could not load your security overview. Please retry." page error.
-  '20260919130100_reload_postgrest_schema_partner_security.sql',
+  '20260930000400_reload_postgrest_schema_partner_security.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
   // Referral code normalization (PHASE 4.2). Widens growth_normalize_code's
@@ -142,6 +154,26 @@ export const LOCAL_GROWTH_CHAIN = [
   // Keep the local gateway on the same immediate-enrollment policy as production.
   '20260930044315_growth_partner_instant_enrollment.sql',
   '20260930050447_partner_dashboard_referral_code_payload.sql',
+  // KYC state vocabulary reconciliation (20261031). Drops any stale CHECK on
+  // kyc_status that only allows ('pending','approved','rejected'), normalizes
+  // legacy rows to the canonical states and re-adds one constraint that also
+  // accepts the legacy alias. Without it, a project carrying the old CHECK
+  // refuses every application ('submitted' → 23514) — the reported
+  // "submission fails with a generic error" bug.
+  '20261031000000_partner_kyc_status_vocabulary.sql',
+  // KYC reference normalizer signature fix (20261031). The hardening migration's
+  // BEFORE INSERT trigger calls normalize_partner_kyc_reference(text, text) while
+  // only the one-argument function exists, so every application insert failed
+  // with 42883. Without this, the local stack cannot store an application at all.
+  '20261031000001_partner_kyc_reference_normalizer_fix.sql',
+  // Admin & Manager management (20261101). Roles + RBAC helpers, the public
+  // manager onboarding link/application tables, the append-only audit trail,
+  // the reward tiers, the manager-documents bucket, then the area directory,
+  // moderation, bank/UPI corrections, payout processing with a UTR and the
+  // super-admin-only export. Without these the /admin surface has no schema and
+  // every route answers PGRST202.
+  '20261101000000_admin_management_core.sql',
+  '20261101000100_admin_partner_operations.sql',
 ];
 
 /**

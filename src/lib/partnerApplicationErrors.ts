@@ -42,10 +42,17 @@ export const PARTNER_APPLICATION_ERROR_MESSAGES = {
   network: 'Network error. Check your connection and try again.',
   schema:
     'Partner applications are not set up on this project yet. Apply supabase/migrations/20261030000000_partner_applications_hardening.sql, then try again.',
+  /**
+   * The database refused the KYC state the write sends ('submitted') because the
+   * project still carries the legacy vocabulary ('pending','approved',
+   * 'rejected'). Reported as a schema problem, not as "check your details": the
+   * applicant's input was fine and retyping it can never help.
+   */
+  kycStateSchema:
+    'This project\'s Growth Partner schema does not accept the KYC state "submitted" yet, so nothing was saved. Apply supabase/migrations/20261031000000_partner_kyc_status_vocabulary.sql, then submit again.',
   rateLimit: 'Too many attempts. Please wait a moment and try again.',
   suspended: 'Your account is suspended. Contact support for help.',
   unavailable: 'Applications are unavailable right now. Please try again later.',
-  kycStatusSchema: 'Partner application setup needs an update. Please contact support and try again after it is fixed.',
   unknown: 'We could not submit your application. Please try again.',
 } as const;
 
@@ -143,14 +150,6 @@ export function toPartnerApplicationError(error: unknown): PartnerApplicationErr
   const code = codeOf(error);
   const status = statusOf(error);
 
-  // This CHECK concerns the server's workflow state, never a user's KYC input.
-  // Legacy projects rejected the RPC's 'submitted' value with SQLSTATE 23514.
-  if (code === '23514' && /growth_partner_applications_kyc_status_check/i.test(message)) {
-    return new PartnerApplicationError('schema', PARTNER_APPLICATION_ERROR_MESSAGES.kycStatusSchema, {
-      code, status, cause: error,
-    });
-  }
-
   // 1. Duplicate — the DB unique index, the RPC guard, or an HTTP 409.
   if (
     code === '23505' ||
@@ -228,6 +227,23 @@ export function toPartnerApplicationError(error: unknown): PartnerApplicationErr
   // 7. Rate limiting.
   if (status === 429 || /rate limit|too many requests|over_request/i.test(message)) {
     return new PartnerApplicationError('rate-limit', PARTNER_APPLICATION_ERROR_MESSAGES.rateLimit, {
+      code,
+      status,
+      cause: error,
+    });
+  }
+
+  // 7b. The database refused the KYC state the write sends. This is a schema
+  //     mismatch (an old CHECK on kyc_status), never the applicant's mistake —
+  //     so it is classified as `schema` (retrying an unchanged form is useless)
+  //     and never as the generic "check your application details" sentence.
+  //     Guarded by BOTH the check-violation code and the column name, so an
+  //     Aadhaar/length check violation still falls through to branch 8.
+  if (
+    (code === '23514' || /check constraint|check_violation/i.test(message)) &&
+    /kyc_status/i.test(message)
+  ) {
+    return new PartnerApplicationError('schema', PARTNER_APPLICATION_ERROR_MESSAGES.kycStateSchema, {
       code,
       status,
       cause: error,

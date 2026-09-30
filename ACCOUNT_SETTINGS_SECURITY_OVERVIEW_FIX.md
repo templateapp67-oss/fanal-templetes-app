@@ -13,7 +13,7 @@ Change Email, no Change Password, no 2FA, no Sessions, no Danger Zone. Pressing
 | Page component | `src/components/PartnerAccountSettingsPage.tsx` (`PartnerAccountSettingsPage`, rendered by `GrowthPartnerPage` for the `account-settings` section) |
 | Data layer | `src/lib/partnerAccountSecurity.ts` → `fetchPartnerSecurityOverview()` |
 | The one network call | `supabase.rpc('get_my_partner_security_overview')` (no arguments; the partner is derived from `auth.uid()` server-side) |
-| Backend | `supabase/migrations/20260919130000_partner_account_security_settings.sql` |
+| Backend | `supabase/migrations/20260930000300_partner_account_security_settings.sql` |
 
 The overview is **one of four** things the page renders. The other three —
 Change Email, Change Password, 2FA enrollment, and the Danger Zone — talk to
@@ -51,9 +51,9 @@ The SQL is correct — `tests/partnerAccountSettingsBackend.test.ts` exercises
 and passes. The failure is environmental, and one of the causes is a genuine
 migration bug:
 
-**`20260919130000_partner_account_security_settings.sql` creates five RPCs but
+**`20260930000300_partner_account_security_settings.sql` creates five RPCs but
 never reloads PostgREST's schema cache.** Its neighbours do
-(`20260911094853`, `20260911101201`, `20260919120000` … all end with
+(`20260911094853`, `20260911101201`, `20260930000200` … all end with
 `notify pgrst, 'reload schema';`). PostgREST caches the schema at startup, so on
 a project where this migration was applied while PostgREST was already running,
 the browser's `rpc('get_my_partner_security_overview')` is answered with
@@ -66,7 +66,7 @@ PGRST202  Could not find the function public.get_my_partner_security_overview()
 …until the cache expires or somebody reloads it by hand. That is exactly the
 text behind the generic "Could not load your security overview" message, and
 why pressing Retry never helped. Fixed by
-`supabase/migrations/20260919130100_reload_postgrest_schema_partner_security.sql`
+`supabase/migrations/20260930000400_reload_postgrest_schema_partner_security.sql`
 (registered in `LOCAL_GROWTH_CHAIN`).
 
 The other three causes, verified against the running local gateway
@@ -91,7 +91,7 @@ call as an active partner, and prints the remediation next to each failure.
 | `src/lib/usePartnerSecurityOverview.ts` *(new)* | The read as React state: newest-request-wins (request-id + unmount guard), `loading` only for the very first load, `error` always surfaced (never silent staleness), a manual `retry()` that counts attempts, and the client read through a ref so an injected object literal cannot restart the fetch on every render. |
 | `src/components/PartnerSectionErrorBoundary.tsx` *(new)* | A class-component error boundary (React has no hook equivalent) so a render-time throw in one card shows a fallback for that card instead of blanking the route. |
 | `src/components/PartnerAccountSettingsPage.tsx` | The route no longer has an all-or-nothing gate. Only the first load owns the page; afterwards a failed read degrades the security sections only. Adds the classified error card with a working **Retry** (`data-account-action="retry-security-overview"`), three-state 2FA (`on` / `off` / **unknown** — an unreadable status is never shown as "2FA off"), "could not be loaded" states for Sessions and the Security Log, and per-section error boundaries. |
-| `supabase/migrations/20260919130100_reload_postgrest_schema_partner_security.sql` *(new)* | `notify pgrst, 'reload schema';` after the security migration (registered in `LOCAL_GROWTH_CHAIN`). |
+| `supabase/migrations/20260930000400_reload_postgrest_schema_partner_security.sql` *(new)* | `notify pgrst, 'reload schema';` after the security migration (registered in `LOCAL_GROWTH_CHAIN`). |
 | `scripts/diagnose-partner-security-overview.mjs` *(new)* | `npm run diagnose:partner-security` — the four-cause diagnostic described above. |
 | `tests/dom/partnerAccountSettingsSecurityFailure.test.ts` *(new)* | Four browser-level tests: the page keeps working when the read fails, a refusal is classified, **Retry re-fetches and the page heals**, and a transient failure is retried automatically. |
 | `tests/partnerAccountSecurity.test.ts` | Classification table (eight causes → kind + retryability + "no raw text") and the retry policy (retries blips, one attempt for refusals, aborts cleanly). |

@@ -261,33 +261,51 @@ async function submitPartnerApplication(
   } catch (thrown) {
     settled = { data: null, error: thrown };
   }
-  // (5) Fallback to direct RLS-scoped INSERT if the RPC is not in PostgREST's
-  //     schema cache yet, but the table + RLS policies exist on the project.
+  // (5) Recovery write, used only when the RPC call could not store the row:
+  //     (a) the function is absent from PostgREST's schema cache (PGRST202 /
+  //         42883 — migration applied but the API cache is stale), or
+  //     (b) the function ran but its write was refused by a stale CHECK on
+  //         kyc_status (23514) that predates the canonical vocabulary.
+  //     Both are recoverable through the RLS-scoped INSERT below, guarded by the
+  //     same policies: no identity is sent from here — `user_id` is the caller's
+  //     own session id and `status` is 'pending'.
+  const rpcFailureText = `${(settled.error as { code?: unknown })?.code ?? ''} ${
+    (settled.error as { message?: unknown })?.message ?? ''
+  }`;
+  const rpcMissing = /PGRST202|PGRST203|42883|could not find the function/i.test(rpcFailureText);
   if (
     settled.error &&
     typeof (client as any).from === 'function' &&
-    /PGRST202|PGRST203|42883|could not find the function/i.test(
-      `${(settled.error as any)?.code ?? ''} ${(settled.error as any)?.message ?? ''}`
-    )
+    (rpcMissing || isLegacyKycStatusRefusal(settled.error))
   ) {
     try {
       const { data: sessionData } = await client.auth.getSession();
       const uid = sessionData?.session?.user?.id;
       if (uid) {
-        const directInsert = await (client as any)
-          .from('growth_partner_applications')
-          .insert({
-            user_id: uid,
-            full_name: validated.values.fullName,
-            phone: validated.values.phone,
-            status: 'pending',
-            kyc_status: 'submitted',
-            kyc_document_type: validated.values.kycDocumentType,
-            kyc_document_reference: validated.values.kycDocumentReference,
-            kyc_submitted_at: new Date().toISOString(),
-          })
-          .select('id, status, kyc_status, created_at')
-          .single();
+        const insertApplication = (kycStatus: string) =>
+          (client as any)
+            .from('growth_partner_applications')
+            .insert({
+              user_id: uid,
+              full_name: validated.values.fullName,
+              phone: validated.values.phone,
+              status: 'pending',
+              kyc_status: kycStatus,
+              kyc_document_type: validated.values.kycDocumentType,
+              kyc_document_reference: validated.values.kycDocumentReference,
+              kyc_submitted_at: new Date().toISOString(),
+            })
+            .select('id, status, kyc_status, created_at')
+            .single();
+        let directInsert = await insertApplication('submitted');
+        // A project whose column still only allows ('pending','approved',
+        // 'rejected') refuses 'submitted'. There, 'pending' means exactly the
+        // same thing — KYC received, awaiting review — so the application is
+        // stored instead of being lost to a stale CHECK. The row is normalized
+        // to 'submitted' by 20261031000000_partner_kyc_status_vocabulary.sql.
+        if (directInsert?.error && isLegacyKycStatusRefusal(directInsert.error)) {
+          directInsert = await insertApplication('pending');
+        }
         if (!directInsert?.error && directInsert?.data) {
           return normalizeApplicationResult(directInsert.data);
         }
@@ -303,6 +321,24 @@ async function submitPartnerApplication(
   // (6) Classify every failure — never replace it with a catch-all sentence.
   if (settled.error) throw toPartnerApplicationError(settled.error);
   return normalizeApplicationResult(settled.data);
+}
+
+/**
+ * True when a database refusal is a CHECK violation on `kyc_status` — the shape
+ * a project returns while that column still only allows the legacy
+ * ('pending','approved','rejected') vocabulary and the write sends 'submitted'.
+ *
+ * Requires the check-violation code AND the column name, so an unrelated 23514
+ * (an Aadhaar format check, a length check) can never trigger the legacy write
+ * or be reported as a KYC-state problem.
+ */
+function isLegacyKycStatusRefusal(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, message, details } = error as { code?: unknown; message?: unknown; details?: unknown };
+  const text = `${message ?? ''} ${details ?? ''}`;
+  const isCheckViolation =
+    String(code ?? '') === '23514' || /check constraint|check_violation/i.test(text);
+  return isCheckViolation && /kyc_status/i.test(text);
 }
 
 /** Normalize the RPC payload; unknown shapes degrade to null, never to guesses. */
@@ -357,35 +393,50 @@ function messageOf(error: unknown): string {
  * Map a Supabase Auth failure to safe copy (never raw database/driver text).
  * The invalid-credentials shape is pinned so a wrong password is always
  * reported as exactly that — never with account-existence hints.
+ *
+ * IMPORTANT: This function handles AUTHENTICATION errors only (wrong password,
+ * unconfirmed email, banned account, network issues).
+ * Partner authorization failures (not a partner, pending, rejected, inactive)
+ * are handled separately in resolveGrowthPartnerLogin after successful auth.
  */
 export function toGrowthPartnerLoginError(error: unknown): Error {
   const message = messageOf(error);
+  const code = (error as {code?: string})?.code;
+
   if (
-    (error as {code?: string})?.code === 'email_provider_disabled' ||
+    code === 'email_provider_disabled' ||
     /email (signups|logins) are disabled|email provider.*disabled/i.test(message)
   ) {
     return new Error('Email sign-in is disabled in Supabase. Enable the Email provider in Authentication → Providers → Email.');
   }
-  if ((error as {code?: string})?.code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) {
+  if (code === 'user_banned' || /user.*banned|account.*suspended/i.test(message)) {
     return new Error('Your account is suspended. Contact support for help.');
   }
-  if (/invalid login credentials|invalid email or password|invalid grant/i.test(message)) {
+  // Specific auth failures — keep generic to prevent enumeration
+  if (/invalid login credentials|invalid email or password|invalid grant|auth.*failed|wrong password|incorrect password/i.test(message)) {
     return new Error('Invalid email or password. Please try again.');
   }
   if (/user already registered|already registered|already exists/i.test(message)) {
     return new Error('This email already has an account. Please use Sign in instead.');
   }
-  if (/email not confirmed/i.test(message)) {
+  if (/email not confirmed|email.*not.*verified|verify.*email/i.test(message)) {
     return new Error('Please verify your email, then log in.');
   }
   if (/rate limit|too many|over request/i.test(message)) {
     return new Error('Too many attempts. Please wait a moment and try again.');
   }
-  if (/failed to fetch|network|fetch failed|connection/i.test(message)) {
+  if (/failed to fetch|network|fetch failed|connection|timeout/i.test(message)) {
     return new Error('Network error. Check your connection and try again.');
   }
   return new Error('Login failed. Please try again.');
 }
+
+// NOTE: authorization outcomes are NOT errors classified here. A signed-in
+// account that is not an active partner is a STATE the login page renders
+// (`resolveGrowthPartnerLogin` → 'unauthorized' | 'pending' | 'rejected' |
+// 'inactive'), each with its own dedicated screen and copy, because those cases
+// are not retryable failures and must never be presented as "wrong password".
+// This module only classifies the AUTH failures below.
 
 /**
  * Map an auth user to the viewer the login route uses. One mapper for both the

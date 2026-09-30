@@ -27,6 +27,7 @@ import { createBookingCheckinHandler } from "../server/bookingCheckin.js";
 import { registerCustomerRoutes } from "../server/customerRoutes.js";
 import { registerStaffPerformanceRoutes } from "../server/staffPerformanceRoutes.js";
 import { registerPartnerPortalRoutes } from "../server/partnerPortalRoutes.js";
+import { registerAdminRoutes } from "../server/adminRoutes.js";
 import {
   createMyBookingsListHandler,
   createMyBookingDetailHandler,
@@ -396,6 +397,26 @@ registerStaffPerformanceRoutes(app);
 // the functions' own "active partner" guard stay in force; the browser falls
 // back to the direct RPC whenever these routes are not deployed.
 // ==========================================================================
+// ==========================================================================
+// ADMIN & MANAGER MANAGEMENT — /api/admin/* + the PUBLIC onboarding form
+// --------------------------------------------------------------------------
+// Same mount as server.ts, on the serverless entry: the staff routes verify
+// the caller and ask SQL for their role, the public onboarding routes trust
+// only the link token, and the service-role client is used for exactly two
+// things (creating the approved manager's Auth user, and the private
+// `manager-documents` bucket). On a deploy without a service key those two
+// answer 503 instead of pretending.
+// ==========================================================================
+registerAdminRoutes(
+  app,
+  {
+    db,
+    isMock: bookingHandlerIsMock,
+    admin: admin ?? undefined,
+  },
+  asyncRoute
+);
+
 registerPartnerPortalRoutes(
   app,
   {

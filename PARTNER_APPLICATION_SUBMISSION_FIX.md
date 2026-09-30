@@ -77,6 +77,23 @@ Five defects, all in the same code path:
   `SECURITY DEFINER` with a pinned `search_path` and `auth.uid()` as the only
   source of identity.
 
+### 2.2b Database — the two write blockers found after the first fix
+
+Submitting on a live project could still store nothing. Two independent database
+causes were reproduced on a real Postgres (PGlite, same migrations), and each has
+its own migration now:
+
+| Cause | Symptom | Fix |
+| --- | --- | --- |
+| A `kyc_status` CHECK from an older build that allows only `('pending','approved','rejected')` — the write path sends `submitted` | Postgres refuses the row with **`23514`**; no field can be blamed, so the UI fell back to *"Check your application details and try again."* | `20261031000000_partner_kyc_status_vocabulary.sql` — drops every CHECK that pins `kyc_status`, normalizes stored legacy rows (`pending` + a KYC reference → `submitted`), and re-adds one constraint accepting the canonical states **and** the legacy `pending` alias |
+| The hardening migration's normalize trigger calls `normalize_partner_kyc_reference(text, text)` while only the one-argument function is created | **Every** insert into `growth_partner_applications` fails with **`42883`**, whatever the applicant types | `20261031000001_partner_kyc_reference_normalizer_fix.sql` — creates the two-argument form the trigger calls; the one-argument form delegates to it, so both agree on one canonical value |
+
+The client no longer depends on the first one being applied to succeed: when a
+project refuses `submitted`, `submitGrowthPartnerApplication` retries the
+RLS-scoped insert with the legacy value `pending` (same meaning there), and if
+even that is refused the failure is classified as a **schema** problem with the
+actionable message — never the generic sentence.
+
 ### 2.3 Before / after
 
 | Situation | Before | After |
@@ -87,6 +104,8 @@ Five defects, all in the same code path:
 | Someone else's Aadhaar reused | accepted | `That KYC document is already registered. Check the number and try again.` |
 | Session expired | `Application failed. Please try again.` | `Your session expired. Please sign in again.` + a **Sign in** button |
 | Migration not applied | `Application failed. Please try again.` | `Partner applications are not set up on this project yet. Apply supabase/migrations/…, then try again.` |
+| Project still on the legacy `kyc_status` vocabulary | nothing stored, `Check your application details and try again.` | the row is stored anyway (client retries with the legacy value), or the exact fix is named: `… Apply supabase/migrations/20261031000000_partner_kyc_status_vocabulary.sql, then submit again.` |
+| Normalize trigger cannot resolve its function | nothing stored, setup/schema error | `20261031000001_partner_kyc_reference_normalizer_fix.sql` makes the trigger resolvable; inserts normalize as intended |
 | Network down | `Application failed. Please try again.` | `Network error. Check your connection and try again.` |
 | Success | form still on screen | **Application Pending Approval** (+ *Check application status*) |
 
@@ -97,6 +116,9 @@ Five defects, all in the same code path:
 1. Run `supabase/migrations/20261030000000_partner_applications_hardening.sql`
    in the SQL Editor (or `supabase db push`). It is idempotent — running it
    twice changes nothing.
+   Then run the two write-path fixes, in this order (both idempotent):
+   `supabase/migrations/20261031000000_partner_kyc_status_vocabulary.sql` and
+   `supabase/migrations/20261031000001_partner_kyc_reference_normalizer_fix.sql`.
 2. No frontend env change is needed; no new RPC name and no new table grant is
    required (the RPC is already granted to `authenticated`).
 3. Verify on the project:
@@ -115,6 +137,7 @@ Five defects, all in the same code path:
 | --- | --- |
 | `tests/partnerApplicationValidation.test.ts` | phone/KYC/name normalization and every validation message |
 | `tests/partnerApplicationSubmission.test.ts` | the database (formats, duplicate 409, cross-account KYC, reapply after rejection, RLS, view, idempotency) **and** the client submission layer (classification, session pre-check, duplicate pre-check, no identity in the payload) |
+| `tests/partnerKycStatusVocabulary.test.ts` | the two write blockers on a real Postgres: the legacy `kyc_status` constraint reproduces the `23514` refusal, the reconciliation migration repairs it (and normalizes stored legacy rows, and is idempotent), the normalize trigger resolves its two-argument function — plus the client retrying with the legacy value and the exact schema copy when even that is refused |
 | `tests/dom/partnerApplicationFormBrowserFlow.test.ts` | the real form in jsdom: invalid Aadhaar → no request; busy state locks fields + spinner; duplicate/network/session copy; values preserved; **the reported flow end to end** (portal → apply → invalid → valid → *Application Pending Approval*) |
 | `scripts/reproduce-partner-application-error.mjs` | the reproduction, kept as a regression harness |
 

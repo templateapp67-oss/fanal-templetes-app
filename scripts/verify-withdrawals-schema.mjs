@@ -19,8 +19,8 @@ const REQUIRED_RPCS = [
 async function main() {
   console.log('=== Withdrawals Page Schema Verification ===\n');
   console.log('Migrations required:');
-  console.log(' - 20260918035349_partner_portal_operations.sql');
-  console.log(' - 20260919120000_partner_portal_section_reads.sql\n');
+  console.log(' - 20260930000000_partner_portal_operations.sql');
+  console.log(' - 20260930000200_partner_portal_section_reads.sql\n');
 
   const local = await createLocalDatabase();
   const db = local.db;
@@ -106,8 +106,8 @@ async function main() {
   console.log('apply migrations via:');
   console.log('  npx supabase db push');
   console.log('or SQL Editor with files:');
-  console.log('  supabase/migrations/20260918035349_partner_portal_operations.sql');
-  console.log('  supabase/migrations/20260919120000_partner_portal_section_reads.sql');
+  console.log('  supabase/migrations/20260930000000_partner_portal_operations.sql');
+  console.log('  supabase/migrations/20260930000200_partner_portal_section_reads.sql');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

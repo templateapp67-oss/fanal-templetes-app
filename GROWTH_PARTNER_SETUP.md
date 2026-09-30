@@ -76,7 +76,7 @@ the API.
 * `private.is_trusted_server_or_admin()` — the ledger half of the portal gates on
   it (`release_partner_earnings()` makes cleared commission withdrawable,
   `admin_mark_partner_payout_paid()` pays a request out), and no migration in this
-  repository defined it. `20260919120000_partner_portal_section_reads.sql` now
+  repository defined it. `20260930000200_partner_portal_section_reads.sql` now
   creates the minimum — superuser, or the same `app.is_admin` claim
   `private.is_admin()` reads, or `service_role` — **only when the function does not
   already exist**: if your project has its own predicate for who may move money,
@@ -99,17 +99,35 @@ file is idempotent:
 | 8 | `20260919_growth_partner_area_contract_alignment.sql` | **required** — see below |
 | 9 | `20260920_growth_partner_application_queue.sql` | `list_growth_partner_applications` — the admin review queue (admin-only) |
 | 10 | `20260928_partner_referrals_table.sql`, `20260929_partner_referral_events_rls.sql` | `partner_referrals`, `partner_referral_events` and `growth_partners.id` — **must precede the portal sections below** |
-| 11 | `20260918035349_partner_portal_operations.sql` | the operational model the Earnings/Withdrawals/Marketing/Levels/Leaderboards/Notifications/Support sections read: `partner_earnings`, `partner_payout_requests`, `partner_level_definitions` (+ seeded tiers), `partner_notifications`, `partner_notification_preferences`, `partner_marketing_assets`, `partner_support_tickets`, `partner_support_attachments`, own-row RLS for all of it, the two private buckets, and the `get_my_partner_*` / `request_my_partner_payout` / `record_partner_subscription_commission` / `release_partner_earnings` / `admin_mark_partner_payout_paid` RPCs |
+| 11 | `20260930000000_partner_portal_operations.sql` | the operational model the Earnings/Withdrawals/Marketing/Levels/Leaderboards/Notifications/Support sections read: `partner_earnings`, `partner_payout_requests`, `partner_level_definitions` (+ seeded tiers), `partner_notifications`, `partner_notification_preferences`, `partner_marketing_assets`, `partner_support_tickets`, `partner_support_attachments`, own-row RLS for all of it, the two private buckets, and the `get_my_partner_*` / `request_my_partner_payout` / `record_partner_subscription_commission` / `release_partner_earnings` / `admin_mark_partner_payout_paid` RPCs |
 | 12 | `20260922085236_enable_growth_partner_open_enrollment.sql` | open enrollment: a signed-in account that submits its own validated application is approved immediately (the `/partner/login` "Become a Growth Partner" form) |
 | 13 | `20260922091000_direct_growth_partner_dashboard_access.sql` | **`ensure_my_growth_partner()`** — direct self-enrollment for `auth.uid()`. Required by `/partner/dashboard`: without it every denial screen's "Instantly Approve & Access" action and the login page's automatic activation cannot run (see 7.4) |
-| 14 | `20260919120000_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
+| 14 | `20260930000200_partner_portal_section_reads.sql` | the reads/writes section 7.3 still needed on top: `get_my_partner_payout_requests`, `cancel_my_partner_payout_request`, `get_my_partner_support_tickets`, `get_my_partner_notification_preferences`, `update_my_partner_notification_preferences`, `get_partner_marketing_asset_categories`; the private `partner-marketing-assets` bucket; `private.is_trusted_server_or_admin()` when §2's prerequisite is missing; and a forward fix to `get_my_partner_earnings` / `request_my_partner_payout` so a **paid** payout stays spent (see 7.3) |
 | 15 | `20261030000000_partner_applications_hardening.sql` | **application hardening** — validated formats (12-digit Aadhaar, PAN, 10-digit phone), one application per account and per KYC number (duplicates raise `23505` → HTTP 409), the RLS policies (`INSERT` own row as `pending`, `SELECT` own row), the indexes, and `public.partner_applications` (a `security_invoker` view exposing `id, user_id, full_name, phone, kyc_type, kyc_number, status, created_at`). See [PARTNER_APPLICATION_SUBMISSION_FIX.md](./PARTNER_APPLICATION_SUBMISSION_FIX.md) |
+| 16 | `20261031000000_partner_kyc_status_vocabulary.sql` | **KYC state reconciliation** — drops a stale `kyc_status` CHECK that only allows `('pending','approved','rejected')` and re-adds one constraint that accepts the canonical states plus the legacy `pending` alias, normalizing already-stored legacy rows. Without it, a project whose column predates `20260911101201` refuses every application (`submitted` → `23514`) |
+| 17 | `20261031000001_partner_kyc_reference_normalizer_fix.sql` | **normalizer signature fix** — creates the two-argument `normalize_partner_kyc_reference(text, text)` the hardening migration's normalize trigger already calls (only the one-argument form was created, so every insert failed with `42883`). The one-argument form now delegates to it |
 
-The two portal migrations sort earlier than they apply:
-`partner_earnings.partner_id` and the referral joins FK to
-`growth_partners(id)` / `partner_referrals` / `partner_referral_events`, which
-only exist from `20260928_partner_referrals_table.sql` /
-`20260929_partner_referral_events_rls.sql` onward. Apply them after those two.
+**The portal files now sort exactly where they apply.** They used to be named
+`20260918035349_partner_portal_operations.sql`, `20260918070000_partner_account_settings.sql`,
+`20260919120000_partner_portal_section_reads.sql` and
+`20260919130000_partner_account_security_settings.sql` — names that sort *before*
+`20260928_partner_referrals_table.sql` / `20260929_partner_referral_events_rls.sql`,
+even though `partner_earnings.partner_id` and the referral joins FK to the
+`growth_partners(id)` / `partner_referrals` / `partner_referral_events` those two
+create. A runner that sorts by file name (`supabase db push`, `supabase migration
+up`) therefore applied them first, failed them with `column "id" referenced in
+foreign key constraint does not exist`, rolled them back — and left the project
+with **no portal schema**, so every operational section (the asset library
+included) answered `PGRST202` and rendered
+"The partner operations schema is not applied to this project yet."
+
+They are renamed `20260930000000`–`20260930000400` (plus
+`20260930000400_reload_postgrest_schema_partner_security.sql`), i.e. after every
+dependency. The SQL is unchanged and idempotent, so re-running the renamed files
+on a project that already has the schema is a no-op, and a project whose run
+failed gets the schema installed. `tests/migrationOrder.test.ts` applies the whole
+chain in file-name order on a real Postgres and fails if any migration errors or
+the portal schema is missing.
 
 Inside that window they run on **either** `growth_partners` generation:
 `my_active_partner_id()` and `get_partner_leaderboard()` look the `status`
@@ -203,7 +221,7 @@ The verifier checks the operational model too: the seven `partner_*` tables and
 one read probe per promoted section (each probe is a read, or a write the
 function itself refuses for a key that owns no partner row — the financial
 writers are never called, a health check must not be able to move money). On a
-project where `20260918035349_partner_portal_operations.sql` has not been
+project where `20260930000000_partner_portal_operations.sql` has not been
 applied this fails with `partner_earnings … not found` /
 `PGRST202` lines — the same reason the seven sections print the schema hint
 (7.3), now visible before a partner has to discover it.
@@ -431,7 +449,7 @@ against particular rows), and both `get_my_partner_earnings()` and
 `request_my_partner_payout()` originally netted off only requests that were
 *still open* — so marking ₹1,500 paid put ₹1,500 back in the wallet and a second
 ₹1,500 request sailed through the ceiling check: the same commission could be
-withdrawn repeatedly. `20260919120000` redefines both functions (same
+withdrawn repeatedly. `20260930000200` redefines both functions (same
 signatures, so grants and callers are untouched) to net off every payout request
 the desk has not cancelled or rejected, and adds `cleared_paise` — the gross
 past-clearance figure — so the Withdrawals hero can still say "₹1,250 cleared ·
@@ -440,7 +458,7 @@ subtracting the reservation twice. `tests/partnerPortalSectionSql.test.ts`
 re-requests the paid money and expects `Withdrawal exceeds available balance`.
 
 **Marketing downloads are not public.** `partner-support` (created by
-`20260918035349`) and `partner-marketing-assets` (created by the 20260919120000
+`20260930000000`) and `partner-marketing-assets` (created by the 20260930000200
 follow-up, which existed as a column default but as no bucket) are both private,
 and neither carries a storage policy for `authenticated`: a download link is signed per request
 for exactly one file the caller is allowed to see (60 seconds), and only after
@@ -535,7 +553,10 @@ Notes:
 | "Could not verify your Growth Partner access. Please try again." | the verification/enrollment read threw — see 7.4 to tell a missing migration from a real outage | 7.4 |
 | "…database setup is missing on this project…" on `/partner/login` | `PGRST202` for `get_my_growth_partner` / `ensure_my_growth_partner` | 7.4: apply `20260922091000_direct_growth_partner_dashboard_access.sql`, then reload the schema cache |
 | `PGRST202` / "function … not found" in the verifier | a migration was never applied | step 3, in order |
-| Every operational section says "These records need the partner portal migrations" | `20260918035349_partner_portal_operations.sql` (and the 20260919120000 follow-up) are missing, or they were applied before `20260928`/`20260929` | step 3, in order — see 7.3 for the dependency |
+| "The asset library could not load" / any operational section says "the partner operations schema is not applied" | the portal migrations never installed: they used to be named `20260918…`/`20260919…`, so a file-name-order runner (`supabase db push`) applied them **before** `20260928`/`20260929` and they rolled back on `column "id" referenced in foreign key constraint does not exist` | they are renamed `20260930000000`–`20260930000400` (after every dependency), so `db push` now installs them. A project that already failed them: apply the four files in step 3 by hand, then `supabase migration repair --status applied <version>`. Guarded by `tests/migrationOrder.test.ts` |
+| Earnings show ₹0, notifications are empty or the Levels page renders nothing although the partner has data | a placeholder generation of the portal RPCs is live: `20261016000000_partner_portal_strict_role_check.sql` used to overwrite `get_my_partner_earnings` / `get_my_partner_levels` / `get_my_partner_notifications` outright | re-apply `20260930000000_partner_portal_operations.sql` and `20260930000200_partner_portal_section_reads.sql` (idempotent), or re-run the current `20261016000000_partner_portal_strict_role_check.sql`, which now only stands in where no implementation exists |
+| "Active Growth Partner required" (403) for a partner who is active | the row's `status` is `'active'` — the column default `20260911094853` writes, and what `provision_growth_partner()` leaves behind — while the portal used to accept only `'approved'` | apply the current `20260930000000_partner_portal_operations.sql`: `my_active_partner_id()` now accepts `approved` and `active`, refuses `pending`/`rejected`/`suspended`, and keeps `is_active` as the admin switch |
+| A withdrawal the API refused (e.g. "Minimum withdrawal is ₹500") appears to have been created | the client data layer replaced a JSON refusal from `/api/partner/*` with its fabricated demo fallback | fixed on this branch (`callPartnerOperation` surfaces refusals; only an absent proxy falls through to the RPC), pinned by `tests/partnerPortalOperations.test.ts` |
 | Marketing download says storage is not configured (503) | no `partner-marketing-assets` bucket / no service-role storage credentials | apply the portal migration and set `SUPABASE_SERVICE_ROLE_KEY`; locally this refusal is expected |
 | "Could not load the Growth Partner area" | RPC error (see the message) | check the verifier output for the failing function |
 
@@ -1174,7 +1195,7 @@ planned-slot registry and its disabled/`Soon` rendering were deleted, each
 section got a real page under `src/components/partner/`, a real path in
 `src/lib/router.ts`, and a real read/write path
 (`src/lib/partnerPortalOperations.ts` → `/api/partner/*` → the section RPCs).
-`20260919120000_partner_portal_section_reads.sql` is the one new migration this
+`20260930000200_partner_portal_section_reads.sql` is the one new migration this
 needed; like its predecessor it has **not** been applied to any project by these
 code changes — applying migrations stays an operator step (§3). No production
 data was modified.

@@ -250,7 +250,7 @@ test('writes carry the exact named args the RPCs declare', () =>
 
 test('the payout floor the form validates against is the constraint the SQL enforces', () => {
   assert.equal(PARTNER_MINIMUM_PAYOUT_PAISE, 50000);
-  const migration = readFileSync('supabase/migrations/20260918035349_partner_portal_operations.sql', 'utf8');
+  const migration = readFileSync('supabase/migrations/20260930000000_partner_portal_operations.sql', 'utf8');
   assert.match(migration, /amount_paise bigint not null check \(amount_paise >= 50000\)/);
   assert.match(migration, /p_amount_paise < 50000 then raise exception 'Minimum withdrawal is ₹500'/);
 });
@@ -322,8 +322,8 @@ test('a missing function names the two migrations that fix it', () => {
   assert.equal(error.code, 'schema_not_applied');
   assert.equal(error.retryable, false);
   assert.equal(error.message, PARTNER_SCHEMA_HINT);
-  assert.match(PARTNER_SCHEMA_HINT, /20260918035349_partner_portal_operations\.sql/);
-  assert.match(PARTNER_SCHEMA_HINT, /20260919120000_partner_portal_section_reads\.sql/);
+  assert.match(PARTNER_SCHEMA_HINT, /20260930000000_partner_portal_operations\.sql/);
+  assert.match(PARTNER_SCHEMA_HINT, /20260930000200_partner_portal_section_reads\.sql/);
 });
 
 test('the codes the portal can act on are told apart from a generic failure', () => {

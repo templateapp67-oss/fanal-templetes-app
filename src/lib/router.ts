@@ -523,6 +523,72 @@ export function matchBookingDetailPath(pathname: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Admin & Manager management (`/admin/...`)
+// ---------------------------------------------------------------------------
+// The staff-facing surface: the public manager onboarding form (a link a Super
+// Admin shares), plus the operator panels — onboarding link generator, manager
+// application review, the area-wise partner directory, work/reward audit and the
+// payout desk. `/admin/*` never renders the owner app chrome, and every panel
+// resolves the caller's role from SQL (`get_my_admin_access()`), not from the
+// URL — a manager who types /admin/staff still gets the supervisor screens they
+// are allowed, and a non-staff account gets the access-denied state.
+export const ADMIN_ROOT = '/admin';
+export const ADMIN_ONBOARD_MANAGER_PATH = '/admin/onboard-manager';
+export const ADMIN_DASHBOARD_PATH = '/admin/dashboard';
+export const ADMIN_APPLICATIONS_PATH = '/admin/applications';
+export const ADMIN_STAFF_PATH = '/admin/staff';
+export const ADMIN_PARTNERS_PATH = '/admin/partners';
+export const ADMIN_PAYOUTS_PATH = '/admin/payouts';
+export const ADMIN_AUDIT_PATH = '/admin/audit';
+
+export function isAdminPath(pathname: string): boolean {
+  const path = normalizePath(pathname).toLowerCase();
+  return path === ADMIN_ROOT || path.startsWith(`${ADMIN_ROOT}/`);
+}
+
+/** The public onboarding form: no session, the link token is the authorization. */
+export function isAdminOnboardingFormPath(pathname: string): boolean {
+  return normalizePath(pathname).toLowerCase() === ADMIN_ONBOARD_MANAGER_PATH;
+}
+
+export type AdminSection = 'dashboard' | 'applications' | 'staff' | 'partners' | 'payouts' | 'audit';
+
+const ADMIN_SECTIONS: AdminSection[] = ['dashboard', 'applications', 'staff', 'partners', 'payouts', 'audit'];
+
+const ADMIN_SECTION_PATHS: Record<AdminSection, string> = {
+  dashboard: ADMIN_DASHBOARD_PATH,
+  applications: ADMIN_APPLICATIONS_PATH,
+  staff: ADMIN_STAFF_PATH,
+  partners: ADMIN_PARTNERS_PATH,
+  payouts: ADMIN_PAYOUTS_PATH,
+  audit: ADMIN_AUDIT_PATH,
+};
+
+/** Section for `/admin` (dashboard), `/admin/<section>`; unknown → dashboard. */
+export function matchAdminRoute(pathname: string): AdminSection {
+  const segments = normalizePath(pathname).split('/').filter(Boolean);
+  if (segments[0]?.toLowerCase() !== 'admin') return 'dashboard';
+  const raw = String(segments[1] || '').toLowerCase();
+  if (!raw) return 'dashboard';
+  return (ADMIN_SECTIONS as string[]).includes(raw) ? (raw as AdminSection) : 'dashboard';
+}
+
+export function adminPath(section: AdminSection = 'dashboard'): string {
+  return ADMIN_SECTION_PATHS[section] ?? ADMIN_DASHBOARD_PATH;
+}
+
+export function adminSectionLabel(section: AdminSection): string {
+  switch (section) {
+    case 'applications': return 'Manager applications';
+    case 'staff': return 'Team & roles';
+    case 'partners': return 'Partner directory';
+    case 'payouts': return 'Payout desk';
+    case 'audit': return 'Work & audit report';
+    default: return 'Overview';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Settings, Editor & Onboarding Website Guard Routes
 // ---------------------------------------------------------------------------
 export const SETTINGS_PROFILE_PATH = '/settings/profile';

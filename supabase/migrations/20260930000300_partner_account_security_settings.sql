@@ -93,7 +93,7 @@ grant select, insert, update on public.partner_deactivation_requests to authenti
 
 -- ---------------------------------------------------------------------------
 -- 4. Account settings read/write — full replaces (same whitelist contract as
---    20260918070000: an unknown key is refused, never silently ignored).
+--    20260930000100: an unknown key is refused, never silently ignored).
 -- ---------------------------------------------------------------------------
 
 create or replace function public.get_my_partner_account_settings()

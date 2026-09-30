@@ -10,8 +10,8 @@ begin
   if to_regprocedure('public.normalize_partner_kyc_reference(text,text)') is null then
     execute $definition$
       create function public.normalize_partner_kyc_reference(p_document_type text, p_reference text)
-      returns text language sql immutable set search_path = pg_catalog, public, pg_temp
-      as 'select public.normalize_partner_kyc_reference(p_reference)'
+      returns text language plpgsql immutable set search_path = pg_catalog, public, pg_temp
+      as $body$begin return public.normalize_partner_kyc_reference(p_reference); end$body$
     $definition$;
     revoke all on function public.normalize_partner_kyc_reference(text,text) from public, anon;
     grant execute on function public.normalize_partner_kyc_reference(text,text) to authenticated;

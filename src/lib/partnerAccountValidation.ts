@@ -6,7 +6,7 @@ import { z } from 'zod';
 // One source of truth for every rule the account/profile forms enforce, shared
 // by the Contact, Payout, Notifications, Change Email and Password sections.
 // The database re-validates the same shapes in SQL
-// (20260919130000_partner_account_security_settings.sql) — these schemas are
+// (20260930000300_partner_account_security_settings.sql) — these schemas are
 // the fast, friendly first gate; SQL remains the actual gate.
 // ============================================================================
 
