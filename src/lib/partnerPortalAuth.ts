@@ -51,9 +51,9 @@ export const PARTNER_PORTAL_UNAUTHORIZED_BODY = 'You do not have access to the G
 export const PARTNER_PORTAL_UNAUTHORIZED_HINT =
   'If you were invited as a Growth Partner, sign in with that account.';
 
-export const PARTNER_PORTAL_PENDING_TITLE = 'Application under review';
+export const PARTNER_PORTAL_PENDING_TITLE = 'Could not finish opening your dashboard';
 export const PARTNER_PORTAL_PENDING_BODY =
-  'Your Growth Partner application is with our team. You will get access here as soon as it is approved.';
+  'Please retry to complete your partner dashboard setup.';
 
 export const PARTNER_PORTAL_REJECTED_TITLE = 'Application not approved';
 export const PARTNER_PORTAL_REJECTED_BODY =

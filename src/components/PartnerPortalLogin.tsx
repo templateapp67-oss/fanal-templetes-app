@@ -16,6 +16,7 @@ import {
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
+  ensureMyGrowthPartner,
   fetchMyGrowthPartnerRow,
   isMissingPartnerSchemaError,
   GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
@@ -713,9 +714,9 @@ export const PartnerPortalFailure: React.FC<{
 type PartnerPortalMode = 'login' | 'signup' | 'apply' | 'forgot' | 'set-password';
 
 /** Title of the screen a successful submission lands on (spec copy). */
-export const PARTNER_APPLICATION_PENDING_TITLE = 'Application Pending Approval';
+export const PARTNER_APPLICATION_PENDING_TITLE = 'Application submitted';
 export const PARTNER_APPLICATION_PENDING_BODY =
-  'Your Growth Partner application is with our team. You will get access to the dashboard as soon as it is approved — no need to apply again.';
+  'Your application was saved. Continue to your partner dashboard.';
 
 /**
  * The signed-in "Become a Growth Partner" application form.
@@ -849,7 +850,7 @@ export const PartnerApplicationForm: React.FC<{
         <PartnerBrandMark logoSrc={logoSrc} />
         <h1 className="text-2xl font-bold text-slate-900">Become a Growth Partner</h1>
         <p className="text-sm text-slate-600">
-          Use your current account to submit a Growth Partner application. Access starts after approval.
+          Use your current account to submit a Growth Partner application. Your dashboard opens after submission.
         </p>
 
         <Field
@@ -1102,10 +1103,7 @@ export const PartnerPortalLogin: React.FC<{
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState('');
-  // Application submission outcome: 'pending' renders the "Application Pending
-  // Approval" screen after a successful write (the record really is pending).
-  const [applicationOutcome, setApplicationOutcome] = useState<'idle' | 'pending'>('idle');
-  const [applicationSubmittedAt, setApplicationSubmittedAt] = useState<string | null>(null);
+
   const [applicationFieldErrors, setApplicationFieldErrors] = useState<PartnerApplicationFieldErrors>({});
   const [applicationNeedsSignIn, setApplicationNeedsSignIn] = useState(false);
 
@@ -1204,7 +1202,12 @@ export const PartnerPortalLogin: React.FC<{
           // approved" from "never applied". A failed lookup is never an
           // access grant, so it falls back to the unauthorized card.
           const own = (await readApplicationRow().catch(() => null)) as GrowthPartnerApplicationRow | null;
-          if (!cancelled) setApplication(own);
+          if (own?.status === 'pending' || own?.status === 'approved') {
+            await (client?.ensurePartnerRow ?? ensureMyGrowthPartner)();
+            row = await readPartnerRow();
+            if (!row) throw new Error('Could not finish partner dashboard setup. Please retry.');
+            if (!cancelled) { setPartnerRow(row); setApplication(null); }
+          } else if (!cancelled) setApplication(own);
         }
       } catch (error) {
         if (cancelled) return;
@@ -1445,7 +1448,7 @@ export const PartnerPortalLogin: React.FC<{
         }
         setSignupSuccess(
           result.confirmed
-            ? 'Application submitted. Dashboard access will be enabled after approval.'
+            ? 'Application submitted. Opening your partner dashboard…'
             : 'Account created. Verify your email, then return here to sign in and submit your application.'
         );
       },
@@ -1483,8 +1486,7 @@ export const PartnerPortalLogin: React.FC<{
           kyc_status: result.kycStatus ?? 'submitted',
           created_at: result.createdAt ?? new Date().toISOString(),
         });
-        setApplicationSubmittedAt(result.createdAt ?? new Date().toISOString());
-        setApplicationOutcome('pending');
+        setVerifying(true);
         setMode('login');
         setAttempt((value) => value + 1);
       },
@@ -1546,24 +1548,6 @@ export const PartnerPortalLogin: React.FC<{
 
   if (state === 'loading' || state === 'granted') return <PartnerPortalVerifying logoSrc={logoSrc} />;
 
-  // A successful submission lands on its own screen ("Application Pending
-  // Approval") instead of dropping the user back to a form they could resubmit.
-  // "Check application status" re-reads the row from the backend.
-  if (applicationOutcome === 'pending') {
-    return (
-      <PartnerApplicationPending
-        submittedAt={applicationSubmittedAt}
-        busy={busy}
-        onCheckStatus={() => {
-          setApplicationOutcome('idle');
-          setMode('login');
-          setAttempt((value) => value + 1);
-        }}
-        onBack={onBack}
-      />
-    );
-  }
-
   if (state === 'unauthorized' && mode === 'apply') {
     return (
       <PartnerApplicationForm
@@ -1581,8 +1565,7 @@ export const PartnerPortalLogin: React.FC<{
           setApplicationNeedsSignIn(false);
         }}
         onSignIn={() => {
-          setApplicationOutcome('idle');
-          setMode('login');
+            setMode('login');
           setFormError('');
           setApplicationFieldErrors({});
           setApplicationNeedsSignIn(false);

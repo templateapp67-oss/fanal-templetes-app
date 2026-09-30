@@ -151,6 +151,9 @@ export const LOCAL_GROWTH_CHAIN = [
   // overwrites an existing application — the exact behaviour the production fix
   // removes, so the local stack must not keep reproducing it.
   '20261030000000_partner_applications_hardening.sql',
+  // Keep the local gateway on the same immediate-enrollment policy as production.
+  '20260930044315_growth_partner_instant_enrollment.sql',
+  '20260930050447_partner_dashboard_referral_code_payload.sql',
   // KYC state vocabulary reconciliation (20261031). Drops any stale CHECK on
   // kyc_status that only allows ('pending','approved','rejected'), normalizes
   // legacy rows to the canonical states and re-adds one constraint that also

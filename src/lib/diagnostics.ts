@@ -179,7 +179,7 @@ async function testProfilesTable(uid: string, email: string | null): Promise<{ r
   // SELECT own profile
   const selectRes = await supabase
     .from('profiles')
-    .select('id, email, full_name, role')
+    .select('id, email, full_name')
     .eq('id', uid)
     .maybeSingle();
 

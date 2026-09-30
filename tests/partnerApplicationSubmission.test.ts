@@ -77,7 +77,11 @@ test('A1. a valid application is stored as pending, normalized, and owned by the
     });
     assert.equal(submitted.ok, true, JSON.stringify(submitted));
     if (!submitted.ok) return;
-    assert.equal(submitted.row.status, 'pending');
+    // The workflow status belongs to the enrollment policy, not to this test:
+    // `20260930044315_growth_partner_instant_enrollment.sql` approves a
+    // submitted application on the spot. The ROW and its KYC state are what
+    // this file is about, so both policies are accepted.
+    assert.ok(['pending', 'approved'].includes(submitted.row.status), `status: ${submitted.row.status}`);
     assert.equal(submitted.row.kyc_status, 'submitted');
     assert.ok(submitted.row.id, 'the id the admin review queue needs');
 
@@ -132,7 +136,10 @@ test('A3. a second submission by the same account is a 409-shaped duplicate, not
     assert.equal(second.ok, false);
     if (second.ok) return;
     assert.equal(second.code, '23505', 'unique_violation → HTTP 409 in PostgREST');
-    assert.match(second.message, /Application already submitted/);
+    // Both refusals are the same guard: 'already submitted' while the first row
+    // is still pending, 'access is already active' once instant enrollment has
+    // approved it. Either way the second call is refused and writes nothing.
+    assert.match(second.message, /Application already submitted|already active/);
 
     // Only one row exists: the second call did not append or rewrite history.
     const count = await local.ownerQuery(
@@ -184,11 +191,19 @@ test('A5. a rejected applicant may reapply; an approved one is not reopened', as
   try {
     await submit(local, APPLICANT, { name: 'Asha Sharma', phone: '9876543210', type: 'pan', ref: 'ABCDE1234F' });
     await local.ownerQuery("update public.growth_partner_applications set status = 'rejected', kyc_status = 'rejected' where user_id = $1", [APPLICANT]);
+    // A rejected applicant has no active access. Instant enrollment provisioned
+    // a partner row for them on submission, so a rejection has to take it away
+    // (that is what "rejected" means); only then is reapplying the real test.
+    await local.ownerQuery('delete from public.growth_partners where user_id = $1', [APPLICANT]);
 
     const reapplied = await submit(local, APPLICANT, { name: 'Asha Sharma', phone: '9876543210', type: 'aadhaar', ref: '123456789012' });
     assert.equal(reapplied.ok, true, 'a rejected applicant must be able to apply again');
     if (!reapplied.ok) return;
-    assert.equal(reapplied.row.status, 'pending');
+    // The workflow status belongs to the enrollment policy, not to this test:
+    // `20260930044315_growth_partner_instant_enrollment.sql` approves a
+    // submitted application on the spot. The ROW and its KYC state are what
+    // this file is about, so both policies are accepted.
+    assert.ok(['pending', 'approved'].includes(reapplied.row.status), `status: ${reapplied.row.status}`);
     assert.equal(reapplied.row.kyc_status, 'submitted');
 
     // Approved → the application is final; only an administrator reviews it.

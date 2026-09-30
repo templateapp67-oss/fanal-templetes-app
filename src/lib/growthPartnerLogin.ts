@@ -49,6 +49,7 @@ export interface GrowthPartnerAuthClient {
    * auth actions and the Growth Partner authorization check.
    */
   fetchPartnerRow?: () => Promise<GrowthPartner | null>;
+  ensurePartnerRow?: () => Promise<unknown>;
   /**
    * The caller's own application row, used to tell "under review" apart from
    * "never applied". Defaults to `fetchMyGrowthPartnerApplication` (the RLS

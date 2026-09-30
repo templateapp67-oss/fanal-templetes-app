@@ -125,7 +125,14 @@ test('A2. the vocabulary migration makes the same submission succeed', async () 
     const submitted = await submit(local, VALID);
     assert.equal(submitted.ok, true, `the application must be stored: ${JSON.stringify(submitted)}`);
     if (!submitted.ok) return;
-    assert.equal(submitted.row.status, 'pending');
+    // The subject here is the KYC vocabulary, not the enrollment policy:
+    // `20260930044315_growth_partner_instant_enrollment.sql` (main) approves a
+    // submitted application on the spot, so the workflow status is whatever
+    // that trigger decides — the row must exist either way.
+    assert.ok(
+      ['pending', 'approved'].includes(submitted.row.status),
+      `the application was stored with a workflow status: ${submitted.row.status}`
+    );
     assert.equal(submitted.row.kyc_status, 'submitted', 'the canonical state is stored after reconciling');
 
     // One constraint, and it is the reconciled one.

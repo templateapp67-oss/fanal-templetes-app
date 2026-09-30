@@ -6,6 +6,7 @@ import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
   fetchMyGrowthPartnerRow,
+  ensureMyGrowthPartner,
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
   GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
@@ -69,9 +70,9 @@ export const GROWTH_PARTNER_LOGIN_SESSION_BODY = 'Please sign in again to contin
 export const GROWTH_PARTNER_LOGIN_ERROR_TITLE = 'Could not verify your Growth Partner access';
 export const GROWTH_PARTNER_LOGIN_ERROR_BODY = 'Please try again.';
 export const GROWTH_PARTNER_SIGNUP_SUCCESS = 'Growth Partner access activated. Opening your dashboard…';
-export const GROWTH_PARTNER_LOGIN_PENDING_TITLE = 'Application under review';
+export const GROWTH_PARTNER_LOGIN_PENDING_TITLE = 'Could not finish opening your dashboard';
 export const GROWTH_PARTNER_LOGIN_PENDING_BODY =
-  'Your Growth Partner application is with our team. You will get access here as soon as it is approved.';
+  'Please retry to complete your partner dashboard setup.';
 export const GROWTH_PARTNER_ADMIN_QUEUE_TITLE = 'Growth Partner applications';
 export const GROWTH_PARTNER_ADMIN_QUEUE_EMPTY = 'No applications are waiting for review.';
 
@@ -344,7 +345,7 @@ export const GrowthPartnerSignupForm: React.FC<{
         <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Growth Partner</p>
         <h1 className="mt-1 text-2xl font-bold text-slate-900">Apply as a Growth Partner</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Create an account and submit your application. Access starts only after approval.
+          Create an account and submit your application. Your dashboard opens after submission.
         </p>
         <form className="mt-6 space-y-4" onSubmit={handleFormSubmit}>
           <Field
@@ -796,7 +797,12 @@ export const GrowthPartnerLogin: React.FC<{
           // "never applied". A failed lookup is never an access grant, so it
           // falls back to the plain unauthorized card.
           const pending = (await readApplicationRow().catch(() => null)) as GrowthPartnerApplicationRow | null;
-          if (!cancelled) setApplication(pending);
+          if (pending?.status === 'pending' || pending?.status === 'approved') {
+            await (client?.ensurePartnerRow ?? ensureMyGrowthPartner)();
+            row = await readPartnerRow();
+            if (!row) throw new Error('Could not finish partner dashboard setup. Please retry.');
+            if (!cancelled) { setPartnerRow(row); setApplication(null); }
+          } else if (!cancelled) setApplication(pending);
         }
       } catch (error) {
         if (cancelled) return;
@@ -950,7 +956,7 @@ export const GrowthPartnerLogin: React.FC<{
           }
           setSignupSuccess(
             result.confirmed
-              ? 'Application submitted. Dashboard access will be enabled after approval.'
+              ? 'Application submitted. Opening your partner dashboard…'
               : 'Account created. Verify your email, then return here to sign in and submit your application.'
           );
         },
