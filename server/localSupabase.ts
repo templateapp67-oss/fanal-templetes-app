@@ -141,6 +141,7 @@ export const LOCAL_GROWTH_CHAIN = [
   '20261030000000_partner_applications_hardening.sql',
   // Keep the local gateway on the same immediate-enrollment policy as production.
   '20260930044315_growth_partner_instant_enrollment.sql',
+  '20260930050447_partner_dashboard_referral_code_payload.sql',
 ];
 
 /**

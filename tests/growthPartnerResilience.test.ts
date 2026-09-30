@@ -164,6 +164,34 @@ function stubTransport(payloadFor: (rpc: string) => { body?: unknown; status?: n
   };
 }
 
+test('reward-only dashboard payload recovers the stored code through the own-partner RPC', async () => {
+  const calls: string[] = [];
+  const restore = stubTransport((rpc) => {
+    calls.push(rpc);
+    return { body: rpc === 'get_my_growth_partner'
+      ? { user_id: 'own-user', referral_code: 'SAVED123', is_active: true, created_at: '2026-09-30T00:00:00Z' }
+      : { total_shops_onboarded: 0 } };
+  });
+  try {
+    const data = await fetchMyPartnerDashboard();
+    assert.equal(data.partner.referral_code, 'SAVED123');
+    assert.equal(data.partner.is_active, true);
+    assert.deepEqual(calls, ['get_my_partner_dashboard', 'get_my_growth_partner']);
+  } finally { restore(); }
+});
+
+test('complete dashboard payload keeps its stored code without another identity request', async () => {
+  const calls: string[] = [];
+  const restore = stubTransport((rpc) => {
+    calls.push(rpc);
+    return {body: {partner: {referral_code: 'SAVED123', is_active: true}}};
+  });
+  try {
+    assert.equal((await fetchMyPartnerDashboard()).partner.referral_code, 'SAVED123');
+    assert.deepEqual(calls, ['get_my_partner_dashboard']);
+  } finally { restore(); }
+});
+
 test('the dashboard read survives every empty payload shape', async () => {
   for (const body of [null, {}, { partner: null, kpis: null, recent_activity: null }]) {
     const restore = stubTransport(() => ({ body }));
@@ -191,10 +219,9 @@ test('the referral, performance, application and partner reads survive empty pay
     // No application row → "you never applied", exactly as the RLS read does.
     assert.equal(await fetchMyGrowthPartnerApplication(), null);
 
-    // A partner row that lost its flag is NOT treated as paused: only an
-    // explicit `false` may cut a partner's own access.
+    // An empty payload must not fabricate active partner authorization.
     const row = await fetchMyGrowthPartnerRow();
-    assert.equal(row?.is_active, true);
+    assert.equal(row?.is_active, false);
 
     const onboarding = await getMyOnboardingStatus();
     assert.equal(onboarding.status, 'not_started');
