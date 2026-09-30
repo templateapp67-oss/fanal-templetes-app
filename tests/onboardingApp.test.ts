@@ -142,7 +142,8 @@ test('email + signup validation enforces the gateway minimums', () => {
   // PHASE 2 — identity fields the `handle_new_user()` trigger persists.
   assert.match(validateSignup({ ...base, fullName: '   ', password: 'secret1', confirm: 'secret1' }).errors.fullName || '', /full name/i);
   assert.match(validateSignup({ ...base, fullName: 'x'.repeat(121), password: 'secret1', confirm: 'secret1' }).errors.fullName || '', /120 characters/);
-  assert.match(validateSignup({ ...base, phone: '', password: 'secret1', confirm: 'secret1' }).errors.phone || '', /phone number/i);
+  // Phone is optional: an empty field is not an error, a malformed one is.
+  assert.equal(validateSignup({ ...base, phone: '', password: 'secret1', confirm: 'secret1' }).errors.phone, undefined);
   assert.match(validateSignup({ ...base, phone: '12345', password: 'secret1', confirm: 'secret1' }).errors.phone || '', /valid phone/);
   assert.equal(validateSignup({ ...base, phone: '9845077654', password: 'secret1', confirm: 'secret1' }).ok, true);
   assert.equal(validateSignup({ ...base, phone: '+91 (98450) 77-654', password: 'secret1', confirm: 'secret1' }).ok, true);
@@ -260,7 +261,7 @@ test('auth failures map to safe messages and never leak internals', () => {
   assert.equal(toSafeAuthError({ code: 'email_exists' }, 'signup').code, 'email-in-use');
   assert.equal(
     toSafeAuthError({ error_description: 'User already registered' }, 'signup').message,
-    'An account with this email already exists. Try logging in.'
+    'An account already exists with this email. Please log in.'
   );
   assert.equal(toSafeAuthError(new Error('Password should be at least 6 characters')).code, 'validation');
   assert.match(toSafeAuthError(new Error('over request rate limit')).message, /Too many attempts/);
@@ -268,7 +269,7 @@ test('auth failures map to safe messages and never leak internals', () => {
   const leaked = toSafeAuthError(new Error('column "auth"."x" does not exist (42P01)'));
   assert.equal(leaked.code, 'unknown');
   assert.doesNotMatch(leaked.message, /column|42P01/);
-  assert.match(toSafeAuthError(new Error('x'), 'signup').message, /Account creation failed/);
+  assert.match(toSafeAuthError(new Error('x'), 'signup').message, /Account creation could not be completed/);
   assert.match(toSafeAuthError(new Error('x'), 'reset').message, /Password reset failed/);
 });
 
@@ -366,6 +367,9 @@ test('sign up succeeds with valid credentials and flags email confirmation', asy
 
   // The attribution capability still travels inside the same metadata object,
   // and the redirect target brings a confirmed account back into the funnel.
+  // `buildSafeSignupMetadata` only carries an opaque 64-hex capability and
+  // always emits the full safe metadata shape (raw codes never ride along).
+  const capability = 'a'.repeat(64);
   const attributed = fakeAuth({ signUp: ok({ user: { id: 'u-3', email: 'a@example.com' }, session: {} }) });
   await signUpWithEmail({ auth: attributed.auth, rpc: async () => ok(null) } as any, {
     fullName: 'A Owner',
@@ -373,12 +377,22 @@ test('sign up succeeds with valid credentials and flags email confirmation', asy
     phone: '9845077654',
     password: 'secret1',
     confirm: 'secret1',
-    attributionToken: 'token-abc',
+    attributionToken: capability,
   });
   assert.deepEqual(lastSignUpArgs(attributed), {
     email: 'a@example.com',
     password: 'secret1',
-    options: { data: { full_name: 'A Owner', phone_number: '9845077654', growth_referral_token: 'token-abc' } },
+    options: {
+      data: {
+        full_name: 'A Owner',
+        salon_name: '',
+        phone: '9845077654',
+        phone_number: '9845077654',
+        city: '',
+        referral_code: null,
+        growth_referral_token: capability,
+      },
+    },
   });
 });
 
@@ -594,11 +608,14 @@ test('sign up renders identity + credentials and nothing business-related', () =
   const html = render(React.createElement(SignupScreen, {}));
   assert.match(html, new RegExp(SIGNUP_TITLE));
   assert.match(html, new RegExp(SIGNUP_SUBTITLE));
-  assert.equal(countInputs(html), 5);
+  // Six fields: the Phase 4 referral code plus the five identity/credential
+  // fields. Still nothing business-related.
+  assert.equal(countInputs(html), 6);
   assert.match(html, /Full name/);
   assert.match(html, /type="email"/);
   assert.match(html, /type="tel"/);
   assert.match(html, /Confirm password/);
+  assert.match(html, /Referral code/);
   assert.match(html, /Log in/);
   assert.doesNotMatch(html, /business|salon|staff|address|GST|payment/i);
 });

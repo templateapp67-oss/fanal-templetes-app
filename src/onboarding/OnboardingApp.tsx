@@ -73,6 +73,34 @@ export const ONBOARDING_MOCK_TITLE = 'Onboarding needs a live connection';
 export const ONBOARDING_MOCK_BODY =
   'Sign up, login and referral verification need Supabase Auth, which is not connected in this preview.';
 
+// ============================================================================
+// "Continue without a referral" — the referral step is a funnel stage, not a
+// trap. An account created organically (no partner code), a returning owner
+// or a staff member must never be stranded on the code-entry form with no
+// way forward. The dismissal is remembered per browser, so a refresh or a
+// later visit lands on the status screen instead of re-showing the gate.
+// It is reversible from the status screen ("Link a referral code"), and a
+// successfully linked code retires the flag.
+// ============================================================================
+export const REFERRAL_GATE_DISMISSED_KEY = 'nexora_referral_gate_dismissed';
+
+function readReferralGateDismissed(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage?.getItem(REFERRAL_GATE_DISMISSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeReferralGateDismissed(dismissed: boolean): void {
+  try {
+    if (dismissed) window.localStorage.setItem(REFERRAL_GATE_DISMISSED_KEY, '1');
+    else window.localStorage.removeItem(REFERRAL_GATE_DISMISSED_KEY);
+  } catch {
+    // Private mode / storage disabled: the skip still works for this visit.
+  }
+}
+
 /**
  * Read the referral code of a partner's share link
  * (`/onboarding/signup?ref=CODE`; the legacy `/signup` alias is accepted). The code is
@@ -153,6 +181,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   // before the funnel means anything again.
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [skipLinkPrefill, setSkipLinkPrefill] = useState(false);
+  // Whether this browser chose "Continue without a referral" before. Read
+  // once on mount so a refresh does not re-trap the user in the gate.
+  const [referralSkipped, setReferralSkipped] = useState(() => readReferralGateDismissed());
   const captureFlight = useRef<Promise<string> | null>(null);
   const handoffFlight = useRef(createSingleFlight());
   const mounted = useRef(true);
@@ -291,6 +322,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   const requested: OnboardingSection = matchOnboardingRoute(path);
   const phase: OnboardingPhase = snapshot?.phase ?? 'pending';
   const resolved = resolveOnboardingRoute({ hasSession: !!viewer, phase, requested });
+  // The skip maps the referral step onto the status screen for this browser:
+  // the account is usable now and a code can be linked later from status.
+  const effectiveResolved: OnboardingSection =
+    referralSkipped && resolved === 'referral' ? 'status' : resolved;
 
   // A bare /signup is never useful to an authenticated account. Keep a
   // referral-bearing visit on the hybrid choice screen, but otherwise send the
@@ -310,9 +345,9 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   // Sync the URL to the resolved route (converges in one step — no loops).
   useEffect(() => {
     if (boot !== 'ready' || existingAccountNotice || passwordRecovery) return;
-    const canonical = onboardingPath(resolved);
+    const canonical = onboardingPath(effectiveResolved);
     if (normalizePath(path) !== normalizePath(canonical)) navigate(canonical);
-  }, [boot, resolved, path, navigate, existingAccountNotice, passwordRecovery]);
+  }, [boot, effectiveResolved, path, navigate, existingAccountNotice, passwordRecovery]);
 
   // Hand the user their website URL the moment they land on the status screen
   // (immediately after sign-up's referral step and after every sign-in).
@@ -320,7 +355,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   // provisions — and the link is only shown for a slugged, NAMED salon, so a
   // placeholder workspace can never leak a link that would change later.
   useEffect(() => {
-    if (!viewer || resolved !== 'status') {
+    if (!viewer || effectiveResolved !== 'status') {
       setSiteUrl(null);
       return;
     }
@@ -343,7 +378,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [viewer, resolved, sb]);
+  }, [viewer, effectiveResolved, sb]);
 
   const handleAuthDone = useCallback(async () => {
     try {
@@ -366,6 +401,20 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
     setHandoffError('');
     navigate(onboardingPath('login'));
   }, [sb, navigate]);
+
+  // The referral gate's escape hatch: remember the choice so this browser
+  // lands on the status screen from now on, instead of the code-entry form.
+  const handleSkipReferral = useCallback(() => {
+    writeReferralGateDismissed(true);
+    setReferralSkipped(true);
+  }, []);
+
+  // The reversible half: reopen the referral form from the status screen.
+  const handleLinkReferral = useCallback(() => {
+    writeReferralGateDismissed(false);
+    setReferralSkipped(false);
+    navigate(onboardingPath('referral'));
+  }, [navigate]);
 
   // Phase 4: mint a one-time handoff (backend verifies auth + live referral)
   // and redirect to the Template App. Single-flight + disabled button stop
@@ -477,18 +526,24 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   if (resolved === 'forgot-password') {
     return <ForgotPasswordScreen client={sb} onGoLogin={() => navigate(onboardingPath('login'))} />;
   }
-  if (resolved === 'referral') {
+  if (effectiveResolved === 'referral') {
     return (
       <ReferralScreen
         client={sb}
         email={viewer?.email || ''}
         initialCode={skipLinkPrefill ? '' : sharedReferralCode}
-        onLinked={() => void handleAuthDone()}
+        onLinked={() => {
+          // A linked code retires the skip: the funnel is back in control.
+          writeReferralGateDismissed(false);
+          setReferralSkipped(false);
+          void handleAuthDone();
+        }}
         onLogout={() => void handleLogout()}
+        onSkip={handleSkipReferral}
       />
     );
   }
-  if (resolved === 'website') {
+  if (effectiveResolved === 'website') {
     return (
       <BusinessSetupScreen
         client={sb}
@@ -502,7 +557,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
       />
     );
   }
-  if (resolved === 'status') {
+  if (effectiveResolved === 'status') {
     return (
       <StatusScreen
         phase={phase}
@@ -515,6 +570,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
         handoffError={handoffError}
         completed={phase === 'completed'}
         siteUrl={siteUrl}
+        onLinkReferral={handleLinkReferral}
       />
     );
   }
