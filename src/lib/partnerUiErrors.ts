@@ -19,6 +19,7 @@ const SAFE_MESSAGES = new Set([
   "We could not submit your application. Please try again.",
   "Applications are unavailable right now. Please try again later.",
   "Partner applications are not set up on this project yet. Apply supabase/migrations/20261030000000_partner_applications_hardening.sql, then try again.",
+  "This project's Growth Partner schema does not accept the KYC state \"submitted\" yet, so nothing was saved. Apply supabase/migrations/20261031000000_partner_kyc_status_vocabulary.sql, then submit again.",
   "You have already submitted an application.",
   "Your Growth Partner application is already approved. Sign in to open your dashboard.",
   "Your session expired. Please sign in again.",

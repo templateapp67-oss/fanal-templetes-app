@@ -139,6 +139,18 @@ export const LOCAL_GROWTH_CHAIN = [
   // overwrites an existing application — the exact behaviour the production fix
   // removes, so the local stack must not keep reproducing it.
   '20261030000000_partner_applications_hardening.sql',
+  // KYC state vocabulary reconciliation (20261031). Drops any stale CHECK on
+  // kyc_status that only allows ('pending','approved','rejected'), normalizes
+  // legacy rows to the canonical states and re-adds one constraint that also
+  // accepts the legacy alias. Without it, a project carrying the old CHECK
+  // refuses every application ('submitted' → 23514) — the reported
+  // "submission fails with a generic error" bug.
+  '20261031000000_partner_kyc_status_vocabulary.sql',
+  // KYC reference normalizer signature fix (20261031). The hardening migration's
+  // BEFORE INSERT trigger calls normalize_partner_kyc_reference(text, text) while
+  // only the one-argument function exists, so every application insert failed
+  // with 42883. Without this, the local stack cannot store an application at all.
+  '20261031000001_partner_kyc_reference_normalizer_fix.sql',
 ];
 
 /**
