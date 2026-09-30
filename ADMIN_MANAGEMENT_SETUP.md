@@ -47,6 +47,20 @@ startup (`src/lib/supabaseClient.ts` logs `Supabase keys are missing…`).
 supabase db push        # applies supabase/migrations/ in filename order
 ```
 
+**No CLI / no linking?** Paste one file into the SQL Editor instead —
+**`supabase/apply_admin_management.sql`** is the byte-for-byte concatenation of
+both migrations (2.6k lines) plus the prerequisites, the verification query and
+the next step in its header. Run that query afterwards; on this schema it must
+return:
+
+| `admin_tables` | `admin_role_enum` | `admin_rpcs` | `buckets` | `reward_tiers` |
+| --- | --- | --- | --- | --- |
+| 6 | 1 | 21 | 2 | 3 |
+
+The bundle is generated — after editing either migration, run
+`node scripts/bundle-admin-sql.mjs` so the two never drift. It is safe to paste
+twice (every statement is idempotent).
+
 | Order | File | Contains |
 | --- | --- | --- |
 | 1 | `supabase/migrations/20261101000000_admin_management_core.sql` | `admin_role` enum, `admin_members`, `manager_onboarding_links`, `manager_onboarding_applications`, `partner_audit_logs`, `private` RBAC helpers, RLS, the `manager-documents` bucket + policies, the audit trigger |
