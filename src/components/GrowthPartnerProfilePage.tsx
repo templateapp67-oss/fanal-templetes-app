@@ -351,6 +351,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                   Logo / Profile Photo
                   <input
                     type="file"
+                    disabled={busy}
                     accept="image/jpeg,image/png,image/webp"
                     className="mt-2 block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-pink-100 file:text-[#C20E5A] hover:file:bg-pink-200 cursor-pointer"
                     onChange={async event => {
@@ -362,7 +363,19 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                       setBusy(true);
                       try {
                         const compressed = await compressPartnerAvatar(file);
-                        if (mounted.current) { setPhoto(compressed); setRemovePhoto(false); showPartnerToast.success('Photo ready — it uploads when you save.'); }
+                        const saved = await saveGrowthPartnerProfile({
+                          fullName: profile.full_name,
+                          phone: profile.phone || '',
+                          expectedUserId: profile.partner_id,
+                          photo: compressed,
+                        }, client);
+                        if (mounted.current) {
+                          setProfile(saved);
+                          setPhoto(null);
+                          setRemovePhoto(false);
+                          profileCallback.current?.(saved);
+                          showPartnerToast.success('Profile photo saved.');
+                        }
                       }
                       catch (cause) {
                         const message = cause instanceof Error ? cause.message : 'Choose a valid image.';
@@ -372,7 +385,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                     }}
                   />
                   <span className="mt-1.5 block text-xs font-normal text-slate-500">
-                    Default permanent Nexora logo is active. You can upload or replace with your custom image anytime.
+                    Your photo uploads and saves automatically when selected. JPG, PNG or WebP, up to 5 MB.
                   </span>
                 </label>
                 {avatar && avatar !== '/nexora-salonos-logo.png' && (
