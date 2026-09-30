@@ -81,7 +81,7 @@ begin
       raise exception 'Invalid phone number' using errcode = '22023';
     end if;
     v_phone := nullif(regexp_replace(coalesce(p_patch->>'phone', ''), '[[:space:]().-]', '', 'g'), '');
-    if v_phone is not null and v_phone !~ '^\\+?[0-9]{7,15}$' then
+    if v_phone is not null and v_phone !~ '^[+]?[0-9]{7,15}$' then
       raise exception 'Enter a phone number with 7–15 digits' using errcode = '22023';
     end if;
   end if;
@@ -92,7 +92,7 @@ begin
     end if;
     v_path := nullif(btrim(coalesce(p_patch->>'photo_path', '')), '');
     if v_path is not null then
-      if v_path !~ ('^' || v_partner.user_id::text || '/[a-f0-9-]{36}\\.(jpg|png|webp)$') then
+      if v_path !~ ('^' || v_partner.user_id::text || '/[a-f0-9-]{36}[.](jpg|png|webp)$') then
         raise exception 'Profile photo must be uploaded to your own account folder' using errcode = '22023';
       end if;
       if to_regclass('storage.objects') is null then
