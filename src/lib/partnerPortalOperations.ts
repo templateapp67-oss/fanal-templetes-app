@@ -6,8 +6,8 @@ import { supabase } from './supabaseClient';
 // Materials, Partner Levels, Leaderboards, Notifications, Support.
 //
 // Everything here reads the schema owned by
-//   supabase/migrations/20260918035349_partner_portal_operations.sql
-//   supabase/migrations/20260919120000_partner_portal_section_reads.sql
+//   supabase/migrations/20260930000000_partner_portal_operations.sql
+//   supabase/migrations/20260930000200_partner_portal_section_reads.sql
 // and no call ever names a partner: each RPC derives the partner from
 // auth.uid() server-side (my_active_partner_id()), so a tampered URL or body
 // cannot reach another partner's wallet, tickets or notifications. This module
@@ -36,11 +36,26 @@ import { supabase } from './supabaseClient';
 /** Both transports are bounded: a hung proxy must not hang the page. */
 export const PARTNER_OPERATION_TIMEOUT_MS = 12_000;
 
-/** Shown whenever a section cannot load because its RPCs are not deployed. */
+/**
+ * Shown whenever a section cannot load because its RPCs are not deployed.
+ *
+ * All four portal migrations are named, because each one carries RPCs a
+ * different section calls — a partner who applies only the first two still sees
+ * "your account settings could not load". The closing note is the fix for the
+ * original failure: these files must be applied AFTER `20260928`/`20260929`
+ * (which create `growth_partners.id`, `partner_referrals` and
+ * `partner_referral_events`, the targets of their foreign keys). A runner that
+ * applies migrations in file-name order got that wrong, rolled the files back
+ * and left the project with no portal schema at all — see
+ * `tests/migrationOrder.test.ts`.
+ */
 export const PARTNER_SCHEMA_HINT =
-  'The partner operations schema is not applied to this project yet. Run ' +
-  'supabase/migrations/20260918035349_partner_portal_operations.sql and ' +
-  'supabase/migrations/20260919120000_partner_portal_section_reads.sql, then retry.';
+  'The partner operations schema is not applied to this project yet. Apply ' +
+  'supabase/migrations/20260930000000_partner_portal_operations.sql, ' +
+  'supabase/migrations/20260930000100_partner_account_settings.sql, ' +
+  'supabase/migrations/20260930000200_partner_portal_section_reads.sql and ' +
+  'supabase/migrations/20260930000300_partner_account_security_settings.sql, ' +
+  'after 20260928 and 20260929, then retry.';
 
 // ---------------------------------------------------------------------------
 // Payloads (the exact jsonb shapes the SQL functions return)

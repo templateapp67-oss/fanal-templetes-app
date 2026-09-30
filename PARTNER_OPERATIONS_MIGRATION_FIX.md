@@ -4,8 +4,8 @@ Error you saw:
 
 ```
 Your tickets could not load. The partner operations schema is not applied to this project yet.
-Run supabase/migrations/20260918035349_partner_portal_operations.sql and
-supabase/migrations/20260919120000_partner_portal_section_reads.sql, then retry.
+Run supabase/migrations/20260930000000_partner_portal_operations.sql and
+supabase/migrations/20260930000200_partner_portal_section_reads.sql, then retry.
 ```
 
 This happens when your Supabase project (cloud or local PGlite gateway) is missing the two portal migrations that create:
@@ -46,13 +46,18 @@ This happens when your Supabase project (cloud or local PGlite gateway) is missi
 
 2. **Push all pending migrations (includes the two required files)**
 
-   > ⚠️ **Dependency order matters** — see `GROWTH_PARTNER_SETUP.md §3` and troubleshooting row
-   > "Every operational section says...". The file timestamps are misleading:
-   > `20260918035349` references `growth_partners.id` (added in `20260928_partner_referrals_table.sql`)
-   > and `partner_referrals` / `partner_referral_events` (created in `20260928` / `20260929`).
-   > **Logical order is:** `20260928`, `20260929`, **then** `20260918035349`, `20260918070000`, `20260919120000`.
-   > If your project already has `20260928`/`20260929` applied (you followed GROWTH_PARTNER_SETUP.md),
-   > `supabase db push` will only push the portal files and succeed. If not, apply `28`/`29` first via SQL Editor.
+   > ✅ **Ordering is now automatic.** The portal files were named
+   > `20260918035349`/`20260918070000`/`20260919120000`/`20260919130000`, which sorts them
+   > *before* `20260928`/`20260929` — the migrations that add `growth_partners.id` and create
+   > `partner_referrals` / `partner_referral_events`, i.e. the targets of their foreign keys.
+   > A file-name-order runner (`supabase db push`) therefore failed them with
+   > `column "id" referenced in foreign key constraint does not exist`, rolled them back, and left
+   > the project with **no portal schema at all** — which the UI reports as
+   > "The partner operations schema is not applied to this project yet." (the asset library error).
+   > They are now named `20260930000000`–`20260930000400`, i.e. after every dependency, so
+   > `supabase db push` applies them in a working order and no manual sequencing is needed.
+   > The files are idempotent: a project that already ran them just re-runs them, and a project
+   > whose run failed finally gets the schema. Guarded by `tests/migrationOrder.test.ts`.
 
    ```bash
    # From repo root
@@ -69,18 +74,18 @@ This happens when your Supabase project (cloud or local PGlite gateway) is missi
    -- 2. Adds partner_referral_events
    -- supabase/migrations/20260929_partner_referral_events_rls.sql
    -- 3. Now portal operations (creates tables + my_active_partner_id + RLS + RPCs)
-   -- supabase/migrations/20260918035349_partner_portal_operations.sql
+   -- supabase/migrations/20260930000000_partner_portal_operations.sql
    -- 4. Account settings (needs my_active_partner_id)
-   -- supabase/migrations/20260918070000_partner_account_settings.sql
+   -- supabase/migrations/20260930000100_partner_account_settings.sql
    -- 5. Section reads (needs operations tables)
-   -- supabase/migrations/20260919120000_partner_portal_section_reads.sql
+   -- supabase/migrations/20260930000200_partner_portal_section_reads.sql
    ```
 
    After manual SQL Editor runs, repair the migration history so CLI knows they are applied:
    ```bash
-   supabase migration repair --status applied 20260918035349
-   supabase migration repair --status applied 20260918070000
-   supabase migration repair --status applied 20260919120000
+   supabase migration repair --status applied 20260930000000
+   supabase migration repair --status applied 20260930000100
+   supabase migration repair --status applied 20260930000200
    ```
 
 3. **If you only want those two files (e.g., you edited history), apply manually:**
@@ -113,24 +118,34 @@ This happens when your Supabase project (cloud or local PGlite gateway) is missi
 
 ## Option 2: Supabase Dashboard SQL Editor (no CLI needed)
 
-### Important: dependency order (GROWTH_PARTNER_SETUP.md §3)
+### Dependency order — now encoded in the file names
 
-The portal migrations depend on two earlier migrations that add the columns/tables they reference:
+The portal migrations have foreign keys into `growth_partners(id)` and reference
+`partner_referrals` / `partner_referral_events`, so they cannot run before:
 
-1. `20260928_partner_referrals_table.sql` — adds `growth_partners.id` + `partner_referrals` table
-2. `20260929_partner_referral_events_rls.sql` — adds `partner_referral_events` table
+1. `20260928_partner_referrals_table.sql` — adds `growth_partners.id` + `partner_referrals`
+2. `20260929_partner_referral_events_rls.sql` — adds `partner_referral_events`
 
-**You must apply those two first**, then the portal files. If you apply `20260918035349` before `20260928`, Postgres will error with `column "id" referenced in foreign key constraint does not exist`.
+Their names now guarantee that (`20260930…` sorts after `20260929…`), so **no manual
+sequencing is needed** — apply them in any runner, in file-name order, and they install.
 
-Full correct order for a fresh project (or when 28/29 are missing):
+Full order for a fresh project (identical to file-name order):
 
 ```
 20260928_partner_referrals_table.sql
 20260929_partner_referral_events_rls.sql
-20260918035349_partner_portal_operations.sql
-20260918070000_partner_account_settings.sql
-20260919120000_partner_portal_section_reads.sql
+20260930000000_partner_portal_operations.sql
+20260930000100_partner_account_settings.sql
+20260930000200_partner_portal_section_reads.sql
+20260930000300_partner_account_security_settings.sql
+20260930000400_reload_postgrest_schema_partner_security.sql
 ```
+
+A project that ran `supabase db push` **before** this rename is the one that needs the
+SQL Editor: its portal files failed and were rolled back while the CLI still recorded
+them as attempted. Applying the four files by hand (steps below) installs the schema;
+then `supabase migration repair --status applied <version>` keeps the CLI's history in
+step. `tests/migrationOrder.test.ts` fails if any of this ever regresses.
 
 If your project already has 28/29 applied (check via `select * from supabase_migrations.schema_migrations`), you can start at step 2 below.
 
@@ -143,17 +158,17 @@ If your project already has 28/29 applied (check via `select * from supabase_mig
    - Copy `supabase/migrations/20260928_partner_referrals_table.sql` → Run
    - Copy `supabase/migrations/20260929_partner_referral_events_rls.sql` → Run
 
-2. **Run `20260918035349_partner_portal_operations.sql`**
-   - Copy entire file content from repo: `supabase/migrations/20260918035349_partner_portal_operations.sql`
+2. **Run `20260930000000_partner_portal_operations.sql`**
+   - Copy entire file content from repo: `supabase/migrations/20260930000000_partner_portal_operations.sql`
    - Paste into SQL Editor
    - Click **Run**
    - Should end with `notify pgrst, 'reload schema'; commit;`
    - If you see `relation "storage.buckets" does not exist`, that's okay — the migration guards that block with `to_regclass('storage.buckets') is null` check. On Supabase cloud, `storage.buckets` DOES exist, so it will create `partner-support` bucket + policies.
 
-3. **Run `20260918070000_partner_account_settings.sql` (optional but recommended)**
+3. **Run `20260930000100_partner_account_settings.sql` (optional but recommended)**
    - Same process: copy, paste, run
 
-4. **Run `20260919120000_partner_portal_section_reads.sql`**
+4. **Run `20260930000200_partner_portal_section_reads.sql`**
    - Copy entire file, paste, run
    - This file also guards `private.is_trusted_server_or_admin()` creation: if your project already has a custom admin predicate, it keeps yours; if missing, it creates the minimal safe version that allows `service_role` and superuser.
 
@@ -210,9 +225,9 @@ This repo includes a PGlite gateway (`server/localSupabase.ts`) that runs real m
 
 **Fixed in this branch:** `LOCAL_GROWTH_CHAIN` now includes:
 ```ts
-'20260918035349_partner_portal_operations.sql',
-'20260918070000_partner_account_settings.sql',
-'20260919120000_partner_portal_section_reads.sql',
+'20260930000000_partner_portal_operations.sql',
+'20260930000100_partner_account_settings.sql',
+'20260930000200_partner_portal_section_reads.sql',
 ```
 in correct chronological order, so `LOCAL_SUPABASE=true` now serves tickets, earnings, etc. without a cloud project.
 
@@ -304,8 +319,8 @@ If you get `[]` or `{"items":...}`, the schema is applied.
 ## References
 
 - Migrations:
-  - `supabase/migrations/20260918035349_partner_portal_operations.sql`
-  - `supabase/migrations/20260918070000_partner_account_settings.sql`
-  - `supabase/migrations/20260919120000_partner_portal_section_reads.sql`
+  - `supabase/migrations/20260930000000_partner_portal_operations.sql`
+  - `supabase/migrations/20260930000100_partner_account_settings.sql`
+  - `supabase/migrations/20260930000200_partner_portal_section_reads.sql`
 - Docs: `SUPABASE_SETUP.md`, `GROWTH_PARTNER_SETUP.md`
 - Tests: `tests/partnerPortalSectionSql.test.ts` (pins ledger, payout, ticket, notification, asset, level, leaderboard behavior)

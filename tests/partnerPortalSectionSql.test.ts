@@ -7,8 +7,8 @@
 // claim — the ₹500 floor, one open payout at a time, "you may cancel only your
 // own open request", tickets bounded the way the table checks them, a partner
 // never seeing another partner's wallet. Those promises are made inside
-// `20260918035349_partner_portal_operations.sql` and
-// `20260919120000_partner_portal_section_reads.sql`, so they are tested there.
+// `20260930000000_partner_portal_operations.sql` and
+// `20260930000200_partner_portal_section_reads.sql`, so they are tested there.
 //
 // Why a dedicated file originally didn't add migrations to `LOCAL_GROWTH_CHAIN`:
 // the Part 3 guards enumerate which tables can hold partner/referral state to
@@ -35,8 +35,8 @@ import { readFileSync } from 'node:fs';
 import { createLocalDatabase, LOCAL_GROWTH_CHAIN } from '../server/localSupabase';
 
 const PORTAL_MIGRATIONS = [
-  '20260918035349_partner_portal_operations.sql',
-  '20260919120000_partner_portal_section_reads.sql',
+  '20260930000000_partner_portal_operations.sql',
+  '20260930000200_partner_portal_section_reads.sql',
 ];
 
 const MIGRATION = (file: string) =>
@@ -624,7 +624,7 @@ test('private.is_trusted_server_or_admin() is created when missing and never rep
       `create or replace function private.is_trusted_server_or_admin() returns boolean
          language sql stable as $$ select false $$`
     );
-    await strict.db.exec(MIGRATION('20260919120000_partner_portal_section_reads.sql'));
+    await strict.db.exec(MIGRATION('20260930000200_partner_portal_section_reads.sql'));
     const body = await strict.query(
       `select pg_get_functiondef(p.oid) as def from pg_proc p
          join pg_namespace n on n.oid=p.pronamespace

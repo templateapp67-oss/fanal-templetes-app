@@ -10,7 +10,7 @@
 //   1. the security migration is not applied  → PGRST202 (function not found)
 //   2. PostgREST's schema cache is stale      → PGRST202 (same symptom, the
 //      migration IS applied — fixed by `notify pgrst, 'reload schema';`,
-//      see 20260919130100_reload_postgrest_schema_partner_security.sql)
+//      see 20260930000400_reload_postgrest_schema_partner_security.sql)
 //   3. the caller has no ACTIVE growth_partners row → 42501 "Active Growth
 //      Partner required" (pending / rejected / deactivated application)
 //   4. the request carried no usable JWT      → 401 / PGRST301
@@ -39,7 +39,7 @@ function explain(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || error || '');
   if (code === 'PGRST202' || /could not find the function|schema cache/i.test(message)) {
-    return 'MISSING FROM THE SCHEMA CACHE — apply supabase/migrations/20260919130000_partner_account_security_settings.sql, then run `notify pgrst, \'reload schema\';` (20260919130100 does exactly that).';
+    return 'MISSING FROM THE SCHEMA CACHE — apply supabase/migrations/20260930000300_partner_account_security_settings.sql, then run `notify pgrst, \'reload schema\';` (20260930000400 does exactly that).';
   }
   if (code === '42501' || /active growth partner required|permission denied/i.test(message)) {
     return 'CALLER IS NOT AN ACTIVE PARTNER — the RPC executed and refused on authorization (pending/rejected/deactivated application, or the EXECUTE grant is missing).';

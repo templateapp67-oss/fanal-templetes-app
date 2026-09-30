@@ -14,9 +14,9 @@ import { fileURLToPath } from 'url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const MIGRATIONS = [
-  '20260918035349_partner_portal_operations.sql',
-  '20260918070000_partner_account_settings.sql',
-  '20260919120000_partner_portal_section_reads.sql',
+  '20260930000000_partner_portal_operations.sql',
+  '20260930000100_partner_account_settings.sql',
+  '20260930000200_partner_portal_section_reads.sql',
 ];
 
 async function main() {

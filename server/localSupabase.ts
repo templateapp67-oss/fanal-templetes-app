@@ -64,24 +64,36 @@ export const LOCAL_GROWTH_CHAIN = [
   // Marketing Materials, Partner Levels, Leaderboards, Notifications, Support.
   // Previously missing from the local gateway, which caused:
   // "Your tickets could not load. The partner operations schema is not applied..."
-  // NOTE: These must run AFTER 20260928/29 because:
-  //   - growth_partners.id is added in 20260928 (operations references it)
-  //   - partner_referrals and partner_referral_events are created in 28/29
-  //     (operations has FKs to them)
-  // GROWTH_PARTNER_SETUP.md §3 explicitly says 28/29 must precede portal sections.
-  // The timestamp 20260918 is misleading — logical dependency order is 28,29,18,19.
-  '20260918035349_partner_portal_operations.sql',
-  '20260918070000_partner_account_settings.sql',
-  '20260919120000_partner_portal_section_reads.sql',
+  //
+  // These files were named `20260918035349`/`20260919120000` and therefore sorted
+  // BEFORE `20260928`/`20260929` — the two migrations that create the objects
+  // they depend on (`growth_partners.id`, `partner_referrals`,
+  // `partner_referral_events`). Any runner that applies migrations in file-name
+  // order (`supabase db push`, `supabase migration up`, an alphabetical script)
+  // therefore failed them with "column \"id\" referenced in foreign key
+  // constraint does not exist", left NO portal schema behind, and every portal
+  // section — the asset library included — answered PGRST202, which the UI
+  // reports as "The partner operations schema is not applied to this project
+  // yet." They are now named `20260930000000…`/`20260930000400…`, i.e. after
+  // every dependency and before `20260930_partner_dashboard_metrics.sql`.
+  // Nothing else changed: the files are idempotent, so a project that already
+  // ran them simply re-runs them (and a project that failed them finally gets
+  // the schema).
+  //
+  // tests/migrationOrder.test.ts applies this whole chain in FILE-NAME order and
+  // fails if any migration errors or if the portal schema is absent.
+  '20260930000000_partner_portal_operations.sql',
+  '20260930000100_partner_account_settings.sql',
+  '20260930000200_partner_portal_section_reads.sql',
   // Account Settings v2 — structured social links, bank/PAN fields,
   // notification toggles, the security log + deactivation requests and the
   // security RPCs the /partner/account-settings page renders.
-  '20260919130000_partner_account_security_settings.sql',
+  '20260930000300_partner_account_security_settings.sql',
   // Flushes PostgREST's schema cache after those RPCs. Without it a project
-  // that applied 20260919130000 while PostgREST was running keeps answering
+  // that applied 20260930000300 while PostgREST was running keeps answering
   // PGRST202 for get_my_partner_security_overview — the
   // "Could not load your security overview. Please retry." page error.
-  '20260919130100_reload_postgrest_schema_partner_security.sql',
+  '20260930000400_reload_postgrest_schema_partner_security.sql',
   '20260930_partner_dashboard_metrics.sql',
   '20261001_partner_dashboard_activity.sql',
   // Referral code normalization (PHASE 4.2). Widens growth_normalize_code's

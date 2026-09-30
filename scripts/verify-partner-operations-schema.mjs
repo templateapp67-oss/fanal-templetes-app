@@ -163,9 +163,9 @@ async function checkViaPGlite() {
 async function main() {
   console.log('=== Partner Operations Schema Verification ===\n');
   console.log('Expected migrations:');
-  console.log(' - supabase/migrations/20260918035349_partner_portal_operations.sql');
-  console.log(' - supabase/migrations/20260918070000_partner_account_settings.sql');
-  console.log(' - supabase/migrations/20260919120000_partner_portal_section_reads.sql\n');
+  console.log(' - supabase/migrations/20260930000000_partner_portal_operations.sql');
+  console.log(' - supabase/migrations/20260930000100_partner_account_settings.sql');
+  console.log(' - supabase/migrations/20260930000200_partner_portal_section_reads.sql\n');
 
   const live = await checkViaSupabaseClient();
   const local = await checkViaPGlite();

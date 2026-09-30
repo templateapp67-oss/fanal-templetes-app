@@ -4,12 +4,12 @@
 -- WHY THIS EXISTS (the "Could not load your security overview. Please retry."
 -- error on /partner/account-settings):
 --
---   20260919130000_partner_account_security_settings.sql creates the five RPCs
+--   20260930000300_partner_account_security_settings.sql creates the five RPCs
 --   that page calls (get_my_partner_security_overview,
 --   revoke_my_other_partner_sessions, set_my_partner_two_factor,
 --   request_my_partner_account_deactivation,
 --   cancel_my_partner_account_deactivation) — but, unlike its neighbours
---   (20260911094853, 20260911101201, 20260919120000 …), it never asks
+--   (20260911094853, 20260911101201, 20260930000200 …), it never asks
 --   PostgREST to reload its schema cache.
 --
 --   PostgREST caches the schema at startup. On a project where the security

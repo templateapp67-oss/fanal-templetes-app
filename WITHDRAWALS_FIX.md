@@ -3,19 +3,19 @@
 Error:
 ```
 Your payout requests could not load. The partner operations schema is not applied to this project yet.
-Run supabase/migrations/20260918035349_partner_portal_operations.sql and
-supabase/migrations/20260919120000_partner_portal_section_reads.sql, then retry.
+Run supabase/migrations/20260930000000_partner_portal_operations.sql and
+supabase/migrations/20260930000200_partner_portal_section_reads.sql, then retry.
 ```
 
 ## What the page needs
 
-**Tables (from 20260918035349):**
+**Tables (from 20260930000000):**
 - `partner_earnings` — ledger, 15% commission, status `pending` → `available_for_withdrawal` after 7 days
 - `partner_payout_requests` — payout requests, floor ₹500 (`amount_paise >= 50000`), one open per partner via partial unique index `partner_payout_requests_one_open_per_partner WHERE status IN ('pending','in_review')`
 - `partner_level_definitions` — seeded tiers bronze/silver/gold/platinum
 - plus notifications, marketing assets, support tickets (same file)
 
-**Follow-up (from 20260919120000):**
+**Follow-up (from 20260930000200):**
 - Fixes wallet accounting: `available_paise` now nets off **all** non-cancelled/rejected payouts (including paid), not just open ones — prevents double withdrawal
 - Adds `get_my_partner_payout_requests()` — lists own requests + open total
 - Adds `cancel_my_partner_payout_request()` — cancels own open request
@@ -40,12 +40,12 @@ supabase/migrations/20260919120000_partner_portal_section_reads.sql, then retry.
 ```
 20260928_partner_referrals_table.sql        -- adds growth_partners.id + partner_referrals
 20260929_partner_referral_events_rls.sql    -- adds partner_referral_events
-20260918035349_partner_portal_operations.sql -- references above, creates earnings/payout tables
-20260918070000_partner_account_settings.sql -- needs my_active_partner_id()
-20260919120000_partner_portal_section_reads.sql -- needs earnings/payout tables
+20260930000000_partner_portal_operations.sql -- references above, creates earnings/payout tables
+20260930000100_partner_account_settings.sql -- needs my_active_partner_id()
+20260930000200_partner_portal_section_reads.sql -- needs earnings/payout tables
 ```
 
-If you apply 20260918035349 before 20260928, you get:
+If you apply 20260930000000 before 20260928, you get:
 `column "id" referenced in foreign key constraint does not exist`
 
 See `GROWTH_PARTNER_SETUP.md` table row 10-12.
@@ -71,9 +71,9 @@ npx supabase migration list
 npx supabase db push
 
 # If you need to force only the portal files (after manual SQL Editor apply):
-npx supabase migration repair --status applied 20260918035349
-npx supabase migration repair --status applied 20260918070000
-npx supabase migration repair --status applied 20260919120000
+npx supabase migration repair --status applied 20260930000000
+npx supabase migration repair --status applied 20260930000100
+npx supabase migration repair --status applied 20260930000200
 
 # Verify
 npx supabase db push --dry-run
@@ -94,16 +94,16 @@ npx supabase db push --dry-run
    - Open `supabase/migrations/20260929_partner_referral_events_rls.sql` → copy all → Run
 
 3. **Apply portal operations:**
-   - Open `supabase/migrations/20260918035349_partner_portal_operations.sql`
+   - Open `supabase/migrations/20260930000000_partner_portal_operations.sql`
    - Copy entire file (315 lines, includes `begin; ... commit;`)
    - Paste → Run
    - Expected: `Success. No rows returned` + notice `reload schema`
 
 4. **Apply account settings (optional but recommended for profile page):**
-   - `supabase/migrations/20260918070000_partner_account_settings.sql` → Run
+   - `supabase/migrations/20260930000100_partner_account_settings.sql` → Run
 
 5. **Apply section reads (fixes wallet + adds payout list/cancel):**
-   - `supabase/migrations/20260919120000_partner_portal_section_reads.sql`
+   - `supabase/migrations/20260930000200_partner_portal_section_reads.sql`
    - Copy → Run
    - This file guards `private.is_trusted_server_or_admin()` — if your project already has custom logic, it keeps it
 
@@ -161,9 +161,9 @@ where id in ('partner-support','partner-marketing-assets');
 ```ts
 '20260928_partner_referrals_table.sql',
 '20260929_partner_referral_events_rls.sql',
-'20260918035349_partner_portal_operations.sql',
-'20260918070000_partner_account_settings.sql',
-'20260919120000_partner_portal_section_reads.sql',
+'20260930000000_partner_portal_operations.sql',
+'20260930000100_partner_account_settings.sql',
+'20260930000200_partner_portal_section_reads.sql',
 ```
 
 So with:
