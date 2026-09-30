@@ -176,7 +176,7 @@ statements no-op there (by design, guarded with `to_regclass('storage.buckets')`
 
 ## 7. Routes
 
-Operator surface — 16 routes, all behind one `requireAdmin` gate, listed in
+Operator surface — 17 routes, all behind one `requireAdmin` gate, listed in
 `ADMIN_ROUTES` (`server/adminRoutes.ts`):
 
 ```
