@@ -174,6 +174,11 @@ export const LOCAL_GROWTH_CHAIN = [
   // every route answers PGRST202.
   '20261101000000_admin_management_core.sql',
   '20261101000100_admin_partner_operations.sql',
+  // First Super Admin claim. admin_setup_state() + claim_first_super_admin():
+  // the one-time, refused-once-an-admin-exists claim behind the /admin
+  // "Claim Super Admin access" button, so a fresh project needs no hand-written
+  // INSERT to get its first staff account.
+  '20261101000200_admin_first_super_admin_claim.sql',
 ];
 
 /**
