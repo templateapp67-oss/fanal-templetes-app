@@ -23,10 +23,10 @@
 // already in chain and skips re-applying to avoid duplicate policy errors.
 //
 // Two `growth_partners` generations are exercised deliberately: the one this
-// repository ships (`is_active` only) and the deployed one (also `status`). A
-// `language sql` body reads columns at CREATE time, so an unguarded `gp.status`
-// made the whole file uninstallable on a fresh project — the bug this suite
-// exists to keep fixed.
+// repository ships (`is_active` plus `status` defaulting to 'active') and the
+// deployed one (where `status` defaults to 'approved'). A `language sql` body
+// reads columns at CREATE time, so an unguarded `gp.status` made the whole file
+// uninstallable on a fresh project — the bug this suite exists to keep fixed.
 // ============================================================================
 
 import { test } from 'node:test';
@@ -55,11 +55,11 @@ async function portalDatabase(options: { deployedGeneration?: boolean } = {}): P
   const local = await createLocalDatabase();
   const db = local.db;
   if (options.deployedGeneration) {
-    // A project created by the older production path carries an approval
-    // status; the local chain's growth_partners does not.
-    await db.exec(
-      `alter table public.growth_partners add column status text not null default 'approved'`
-    );
+    // A project created by the older production path approves through
+    // `status = 'approved'`. The chain already has the column (default
+    // 'active'), so flip the default instead of adding it — `add column`
+    // failed with 42701 against the schema this repository now ships.
+    await db.exec(`alter table public.growth_partners alter column status set default 'approved'`);
   }
   // LOCAL_GROWTH_CHAIN now includes the portal migrations (fixed for
   // "Your tickets could not load..." error). Only apply those not already in chain.
@@ -171,13 +171,24 @@ async function releaseDueEarnings(portal: PortalDb): Promise<number> {
 test('the portal migrations install on the schema this repository ships', async () => {
   const portal = await portalDatabase();
   try {
-    // The premise, not an assumption: this generation has no approval column,
-    // which is exactly what made the original file uninstallable.
+    // The premise, not an assumption: the generation this repository ships has
+    // `is_active` plus the `status` column 20260911094853 adds with default
+    // 'active' — the value provision_growth_partner() gets by omitting the
+    // field. The portal must accept that row (it used to insist on 'approved',
+    // which refused every provisioned partner), while an explicit lifecycle
+    // value such as 'rejected' still fails closed.
     const columns = await portal.query(
-      `select column_name from information_schema.columns
+      `select column_name, column_default from information_schema.columns
         where table_schema='public' and table_name='growth_partners'`
     );
-    assert.ok(!columns.rows.some((row: any) => row.column_name === 'status'));
+    const names = columns.rows.map((row: any) => row.column_name);
+    assert.ok(names.includes('is_active'), 'the shipped generation keeps is_active');
+    assert.ok(names.includes('status'), 'and the status column 20260911094853 adds');
+    assert.match(
+      String(columns.rows.find((row: any) => row.column_name === 'status')?.column_default),
+      /active/,
+      "the column default is 'active', not 'approved'"
+    );
 
     const tables = await portal.query(
       `select tablename from pg_tables where schemaname='public'

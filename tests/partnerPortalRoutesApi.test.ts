@@ -66,6 +66,8 @@ function fakeResponse(): FakeResponse {
 interface Harness {
   routes: Map<string, (req: any, res: any) => Promise<void> | void>;
   rpcCalls: RpcCall[];
+  /** The pre-flight `get_my_growth_partner` calls (one per authenticated request). */
+  partnerGate: RpcCall[];
   call: (method: 'GET' | 'POST', path: string, options?: { query?: any; body?: any; token?: string | null; params?: any }) => Promise<FakeResponse>;
 }
 
@@ -75,6 +77,12 @@ interface Harness {
  * `token: 'good'` is the only token the fake auth layer accepts; anything else
  * (or no Authorization header) is rejected exactly the way
  * `verifyBackendUser` would reject it, because that is the function being used.
+ *
+ * After the token verifies, the mount wrapper runs its own pre-flight
+ * `get_my_growth_partner` call before a handler parses anything. That call is
+ * answered here with the row the real RPC returns for this caller and recorded
+ * in `partnerGate` — separate from `rpcCalls`, which stays "what the route
+ * itself asked the database", so the per-route assertions keep their meaning.
  */
 function mount(
   overrides: {
@@ -84,6 +92,7 @@ function mount(
   } = {}
 ): Harness {
   const rpcCalls: RpcCall[] = [];
+  const partnerGate: RpcCall[] = [];
   const routes = new Map<string, any>();
   const record = (method: 'get' | 'post') => (path: string, handler: any) => {
     routes.set(`${method.toUpperCase()} ${path}`, handler);
@@ -105,6 +114,10 @@ function mount(
     db,
     isMock: overrides.isMock ?? false,
     callRpc: async (token: string, fn: string, args: Record<string, unknown>) => {
+      if (fn === 'get_my_growth_partner') {
+        partnerGate.push({ token, fn, args });
+        return { data: { user_id: 'partner-user-1', referral_code: 'NXGP-PARTNER1', is_active: true, status: 'approved' } };
+      }
       rpcCalls.push({ token, fn, args });
       if (overrides.rpc) return overrides.rpc(fn, args);
       if (fn === 'get_partner_marketing_assets') {
@@ -121,6 +134,7 @@ function mount(
   return {
     routes,
     rpcCalls,
+    partnerGate,
     call: async (method, path, options = {}) => {
       const handler = routes.get(`${method} ${path}`);
       assert.ok(handler, `${method} ${path} is registered`);
@@ -186,6 +200,8 @@ test('no route is reachable without a verified session — and none takes a part
     assert.equal(res.body?.error?.code, 'auth_required', `${key} uses the shared auth code`);
   }
   assert.equal(harness.rpcCalls.length, 0, 'nothing was read before the caller was verified');
+  assert.equal(harness.partnerGate.length, 0, 'and the pre-flight partner lookup never ran');
+  for (const call of harness.partnerGate) assert.doesNotMatch(JSON.stringify(call.args), /p_partner_id|p_user_id/);
   // No path or handler can smuggle a partner id — the SQL derives it from the
   // session, which is the property this whole surface rests on.
   for (const route of allPaths) {
@@ -208,6 +224,7 @@ test('an unverifiable token is refused with the shared auth copy', async () => {
   const res = await harness.call('GET', '/api/partner/earnings', { token: 'expired' });
   assert.equal(res.statusCode, 401);
   assert.equal(harness.rpcCalls.length, 0, 'the RPC is never reached with a bad token');
+  assert.equal(harness.partnerGate.length, 0, 'and no partner row is looked up either');
 });
 
 // ---------------------------------------------------------------------------

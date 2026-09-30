@@ -245,6 +245,62 @@ npm run dev
 
 ---
 
+## Root causes fixed on this branch
+
+1. **Ordering — the reported "schema is not applied" error.** The five portal
+   files were named `20260918*`/`20260919*`, i.e. *before* `20260928`/`20260929`,
+   the migrations that add `growth_partners.id`, `partner_referrals` and
+   `partner_referral_events`. Any runner that walks migrations by file name
+   failed them with `column "id" referenced in foreign key constraint does not
+   exist`, rolled the whole (transactional) file back, and left no portal schema
+   behind — so PostgREST answered PGRST202 and the UI printed "The partner
+   operations schema is not applied to this project yet." They are now
+   `20260930000000` … `20260930000400`, i.e. after those dependencies and before
+   `20260930_partner_dashboard_metrics.sql` (see "Dependency order — now encoded
+   in the file names"). The files themselves are unchanged and idempotent, so
+   re-applying on a migrated project is safe.
+
+2. **Status vocabulary — "Active Growth Partner required" for a real partner.**
+   `my_active_partner_id()` accepted only `status = 'approved'`, but the
+   column's own default — and what `provision_growth_partner()` writes by
+   omitting the field (`20260912_growth_partner_onboarding.sql`) — is `'active'`
+   (`20260911094853_growth_partner_signup_approval.sql`). Every provisioned
+   partner was refused (42501) by every portal RPC, including the asset library,
+   while the client gate (`src/lib/growthPartner.ts`) accepted the same row. The
+   function (and the leaderboard's filter) now accept `approved` **and**
+   `active`; a NULL/empty legacy value counts as active because `is_active`
+   remains the admin switch, and `pending`/`rejected`/`suspended` still fail
+   closed.
+
+3. **Placeholder RPCs overwrote the real ones.**
+   `20261016000000_partner_portal_strict_role_check.sql` sorts *after* the portal
+   files and recreated `get_my_partner_earnings`, `get_my_partner_levels`,
+   `get_my_partner_notifications` and `get_my_partner_payout_requests` with
+   placeholder bodies. The result: Earnings and Notifications answered zeros and
+   the Levels page returned a shape its client never renders. That file now
+   creates a placeholder **only when no implementation exists**, so it keeps its
+   original purpose on a project that has no portal schema and can no longer
+   clobber a real one.
+
+4. **A payout table that already existed.** `20261010000000_growth_partner_core_schema.sql`
+   creates `partner_payout_requests` with `create table if not exists`, so on a
+   project that carries that generation the portal's stricter CREATE is skipped
+   and `created_at`/`updated_at` are absent — cancel and paid transitions would
+   fail with 42703. The operations migration now adds both columns with
+   `add column if not exists` (safe on either shape; the RPCs keep enforcing the
+   ₹500 floor and the one-open-request rule).
+
+5. **A refused payout was replaced by demo data.** `callPartnerOperation()`
+   answered a JSON refusal from this app's own API (400 "Minimum withdrawal is
+   ₹500", 403 "Active Growth Partner required", …) with the fabricated demo
+   fallback, so a refused withdrawal looked like a created one. Refusals are now
+   surfaced; only a genuinely absent proxy (404/405/501/502/503, network error,
+   non-JSON body) falls through to the PostgREST RPC.
+
+Verified after these changes: `tests/partnerPortalSectionSql.test.ts` 11/11,
+`tests/migrationOrder.test.ts` 4/4, `tests/partnerPortalRoutesApi.test.ts` 16/16,
+`tests/partnerPortalOperations.test.ts` 13/13, `npx tsc --noEmit` clean.
+
 ## Troubleshooting
 
 ### "permission denied for table partner_earnings"
@@ -259,6 +315,19 @@ npm run dev
 ### "function public.my_active_partner_id() does not exist"
 - Operations migration didn't run. Run Option 2 step 2 again.
 - Check for syntax error: the function uses `plpgsql` and probes `information_schema.columns` for `status` column to support both generations.
+
+### Earnings show ₹0 / notifications are empty although the partner has earnings
+- A placeholder generation is live. `20261016000000_partner_portal_strict_role_check.sql`
+  used to overwrite the real RPCs (it now only stands in where no implementation
+  exists). Re-apply `20260930000000_partner_portal_operations.sql` and
+  `20260930000200_partner_portal_section_reads.sql` — both are idempotent — or
+  re-run `20261016000000_partner_portal_strict_role_check.sql` from this branch.
+
+### "Active Growth Partner required" for a partner who is active in the admin UI
+- The row's `status` is `'active'` (the column default) rather than `'approved'`.
+  Apply the current `20260930000000_partner_portal_operations.sql`: its
+  `my_active_partner_id()` accepts both vocabularies, refuses only
+  `pending`/`rejected`/`suspended`, and `is_active` stays the admin switch.
 
 ### "Could not find the function public.get_my_partner_earnings"
 - PostgREST schema cache stale. Run `notify pgrst, 'reload schema';` and wait 2s, then retry.

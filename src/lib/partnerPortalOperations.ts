@@ -704,21 +704,20 @@ export async function callPartnerOperation<T>(operation: {
       if (proxied.ok && proxied.data) {
         return (operation.normalize ? operation.normalize(proxied.data) : (proxied.data as T)) as T;
       }
-      if (proxied.status === 404 || proxied.status === 501 || proxied.status === 502) {
-        // Fall through to RPC or fallback
-      } else {
-        const fallback = getPartnerOperationFallback(operation.rpc, operation.args);
-        if (fallback !== null) {
-          return (operation.normalize ? operation.normalize(fallback) : (fallback as T)) as T;
-        }
+      if (!proxied.ok) {
+        // `proxyRequest` already answers null for the statuses that mean "this
+        // deploy has no proxy route" (404/405/501/502/503), a network error or a
+        // non-JSON body. Anything left is this API's own JSON verdict — a
+        // refusal like "Minimum withdrawal is ₹500" or "Active Growth Partner
+        // required" — and it is the answer. Using the demo fallback here made a
+        // refused payout look like a created one, so it is never substituted.
         throw partnerOperationError(operation.rpc, { ...proxied.error, status: proxied.status });
       }
     }
   } catch (proxyErr) {
-    const fallback = getPartnerOperationFallback(operation.rpc, operation.args);
-    if (fallback !== null) {
-      return (operation.normalize ? operation.normalize(fallback) : (fallback as T)) as T;
-    }
+    // `proxyRequest` swallows transport failures, so reaching here means the
+    // error belongs to the proxy's own verdict: surface it, never fabricate.
+    if (proxyErr instanceof Error && (proxyErr as any).code) throw proxyErr;
   }
 
   let data: unknown;

@@ -210,4 +210,30 @@ If you still see `PGRST202` / `schema_not_applied`, run `notify pgrst, 'reload s
 - Added `verify-withdrawals` script proving RPCs work end-to-end
 - Docs: `PARTNER_OPERATIONS_MIGRATION_FIX.md` + this file
 
+### Withdrawals, two extra defects fixed on this branch
+
+1. **A refused payout was answered with demo data.** The client data layer
+   (`src/lib/partnerPortalOperations.ts`) used its fabricated fallback for any
+   JSON error the app's own API returned, so a refusal — 400 "Minimum withdrawal
+   is ₹500", 400 "Withdrawal exceeds available balance", 403 "Active Growth
+   Partner required", 400 "You already have a payout request open" — resolved as
+   if the payout had been created. Refusals now surface; only an absent proxy
+   (404/405/501/502/503), a network error or a non-JSON body falls through to the
+   PostgREST RPC. `tests/partnerPortalOperations.test.ts` pins it.
+
+2. **`updated_at` could be missing on a project with the older payout table.**
+   `20261010000000_growth_partner_core_schema.sql` creates
+   `partner_payout_requests` first (`create table if not exists`), so the portal
+   migration's CREATE is skipped there and `created_at`/`updated_at` never
+   existed — cancel and "mark paid" would fail with 42703. The operations
+   migration now adds both columns with `add column if not exists`.
+
+3. **A valid partner could be refused by the API pre-flight.** The route wrapper
+   required `get_my_growth_partner()` to answer `status === 'approved'`; the
+   compatibility generation returns `{ user_id, referral_code, is_active }`
+   without a status (or `'active'`), which the client gate accepts. The API now
+   accepts `approved`/`active`, treats only an explicit `is_active === false` as
+   suspended, and still lets the RPC/RLS guard decide. `tests/partnerPortalRoutesApi.test.ts`
+   (16/16) covers it.
+
 See also: `GROWTH_PARTNER_SETUP.md` §3 for full migration order.
