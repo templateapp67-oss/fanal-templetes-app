@@ -110,6 +110,7 @@ import {
   PARTNER_LOGIN_PATH,
   matchBookingDetailPath,
   bookingDetailPath,
+  isAdminPath,
 } from './lib/router';
 import { useReferralTracker } from './lib/useReferralTracker';
 import { MyBookingsPage } from './components/MyBookingsPage';
@@ -121,6 +122,7 @@ import { BookingDetailPage } from './components/BookingDetailPage';
 import { StaffPerformanceDashboard } from './components/StaffPerformanceDashboard';
 import { StaffCommissionDashboard } from './components/StaffCommissionDashboard';
 import { GrowthPartnerPage } from './components/GrowthPartnerPage';
+import { AdminPage } from './components/admin/AdminPage';
 import { recordTemplateCompletion } from './lib/growthPartner';
 import { isTenantHost } from './lib/tenant';
 
@@ -608,6 +610,10 @@ export default function App() {
   // too: the dedicated login page and the partner dashboard render without the
   // owner app's chrome, and the owner effects below must stay silent on it.
   const isPartnerPortal = isPartnerPortalPath(path);
+  // `/admin/...` — the staff surface (Admin & Manager management). It renders
+  // WITHOUT the owner app chrome, exactly like the partner portal, and it
+  // resolves the caller's role from SQL before showing a single partner row.
+  const isAdmin = isAdminPath(path);
   // The handoff page lives under /onboarding/* but is a Template App route, so
   // it must be matched BEFORE the Onboarding App branch below.
   const isTemplateHandoff = isTemplateHandoffPath(path);
@@ -1204,7 +1210,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user?.id || authStatus !== 'ready' || isMockSupabase) return;
-    if (isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isPartnerPortal) return;
+    if (isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isPartnerPortal || isAdmin) return;
 
     const currentPathNorm = normalizePath(path);
     const isProfileRoute = isSettingsProfilePath(path);
@@ -1523,11 +1529,11 @@ export default function App() {
   const cacheWebsiteDraft = useCallback(() => {
     const baseline = draftBaselineRef.current;
     const current = salonStateRef.current;
-    if (!baseline || baseline.ownerId !== current.user?.id || isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isOnboardingApp || isPartnerPortal) return;
+    if (!baseline || baseline.ownerId !== current.user?.id || isPublicSite || shouldBlockForSiteLookup || isCustomerApp || isOnboardingApp || isPartnerPortal || isAdmin) return;
     if (!writeWebsiteDraft(baseline.ownerId, baseline.siteId, baseline.state, current)) {
       console.warn('[Website draft] Browser storage unavailable/full; keep this tab open until cloud save succeeds.');
     }
-  }, [isPublicSite, shouldBlockForSiteLookup, isCustomerApp, isOnboardingApp, isPartnerPortal]);
+  }, [isPublicSite, shouldBlockForSiteLookup, isCustomerApp, isOnboardingApp, isPartnerPortal, isAdmin]);
   const hydrationErrorRef = useRef<string | null>(null);
   // Single-flight runner: the mount effect AND a save-time self-heal retry
   // share one hydration run instead of firing overlapping queries. Keyed by
@@ -2627,6 +2633,32 @@ export default function App() {
           accentHex={ACCENT_PALETTES[(siteTenant?.profile || profile)?.themeAccentKey as AccentPaletteKey]?.primaryHex}
           tenantSubdomain={siteTenant?.isTenant && siteTenant.found ? siteTenant.subdomain || '' : ''}
           tenantName={siteTenant?.isTenant && siteTenant.found ? siteTenant.profile?.businessName || '' : ''}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // ADMIN & MANAGER MANAGEMENT RENDER
+  //
+  // `/admin/onboard-manager` is the PUBLIC onboarding form a Super Admin shares
+  // with a candidate (the link token is the authorization). Every other
+  // `/admin/*` path resolves the caller's role from `get_my_admin_access()` and
+  // renders the panels that role allows — a manager never sees export or delete
+  // controls, and the SQL refuses them even if the DOM is edited.
+  // -------------------------------------------------------------------------
+  if (isAdmin) {
+    return (
+      <ErrorBoundary>
+        <AdminPage
+          path={path}
+          search={search}
+          navigate={navigate}
+          user={user}
+          onRequireAuth={openBookingAuth}
+          onLogout={() => {
+            void supabase.auth.signOut();
+          }}
         />
       </ErrorBoundary>
     );

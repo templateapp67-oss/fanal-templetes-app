@@ -31,6 +31,7 @@ import { createBookingCheckinHandler } from "./server/bookingCheckin";
 import { registerCustomerRoutes } from "./server/customerRoutes";
 import { registerStaffPerformanceRoutes } from "./server/staffPerformanceRoutes";
 import { registerPartnerPortalRoutes } from "./server/partnerPortalRoutes";
+import { registerAdminRoutes } from "./server/adminRoutes";
 import {
   createMyBookingsListHandler,
   createMyBookingDetailHandler,
@@ -781,6 +782,34 @@ app.get("/api/bookings", withRequestTimeout(API_REQUEST_TIMEOUT_MS), asyncRoute(
   // the functions' own "active partner" guard stay in force; the browser falls
   // back to the direct RPC whenever these routes are not deployed.
   // ==========================================================================
+  // ==========================================================================
+  // ADMIN & MANAGER MANAGEMENT — /api/admin/* + the PUBLIC onboarding form
+  // ==========================================================================
+  // The staff surface behind /admin/*. Every operator route verifies the caller
+  // and then asks SQL for their role (`get_my_admin_access()`); the RPCs
+  // themselves scope reads/writes to the caller's work area and refuse DELETE
+  // and export to anybody but a super admin. The public onboarding routes are
+  // the deliberate exception: possession of a valid link token is the whole
+  // authorization, and the submission only ever writes a PENDING application.
+  //
+  // The service-role client is used for exactly two things — creating the Auth
+  // user when a Super Admin approves a manager, and storing/reading candidate
+  // documents in the private `manager-documents` bucket. Both are absent on a
+  // mock deploy, so those routes answer 503 instead of pretending.
+  // ==========================================================================
+  registerAdminRoutes(
+    app,
+    {
+      db,
+      isMock: bookingHandlerIsMock,
+      // Service role, used only for the two privileged steps (creating the
+      // approved manager's Auth user, and the private document bucket). Absent
+      // on a mock deploy → those two routes answer 503 with actionable copy.
+      admin: admin ?? undefined,
+    },
+    asyncRoute
+  );
+
   registerPartnerPortalRoutes(
     app,
     {

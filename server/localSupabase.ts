@@ -163,6 +163,14 @@ export const LOCAL_GROWTH_CHAIN = [
   // only the one-argument function exists, so every application insert failed
   // with 42883. Without this, the local stack cannot store an application at all.
   '20261031000001_partner_kyc_reference_normalizer_fix.sql',
+  // Admin & Manager management (20261101). Roles + RBAC helpers, the public
+  // manager onboarding link/application tables, the append-only audit trail,
+  // the reward tiers, the manager-documents bucket, then the area directory,
+  // moderation, bank/UPI corrections, payout processing with a UTR and the
+  // super-admin-only export. Without these the /admin surface has no schema and
+  // every route answers PGRST202.
+  '20261101000000_admin_management_core.sql',
+  '20261101000100_admin_partner_operations.sql',
 ];
 
 /**
