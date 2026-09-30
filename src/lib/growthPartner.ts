@@ -975,10 +975,21 @@ async function readPartnerPayload<T>(
   return normalize(settled.data);
 }
 
-/** One-call dashboard read: partner card + server KPIs + recent activity. */
+/** Dashboard read, with an own-account identity fallback for older RPC payloads. */
 export async function fetchMyPartnerDashboard(): Promise<PartnerDashboardData> {
-  return readPartnerPayload('Partner dashboard lookup failed', normalizePartnerDashboardData,
+  const dashboard = await readPartnerPayload('Partner dashboard lookup failed', normalizePartnerDashboardData,
     () => supabase.rpc('get_my_partner_dashboard'));
+  if (!dashboard.partner.referral_code) {
+    const partner = await fetchMyGrowthPartnerRow();
+    if (partner?.referral_code) {
+      dashboard.partner = {
+        referral_code: partner.referral_code,
+        is_active: partner.is_active,
+        partner_since: partner.created_at,
+      };
+    }
+  }
+  return dashboard;
 }
 
 /** Own referrals with server-side filter, search and pagination. */
