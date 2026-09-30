@@ -259,7 +259,10 @@ export const GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE =
  * "this project never had the migration applied".
  */
 export async function ensureMyGrowthPartner(): Promise<GrowthPartner> {
-  throw new Error('Partner access required: approval must be granted by an administrator.');
+  const row = await readPartnerPayload('Growth Partner enrollment failed', normalizeGrowthPartnerRow,
+    () => supabase.rpc('ensure_my_growth_partner'));
+  if (!row) throw new Error('Could not finish partner dashboard setup. Please retry.');
+  return row;
 }
 
 /**

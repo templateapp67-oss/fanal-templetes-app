@@ -10,7 +10,7 @@
 //     every field is locked, so a double submission is impossible;
 //   • the server's answer is rendered as its real message (duplicate /
 //     network / session), never as a generic failure;
-//   • a successful submission shows "Application Pending Approval";
+//   • a successful submission opens the dashboard immediately;
 //   • the typed values survive a failed submit — only the field is marked.
 // ============================================================================
 
@@ -317,11 +317,13 @@ test('the document type drives the reference hint and placeholder', async () => 
 // with no partner row, and the whole apply flow runs through it.
 // ---------------------------------------------------------------------------
 
-test('the reported flow: apply from the portal → invalid Aadhaar named → valid submit → pending', async () => {
+test('the reported flow: apply from the portal → invalid Aadhaar named → valid submit → dashboard', async () => {
   const USER = { id: 'b0000000-0000-4000-8000-000000000001', email: 'asha@example.com' };
+  let enrolled = false;
+  let destination = '';
   const rpcCalls: Array<{ name: string; args?: Record<string, unknown> }> = [];
   let rpcResult: { data: any; error: any } = {
-    data: { id: 'app-1', status: 'pending', kyc_status: 'submitted', created_at: '2026-09-29T00:00:00Z' },
+    data: { id: 'app-1', status: 'approved', kyc_status: 'submitted', created_at: '2026-09-29T00:00:00Z' },
     error: null,
   };
 
@@ -333,10 +335,11 @@ test('the reported flow: apply from the portal → invalid Aadhaar named → val
     },
     // Not a partner, and no application yet → the portal shows the denial with
     // the "Become a Growth Partner" way forward.
-    fetchPartnerRow: async () => null,
+    fetchPartnerRow: async () => enrolled ? {user_id: USER.id, referral_code:'NEXORA-TEST1234', is_active:true, status:'approved'} : null,
     fetchApplicationRow: async () => null,
     rpc: async (name: string, args?: Record<string, unknown>) => {
       rpcCalls.push({ name, args });
+      if (!rpcResult.error) enrolled = true;
       return rpcResult;
     },
   } as any;
@@ -344,7 +347,7 @@ test('the reported flow: apply from the portal → invalid Aadhaar named → val
   const view = await mount(React.createElement(PartnerPortalLogin, {
     user: USER,
     client,
-    navigate: () => {},
+    navigate: (path: string) => { destination = path; },
     onBack: () => {},
     onLogout: () => {},
   } as any));
@@ -369,8 +372,8 @@ test('the reported flow: apply from the portal → invalid Aadhaar named → val
     await fillValid(view.container, { phone: '+91 98765 43210', ref: '1234-5678-9012' });
     await submit(view.container);
     await waitFor(
-      () => /Application Pending Approval/.test(view.container.textContent ?? ''),
-      'the pending screen'
+      () => destination === '/partner/dashboard',
+      'the dashboard redirect'
     );
     assert.equal(rpcCalls.length, 1, 'exactly one submission is sent');
     assert.equal(rpcCalls[0].name, 'submit_growth_partner_application');
@@ -380,7 +383,7 @@ test('the reported flow: apply from the portal → invalid Aadhaar named → val
       p_kyc_document_type: 'aadhaar',
       p_kyc_document_reference: '123456789012',
     });
-    assert.match(view.container.textContent ?? '', /Application Pending Approval/);
+    assert.doesNotMatch(view.container.textContent ?? '', /Application Pending Approval|Application under review/);
   } finally {
     await view.unmount();
   }
