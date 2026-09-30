@@ -23,6 +23,17 @@ export const STATUS_VERIFIED_BODY =
 export const STATUS_VERIFIED_WAITING_BODY =
   'Nothing more to do right now — stay signed in and you will pick up here.';
 
+/**
+ * The pending state an owner reaches through "Continue without a referral":
+ * the account is real and usable, no partner code is attached yet. It must
+ * read as a normal state, not as an error or as a linked referral.
+ */
+export const STATUS_PENDING_TITLE = 'Your account is ready.';
+export const STATUS_PENDING_BODY =
+  'No referral code is linked yet. You can continue now and link your Growth Partner code whenever you have it.';
+export const STATUS_PENDING_NO_CODE = 'No referral code is linked yet.';
+export const STATUS_LINK_REFERRAL_LABEL = 'Link a referral code';
+
 export const STATUS_COMPLETED_TITLE = 'Your website setup is complete.';
 export const STATUS_COMPLETED_BODY =
   'Your Template App website is finished and linked to your referral.';
@@ -115,6 +126,11 @@ export const StatusScreen: React.FC<{
    * hint is shown until setup finishes).
    */
   siteUrl?: string | null;
+  /**
+   * Present → pending owners can reopen the referral form from the status
+   * screen (the reversible half of "Continue without a referral").
+   */
+  onLinkReferral?: () => void;
 }> = ({
   phase,
   referralCode,
@@ -126,11 +142,16 @@ export const StatusScreen: React.FC<{
   handoffError,
   completed,
   siteUrl,
-}) => (
+  onLinkReferral,
+}) => {
+  // A pending owner (no linked code — typically via "Continue without a
+  // referral") gets its own honest copy; verified/completed keep theirs.
+  const pending = !completed && phase === 'pending' && !referralCode;
+  return (
   <div className="w-full max-w-5xl mx-auto space-y-6">
     <GatewayShell
-      title={completed ? STATUS_COMPLETED_TITLE : STATUS_VERIFIED_TITLE}
-      subtitle={completed ? STATUS_COMPLETED_BODY : STATUS_VERIFIED_BODY}
+      title={completed ? STATUS_COMPLETED_TITLE : pending ? STATUS_PENDING_TITLE : STATUS_VERIFIED_TITLE}
+      subtitle={completed ? STATUS_COMPLETED_BODY : pending ? STATUS_PENDING_BODY : STATUS_VERIFIED_BODY}
       footer={
         <>
           {email ? (
@@ -195,10 +216,22 @@ export const StatusScreen: React.FC<{
               ) : null}
               .
             </>
+          ) : pending ? (
+            STATUS_PENDING_NO_CODE
           ) : (
             'Your referral is linked.'
           )}
         </FormAlert>
+        {pending && onLinkReferral && (
+          <button
+            type="button"
+            onClick={onLinkReferral}
+            data-testid="status-link-referral"
+            className="w-full py-3 rounded-xl text-sm font-bold cursor-pointer transition-opacity hover:opacity-80 border border-slate-300 bg-white text-slate-800"
+          >
+            {STATUS_LINK_REFERRAL_LABEL}
+          </button>
+        )}
         {completed ? (
           <>
             <p className="text-sm text-slate-600">
@@ -250,5 +283,6 @@ export const StatusScreen: React.FC<{
 
 
   </div>
-);
+  );
+};
 

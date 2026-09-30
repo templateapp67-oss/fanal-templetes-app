@@ -16,6 +16,13 @@ import { OnboardingError, createSingleFlight } from '../lib/flow';
 export const REFERRAL_TITLE = 'Enter Referral Code';
 export const REFERRAL_SUBTITLE = 'Enter the code shared by your Growth Partner to continue.';
 
+/**
+ * The escape hatch from this screen. The referral gate must never be a
+ * dead end: an account created organically (without a partner code) has no
+ * code to enter, and forcing one blocks the whole onboarding funnel.
+ */
+export const REFERRAL_SKIP_LABEL = 'Continue without a referral';
+
 /** Presentational form (exported so the busy/disabled contract is testable). */
 export const ReferralForm: React.FC<{
   code: string;
@@ -23,7 +30,9 @@ export const ReferralForm: React.FC<{
   error: string;
   onCodeChange: (value: string) => void;
   onSubmit: () => void;
-}> = ({ code, busy, error, onCodeChange, onSubmit }) => (
+  /** Present → renders the "Continue without a referral" escape hatch. */
+  onSkip?: () => void;
+}> = ({ code, busy, error, onCodeChange, onSubmit, onSkip }) => (
   <form
     className="space-y-4"
     onSubmit={(event) => {
@@ -44,6 +53,17 @@ export const ReferralForm: React.FC<{
     <SubmitButton busy={busy} busyLabel="Verifying…">
       Continue
     </SubmitButton>
+    {onSkip && (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onSkip}
+        data-testid="referral-skip"
+        className="w-full py-3 rounded-xl text-sm font-bold cursor-pointer transition-opacity hover:opacity-80 disabled:opacity-60 disabled:cursor-not-allowed border border-slate-300 bg-white text-slate-800"
+      >
+        {REFERRAL_SKIP_LABEL}
+      </button>
+    )}
   </form>
 );
 
@@ -57,7 +77,13 @@ export const ReferralScreen: React.FC<{
   initialCode?: string;
   onLinked?: () => void;
   onLogout?: () => void;
-}> = ({ client, email, initialCode = '', onLinked, onLogout }) => {
+  /**
+   * Present → the screen shows "Continue without a referral". The gate is a
+   * funnel step, not a trap: an organically created account has no code to
+   * enter and must be able to move on.
+   */
+  onSkip?: () => void;
+}> = ({ client, email, initialCode = '', onLinked, onLogout, onSkip }) => {
   // URL wins over persisted intent, then the router-provided initial code.
   // This runs on mount so a direct /onboarding/referral?code=... link works
   // even if it reaches this screen without first visiting /signup.
@@ -134,6 +160,7 @@ export const ReferralScreen: React.FC<{
           else persistReferralIntent(value);
         }}
         onSubmit={submit}
+        onSkip={onSkip}
       />
     </GatewayShell>
   );
