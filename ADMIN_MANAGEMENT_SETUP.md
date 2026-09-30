@@ -69,6 +69,14 @@ twice (every statement is idempotent).
 Both files are idempotent (`if not exists`, `create or replace`, guarded
 `do $$` blocks), so re-running them is safe.
 
+> **`growth_partners` without an `id` column?** Projects created before
+> `20260928_partner_referrals_table.sql` only have `user_id`, and the FK on
+> `partner_rewards` then fails with *42703: column "id" referenced in foreign
+> key constraint does not exist*. Both migrations create and backfill that
+> column (idempotently) before anything references it, so they are safe on such
+> a project — and if a portal table is missing altogether, they stop with the
+> table names instead of the raw FK error.
+
 > **If this project previously ran the broken portal batch**, re-apply the five
 > idempotent `20260930*` portal migrations after the push — they were clobbered
 > by a later file in that batch. Details and the symptom list are in

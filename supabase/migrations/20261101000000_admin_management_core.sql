@@ -22,6 +22,61 @@
 
 begin;
 
+-- -----------------------------------------------------------------------------
+-- 0. Prerequisites the admin layer keys on
+--    `growth_partners.id` is the surrogate identity every directory row, every
+--    moderation action and every reward row uses. Projects created before
+--    `20260928_partner_referrals_table.sql` only have `user_id` there, and the
+--    foreign key on `partner_rewards` then fails with
+--      42703: column "id" referenced in foreign key constraint does not exist
+--    So the column is created and backfilled here with the exact shape that
+--    migration uses (a no-op once it exists), and the portal tables this file
+--    reads are reported BY NAME if they are missing, instead of surfacing as a
+--    confusing "relation does not exist" a hundred lines later.
+-- -----------------------------------------------------------------------------
+do $prereq$
+declare
+  v_missing text;
+  v_id_attnum smallint;
+  v_has_unique boolean;
+begin
+  select string_agg(t, ', ' order by t) into v_missing
+    from unnest(array[
+      'growth_partners', 'growth_onboarding', 'growth_partner_applications',
+      'profiles', 'partner_account_settings', 'partner_earnings',
+      'partner_notifications', 'partner_payout_requests', 'partner_referrals'
+    ]) as t
+   where to_regclass('public.' || t) is null;
+
+  if v_missing is not null then
+    raise exception
+      'The Growth Partner / partner-portal tables must exist first. Missing: %. Apply the 20260928_partner_referrals_table.sql and 20260930* portal migrations, then run this file again.', v_missing
+      using errcode = '42P01';
+  end if;
+
+  execute 'alter table public.growth_partners add column if not exists id uuid default gen_random_uuid()';
+  execute 'alter table public.growth_partners alter column id set default gen_random_uuid()';
+  execute 'update public.growth_partners set id = gen_random_uuid() where id is null';
+  execute 'alter table public.growth_partners alter column id set not null';
+
+  select a.attnum into v_id_attnum
+    from pg_attribute a
+   where a.attrelid = 'public.growth_partners'::regclass
+     and a.attname = 'id' and not a.attisdropped;
+
+  select exists (
+    select 1 from pg_index i
+     where i.indrelid = 'public.growth_partners'::regclass
+       and i.indisunique and i.indisvalid and i.indpred is null
+       and i.indnatts = 1 and i.indkey[0] = v_id_attnum
+  ) into v_has_unique;
+
+  if not v_has_unique then
+    execute 'create unique index growth_partners_id_key on public.growth_partners(id)';
+  end if;
+end $prereq$;
+
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Roles
 -- ─────────────────────────────────────────────────────────────────────────────
