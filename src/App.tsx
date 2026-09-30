@@ -2660,17 +2660,6 @@ export default function App() {
             void supabase.auth.signOut();
           }}
         />
-        {/* This branch returns early, so the AuthModal instances further down
-            (public site, owner app) never mount on /admin. Without this one,
-            the sign-in card's button set state that rendered nothing and the
-            admin panel was unreachable for an anonymous staff member. */}
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-          initialMode={authMode}
-          purpose="admin"
-          onSuccess={(u) => setUser(u)}
-        />
       </ErrorBoundary>
     );
   }
