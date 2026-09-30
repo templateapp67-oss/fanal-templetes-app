@@ -43,8 +43,8 @@ begin
   select string_agg(t, ', ' order by t) into v_missing
     from unnest(array[
       'growth_partners', 'growth_onboarding', 'growth_partner_applications',
-      'profiles', 'partner_account_settings', 'partner_earnings',
-      'partner_notifications', 'partner_payout_requests', 'partner_referrals'
+      'profiles', 'partner_account_settings', 'partner_notifications',
+      'partner_payout_requests'
     ]) as t
    where to_regclass('public.' || t) is null;
 
@@ -75,6 +75,125 @@ begin
     execute 'create unique index growth_partners_id_key on public.growth_partners(id)';
   end if;
 end $prereq$;
+
+-- -----------------------------------------------------------------------------
+-- 0b. Ledger tables the directory/report read, created when the project has not
+--     run the portal migrations that normally introduce them. The bodies are
+--     copied verbatim from `20260928_partner_referrals_table.sql`,
+--     `20260929_partner_referral_events_rls.sql` and
+--     `20260930000000_partner_portal_operations.sql`, so a later real run of
+--     those files is a no-op (every statement is `if not exists` / `if exists`).
+--     The report SQL already degrades to 0 for a missing ledger, so this is an
+--     upgrade, never a requirement.
+-- -----------------------------------------------------------------------------
+create table if not exists public.partner_referrals (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references public.growth_partners(id) on delete cascade,
+  referred_user_id uuid references auth.users(id) on delete cascade,
+  referral_code text not null,
+  status text not null default 'clicked',
+  conversion_status text not null default 'not_converted',
+  first_clicked_at timestamptz,
+  registered_at timestamptz,
+  converted_at timestamptz,
+  last_activity_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint partner_referrals_code_format check (referral_code ~ '^([A-Z0-9]{6,12}|NEXORA-[A-Z0-9]{4,24})$'),
+  constraint partner_referrals_status_valid check (status in ('clicked','registered','pending','active','converted','inactive','cancelled','rejected')),
+  constraint partner_referrals_conversion_valid check (conversion_status in ('not_converted','converted')),
+  constraint partner_referrals_conversion_consistent check (
+    (conversion_status='converted') = (converted_at is not null)
+    and (status <> 'converted' or conversion_status='converted')
+  ),
+  constraint partner_referrals_registration_consistent check (
+    (referred_user_id is null and registered_at is null and conversion_status='not_converted'
+      and status in ('clicked','inactive','cancelled','rejected'))
+    or (referred_user_id is not null and registered_at is not null and status <> 'clicked')
+  )
+);
+create unique index if not exists partner_referrals_referred_user_key
+  on public.partner_referrals(referred_user_id) where referred_user_id is not null;
+create index if not exists partner_referrals_partner_status_joined_idx
+  on public.partner_referrals(partner_id,status,registered_at desc,id desc);
+create index if not exists partner_referrals_partner_created_idx
+  on public.partner_referrals(partner_id,created_at desc,id desc);
+create index if not exists partner_referrals_partner_activity_idx
+  on public.partner_referrals(partner_id,last_activity_at desc,id desc);
+alter table public.partner_referrals enable row level security;
+revoke all on public.partner_referrals from public, anon, authenticated;
+grant select on public.partner_referrals to authenticated;
+
+create table if not exists public.partner_referral_events (
+  id uuid primary key default gen_random_uuid(),
+  referral_id uuid not null references public.partner_referrals(id) on delete cascade,
+  event_type text not null,
+  event_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint partner_referral_event_type_valid check (event_type in (
+    'link_clicked','signup_started','signup_completed','account_activated',
+    'business_created','subscription_started','converted'
+  )),
+  constraint partner_referral_event_metadata_safe check (
+    jsonb_typeof(event_metadata)='object'
+    and event_metadata - array['source','backfilled'] = '{}'::jsonb
+    and (not (event_metadata ? 'source') or (
+      jsonb_typeof(event_metadata->'source')='string'
+      and event_metadata->>'source' in ('attribution','signup','onboarding','business','subscription','migration')
+    ))
+    and (not (event_metadata ? 'backfilled') or jsonb_typeof(event_metadata->'backfilled')='boolean')
+  ),
+  constraint partner_referral_event_time_valid check (isfinite(created_at))
+);
+alter table public.partner_referral_events enable row level security;
+revoke all on public.partner_referral_events from public, anon, authenticated;
+
+create table if not exists public.partner_earnings (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references public.growth_partners(id) on delete restrict,
+  referral_id uuid references public.partner_referrals(id) on delete set null,
+  source_event_id uuid references public.partner_referral_events(id) on delete set null,
+  source_key text not null,
+  earning_type text not null check (earning_type in ('recurring_subscription_commission','onboarding_reward','tier_bonus','manual_adjustment')),
+  commission_bps integer not null default 1500 check (commission_bps = 1500),
+  payment_cleared_at timestamptz,
+  status text not null default 'pending' check (status in ('pending','available_for_withdrawal','held','paid','reversed')),
+  amount_paise bigint not null check (amount_paise <> 0),
+  earned_at timestamptz not null default now(),
+  available_at timestamptz,
+  paid_at timestamptz,
+  reversal_reason text,
+  metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata) = 'object'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (partner_id, source_key),
+  check ((status = 'paid') = (paid_at is not null)),
+  check ((status <> 'available_for_withdrawal') or (payment_cleared_at is not null and available_at >= payment_cleared_at + interval '7 days'))
+);
+create index if not exists partner_earnings_partner_status_available_idx on public.partner_earnings(partner_id, status, available_at desc, id desc);
+create index if not exists partner_earnings_partner_earned_idx on public.partner_earnings(partner_id, earned_at desc, id desc);
+alter table public.partner_earnings enable row level security;
+revoke all on public.partner_earnings from public, anon, authenticated;
+grant select on public.partner_earnings to authenticated;
+
+-- The own-row policies need the portal helper. On a project that already ran
+-- the portal migrations it exists and this is a no-op; where it does not, the
+-- tables stay RLS-on with no policy (deny-all for anon/authenticated), which is
+-- the safe default — the admin reads go through security-definer RPCs.
+do $own_policies$ begin
+  if to_regprocedure('public.my_active_partner_id()') is not null then
+    if not exists (select 1 from pg_policies where schemaname = 'public'
+                    and tablename = 'partner_referrals' and policyname = 'partner_referrals_select_own') then
+      execute $p$create policy partner_referrals_select_own on public.partner_referrals for select to authenticated
+        using (partner_id = public.my_active_partner_id())$p$;
+    end if;
+    if not exists (select 1 from pg_policies where schemaname = 'public'
+                    and tablename = 'partner_earnings' and policyname = 'partner_earnings_select_own') then
+      execute $p$create policy partner_earnings_select_own on public.partner_earnings for select to authenticated
+        using (partner_id = public.my_active_partner_id())$p$;
+    end if;
+  end if;
+end $own_policies$;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

@@ -69,6 +69,17 @@ twice (every statement is idempotent).
 Both files are idempotent (`if not exists`, `create or replace`, guarded
 `do $$` blocks), so re-running them is safe.
 
+> **A project that has not run the portal migrations?** The bundle creates the
+> three ledger tables it reads (`partner_referrals`, `partner_referral_events`,
+> `partner_earnings`) from the exact DDL of `20260928_partner_referrals_table.sql`,
+> `20260929_partner_referral_events_rls.sql` and
+> `20260930000000_partner_portal_operations.sql` when they are missing, so a
+> later real run of those files is still a no-op. Only the core tables
+> (`growth_partners`, `growth_onboarding`, `growth_partner_applications`,
+> `profiles`, `partner_account_settings`, `partner_notifications`,
+> `partner_payout_requests`) are required — if one of those is absent, the file
+> stops immediately and names it.
+
 > **`growth_partners` without an `id` column?** Projects created before
 > `20260928_partner_referrals_table.sql` only have `user_id`, and the FK on
 > `partner_rewards` then fails with *42703: column "id" referenced in foreign
