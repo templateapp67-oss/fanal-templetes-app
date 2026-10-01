@@ -28,6 +28,14 @@ import type {
   SalonService,
   Stylist,
 } from '../types.js';
+import { prepareWebsiteStateForSave } from './websiteContentNormalize.js';
+import {
+  GENERIC_CONTENT_MESSAGE,
+  classifyWebsiteSaveError,
+  describeWebsiteSaveFailure,
+  isWebsiteContentRejection,
+} from './websiteSaveErrors.js';
+import { formatWebsiteIssue, type WebsiteFieldIssue } from './websiteValidation.js';
 
 /** Auto-save debounce delay. Kept inside the 1000–1500ms sweet spot so fast
  *  typing does not spam the API while edits still persist quickly. */
@@ -415,17 +423,11 @@ export function summarizeSaveError(detail: string): string {
   ) {
     return 'Website content is too large — please use smaller or fewer inline images and try saving again.';
   }
-  if (
-    d.includes('invalid gallery image') ||
-    d.includes('invalid profile image') ||
-    d.includes('invalid service') ||
-    d.includes('use a valid youtube link') ||
-    d.includes('check your website content') ||
-    d.includes('invalid_website_content') ||
-    d.includes('22023')
-  ) {
-    return 'Some website content (such as an empty gallery image, invalid URL, or service detail) could not be validated. Please check your entries and save again.';
-  }
+  // Field-level content rejections from save_owner_editor_state: name the part
+  // of the editor that is wrong instead of one catch-all sentence.
+  const contentIssue = classifyWebsiteSaveError(detail);
+  if (contentIssue) return formatWebsiteIssue(contentIssue);
+  if (isWebsiteContentRejection(detail)) return GENERIC_CONTENT_MESSAGE;
   if (
     d.includes('your workspace could not be saved') ||
     d.includes('select a salon owned by this account') ||
@@ -850,6 +852,8 @@ export interface ApiSaveResult {
   error?: string;
   /** Server-side persistence timestamp from { success: true, timestamp }. */
   timestamp?: number;
+  /** Field-level problems when the server rejected the content (HTTP 400). */
+  issues?: WebsiteFieldIssue[];
 }
 
 export interface WebsiteApiOptions {
@@ -919,36 +923,23 @@ export async function saveViaWebsiteApi(
     if (options.accessToken) {
       headers.Authorization = `Bearer ${options.accessToken}`;
     }
-    const rawProfile: any = payload.profile;
-    const hasEmptyGallery =
-      rawProfile &&
-      Array.isArray(rawProfile.gallery) &&
-      rawProfile.gallery.some((item: any) => !String(item?.url ?? '').trim());
-    const hasEmptyLookbook =
-      rawProfile &&
-      Array.isArray(rawProfile.lookbookPhotos) &&
-      rawProfile.lookbookPhotos.some((item: any) => !String(item?.url ?? '').trim());
-    const sanitizedProfile =
-      hasEmptyGallery || hasEmptyLookbook
-        ? {
-            ...rawProfile,
-            ...(hasEmptyGallery
-              ? { gallery: rawProfile.gallery.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
-              : {}),
-            ...(hasEmptyLookbook
-              ? { lookbookPhotos: rawProfile.lookbookPhotos.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
-              : {}),
-          }
-        : rawProfile;
+    // Repair what has an obvious repair (padded links, empty gallery slots → the
+    // default image, stale team assignments…) instead of letting one small
+    // problem reject the whole save. The server applies the same repair.
+    const prepared = prepareWebsiteStateForSave({
+      profile: payload.profile as any,
+      services: payload.services as any,
+      stylists: payload.stylists as any,
+    });
     const requestInit: RequestInit = {
       method: 'POST',
       headers,
       body: JSON.stringify({
         salonData: {
           ownerId: payload.ownerId,
-          profile: sanitizedProfile,
-          services: payload.services,
-          stylists: payload.stylists,
+          profile: prepared.payload.profile,
+          services: prepared.payload.services,
+          stylists: prepared.payload.stylists,
           loyaltyConfig: payload.loyaltyConfig,
           selectedTemplateId: payload.selectedTemplateId,
         },
@@ -997,7 +988,15 @@ export async function saveViaWebsiteApi(
       body: body ?? null,
       table: 'profiles + services + stylists + loyalty_config + loyalty_rewards (server-side upsert)',
     });
-    return { ok: false, status: res.status, error: serverMessage };
+    const issues = Array.isArray(body?.issues)
+      ? (body.issues as unknown[]).filter(
+          (item): item is WebsiteFieldIssue =>
+            !!item && typeof item === 'object' &&
+            typeof (item as any).path === 'string' && typeof (item as any).message === 'string' &&
+            typeof (item as any).label === 'string'
+        )
+      : [];
+    return { ok: false, status: res.status, error: serverMessage, ...(issues.length ? { issues } : {}) };
   } catch (err) {
     const elapsedMs = Date.now() - startTime;
     const message = `POST ${path} network failure after ${elapsedMs}ms: ${describeError(err)}`;
@@ -1049,6 +1048,11 @@ export interface SalonSaveOutcome {
   errors: string[];
   /** One-line human-readable summary (toast material). */
   summary: string;
+  /**
+   * When the save was rejected because of the owner's content: the exact
+   * fields that need fixing (errors) — empty for every other kind of failure.
+   */
+  issues?: WebsiteFieldIssue[];
 }
 
 export interface SalonSavePipelineOptions {
@@ -1306,6 +1310,7 @@ export async function runSalonSavePipeline(
   // + server message) is otherwise only visible in the console, which made an
   // expired-token 401 on the fallback look like a database error in the toast.
   let apiFailure: string | null = null;
+  let apiIssues: WebsiteFieldIssue[] = [];
 
   if (!onlyDataShapeFailures) {
     console.warn(
@@ -1373,6 +1378,7 @@ export async function runSalonSavePipeline(
     }
     // api.error is already console-logged with the exact HTTP status.
     apiFailure = `POST /api/website/save failed (HTTP ${api.status ?? 'no response'}) | ${api.error ?? 'unknown error'}`;
+    apiIssues = api.issues ?? [];
   } else {
     logSaveError({
       stage: 'cloud-sync',
@@ -1399,11 +1405,20 @@ export async function runSalonSavePipeline(
     apiFailure,
     localError: error ?? null,
   });
+  const failureDetail = [...cloud.errors, ...(apiFailure ? [apiFailure] : [])].join(' · ');
+  const issues = apiIssues.length
+    ? apiIssues
+    : describeWebsiteSaveFailure(failureDetail, {
+        profile: payload.profile,
+        services: payload.services,
+        stylists: payload.stylists,
+      });
   return {
     ok: draftWritten,
     target: 'local_draft',
     draftWritten,
     errors: [...cloud.errors, ...(apiFailure ? [apiFailure] : []), ...(error ? [`local storage: ${error}`] : [])],
+    issues,
     summary: draftWritten
       ? 'Cloud save failed — your changes are safely cached on this device as a local draft and will retry automatically.'
       : 'Save failed — the cloud is unreachable and local storage is unavailable.',

@@ -3,6 +3,7 @@ import type { SalonSyncPayload, SalonSyncResult } from './salonSync';
 import { describeError, isAuthLikeFailure, isSessionExpiryFailure } from './autoSave';
 import { ensureFreshSession, refreshSessionForSave, SESSION_REFRESH_HINT } from './authSession';
 import { resolveOwnerWorkspace } from './ownerWorkspace';
+import { prepareWebsiteStateForSave } from './websiteContentNormalize';
 
 // Serialize profile and editor writes so an older in-flight autosave cannot
 // land after an explicit profile save in this tab.
@@ -29,26 +30,6 @@ export function isMissingOwnerWorkspaceError(errors: string[] | undefined): bool
     || /nexora_owner_salon_ids/i.test(joined);
 }
 
-function sanitizeEditorProfileForSave<T extends Record<string, any> | undefined>(profile: T): T {
-  if (!profile || typeof profile !== 'object') return profile;
-  const hasEmptyGallery =
-    Array.isArray(profile.gallery) &&
-    profile.gallery.some((item: any) => !String(item?.url ?? '').trim());
-  const hasEmptyLookbook =
-    Array.isArray(profile.lookbookPhotos) &&
-    profile.lookbookPhotos.some((item: any) => !String(item?.url ?? '').trim());
-  if (!hasEmptyGallery && !hasEmptyLookbook) return profile;
-  return {
-    ...profile,
-    ...(hasEmptyGallery
-      ? { gallery: profile.gallery.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
-      : {}),
-    ...(hasEmptyLookbook
-      ? { lookbookPhotos: profile.lookbookPhotos.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
-      : {}),
-  };
-}
-
 async function writeOwnerEditorState(
   db: SupabaseClient,
   payload: SalonSyncPayload
@@ -56,11 +37,19 @@ async function writeOwnerEditorState(
   // One RPC call with the caller's current token. Returns the raw error (if
   // any) instead of throwing so the caller can decide whether an auth retry
   // is worth it.
-  const sanitizedProfile = sanitizeEditorProfileForSave(payload.profile as any);
+  //
+  // Repair what has an obvious repair (padded links, empty gallery slots → the
+  // default image, stale team assignments…) so one small problem cannot reject
+  // the whole transaction. See websiteContentNormalize.ts.
+  const prepared = prepareWebsiteStateForSave({
+    profile: payload.profile as any,
+    services: payload.services as any,
+    stylists: payload.stylists as any,
+  });
   const callSaveRpc = async (): Promise<unknown | null> => {
     const { error } = await db.rpc('save_owner_editor_state', { p_state: {
-      profile: sanitizedProfile, services: payload.services,
-      stylists: payload.stylists, loyaltyConfig: payload.loyaltyConfig,
+      profile: prepared.payload.profile, services: prepared.payload.services,
+      stylists: prepared.payload.stylists, loyaltyConfig: payload.loyaltyConfig,
       ...(payload.appointments !== undefined ? { appointments: payload.appointments } : {}),
       ...(payload.clients !== undefined ? { clients: payload.clients } : {}),
       ...(payload.selectedTemplateId !== undefined ? { selectedTemplateId: payload.selectedTemplateId } : {}),

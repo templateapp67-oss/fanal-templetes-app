@@ -47,6 +47,8 @@ import { CURATED_GOOGLE_FONTS } from '../utils/fontHelper';
 import { SalonProfile, SalonService, BusinessTypeId, Stylist } from '../types';
 import { getTemplateConfig, getTemplateById } from '../data/templates';
 import { getSiteUrl, slugifySalonName } from '../lib/salonStore';
+import { getLiveSiteNotice } from '../lib/liveSite';
+import { LiveSiteNotice } from './LiveSiteNotice';
 import { SaveStatus, getSaveUiState } from '../lib/autoSave';
 import { AIBioModal } from './AIBioModal';
 import { SavePermissionNotice } from './SavePermissionNotice';
@@ -62,6 +64,8 @@ import { generateSocialSharePlaceholder } from '../utils/socialShareGenerator';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/imageUploadHelper';
 import { StaffPortfolioEditor } from './StaffPortfolioEditor';
+import { CharCounter, FieldError, ItemIssues, WebsiteIssuesPanel, issueFieldProps, scrollToIssuesPanel, useFieldIssueProps, useIssueLookup } from './WebsiteIssues';
+import { WEBSITE_LIMITS } from '../lib/websiteValidation';
 import { LiveTemplatePreview } from './LiveTemplatePreview';
 import type { TemplatePreviewSection } from './DynamicTemplateRenderer';
 
@@ -79,7 +83,14 @@ interface WebsiteEditorProps {
   /** Template browsing/selection is owned by /templates, never this editor. */
   onChangeTemplate?: () => void;
   selectedTemplateId?: BusinessTypeId;
+  /** The address shown in the editor (follows the draft, so it updates as the owner types). */
   siteUrl: string;
+  /**
+   * The address the website is live at right now — the last one the cloud
+   * accepted. "Open Site" always opens this, whatever the draft holds; it falls
+   * back to `siteUrl` until a published address is known.
+   */
+  publishedSiteUrl?: string;
   onSave: () => Promise<boolean>;
   onBackToDashboard: () => void;
   onGoToProfileSetup?: () => void;
@@ -108,6 +119,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   onChangeTemplate,
   selectedTemplateId,
   siteUrl,
+  publishedSiteUrl,
   onSave,
   onBackToDashboard,
   onGoToProfileSetup,
@@ -300,6 +312,15 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
   const isSavePending = saveUi.busy;
   const isSaveFailed = saveUi.failed;
 
+  // Problems a blocked save found, shown next to the field that owns them.
+  const issueAt = useIssueLookup();
+  const aboutField = useFieldIssueProps('profile.about');
+  const keywordsField = useFieldIssueProps('profile.seoKeywords');
+  const instagramField = useFieldIssueProps('profile.instagramHandle');
+  const facebookField = useFieldIssueProps('profile.facebookPage');
+  const tiktokField = useFieldIssueProps('profile.tiktokHandle');
+  const subdomainField = useFieldIssueProps('profile.subdomain');
+
   const upd = (patch: Partial<SalonProfile>) => {
     const merged = { ...patch };
     if ('phone' in patch) {
@@ -415,6 +436,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             console.error('[WebsiteEditor] Template completion update failed:', completionError);
           }
         });
+      } else {
+        // A save blocked by invalid content lists the fields in the panel at the
+        // top of the page; bring it into view once React has rendered it.
+        window.setTimeout(scrollToIssuesPanel, 80);
       }
     } catch (err) {
       console.error('[WebsiteEditor] Unexpected error during manual save:', err);
@@ -446,43 +471,16 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
     }
   };
 
-  const handleOpenSite = async () => {
-    if (isSaving || saveStatus === 'saving') return;
-    const liveUrl = getSiteUrl(profile);
-    // Open a tab synchronously so browsers do not block it while the cloud save
-    // commits. If the save fails, close the blank tab and keep the owner here.
-    const popup = typeof window !== 'undefined' ? window.open('', '_blank') : null;
-    if (popup) {
-      try { popup.opener = null; } catch {}
-      try { popup.document.title = 'Opening your salon website…'; } catch {}
-    }
-
-    setIsSaving(true);
-    try {
-      const published = await onSave();
-      if (!published) {
-        try { popup?.close(); } catch {}
-        showToast?.('Publish did not complete, so the live site was not opened. Please retry after the save succeeds.', 'error');
-        return;
-      }
-      if (popup) {
-        popup.location.href = liveUrl;
-      } else if (typeof window !== 'undefined') {
-        window.open(liveUrl, '_blank', 'noopener,noreferrer');
-      }
-    } catch (err) {
-      try { popup?.close(); } catch {}
-      console.error('[WebsiteEditor] Unexpected error opening live site:', err);
-      showToast?.('Could not open the live site. Please try again after saving.', 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const subCategories =
     getTemplateConfig(selectedTemplateId || profile.businessType)?.subCategories || [];
 
   const saveLabel = saveUi.label;
+
+  // Opening the site is navigation, never a save: it always leads to the address
+  // that is live now. When the draft is ahead of it (failed save, new address not
+  // published yet) the notice says so — next to the link, never in front of it.
+  const liveUrl = publishedSiteUrl || siteUrl;
+  const liveSiteNotice = getLiveSiteNotice({ saveStatus, busy: isSavePending, draftUrl: siteUrl, liveUrl });
 
   return (
     <div className="min-h-dvh w-full max-w-full overflow-x-clip pt-24 pb-16 bg-[#f6f7fb] text-[#151c27]">
@@ -498,6 +496,9 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
             void handleSave();
           }}
         />
+
+        {/* What stopped the last save, field by field (hidden until a save is blocked). */}
+        <WebsiteIssuesPanel />
 
         {/* Profile completion guard banner */}
         {!isProfileReady && (
@@ -669,8 +670,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 value={profile.about}
                 onChange={(e) => upd({ about: e.target.value })}
                 placeholder="Tell clients about your salon's vision, philosophy and experience..."
-                className="w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                {...aboutField.attrs}
+                className={aboutField.className('w-full p-2.5 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
               />
+              <FieldError path="profile.about" />
+              <CharCounter value={profile.about} limit={WEBSITE_LIMITS.about} />
             </div>
 
             <div>
@@ -1415,8 +1419,11 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 onChange={(e) => upd({ seoKeywords: e.target.value })}
                 placeholder="e.g. hair salon Mumbai, Balayage specialist Bandra, organic facials, bridal hair, Keratin treatment"
                 rows={3}
-                className="w-full p-3 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none resize-none font-sans"
+                {...keywordsField.attrs}
+                className={keywordsField.className('w-full p-3 rounded-xl border border-gray-300 text-sm focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none resize-none font-sans')}
               />
+              <FieldError path="profile.seoKeywords" />
+              <CharCounter value={profile.seoKeywords} limit={WEBSITE_LIMITS.seoKeywords} overNote="the last keywords that do not fit are left out when you save." />
               <p className="text-[10px] text-gray-400 mt-1.5">
                 Separate each phrase with a comma. These keywords are dynamically injected as a meta-keywords tag inside your website's header.
               </p>
@@ -1483,8 +1490,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 value={profile.instagramHandle || ''}
                 onChange={(e) => upd({ instagramHandle: e.target.value })}
                 placeholder="e.g. @arts_by_uma or url"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                {...instagramField.attrs}
+                className={instagramField.className('w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
               />
+              <FieldError path="profile.instagramHandle" />
               <div className="text-[10px] text-gray-400 mt-1">
                 {profile.instagramHandle ? displaySocialHandle(profile.instagramHandle) : 'Add handle or URL'}
               </div>
@@ -1517,8 +1526,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 value={profile.facebookPage || ''}
                 onChange={(e) => upd({ facebookPage: e.target.value })}
                 placeholder="e.g. https://facebook.com/salon"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                {...facebookField.attrs}
+                className={facebookField.className('w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
               />
+              <FieldError path="profile.facebookPage" />
               <div className="text-[10px] text-gray-400 mt-1">
                 {profile.facebookPage ? displaySocialHandle(profile.facebookPage, '') : 'Add page URL'}
               </div>
@@ -1551,8 +1562,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 value={getTikTokValue(profile)}
                 onChange={(e) => upd({ tiktokHandle: e.target.value, tiktokProfile: e.target.value, tiktokUrl: e.target.value })}
                 placeholder="e.g. @arts_by_uma or url"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                {...tiktokField.attrs}
+                className={tiktokField.className('w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-mono bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
               />
+              <FieldError path="profile.tiktokHandle" />
               <div className="text-[10px] text-gray-400 mt-1">
                 {getTikTokValue(profile) ? displaySocialHandle(getTikTokValue(profile)) : 'Add handle or URL'}
               </div>
@@ -1565,7 +1578,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
         <StaffPortfolioEditor stylists={stylists} setStylists={setStylists} />
 
         {/* ===== 4. SERVICES & PRICING ===== */}
-        <section data-preview-section="services" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
+        <section data-preview-section="services" data-field-path="services" className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-[#C20E5A]" />
@@ -1585,9 +1598,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </p>
 
           <div className="space-y-3">
-            {services.map((srv, idx) => (
+            {services.map((srv, idx) => {
+              const nameField = issueFieldProps(`services[${idx}].name`, issueAt(`services[${idx}].name`));
+              const minsField = issueFieldProps(`services[${idx}].durationMinutes`, issueAt(`services[${idx}].durationMinutes`));
+              return (
               <div
                 key={srv.id}
+                data-field-path={`services[${idx}]`}
                 className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-[#C20E5A]/30 transition-all flex flex-col md:flex-row md:items-center gap-3"
               >
                 <div className="w-6 text-center text-xs font-mono font-bold text-gray-400">
@@ -1595,7 +1612,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                 </div>
 
                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
-                  <div className="sm:col-span-4"><ContentImageField label={`${srv.name} image`} value={srv.imageUrl} onChange={imageUrl => updateService(srv.id, { imageUrl })} /></div>
+                  <div className="sm:col-span-4"><ContentImageField label={`${srv.name} image`} value={srv.imageUrl} fieldPath={`services[${idx}].imageUrl`} onChange={imageUrl => updateService(srv.id, { imageUrl })} /></div>
                   <label className="sm:col-span-4 text-xs">Full service details<textarea className="w-full rounded-lg border border-gray-300 p-2" rows={3} value={srv.description} onChange={e => updateService(srv.id, { description: e.target.value })} /></label>
                   <label className="sm:col-span-4 text-xs"><input type="checkbox" checked={srv.showDuration !== false} onChange={e => updateService(srv.id, { showDuration: e.target.checked })} /> Show duration on website</label>
                   <div className="sm:col-span-2">
@@ -1607,8 +1624,10 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                       value={srv.name}
                       onChange={(e) => updateService(srv.id, { name: e.target.value })}
                       placeholder="e.g. Signature Haircut & Styling"
-                      className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                      {...nameField.attrs}
+                      className={nameField.className('w-full p-2 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
                     />
+                    <FieldError path={`services[${idx}].name`} />
                   </div>
 
                   <div>
@@ -1629,7 +1648,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <ServicePriceFields service={srv} onChange={patch => updateService(srv.id, patch)} />
+                    <ServicePriceFields service={srv} fieldPath={`services[${idx}]`} onChange={patch => updateService(srv.id, patch)} />
                     <div>
                       <label className="text-[10px] font-mono-caps text-gray-500 block mb-0.5">
                         Mins
@@ -1644,10 +1663,13 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                             durationMinutes: Number(e.target.value) || 15,
                           })
                         }
-                        className="w-full p-2 rounded-lg border border-gray-300 text-xs bg-white font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                        {...minsField.attrs}
+                        className={minsField.className('w-full p-2 rounded-lg border border-gray-300 text-xs bg-white font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
                       />
+                      <FieldError path={`services[${idx}].durationMinutes`} />
                     </div>
                   </div>
+                  <div className="sm:col-span-4"><ItemIssues prefix={`services[${idx}].id`} /></div>
                 </div>
 
                 <div className="flex items-center gap-2 self-end md:self-center">
@@ -1664,7 +1686,8 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -1749,40 +1772,49 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
                     })
                   }
                   placeholder="mysalon"
-                  className="flex-1 p-2.5 rounded-l-xl border border-gray-300 border-r-0 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none"
+                  {...subdomainField.attrs}
+                  className={subdomainField.className('flex-1 min-w-0 p-2.5 rounded-l-xl border border-gray-300 border-r-0 text-sm font-mono focus:ring-2 focus:ring-[#C20E5A]/20 focus:border-[#C20E5A] outline-none')}
                 />
                 <span className="bg-gray-50 px-3 py-2.5 border border-gray-300 rounded-r-xl text-sm font-mono text-gray-500">
                   .nexora.in
                 </span>
               </div>
+              <FieldError path="profile.subdomain" />
             </div>
 
-            <div className="md:col-span-2 rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex items-center gap-2 flex-1">
-                <Globe className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="font-mono text-sm font-bold text-emerald-900 truncate">
-                  {siteUrl}
-                </span>
+            <div className="md:col-span-2 flex flex-col gap-2">
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Globe className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-mono text-sm font-bold text-emerald-900 truncate">
+                    {siteUrl}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 text-[11px] font-bold hover:bg-emerald-50 transition-colors cursor-pointer"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  </button>
+                  {/* A plain link: it never waits for, or depends on, a save. */}
+                  <a
+                    href={liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="open-live-site"
+                    title="Open your live website in a new tab"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Open Site</span>
+                    <span className="sr-only"> (opens your live website in a new tab)</span>
+                  </a>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 text-[11px] font-bold hover:bg-emerald-50 transition-colors cursor-pointer"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenSite}
-                  disabled={isSaving || saveStatus === 'saving'}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-[11px] font-bold transition-colors"
-                >
-                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                  <span>{isSaving ? 'Saving…' : 'Open Site'}</span>
-                </button>
-              </div>
+              {liveSiteNotice && <LiveSiteNotice notice={liveSiteNotice} liveUrl={liveUrl} onSave={handleSave} />}
             </div>
           </div>
         </section>

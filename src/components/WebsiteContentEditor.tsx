@@ -6,6 +6,8 @@ import { getTemplateById } from '../data/templates';
 import { ContentImageField } from './ContentImageField';
 import { YouTubeVideoEditor } from './YouTubeVideoEditor';
 import { AIBioModal } from './AIBioModal';
+import { DEFAULT_GALLERY_IMAGE_URL, WEBSITE_LIMITS } from '../lib/websiteValidation';
+import { CharCounter, FieldError, ItemIssues, useFieldIssueProps, useIssuesUnder, useOpenWhenInvalid } from './WebsiteIssues';
 
 const OWNER_ROLE_SUGGESTIONS = [
   'Founder & Creative Director',
@@ -27,6 +29,28 @@ function profileHints(businessType: string) {
   };
 }
 
+type GalleryPhoto = NonNullable<SalonProfile['gallery']>[number];
+
+/** One gallery row. Opens itself when the save found a problem inside it. */
+const GalleryRow: React.FC<{
+  photo: GalleryPhoto; index: number; field: string;
+  updateGallery: (update: (photos: NonNullable<SalonProfile['gallery']>) => NonNullable<SalonProfile['gallery']>) => void;
+}> = ({ photo, index, field, updateGallery }) => {
+  const path = `profile.gallery[${index}]`;
+  const hasIssue = useIssuesUnder(path).length > 0;
+  const detailsRef = useOpenWhenInvalid(hasIssue);
+  return <details ref={detailsRef} data-field-path={path} className={`rounded-xl border p-3 ${hasIssue ? 'border-red-400 bg-red-50/40' : 'border-slate-200'}`}>
+    <summary className="cursor-pointer text-sm font-bold">{photo.title || 'Untitled image'}{hasIssue && <span className="ml-2 text-xs font-semibold text-red-700">Needs attention</span>}</summary>
+    <div className="mt-3 space-y-3">
+      <ContentImageField label="Gallery image" value={photo.url} fieldPath={`${path}.url`} placeholderUrl={DEFAULT_GALLERY_IMAGE_URL}
+        emptyHint="No photo yet. A default image is shown on your website until you add one."
+        onChange={url => updateGallery(photos => photos.map(p => p.id === photo.id ? { ...p, url } : p))} />
+      {(['title', 'tag'] as const).map(key => <label key={key} className="block text-xs capitalize">{key}<input className={field} value={photo[key]} onChange={e => updateGallery(photos => photos.map(p => p.id === photo.id ? { ...p, [key]: e.target.value } : p))} /></label>)}
+      <button type="button" className="text-xs text-rose-700" onClick={() => updateGallery(photos => photos.filter(p => p.id !== photo.id))}>Delete gallery image</button>
+    </div>
+  </details>;
+};
+
 export function WebsiteContentEditor({ profile, setProfile, services, setServices, templateId }: {
   profile: SalonProfile; setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   services?: SalonService[]; setServices?: React.Dispatch<React.SetStateAction<SalonService[]>>; templateId?: BusinessTypeId;
@@ -39,11 +63,12 @@ export function WebsiteContentEditor({ profile, setProfile, services, setService
   const upd = (patch: Partial<SalonProfile>) => setProfile(p => ({ ...p, ...patch }));
   const field = 'w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-900';
   const hints = profileHints(profile.businessType);
+  const bioField = useFieldIssueProps('profile.ownerBio');
   return <div className="space-y-5 text-slate-900">
     <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
       <h3 className="font-bold">Owner / Founder profile</h3>
       <p className="text-xs text-slate-500">Public professional details only. Personal account details such as date of birth are never shown here.</p>
-      <ContentImageField label="Owner portrait" value={profile.ownerPhotoUrl} onChange={ownerPhotoUrl => upd({ ownerPhotoUrl })} />
+      <ContentImageField label="Owner portrait" value={profile.ownerPhotoUrl} fieldPath="profile.ownerPhotoUrl" onChange={ownerPhotoUrl => upd({ ownerPhotoUrl })} />
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
         <p className="text-xs text-slate-600">Quick setup: suggested details are based on your selected salon template.</p>
         <button type="button" onClick={() => upd({ ownerRole: profile.ownerRole || hints.role, ownerExperience: profile.ownerExperience || hints.experience, ownerQualifications: profile.ownerQualifications || hints.qualifications })} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Use suggested details</button>
@@ -54,31 +79,26 @@ export function WebsiteContentEditor({ profile, setProfile, services, setService
         <label className="text-xs font-bold">Experience<input className={field} placeholder={hints.experience} value={profile.ownerExperience || ''} onChange={e => upd({ ownerExperience: e.target.value })} /></label>
         <label className="text-xs font-bold">Qualifications & specialties<input className={field} placeholder={hints.qualifications} value={profile.ownerQualifications || ''} onChange={e => upd({ ownerQualifications: e.target.value })} /></label>
       </div>
-      <label className="block text-xs font-bold">Professional biography<textarea rows={4} className={field} placeholder="Use AI to write a ready professional biography based on your salon." value={profile.ownerBio || ''} onChange={e => upd({ ownerBio: e.target.value })} /></label>
+      <label className="block text-xs font-bold">Professional biography<textarea rows={4} {...bioField.attrs} className={bioField.className(field)} placeholder="Use AI to write a ready professional biography based on your salon." value={profile.ownerBio || ''} onChange={e => upd({ ownerBio: e.target.value })} /></label>
+      <FieldError path="profile.ownerBio" />
+      <CharCounter value={profile.ownerBio} limit={WEBSITE_LIMITS.ownerBio} />
       <button type="button" onClick={() => setBioGeneratorOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-rose-700 px-3 py-2 text-xs font-bold text-white">✨ Generate professional biography with AI</button>
     </section>
     <YouTubeVideoEditor profile={profile} setProfile={setProfile} templateId={templateId} />
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
+    <section data-field-path="profile.gallery" className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
       <h3 className="font-bold">Studio Lookbook / Gallery</h3>
       <div className="flex flex-wrap gap-3">
         <button type="button" className="text-xs font-bold text-blue-700" onClick={() => updateGallery(photos => photos.length < 100 ? [...photos, { id: `gallery-${crypto.randomUUID()}`, title: 'New showcase', url: '', tag: 'Studio' }] : photos)}>+ Add gallery image</button>
         {!profile.gallery?.length && <button type="button" className="text-xs text-rose-700" onClick={() => upd({ gallery: template?.defaultData.gallery.map(p => ({ ...p })) || [] })}>Use template gallery</button>}
       </div>
-      {(profile.gallery ?? template?.defaultData.gallery ?? []).map(photo => <details key={photo.id} className="rounded-xl border border-slate-200 p-3">
-        <summary className="cursor-pointer text-sm font-bold">{photo.title || 'Untitled image'}</summary>
-        <div className="mt-3 space-y-3">
-          <ContentImageField label="Gallery image" value={photo.url} onChange={url => updateGallery(photos => photos.map(p => p.id === photo.id ? { ...p, url } : p))} />
-          {(['title', 'tag'] as const).map(key => <label key={key} className="block text-xs capitalize">{key}<input className={field} value={photo[key]} onChange={e => updateGallery(photos => photos.map(p => p.id === photo.id ? { ...p, [key]: e.target.value } : p))} /></label>)}
-          <button type="button" className="text-xs text-rose-700" onClick={() => updateGallery(photos => photos.filter(p => p.id !== photo.id))}>Delete gallery image</button>
-        </div>
-      </details>)}
+      {(profile.gallery ?? template?.defaultData.gallery ?? []).map((photo, index) => <GalleryRow key={photo.id} photo={photo} index={index} field={field} updateGallery={updateGallery} />)}
     </section>
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
+    <section data-field-path="profile.testimonials" className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
       <h3 className="font-bold">Client testimonials</h3>
       <p className="text-xs text-slate-500">Replace sample testimonials with genuine client feedback before publishing.</p>
       <button type="button" className="text-xs font-bold text-blue-700" onClick={() => { setEditingReview(null); setReviewOpen(true); }}>+ Add testimonial</button>
-      {(profile.testimonials ?? template?.defaultData.testimonials ?? []).map(review => <div key={review.id} className="rounded-lg border p-3 text-sm">
-        <strong>{review.name}</strong><p>{review.comment}</p><div className="mt-2 flex gap-4">
+      {(profile.testimonials ?? template?.defaultData.testimonials ?? []).map((review, index) => <div key={review.id} data-field-path={`profile.testimonials[${index}]`} className="rounded-lg border p-3 text-sm">
+        <strong>{review.name}</strong><p>{review.comment}</p><ItemIssues prefix={`profile.testimonials[${index}]`} /><div className="mt-2 flex gap-4">
           <button type="button" aria-label={`Edit testimonial by ${review.name}`} className="text-xs text-blue-700" onClick={() => { setEditingReview(review); setReviewOpen(true); }}>Edit</button>
           <button type="button" aria-label={`Delete testimonial by ${review.name}`} className="text-xs text-rose-700" onClick={() => setProfile(p => ({ ...p, testimonials: (p.testimonials ?? template?.defaultData.testimonials ?? []).filter(r => r.id !== review.id) }))}>Delete</button>
         </div>

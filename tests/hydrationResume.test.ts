@@ -147,6 +147,29 @@ test('arrays replaced during the read are kept', () => {
   assert.deepEqual(next.stylists, savedPartialSetup.stylists, 'the untouched one still restores');
 });
 
+test('empty lists React re-creates right after sign-in are not edits — the saved services and team still load', () => {
+  // Found in a real browser: after sign-in React commits `setServices([])` / `setStylists([])`, which are NEW
+  // empty arrays. Compared by reference they looked like owner edits, so the saved services and team were
+  // discarded — and the next auto-save deleted them from the database.
+  const beforeRead = { ...freshDevice(), services: [] as any[], stylists: [] as any[] };
+  const current = { ...beforeRead, services: [] as any[], stylists: [] as any[] };
+  assert.notEqual(current.services, beforeRead.services, 'different array objects …');
+  assert.deepEqual(current.services, beforeRead.services, '… with the same (empty) content');
+  const next = merge(current, beforeRead)!;
+  assert.deepEqual(next.services, savedPartialSetup.services, 'the saved services are restored');
+  assert.deepEqual(next.stylists, savedPartialSetup.stylists, 'the saved team is restored');
+  assert.equal(next.loyaltyConfig.pointsPerVisit, 25, 'and so is the loyalty setup');
+});
+
+test('a list the owner really changed during the read still wins, even if React also re-created the others', () => {
+  const beforeRead = { ...freshDevice(), services: [] as any[], stylists: [] as any[] };
+  const typed = [{ id: 'local-1', name: 'Typed while it loaded', price: 500, duration: 30 }];
+  const current = { ...beforeRead, services: typed as any[], stylists: [] as any[] };
+  const next = merge(current, beforeRead)!;
+  assert.deepEqual(next.services, typed, 'the owner\'s new service is kept');
+  assert.deepEqual(next.stylists, savedPartialSetup.stylists, 'the team nobody touched still restores');
+});
+
 test('a template picked during the read is kept', () => {
   const beforeRead = freshDevice();
   const current = { ...beforeRead, selectedTemplateId: 'beauty_spa' };

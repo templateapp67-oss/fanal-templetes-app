@@ -1,6 +1,9 @@
 import { addMissingStarterServices } from './data/categoryStarterServices';
 import { websiteSnapshot, writeWebsiteDraft, recoverWebsiteDraft, acknowledgeWebsiteDraft, type WebsiteSnapshot } from './lib/websiteDraft';
-import { websiteContentError } from './lib/websiteValidation';
+import type { WebsiteFieldIssue } from './lib/websiteValidation';
+import { prepareWebsiteStateForSave } from './lib/websiteContentNormalize';
+import { summarizeWebsiteIssues } from './lib/websiteSaveErrors';
+import { WebsiteIssuesProvider } from './components/WebsiteIssues';
 import { observeAuthSession, type RestoredAuthState } from './lib/restoreAuthSession';
 import { runRLSDiagnosticSuite, type DiagnosticSuiteReport } from './lib/diagnostics';
 import { RLSDiagnosticsModal } from './components/RLSDiagnosticsModal';
@@ -24,7 +27,7 @@ import {
   requiresOwnerEditorSetup,
   shouldRedirectEditorToWebsiteOnboarding,
 } from './lib/ownerRouteGuard';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
@@ -75,6 +78,7 @@ import type { SalonPersistResult, SalonEditorStatePatch } from './lib/autoSave';
 import { ensureFreshSession, refreshSessionForSave, logAuthEnvironmentDiagnostics } from './lib/authSession';
 import { applyWorkingHoursFromRow } from './lib/salonSync';
 import { saveOwnerEditorState } from './lib/ownerEditorState';
+import { getLiveSiteUrl, publishedAddressOf, type PublishedSiteAddress } from './lib/liveSite';
 import {
   usePathRoute,
   isCustomerAppPath,
@@ -434,6 +438,17 @@ export default function App() {
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  // The address the public website is live at right now: only what the cloud
+  // last accepted (a cloud save) or returned (hydration) — never the draft. The
+  // editor's "Open Site" link opens this, so it keeps working while the draft
+  // holds unsaved or failed edits.
+  const [publishedAddress, setPublishedAddress] = useState<PublishedSiteAddress | null>(null);
+  // A profile without any address says nothing about where the site is live (the
+  // database keeps the salon's existing slug then), so it never erases one.
+  const confirmPublishedAddress = useCallback((confirmed: Partial<SalonProfile> | null | undefined) => {
+    const address = publishedAddressOf(confirmed);
+    if (address) setPublishedAddress(address);
+  }, []);
   // True when a cloud save was rejected because the Supabase session is no
   // longer usable (expired/revoked token) even after a silent refresh + retry.
   // The editor turns this into a friendly "sign in again" notice instead of a
@@ -485,6 +500,30 @@ export default function App() {
       initialSaved?.profile?.businessType ||
       INITIAL_SALON_PROFILE.businessType
   );
+
+  // -------------------------------------------------------------------------
+  // SAVE PROBLEMS, FIELD BY FIELD
+  // `liveWebsiteIssues` is what a save would be rejected for right now (the same
+  // check the save pipeline and the server run). Inputs only show it once a save
+  // was attempted and blocked (`issuesRevealed`), so nothing flashes red while the
+  // owner is still typing; it switches off again when everything is fixed.
+  // `pinnedSaveIssues` are problems only the database reported.
+  const [issuesRevealed, setIssuesRevealed] = useState(false);
+  const [pinnedSaveIssues, setPinnedSaveIssues] = useState<WebsiteFieldIssue[]>([]);
+  const liveWebsiteIssues = useMemo(
+    () => prepareWebsiteStateForSave({ profile, services, stylists }).issues,
+    [profile, services, stylists]
+  );
+  const websiteIssues = useMemo(
+    () =>
+      pinnedSaveIssues.length && !liveWebsiteIssues.some((issue) => issue.severity === 'error')
+        ? [...liveWebsiteIssues, ...pinnedSaveIssues]
+        : liveWebsiteIssues,
+    [liveWebsiteIssues, pinnedSaveIssues]
+  );
+  useEffect(() => {
+    if (issuesRevealed && !websiteIssues.some((issue) => issue.severity === 'error')) setIssuesRevealed(false);
+  }, [issuesRevealed, websiteIssues]);
 
   // -------------------------------------------------------------------------
   // SHARED PERSISTENCE REFS
@@ -848,7 +887,9 @@ export default function App() {
     (message: string, type: 'success' | 'error' = 'success') => {
       setToast({ id: Date.now(), message, type });
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
-      toastTimer.current = window.setTimeout(() => setToast(null), 3200);
+      // A field-level error ("Service 2 › Price: …") needs longer to read than "Saved".
+      const visibleMs = type === 'error' ? Math.min(9000, 4500 + message.length * 30) : 3200;
+      toastTimer.current = window.setTimeout(() => setToast(null), visibleMs);
     },
     []
   );
@@ -913,6 +954,7 @@ export default function App() {
           hydratedForUserRef.current = false;
           hydrationUserRef.current = null;
           lastPersistedSnapshotRef.current = '';
+          setPublishedAddress(null);
         }
       }
     );
@@ -934,6 +976,7 @@ export default function App() {
         }
         hasPendingSaveRef.current = false;
         setSaveStatus('idle');
+        setPublishedAddress(null); // another account's live address must never be opened
 
         clearAllLocalUserState();
         hydratedForUserRef.current = false;
@@ -1617,6 +1660,8 @@ export default function App() {
             const siteId = saved?.salonId || 'workspace';
             const cloudState = mergeHydratedSalonState({ current: beforeRead, beforeRead, saved, userId }) || websiteSnapshot(beforeRead);
             draftBaselineRef.current = { ownerId: userId, siteId, state: websiteSnapshot(cloudState) };
+            // The live site is the cloud row, not any local draft laid over it below.
+            confirmPublishedAddress(saved?.profile);
             const recovered = recoverWebsiteDraft(userId, siteId, cloudState);
             if (saved || JSON.stringify(recovered) !== JSON.stringify(cloudState)) {
               // PHASE 3.2 — the cloud row is the authoritative onboarding state
@@ -1654,6 +1699,7 @@ export default function App() {
               const ownerRes = await resolveOwnerSalon(supabase, userId);
               if (ownerRes.status === 'active' && ownerRes.salon) {
                 const s = ownerRes.salon;
+                confirmPublishedAddress({ subdomain: s.slug });
                 setProfile((prev) => ({
                   ...prev,
                   ownerId: userId,
@@ -1702,7 +1748,7 @@ export default function App() {
       });
       return run;
     },
-    [applyHydrationSnapshot]
+    [applyHydrationSnapshot, confirmPublishedAddress]
   );
   startHydrationRef.current = startHydration;
 
@@ -1807,11 +1853,20 @@ export default function App() {
       cacheWebsiteDraft();
       const state = salonStateRef.current;
       const draftScope = draftBaselineRef.current;
-      const invalidContent = websiteContentError(state);
-      if (invalidContent) {
+      // The same repair + validation the save itself applies: empty gallery slots
+      // get the default image, padded links are trimmed, stale team assignments are
+      // dropped. Only what cannot be repaired blocks the save — and it is named.
+      const prepared = prepareWebsiteStateForSave({
+        profile: state.profile,
+        services: state.services,
+        stylists: state.stylists,
+      });
+      if (prepared.errors.length) {
+        const blockedBy = summarizeWebsiteIssues(prepared.errors);
+        setIssuesRevealed(true);
         setSaveStatus('error');
-        if (source === 'manual') showToast(invalidContent, 'error');
-        return { published: false, localDraft: false, failed: true };
+        if (source === 'manual') showToast(blockedBy, 'error');
+        return { published: false, localDraft: false, failed: true, error: blockedBy };
       }
       saveStep('authenticated user resolved', { userId: state.user?.id ?? null, mock: isMockSupabase });
 
@@ -1836,6 +1891,7 @@ export default function App() {
       saveInFlightRef.current = true;
       if (statusResetTimerRef.current) window.clearTimeout(statusResetTimerRef.current);
       setSaveStatus('saving');
+      setPinnedSaveIssues((current) => (current.length ? [] : current));
       const failures: string[] = [];
 
       console.info('[Nexora Save Pipeline] === SAVE OPERATION INITIATED ===', {
@@ -2099,21 +2155,31 @@ export default function App() {
           // engine already refreshed + retried once, so tell the owner
           // exactly what to do and let the editor show the same notice.
           if (sessionGone) setSaveNeedsSignIn(true);
+          // The database rejected the owner's CONTENT: name the exact fields
+          // (red inputs + the summary panel) instead of one generic sentence.
+          const contentIssues = sessionGone ? [] : (cloud.issues ?? []);
+          if (contentIssues.length) {
+            setPinnedSaveIssues(contentIssues);
+            setIssuesRevealed(true);
+          }
+          const failureReason = contentIssues.length ? summarizeWebsiteIssues(contentIssues) : summarizeSaveError(detail);
           if (source === 'manual' || lastErrorToastRef.current !== detail) {
             showToast(
               sessionGone
                 ? `Save failed: ${SESSION_EXPIRED_SAVE_MESSAGE}`
-                : `Save failed: ${summarizeSaveError(detail)}`,
+                : `Save failed: ${failureReason}`,
               'error'
             );
           }
           lastErrorToastRef.current = detail;
-          return { published: false, localDraft: false, failed: true, error: summarizeSaveError(detail) };
+          return { published: false, localDraft: false, failed: true, error: failureReason };
         }
 
         lastPersistedSnapshotRef.current = snapshot;
         lastErrorToastRef.current = '';
         setLastSavedAt(Date.now());
+        setIssuesRevealed(false);
+        setPinnedSaveIssues((current) => (current.length ? [] : current));
 
         const publishedToCloud = cloud.target === 'cloud' || cloud.target === 'api';
         console.info('[Nexora Save Pipeline] Stage 5 (Save Status Resolution): Finished save pipeline ->', {
@@ -2124,6 +2190,8 @@ export default function App() {
         });
 
         if (publishedToCloud) {
+          // The cloud accepted this state, so its address is what is live now.
+          confirmPublishedAddress(state.profile);
           if (draftScope && draftScope.ownerId === state.user?.id) {
             acknowledgeWebsiteDraft(draftScope.ownerId, draftScope.siteId, state);
             if (draftBaselineRef.current?.ownerId === draftScope.ownerId && draftBaselineRef.current.siteId === draftScope.siteId) {
@@ -2136,7 +2204,8 @@ export default function App() {
           // Auto-saves update quietly via the status pill; only explicit
           // saves interrupt the owner with a toast.
           if (source === 'manual') {
-            showToast(options?.message || 'Website details updated successfully!');
+            // Say what was repaired on the way (e.g. empty gallery slots now use the default image).
+            showToast([options?.message || 'Website details updated successfully!', ...prepared.notes].join(' '));
           }
         } else {
           // SUCCESS (Local Draft) — unauthenticated / mock session, or the
@@ -2183,7 +2252,7 @@ export default function App() {
         }
       }
     },
-    [showToast, scheduleStatusReset, startHydration, cacheWebsiteDraft]
+    [showToast, scheduleStatusReset, startHydration, cacheWebsiteDraft, confirmPublishedAddress]
   );
 
   // Debounced auto-save. The timer resets on every keystroke so a burst of
@@ -2807,6 +2876,7 @@ export default function App() {
   }
 
   return (
+    <WebsiteIssuesProvider issues={websiteIssues} revealed={issuesRevealed}>
     <div className="min-h-dvh bg-surface text-on-surface">
       <Header
         currentView={currentView}
@@ -2904,6 +2974,7 @@ export default function App() {
           selectedTemplateId={selectedTemplateId}
           onChangeTemplate={() => openTemplateExplorer()}
           siteUrl={getSiteUrl(profile)}
+          publishedSiteUrl={getLiveSiteUrl(profile, publishedAddress)}
           onSave={handleSaveNow}
           onBackToDashboard={() => setCurrentView('dashboard')}
           showToast={showToast}
@@ -2928,7 +2999,7 @@ export default function App() {
           selectedTemplateId={selectedTemplateId}
           setSelectedTemplateId={setSelectedTemplateId}
           onOpenTemplateExplorer={() => openTemplateExplorer()}
-          siteUrl={getSiteUrl(profile)}
+          siteUrl={getLiveSiteUrl(profile, publishedAddress)}
           rebookRequest={rebookTarget}
         />
       )}
@@ -2956,7 +3027,7 @@ export default function App() {
             setWizardStartingStep(1);
             setCurrentView('wizard');
           }}
-          siteUrl={getSiteUrl(profile)}
+          siteUrl={getLiveSiteUrl(profile, publishedAddress)}
           isAuthenticated={!!user}
           onRequireAuth={openBookingAuth}
           onNavigateToStaffPerformance={() => setCurrentView('staffPerformance')}
@@ -3110,5 +3181,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </WebsiteIssuesProvider>
   );
 }

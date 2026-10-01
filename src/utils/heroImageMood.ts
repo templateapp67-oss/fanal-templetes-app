@@ -218,6 +218,12 @@ export function extractImageMoodAsync(imageUrl: string, fallbackAccent?: string)
       return;
     }
 
+    // No DOM image support (server render, test runner): use the URL-based styling.
+    if (typeof Image === 'undefined') {
+      resolve(computeHeroAIStyling(imageUrl, fallbackAccent));
+      return;
+    }
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
 

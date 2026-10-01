@@ -1,4 +1,6 @@
-import { hasRequiredWebsiteProfile, websiteContentError } from '../src/lib/websiteValidation.js';
+import { hasRequiredWebsiteProfile } from '../src/lib/websiteValidation.js';
+import { prepareWebsiteStateForSave } from '../src/lib/websiteContentNormalize.js';
+import { describeWebsiteSaveFailure, summarizeWebsiteIssues } from '../src/lib/websiteSaveErrors.js';
 import { BackendError, databaseForToken, verifyBackendUser, readDatabase } from './backendContext.js';
 // Authenticated fallback for editor saves. Identity is verified against Supabase
 // Auth, then the caller-scoped workspace RPC enforces ownership and commits
@@ -147,9 +149,22 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       if (!/^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(subdomain)) return res.status(400).json({ success: false, code: 'INVALID_WEBSITE_ADDRESS', error: 'Use 2–63 letters, numbers or hyphens for the website address.' });
 
       // The owner must be authenticated before returning draft validation errors.
-      const contentError = websiteContentError(salonData);
-      if (contentError) return res.status(400).json({ success: false, code: 'INVALID_WEBSITE_CONTENT', error: contentError });
-      if (!hasRequiredWebsiteProfile(profile)) {
+      // Repair what has an obvious repair first (padded links, empty gallery
+      // slots → the default image, stale team assignments…) so the save does
+      // not fail on something the editor could have fixed itself; whatever
+      // remains is reported field by field.
+      const prepared = prepareWebsiteStateForSave(salonData);
+      if (prepared.errors.length) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_WEBSITE_CONTENT',
+          error: summarizeWebsiteIssues(prepared.errors),
+          issues: prepared.errors,
+        });
+      }
+      const content: any = prepared.payload;
+      const cleanProfile: SalonProfile | null = content.profile && typeof content.profile === 'object' ? content.profile : null;
+      if (!hasRequiredWebsiteProfile(cleanProfile)) {
         return res.status(400).json({ success: false, code: 'PROFILE_INCOMPLETE',
           error: 'Add your salon name, contact number, business category, address and city before publishing.' });
       }
@@ -161,9 +176,9 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
       // ------------------------------------------------------------------
       if (isMockSupabase) {
         deps.mockSalons[subdomain] = {
-          profile: { ...profile, subdomain, ownerId },
-          services,
-          stylists,
+          profile: { ...cleanProfile, subdomain, ownerId },
+          services: Array.isArray(content.services) ? content.services : services,
+          stylists: Array.isArray(content.stylists) ? content.stylists : stylists,
           loyaltyConfig,
           selectedTemplateId: salonData.selectedTemplateId,
           customDomain: profile?.customDomain || null,
@@ -196,30 +211,17 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         ...(Array.isArray(salonData.clients) ? { clients: salonData.clients } : {}),
         ...(salonData.selectedTemplateId !== undefined ? { selectedTemplateId: salonData.selectedTemplateId } : {}),
       };
-      const hasEmptyGallery =
-        profile &&
-        Array.isArray(profile.gallery) &&
-        profile.gallery.some((item: any) => !String(item?.url ?? '').trim());
-      const hasEmptyLookbook =
-        profile &&
-        Array.isArray(profile.lookbookPhotos) &&
-        profile.lookbookPhotos.some((item: any) => !String(item?.url ?? '').trim());
-      const sanitizedProfile =
-        hasEmptyGallery || hasEmptyLookbook
-          ? {
-              ...profile,
-              ...(hasEmptyGallery
-                ? { gallery: profile.gallery.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
-                : {}),
-              ...(hasEmptyLookbook
-                ? { lookbookPhotos: profile.lookbookPhotos.filter((item: any) => String(item?.url ?? '').trim().length > 0) }
-                : {}),
-            }
-          : profile;
       // Use the same transaction as the editor. Never write salon fields into identity profiles.
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const savedState = {
+        profile: cleanProfile,
+        ...(salonData.services !== undefined ? { services: content.services } : {}),
+        ...(salonData.stylists !== undefined ? { stylists: content.stylists } : {}),
+        ...extraState,
+        ...(loyaltyConfig ? { loyaltyConfig } : {}),
+      };
       let result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
-        p_state: { profile: sanitizedProfile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+        p_state: savedState,
       }), { label: 'atomic owner workspace save', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
 
       if (
@@ -236,7 +238,7 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
             retry: false,
           });
           result = await runDb(() => databaseForToken(token).rpc('save_owner_editor_state', {
-            p_state: { profile: sanitizedProfile, ...(salonData.services !== undefined ? { services } : {}), ...(salonData.stylists !== undefined ? { stylists } : {}), ...extraState, ...(loyaltyConfig ? { loyaltyConfig } : {}) },
+            p_state: savedState,
           }), { label: 'atomic owner workspace save (retry)', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry: false });
         } catch (provisionErr) {
           console.warn('[Website save] ensure_owner_workspace retry skipped or failed:', provisionErr);
@@ -255,6 +257,9 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
           code: code === '42501' ? 'DATA_ACCESS_DENIED' : code === '23505' ? 'WEBSITE_ADDRESS_CONFLICT' : code === '22023' || code === '22P02' ? 'INVALID_WEBSITE_CONTENT' : 'WEBSITE_SAVE_FAILED',
           dbCode: code ?? null,
           details: result.error.message ?? undefined,
+          ...(code === '22023' || code === '22P02'
+            ? { issues: describeWebsiteSaveFailure(String(result.error.message ?? ''), savedState) }
+            : {}),
           error: code === '23505' ? 'That website address is already in use. Choose another address.' : code === '22023' || code === '22P02' ? (result.error.message || 'Check your website content, service details and staff schedule before saving.') : 'Your workspace could not be saved. Please retry or contact support.',
         });
       }
