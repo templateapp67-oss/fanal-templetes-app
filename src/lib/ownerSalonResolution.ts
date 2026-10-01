@@ -1,11 +1,44 @@
 import { supabase, isMockSupabase } from './supabaseClient';
 import type { SalonProfile } from '../types';
 import { slugifySalonName } from './salonStore';
+import { fitSeoKeywords } from './seoKeywords';
+import { WEBSITE_LIMITS } from './websiteValidation';
 
 export interface OwnerSalonResolutionResult {
   status: 'active' | 'needs_onboarding';
   salon: any | null;
 }
+
+/**
+ * Keywords a new website starts with, most important first. Only as many as fit the
+ * database's limit are used (`WEBSITE_LIMITS.seoKeywords`): this list used to be 606
+ * characters long, so the FIRST save of every new website was rejected with
+ * "Website text exceeds allowed length" — for a field the owner never wrote.
+ */
+const DEFAULT_SEO_KEYWORDS = [
+  'Nexora SalonOS',
+  'Nexora',
+  'salon management system',
+  'white label salon software',
+  'salon website builder',
+  'online salon booking app',
+  'beauty parlor management system',
+  'barber shop software',
+  'hair studio booking app',
+  'spa booking software',
+  'ayurvedic wellness center website',
+  'luxury hair salon management',
+  'salon billing software',
+  'salon appointment scheduling',
+  'automated whatsapp booking notifications',
+  'salon loyalty program software',
+  'best salon software in india',
+  'salon booking app india',
+  'salon billing and inventory software',
+  'unisex salon management software',
+  'beauty parlor billing software',
+  'top salon website template',
+];
 
 /**
  * Creates a clean, empty/default salon profile for a new user needing onboarding.
@@ -46,30 +79,7 @@ export function createBlankSalonProfile(user?: any): SalonProfile {
     depositPercentage: 20,
     whiteLabelEnabled: true,
     offers: [],
-    seoKeywords: [
-      'Nexora SalonOS',
-      'Nexora',
-      'salon management system',
-      'white label salon software',
-      'salon website builder',
-      'online salon booking app',
-      'beauty parlor management system',
-      'barber shop software',
-      'hair studio booking app',
-      'spa booking software',
-      'ayurvedic wellness center website',
-      'luxury hair salon management',
-      'salon billing software',
-      'salon appointment scheduling',
-      'automated whatsapp booking notifications',
-      'salon loyalty program software',
-      'best salon software in india',
-      'salon booking app india',
-      'salon billing and inventory software',
-      'unisex salon management software',
-      'beauty parlor billing software',
-      'top salon website template'
-    ].join(', '),
+    seoKeywords: fitSeoKeywords(DEFAULT_SEO_KEYWORDS.join(', '), WEBSITE_LIMITS.seoKeywords)?.value ?? '',
   };
 }
 

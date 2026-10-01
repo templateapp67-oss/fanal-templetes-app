@@ -54,9 +54,9 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringif
  *
  * Field by field:
  *   profile            cloud wins, except keys the owner edited during the read
- *   services/stylists/ cloud wins, unless the reference changed during the read
- *     loyaltyConfig    (a reference compare is enough — the app always replaces
- *                      these arrays rather than mutating them)
+ *   services/stylists/ cloud wins, unless their CONTENT changed during the read
+ *     loyaltyConfig    (not their identity: React hands back fresh empty arrays
+ *                      after sign-in, and those are not edits)
  *   selectedTemplateId cloud wins, unless it changed during the read
  */
 export function mergeHydratedSalonState(
@@ -79,8 +79,13 @@ export function mergeHydratedSalonState(
     }
   }
 
+  // "Edited during the read" means the CONTENT changed since the read started — not that the
+  // array is a different object. React commits brand-new empty arrays right after sign-in
+  // (`setServices([])`), so `current.services !== beforeRead.services` even though nobody touched
+  // them. Treating that as an edit made the merge keep the empty lists and throw the saved
+  // services and team away — and the very next auto-save then deleted them from the database.
   const editedDuringRead = (key: 'services' | 'stylists' | 'loyaltyConfig' | 'selectedTemplateId') =>
-    current[key] !== beforeRead[key];
+    !sameJson(current[key], beforeRead[key]);
 
   // A blank id — empty or whitespace only — is not a choice. Applying one
   // would put an unusable value into state and then persist it on the next

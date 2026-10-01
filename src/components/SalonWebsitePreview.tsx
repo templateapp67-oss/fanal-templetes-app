@@ -72,6 +72,16 @@ import { slugifySalonName } from '../lib/salonStore';
 import { useSalonData } from '../lib/useSalonData';
 import { getStylistBio } from './StaffPortfolioEditor';
 
+/**
+ * The description shown on a service card: the whole text while editing, otherwise cut at 150 characters.
+ * A service saved without a description comes back from the database WITHOUT the field, so it may be
+ * undefined — reading `.length` of it used to throw and blank the whole editor ("Something went wrong").
+ */
+export function shortServiceDescription(description: string | null | undefined, expanded: boolean): string {
+  const text = description ?? '';
+  return expanded || text.length <= 150 ? text : `${text.slice(0, 147).trimEnd()}…`;
+}
+
 interface SalonWebsitePreviewProps {
   profile: SalonProfile;
   setProfile?: React.Dispatch<React.SetStateAction<SalonProfile>>;
@@ -2058,7 +2068,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                           isDarkCanvas ? 'text-neutral-300' : 'text-slate-600'
                         }`}>
                           <InlineEditable
-                            value={isEditMode || srv.description.length <= 150 ? srv.description : `${srv.description.slice(0, 147).trimEnd()}…`}
+                            value={shortServiceDescription(srv.description, isEditMode)}
                             onSave={(val) => handleUpdateServiceDesc(srv.id, String(val))}
                             isEditingActive={isEditMode}
                             type="textarea"

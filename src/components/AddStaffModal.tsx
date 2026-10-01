@@ -12,6 +12,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Stylist, SalonService, StaffAccessRole, StaffStatus, DaySchedule } from '../types';
 import { StylistAvatarUpload } from './StylistAvatarUpload';
+import { scheduleProblems } from '../lib/websiteValidation';
 
 interface AddStaffModalProps {
   isOpen: boolean;
@@ -54,13 +55,6 @@ const ACCESS_ROLES: StaffAccessRole[] = [
 ];
 
 const STATUS_OPTIONS: StaffStatus[] = ['Available', 'Busy', 'On Leave', 'Inactive'];
-
-// Exact Assigned Services list
-const ASSIGNED_SERVICES_LIST = [
-  { id: 'srv-p1', name: 'Luxury Spa Pedicure', subtag: 'Pedicure & Manicure' },
-  { id: 'srv-p2', name: 'Gel Polish Overlay', subtag: 'Nail Art & Gel' },
-  { id: 'srv-p3', name: 'Lash Lift & Tint', subtag: 'Lash & Brow' }
-];
 
 // Exact Specializations & Skills list
 const DEFAULT_SKILLS = [
@@ -109,11 +103,11 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   // Privacy Settings
   const [hideMobileNumber, setHideMobileNumber] = useState<boolean>(false);
   
-  // Assigned Services (default active: Luxury Spa Pedicure, Gel Polish Overlay)
-  const [selectedServices, setSelectedServices] = useState<string[]>([
-    'Luxury Spa Pedicure',
-    'Gel Polish Overlay'
-  ]);
+  // Assigned Services: IDs of the salon's OWN services, none selected by
+  // default. (This used to start with two hard-coded demo service names that
+  // exist in nobody's catalogue, which made every later save fail with
+  // "Assigned service is not available in this salon".)
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   
   // Bio
   const [bio, setBio] = useState<string>('');
@@ -163,11 +157,11 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   if (!isOpen) return null;
 
   // Toggle Assigned Service
-  const handleToggleService = (serviceName: string) => {
+  const handleToggleService = (serviceId: string) => {
     setSelectedServices((prev) =>
-      prev.includes(serviceName)
-        ? prev.filter((s) => s !== serviceName)
-        : [...prev, serviceName]
+      prev.includes(serviceId)
+        ? prev.filter((s) => s !== serviceId)
+        : [...prev, serviceId]
     );
   };
 
@@ -243,11 +237,20 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     });
   };
 
+  // Working hours the database would reject (closing time not after opening time).
+  const scheduleIssueByIndex = new Map(scheduleProblems(weeklySchedule).map((problem) => [problem.index, problem.message]));
+
   // Submit Handler
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) {
       setFormError('Full Name is required.');
+      return;
+    }
+    if (scheduleIssueByIndex.size > 0) {
+      // The schedule lives in the optional section — open it so the red rows are visible.
+      setShowAdvanced(true);
+      setFormError(`Fix the weekly schedule before saving. ${[...scheduleIssueByIndex.values()][0]}`);
       return;
     }
 
@@ -263,7 +266,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
       status: currentStatus,
       accessRole: appAccessRole,
       hidePhone: hideMobileNumber,
-      assignedServices: selectedServices,
+      assignedServices: selectedServices.filter((id) => services.some((service) => service.id === id)),
       bio: bio.trim(),
       schedule: weeklySchedule
     };
@@ -564,13 +567,19 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             </label>
 
             <div className="flex flex-wrap gap-2.5">
-              {ASSIGNED_SERVICES_LIST.map((srv) => {
-                const isSelected = selectedServices.includes(srv.name);
+              {services.length === 0 && (
+                <p className="text-xs text-gray-500">
+                  Your service menu is empty. Add services first, then assign them to team members.
+                </p>
+              )}
+              {services.map((srv) => {
+                const isSelected = selectedServices.includes(srv.id);
                 return (
                   <button
                     key={srv.id}
                     type="button"
-                    onClick={() => handleToggleService(srv.name)}
+                    aria-pressed={isSelected}
+                    onClick={() => handleToggleService(srv.id)}
                     className={`px-3.5 py-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col gap-0.5 ${
                       isSelected
                         ? 'border-[#900C3F] bg-[#900C3F]/5 text-gray-900 shadow-xs'
@@ -588,7 +597,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                       <span>{srv.name}</span>
                     </div>
                     <span className="text-[10px] text-gray-500 font-medium pl-5.5">
-                      {srv.subtag}
+                      {srv.category}
                     </span>
                   </button>
                 );
@@ -702,10 +711,14 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 
             <div className="space-y-2">
               {weeklySchedule.map((scheduleItem, idx) => (
+                <React.Fragment key={scheduleItem.day}>
                 <div
-                  key={scheduleItem.day}
+                  data-schedule-day={scheduleItem.day}
+                  aria-invalid={scheduleIssueByIndex.has(idx) ? true : undefined}
                   className={`p-2.5 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors ${
-                    scheduleItem.enabled
+                    scheduleIssueByIndex.has(idx)
+                      ? 'bg-red-50 border-red-400 ring-1 ring-red-300'
+                      : scheduleItem.enabled
                       ? 'bg-white border-gray-200 shadow-xs'
                       : 'bg-gray-100/60 border-gray-200/60 opacity-60'
                   }`}
@@ -762,6 +775,12 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                     </span>
                   )}
                 </div>
+                {scheduleIssueByIndex.has(idx) && (
+                  <p role="alert" data-field-error={`schedule[${idx}]`} className="text-xs font-semibold text-red-700">
+                    {scheduleIssueByIndex.get(idx)}
+                  </p>
+                )}
+                </React.Fragment>
               ))}
             </div>
           </div>

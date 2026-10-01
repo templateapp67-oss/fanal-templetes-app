@@ -40,6 +40,8 @@ import { TEMPLATE_REGISTRY, getTemplateById } from '../data/templates';
 import { SALON_IMAGES } from '../assets/images';
 import { validateAndReadImageFile, compressAndResizeImage } from '../utils/imageUploadHelper';
 import { AILogoSuiteModal } from './AILogoSuiteModal';
+import { FieldError, useFieldIssueProps } from './WebsiteIssues';
+import { cleanImageUrlInput } from '../lib/websiteValidation';
 import { ImageCompressorWidget } from './ImageCompressorWidget';
 import {
   buildYouTubeShortsUrl,
@@ -155,6 +157,8 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
   const [fileError, setFileError] = useState<string | null>(null);
   const [customLogoUrlInput, setCustomLogoUrlInput] = useState<string>(profile.logoUrl || '');
   const [customHeroUrlInput, setCustomHeroUrlInput] = useState<string>(profile.coverImageUrl || '');
+  // A cover link the save rejected is marked on its input, with the reason.
+  const coverField = useFieldIssueProps('profile.coverImageUrl');
 
   useEffect(() => {
     if (primaryAccentColor) {
@@ -755,9 +759,16 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
                 type="url"
                 value={profile.coverImageUrl}
                 onChange={(e) => setProfile((prev) => ({ ...prev, coverImageUrl: e.target.value }))}
+                onBlur={() => setProfile((prev) => {
+                  // Trim, and complete `cdn.example.com/photo.jpg` with https://.
+                  const cleaned = cleanImageUrlInput(prev.coverImageUrl ?? '');
+                  return cleaned === (prev.coverImageUrl ?? '') ? prev : { ...prev, coverImageUrl: cleaned };
+                })}
                 placeholder="Paste custom cover photo URL..."
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-700 focus:border-slate-900 focus:outline-none"
+                {...coverField.attrs}
+                className={coverField.className('w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-700 focus:border-slate-900 focus:outline-none')}
               />
+              <FieldError path="profile.coverImageUrl" />
             </div>
 
           </div>

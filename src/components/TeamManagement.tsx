@@ -232,7 +232,9 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
         setIsAddModalOpen(false);
       } else {
         setSaveError(
-          `Saving the new specialist failed — the change is kept on this device. Submit the form again to retry (exact error in the browser console).`
+          result.error
+            ? `Save failed: ${result.error}`
+            : `Saving the new specialist failed — the change is kept on this device. Submit the form again to retry (exact error in the browser console).`
         );
       }
     } catch (err) {

@@ -1,4 +1,4 @@
-import { isSafeImageUrl } from '../src/lib/websiteValidation.js';
+import { trimmedSafeImageUrl } from '../src/lib/websiteValidation.js';
 import type { SalonProfile, SalonService, SocialVideo } from '../src/types.js';
 import { extractYouTubeId, buildYouTubeWatchUrl, buildYouTubeThumbnailUrl } from '../src/utils/youtube.js';
 import { catalogId } from './normalizedBookingCreate.js';
@@ -21,7 +21,8 @@ export function applyPublicWebsiteContent(profile: SalonProfile, raw: unknown): 
     if (typeof source[key] === 'string') (next as any)[key] = source[key];
   }
   for (const key of ['ownerPhotoUrl', 'coverImageUrl', 'logoUrl', 'customFaviconUrl', 'socialShareImageUrl'] as const) {
-    if (isSafeImageUrl(source[key])) next[key] = source[key];
+    const url = trimmedSafeImageUrl(source[key]);
+    if (url !== undefined) next[key] = url;
   }
   if (typeof source.whiteLabelEnabled === 'boolean') next.whiteLabelEnabled = source.whiteLabelEnabled;
   if (Array.isArray(source.socialVideos)) {
@@ -32,19 +33,19 @@ export function applyPublicWebsiteContent(profile: SalonProfile, raw: unknown): 
       return [{
         id: String(video.id), videoId, youtubeUrl: buildYouTubeWatchUrl(videoId),
         title: String(video.title || ''), description: String(video.description || ''),
-        thumbnailUrl: video.thumbnailUrl && isSafeImageUrl(video.thumbnailUrl) ? video.thumbnailUrl : buildYouTubeThumbnailUrl(videoId), categoryTag: video.categoryTag,
+        thumbnailUrl: trimmedSafeImageUrl(video.thumbnailUrl) || buildYouTubeThumbnailUrl(videoId), categoryTag: video.categoryTag,
         isOwnerVideo: video.isOwnerVideo === true, isDemo: video.isDemo === true,
       }];
     });
   }
-  if (Array.isArray(source.gallery)) next.gallery = source.gallery.filter(p => p && isSafeImageUrl(p.url) && p.url !== '').slice(0, 100).map(p => ({ id: String(p.id), url: p.url, title: String(p.title || ''), tag: String(p.tag || '') }));
-  if (Array.isArray(source.lookbookPhotos)) next.lookbookPhotos = source.lookbookPhotos.filter(p => p && isSafeImageUrl(p.url) && p.url !== '').slice(0, 100).map(p => ({ id: String(p.id), url: p.url, title: String(p.title || ''), tag: String(p.tag || ''), alt: String(p.alt || '') }));
+  if (Array.isArray(source.gallery)) next.gallery = source.gallery.filter(p => p && trimmedSafeImageUrl(p.url)).slice(0, 100).map(p => ({ id: String(p.id), url: trimmedSafeImageUrl(p.url)!, title: String(p.title || ''), tag: String(p.tag || '') }));
+  if (Array.isArray(source.lookbookPhotos)) next.lookbookPhotos = source.lookbookPhotos.filter(p => p && trimmedSafeImageUrl(p.url)).slice(0, 100).map(p => ({ id: String(p.id), url: trimmedSafeImageUrl(p.url)!, title: String(p.title || ''), tag: String(p.tag || ''), alt: String(p.alt || '') }));
   if (source.sectionVisibility && typeof source.sectionVisibility === 'object') {
     const keys = ['header', 'hero', 'metrics', 'about', 'services', 'offers', 'promoPopup', 'stylists', 'testimonials', 'gallery', 'location', 'whatsappFloat'];
     next.sectionVisibility = Object.fromEntries(Object.entries(source.sectionVisibility).filter(([key, value]) => keys.includes(key) && typeof value === 'boolean'));
   }
   if (source.sectionHeadings && typeof source.sectionHeadings === 'object') next.sectionHeadings = Object.fromEntries(Object.entries(source.sectionHeadings).filter(([, value]) => typeof value === 'string'));
-  if (Array.isArray(source.offers)) next.offers = source.offers.filter(o => o && typeof o === 'object' && typeof o.title === 'string').slice(0, 100).map(o => ({ id: String(o.id), title: o.title, description: String(o.description || ''), code: String(o.code || ''), discountValue: String(o.discountValue || ''), isActive: o.isActive !== false, imageUrl: isSafeImageUrl(o.imageUrl) ? o.imageUrl : undefined, startDate: typeof o.startDate === 'string' ? o.startDate : undefined, expiryDate: typeof o.expiryDate === 'string' ? o.expiryDate : undefined, terms: String(o.terms || '') }));
+  if (Array.isArray(source.offers)) next.offers = source.offers.filter(o => o && typeof o === 'object' && typeof o.title === 'string').slice(0, 100).map(o => ({ id: String(o.id), title: o.title, description: String(o.description || ''), code: String(o.code || ''), discountValue: String(o.discountValue || ''), isActive: o.isActive !== false, imageUrl: trimmedSafeImageUrl(o.imageUrl), startDate: typeof o.startDate === 'string' ? o.startDate : undefined, expiryDate: typeof o.expiryDate === 'string' ? o.expiryDate : undefined, terms: String(o.terms || '') }));
   if (source.promotionalBanner && typeof source.promotionalBanner === 'object') {
     const banner = source.promotionalBanner;
     next.promotionalBanner = { enabled: banner.enabled === true, text: typeof banner.text === 'string' ? banner.text : '', buttonAction: banner.buttonAction === 'copy' ? 'copy' : 'book' };
@@ -56,7 +57,7 @@ export function applyPublicWebsiteContent(profile: SalonProfile, raw: unknown): 
   }
   if (Array.isArray(source.testimonials)) next.testimonials = source.testimonials.filter(r => r && typeof r.name === 'string' && typeof r.comment === 'string').slice(0, 100).map(r => ({
     id: String(r.id), name: r.name, comment: r.comment, rating: Math.min(5, Math.max(1, Math.round(Number(r.rating)) || 5)),
-    location: String(r.location || ''), serviceName: String(r.serviceName || ''), date: String(r.date || ''), avatarUrl: isSafeImageUrl(r.avatarUrl) ? r.avatarUrl : '',
+    location: String(r.location || ''), serviceName: String(r.serviceName || ''), date: String(r.date || ''), avatarUrl: trimmedSafeImageUrl(r.avatarUrl) ?? '',
   }));
   return next;
 }
@@ -74,7 +75,7 @@ export function mergeServicePresentation(services: SalonService[], raw: unknown,
       // authoritative in services.price_paise and is never overridden here.
       originalPrice: typeof saved.originalPrice === 'number' && Number.isFinite(saved.originalPrice) && saved.originalPrice >= service.price
         ? saved.originalPrice : undefined,
-      imageUrl: isSafeImageUrl(saved.imageUrl) ? saved.imageUrl : service.imageUrl,
+      imageUrl: trimmedSafeImageUrl(saved.imageUrl) ?? service.imageUrl,
       showDuration: typeof saved.showDuration === 'boolean' ? saved.showDuration : service.showDuration,
       category: typeof saved.category === 'string' ? saved.category : service.category,
       icon: typeof saved.icon === 'string' ? saved.icon : service.icon,
