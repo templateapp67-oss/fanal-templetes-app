@@ -7,7 +7,10 @@ import { YouTubeVideoEditor } from '../../src/components/YouTubeVideoEditor';
 import { WebsiteVideoShowcase } from '../../src/components/WebsiteVideoShowcase';
 import { WebsiteContentEditor } from '../../src/components/WebsiteContentEditor';
 import { getDefaultVideosForTemplate } from '../../src/templateSocialVideos';
-import type { SalonProfile, SalonService } from '../../src/types';
+import { addMissingStarterServices } from '../../src/data/categoryStarterServices';
+import { TEMPLATE_REGISTRY } from '../../src/data/templates';
+import { isSafeImageUrl, websiteContentError } from '../../src/lib/websiteValidation';
+import type { BusinessTypeId, SalonProfile, SalonService } from '../../src/types';
 
 function input(container: HTMLElement, label: string, value: string) {
   const element = container.querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLSelectElement;
@@ -69,14 +72,98 @@ test('starter kit fills an empty menu but preserves custom services, identity an
   }
   const container = document.createElement('div'); const root = createRoot(container);
   try {
+    const originalProfile = profile;
+    const emptyServices = services;
     await act(async () => root.render(React.createElement(Harness)));
-    await act(async () => button(container, 'Add missing starter content').click());
+    assert.strictEqual(services, emptyServices, 'mounting never seeds services');
+    const starterButton = button(container, 'Add missing starter content');
+    assert.equal(starterButton.textContent?.trim(), 'Add missing starter content (5 template services)');
+    assert.equal(starterButton.type, 'button');
+    await act(async () => { starterButton.click(); starterButton.click(); });
     assert.equal(services.length, 5);
-    assert.ok(services.every(s => s.imageUrl && s.description));
+    assert.ok(services.every(s => s.imageUrl && isSafeImageUrl(s.imageUrl) && s.description));
+    assert.strictEqual(profile, originalProfile, 'starter content never updates the owner profile');
     assert.equal(profile.ownerName, 'Me');
     assert.deepEqual(profile.socialVideos, []); assert.deepEqual(profile.gallery, []);
     const first = services;
+    const firstService = services[0];
     await act(async () => button(container, 'Add missing starter content').click());
-    assert.equal(services, first);
+    assert.strictEqual(services, first);
+    assert.strictEqual(services[0], firstService);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('an undefined menu can explicitly seed the selected template instead of the business category', async () => {
+  const originalProfile = { businessType: 'hair_salon', ownerName: 'Owner', socialVideos: [], gallery: [] } as unknown as SalonProfile;
+  let services: SalonService[] | undefined;
+  function Harness() {
+    const [profile, setProfile] = useState(originalProfile);
+    const [rows, setServices] = useState<SalonService[]>([]);
+    services = rows.length ? rows : undefined;
+    return React.createElement(WebsiteContentEditor, { profile, setProfile, services, setServices, templateId: 'massage_wellness' });
+  }
+  const container = document.createElement('div'); const root = createRoot(container);
+  try {
+    await act(async () => root.render(React.createElement(Harness)));
+    assert.equal(services, undefined, 'no defaults are imported on mount');
+    await act(async () => button(container, 'Add missing starter content (5 template services)').click());
+    assert.deepEqual(services, addMissingStarterServices(undefined, 'massage_wellness'));
+    assert.equal(websiteContentError({ profile: originalProfile, services }), null);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('custom services retain array and item references across starter clicks and template changes', async () => {
+  const originalProfile = { businessType: 'hair_salon', ownerName: 'Owner', socialVideos: [], gallery: [] } as unknown as SalonProfile;
+  const customServices: SalonService[] = [{ ...addMissingStarterServices(undefined, 'hair_salon')[0], id: 'owner-service', name: 'My custom service', price: 3456, description: 'My own description', imageUrl: 'https://example.com/custom.jpg' }];
+  let services = customServices;
+  let profile = originalProfile;
+  let templateId: BusinessTypeId = 'hair_salon';
+  function Harness() {
+    const [p, setProfile] = useState(originalProfile);
+    const [rows, setServices] = useState(customServices);
+    profile = p; services = rows;
+    return React.createElement(WebsiteContentEditor, { profile: p, setProfile, services: rows, setServices, templateId });
+  }
+  const container = document.createElement('div'); const root = createRoot(container);
+  try {
+    await act(async () => root.render(React.createElement(Harness)));
+    await act(async () => button(container, 'Add missing starter content').click());
+    assert.strictEqual(services, customServices);
+    assert.strictEqual(services[0], customServices[0]);
+    templateId = 'massage_wellness';
+    await act(async () => root.render(React.createElement(Harness)));
+    assert.strictEqual(services, customServices, 'changing the template never seeds services');
+    await act(async () => button(container, 'Add missing starter content').click());
+    assert.strictEqual(services, customServices);
+    assert.strictEqual(services[0], customServices[0]);
+    assert.strictEqual(profile, originalProfile);
+    assert.equal(services[0].name, 'My custom service');
+    assert.equal(services[0].price, 3456);
+    assert.equal(services[0].description, 'My own description');
+    assert.equal(services[0].imageUrl, 'https://example.com/custom.jpg');
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('each template advertises the actual starter count and seeds complete, valid services only on click', async () => {
+  const profile = { businessType: 'hair_salon', ownerName: 'Owner', socialVideos: [], gallery: [] } as unknown as SalonProfile;
+  let services: SalonService[] = [];
+  function Harness({ templateId }: { templateId: BusinessTypeId }) {
+    const [rows, setServices] = useState<SalonService[]>([]);
+    services = rows;
+    return React.createElement(WebsiteContentEditor, { profile, setProfile: () => assert.fail('starter services must not change the profile'), services: rows, setServices, templateId });
+  }
+  const container = document.createElement('div'); const root = createRoot(container);
+  try {
+    for (const template of TEMPLATE_REGISTRY) {
+      await act(async () => root.render(React.createElement(Harness, { key: template.id, templateId: template.id })));
+      assert.deepEqual(services, [], `${template.id}: no seeding on mount or template change`);
+      const expected = addMissingStarterServices(undefined, template.id);
+      const starterButton = button(container, 'Add missing starter content');
+      assert.equal(starterButton.textContent?.trim(), `Add missing starter content (${expected.length} template services)`);
+      await act(async () => starterButton.click());
+      assert.deepEqual(services, expected, template.id);
+      assert.ok(services.every(s => s.imageUrl && isSafeImageUrl(s.imageUrl) && s.description.trim()), template.id);
+      assert.equal(websiteContentError({ profile, services }), null, template.id);
+    }
   } finally { await act(async () => root.unmount()); }
 });

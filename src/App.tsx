@@ -1,4 +1,3 @@
-import { addMissingStarterServices } from './data/categoryStarterServices';
 import { websiteSnapshot, writeWebsiteDraft, recoverWebsiteDraft, acknowledgeWebsiteDraft, type WebsiteSnapshot } from './lib/websiteDraft';
 import type { WebsiteFieldIssue } from './lib/websiteValidation';
 import { prepareWebsiteStateForSave } from './lib/websiteContentNormalize';
@@ -1566,7 +1565,6 @@ export default function App() {
   // in the editor) after this hydration has succeeded, so a client that failed
   // to load existing rows can never wipe them.
   const hydratedForUserRef = useRef(false);
-  const templateSelectionVersionRef = useRef(0);
   const [workspaceHydration, setWorkspaceHydration] = useState<'loading' | 'ready' | 'error'>('loading');
   const draftBaselineRef = useRef<{ ownerId: string; siteId: string; state: WebsiteSnapshot } | null>(null);
   const cacheWebsiteDraft = useCallback(() => {
@@ -1687,12 +1685,9 @@ export default function App() {
                 setStylists(next.stylists);
                 setLoyaltyConfig(next.loyaltyConfig);
                 setSelectedTemplateId(next.selectedTemplateId as BusinessTypeId);
-                // Keep the "previous template" that mergeTemplatePreservingUserData
-                // compares against in step immediately. Without this there is a
-                // one-render window where previousTemplateIdRef still holds the
-                // default, and picking a template in it would treat the owner's
-                // restored values as the OLD template's defaults and replace
-                // them — the exact data loss this is meant to prevent.
+                // Restore the saved selection and its comparison ref together.
+                // Hydration never imports template services or staff, including
+                // when the owner has intentionally saved an empty list.
                 previousTemplateIdRef.current = next.selectedTemplateId as BusinessTypeId;
               }
             } else {
@@ -2400,25 +2395,8 @@ export default function App() {
 
   const handleSelectTemplate = (catId: BusinessTypeId) => {
     if (!getTemplateById(catId)) return;
-    // An explicit switch can seed an empty menu; existing menus and owner
-    // identity are never replaced. Hydration itself never imports starters.
-    const selectionVersion = ++templateSelectionVersionRef.current;
-    if (catId !== selectedTemplateId) {
-      if (user?.id && !isMockSupabase && !hydratedForUserRef.current) {
-        // A temporarily blank loading state is not an empty cloud menu.
-        const ownerId = user.id;
-        void startHydrationRef.current(ownerId).then(loaded => {
-          if (!loaded || salonStateRef.current.user?.id !== ownerId || selectionVersion !== templateSelectionVersionRef.current) return;
-          setSelectedTemplateId(catId);
-          previousTemplateIdRef.current = catId;
-          setServices(current => addMissingStarterServices(current, catId));
-        });
-      } else {
-        setServices(current => addMissingStarterServices(current, catId));
-      }
-    }
+    // Template selection changes presentation only; starter content is opt-in.
     setSelectedTemplateId(catId);
-    previousTemplateIdRef.current = catId;
   };
 
   const handleSelectCategory = (catId: BusinessTypeId) => {

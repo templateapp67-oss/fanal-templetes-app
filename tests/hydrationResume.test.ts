@@ -112,6 +112,14 @@ test('no saved row at all applies nothing', () => {
   // state" — otherwise a brand-new owner's defaults would be wiped.
 });
 
+test('hydration restores intentionally empty menus and teams without importing template defaults', () => {
+  const saved = { ...savedPartialSetup, services: [], stylists: [] };
+  const next = merge(freshDevice(), undefined, saved)!;
+  assert.strictEqual(next.services, saved.services, 'the empty saved menu is authoritative');
+  assert.strictEqual(next.stylists, saved.stylists, 'the empty saved team is authoritative');
+  assert.equal(next.selectedTemplateId, saved.selectedTemplateId);
+});
+
 // ---------------------------------------------------------------------------
 // Edits made while the read was in flight must survive
 // ---------------------------------------------------------------------------
@@ -145,6 +153,14 @@ test('arrays replaced during the read are kept', () => {
   const next = merge(current, beforeRead)!;
   assert.deepEqual(next.services, editedServices, 'the local array wins');
   assert.deepEqual(next.stylists, savedPartialSetup.stylists, 'the untouched one still restores');
+});
+
+test('services and staff intentionally deleted during hydration stay empty', () => {
+  const beforeRead = freshDevice();
+  const current = { ...beforeRead, services: [], stylists: [] };
+  const next = merge(current, beforeRead)!;
+  assert.strictEqual(next.services, current.services, 'the locally deleted menu is kept');
+  assert.strictEqual(next.stylists, current.stylists, 'the locally deleted team is kept');
 });
 
 test('empty lists React re-creates right after sign-in are not edits — the saved services and team still load', () => {
@@ -260,5 +276,6 @@ test('Phase 12 — Template switching code preserves canonical business data and
   assert.match(appCode, /setSelectedTemplateId\(catId\)/);
 
   const selectTmplFunc = appCode.slice(appCode.indexOf('const handleSelectTemplate ='), appCode.indexOf('const handleSelectCategory ='));
-  assert.doesNotMatch(selectTmplFunc, /ensure_owner_workspace|setProfile|setServices|setStylists/, 'Template change must not provision or rebuild DB records');
+  assert.doesNotMatch(selectTmplFunc, /ensure_owner_workspace|setProfile|setServices|setStylists|startHydration|\.then\(/, 'Template change must not provision or rebuild DB records, even asynchronously');
+  assert.doesNotMatch(appCode, /addMissingStarterServices/, 'starter seeding belongs to the explicit content-editor action, never App hydration');
 });
