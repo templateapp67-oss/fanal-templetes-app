@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { TestimonialModal } from './ClientTestimonials';
 import type { Testimonial } from '../data/templates';
 import type { SalonProfile, SalonService, BusinessTypeId } from '../types';
 import { getTemplateById } from '../data/templates';
+import { addMissingStarterServices } from '../data/categoryStarterServices';
 import { ContentImageField } from './ContentImageField';
 import { YouTubeVideoEditor } from './YouTubeVideoEditor';
 import { AIBioModal } from './AIBioModal';
@@ -55,7 +56,12 @@ export function WebsiteContentEditor({ profile, setProfile, services, setService
   profile: SalonProfile; setProfile: React.Dispatch<React.SetStateAction<SalonProfile>>;
   services?: SalonService[]; setServices?: React.Dispatch<React.SetStateAction<SalonService[]>>; templateId?: BusinessTypeId;
 }) {
-  const template = getTemplateById(templateId || profile.businessType);
+  const starterTemplateId = templateId || profile.businessType;
+  const template = getTemplateById(starterTemplateId);
+  const starterServiceCount = useMemo(
+    () => addMissingStarterServices(undefined, starterTemplateId).length,
+    [starterTemplateId]
+  );
   const [reviewOpen, setReviewOpen] = useState(false);
   const [editingReview, setEditingReview] = useState<Testimonial | null>(null);
   const [bioGeneratorOpen, setBioGeneratorOpen] = useState(false);
@@ -65,6 +71,15 @@ export function WebsiteContentEditor({ profile, setProfile, services, setService
   const hints = profileHints(profile.businessType);
   const bioField = useFieldIssueProps('profile.ownerBio');
   return <div className="space-y-5 text-slate-900">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
+      <h3 className="font-bold">Starter website content</h3>
+      <p className="text-xs text-slate-500">Add template services to an empty menu. Existing services, owner details and media are never changed.</p>
+      <button type="button" disabled={!setServices || starterServiceCount === 0}
+        onClick={() => setServices?.(current => addMissingStarterServices(current, starterTemplateId))}
+        className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+        Add missing starter content ({starterServiceCount} template services)
+      </button>
+    </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
       <h3 className="font-bold">Owner / Founder profile</h3>
       <p className="text-xs text-slate-500">Public professional details only. Personal account details such as date of birth are never shown here.</p>
