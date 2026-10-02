@@ -21,6 +21,7 @@ test('only a direct editor request without an owned salon enters website onboard
   assert.equal(shouldRedirectEditorToWebsiteOnboarding('/editor', 0), true);
   assert.equal(shouldRedirectEditorToWebsiteOnboarding('/editor?site=site-1', 0), true);
   assert.equal(shouldRedirectEditorToWebsiteOnboarding('/editor?site=site-1', 1), false);
+  assert.equal(shouldRedirectEditorToWebsiteOnboarding('/editor', 0, false, true), false);
 });
 
 test('a selected template opens the existing editor even before a salon is created', () => {

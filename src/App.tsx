@@ -23,7 +23,8 @@ import {
   validateSiteOwnership,
 } from './lib/ownerSalonResolution';
 import {
-  requiresOwnerEditorSetup,
+  resolveLoggedInOwnerDestination,
+  resolvePostAuthDestination,
   shouldRedirectEditorToWebsiteOnboarding,
 } from './lib/ownerRouteGuard';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -99,8 +100,6 @@ import {
   parseNextUrl,
   parseSiteParam,
   buildEditorUrl,
-  buildSettingsProfileUrl,
-  SETTINGS_PROFILE_PATH,
   ONBOARDING_WEBSITE_PATH,
   EDITOR_PATH,
   TEMPLATES_PATH,
@@ -345,6 +344,9 @@ export default function App() {
     }
     if (isSettingsProfilePath(path)) {
       setIsProfileSettingsOpen(true);
+      // Stay in the owner workspace. A settings visit must not keep rendering
+      // the public landing page or template preview chrome behind the modal.
+      setCurrentViewState((view) => (view === 'templates' || view === 'landing' ? 'wizard' : view));
       return;
     }
     if (isTemplatesPath(path)) {
@@ -1259,36 +1261,33 @@ export default function App() {
     const isEditorRoute = isEditorPath(path);
     const isOnboardingRoute = isOnboardingWebsitePath(path);
 
-    // Home and the SaaS dashboard are valid destinations for every signed-in
-    // owner. They are not setup gates: a slow/empty salon query must never
-    // eject someone from either route into Explore Templates.
-    // `/onboarding/website` is likewise explicit: visiting it is allowed, but
-    // it must not trap a user who later chooses Home or Dashboard.
-    const requiresEditorSetup = requiresOwnerEditorSetup(path);
-
     const completeness = checkProfileCompleteness(profile, user);
+    const ownerDestination = resolveLoggedInOwnerDestination({
+      path,
+      search,
+      profileComplete: completeness.isComplete,
+    });
 
     // 1. Profile Incomplete check -> redirect to /settings/profile?next=...
-    if (!completeness.isComplete && requiresEditorSetup) {
-      if (!isProfileRoute) {
-        const nextParam = isEditorRoute || isOnboardingRoute ? path : '/editor';
-        const redirectUrl = buildSettingsProfileUrl(nextParam);
-        console.info('[Middleware Guard] Profile incomplete -> redirecting to', redirectUrl);
-        setTargetNextPath(nextParam);
+    //    Logged-in visits to Profile / Settings stay there. `next=/editor`
+    //    is the only continuation, never the public landing/template preview.
+    if (ownerDestination.action === 'redirect') {
+      if (ownerDestination.openProfile) {
+        setTargetNextPath(isEditorRoute || isOnboardingRoute ? `${path}${search || ''}` : EDITOR_PATH);
         setIsProfileSettingsOpen(true);
-        navigate(redirectUrl);
       } else {
-        setIsProfileSettingsOpen(true);
+        setIsProfileSettingsOpen(false);
       }
+      console.info('[Middleware Guard] Continuing signed-in owner to', ownerDestination.to);
+      navigate(ownerDestination.to);
       return;
     }
 
-    // If profile was incomplete and is now complete:
-    if (isProfileRoute && completeness.isComplete) {
-      const nextFromUrl = parseNextUrl(search || '') || targetNextPath || '/editor';
-      console.info('[Middleware Guard] Profile complete -> proceeding to next destination:', nextFromUrl);
-      setIsProfileSettingsOpen(false);
-      navigate(nextFromUrl);
+    if (isProfileRoute) {
+      setIsProfileSettingsOpen(true);
+      if (currentView === 'templates' || currentView === 'landing') {
+        setCurrentViewState('wizard');
+      }
       return;
     }
 
@@ -1303,7 +1302,7 @@ export default function App() {
       // should become the Explore Templates route.
       const selectedEditorTemplate = editorTemplateId(search || '');
       const hasSelectedEditorTemplate = Boolean(selectedEditorTemplate && getTemplateById(selectedEditorTemplate));
-      if (shouldRedirectEditorToWebsiteOnboarding(path, count, hasSelectedEditorTemplate)) {
+      if (shouldRedirectEditorToWebsiteOnboarding(path, count, hasSelectedEditorTemplate, completeness.isComplete)) {
         if (!isOnboardingRoute && currentPathNorm !== '/wizard') {
           console.info('[Owner Editor Guard] 0 sites found -> routing to /onboarding/website');
           navigate(ONBOARDING_WEBSITE_PATH);
@@ -3102,14 +3101,18 @@ export default function App() {
           setCurrentViewState('wizard');
           setWizardStartingStep(1);
           const chosenTemplate = editorTemplateId(search);
-          if (chosenTemplate && getTemplateById(chosenTemplate)) {
+          const intended = resolvePostAuthDestination(path, search);
+          if (chosenTemplate && getTemplateById(chosenTemplate) && !parseNextUrl(search || '')) {
             setSelectedTemplateId(chosenTemplate as BusinessTypeId);
             previousTemplateIdRef.current = chosenTemplate as BusinessTypeId;
             navigate(buildEditorUrl(null, chosenTemplate));
             showToast('Your selected design is ready to customize.');
-          } else {
+          } else if (intended === EDITOR_PATH && !isEditorPath(path) && !isSettingsProfilePath(path) && !parseNextUrl(search || '')) {
             navigate(ONBOARDING_WEBSITE_PATH);
             showToast('Welcome! Complete your quick website setup to go live.');
+          } else {
+            navigate(intended);
+            setIsProfileSettingsOpen(isSettingsProfilePath(intended));
           }
         }}
       />

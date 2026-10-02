@@ -4,6 +4,7 @@ import { describeError, isAuthLikeFailure, isSessionExpiryFailure } from './auto
 import { ensureFreshSession, refreshSessionForSave, SESSION_REFRESH_HINT } from './authSession';
 import { resolveOwnerWorkspace } from './ownerWorkspace';
 import { prepareWebsiteStateForSave } from './websiteContentNormalize';
+import { DEFAULT_DEPOSIT_PERCENT, normalizeDepositPercentage } from './advanceDeposit';
 
 // Serialize profile and editor writes so an older in-flight autosave cannot
 // land after an explicit profile save in this tab.
@@ -47,9 +48,23 @@ async function writeOwnerEditorState(
     stylists: payload.stylists as any,
   });
   const callSaveRpc = async (): Promise<unknown | null> => {
+    const depositPercent = normalizeDepositPercentage(
+      (prepared.payload.profile as { depositPercentage?: unknown } | undefined)?.depositPercentage
+    );
     const { error } = await db.rpc('save_owner_editor_state', { p_state: {
-      profile: prepared.payload.profile, services: prepared.payload.services,
+      profile: {
+        ...(prepared.payload.profile as object),
+        depositPercentage: depositPercent,
+        deposit_25: DEFAULT_DEPOSIT_PERCENT,
+      },
+      services: prepared.payload.services,
       stylists: prepared.payload.stylists, loyaltyConfig: payload.loyaltyConfig,
+      bookingSettings: {
+        require_deposit: Boolean((prepared.payload.profile as { requireDeposit?: unknown } | undefined)?.requireDeposit),
+        deposit_percent: depositPercent,
+        deposit_percentage: depositPercent,
+        deposit_25: DEFAULT_DEPOSIT_PERCENT,
+      },
       ...(payload.appointments !== undefined ? { appointments: payload.appointments } : {}),
       ...(payload.clients !== undefined ? { clients: payload.clients } : {}),
       ...(payload.selectedTemplateId !== undefined ? { selectedTemplateId: payload.selectedTemplateId } : {}),

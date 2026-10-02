@@ -436,7 +436,7 @@ export function getBlankOnboardingProfile(user?: any): SalonProfile {
     tiktokHandle: '',
     tiktokProfile: '',
     requireDeposit: false,
-    depositPercentage: 20,
+    depositPercentage: 25,
     whiteLabelEnabled: true,
     ownerId: user?.id,
     promotionalBanner: { enabled: false, text: '' },

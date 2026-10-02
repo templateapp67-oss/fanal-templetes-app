@@ -1,5 +1,6 @@
 import { buildYouTubeWatchUrl, extractYouTubeId } from '../utils/youtube.js';
 import { fitSeoKeywords } from './seoKeywords.js';
+import { DEFAULT_DEPOSIT_PERCENT, normalizeDepositPercentage } from './advanceDeposit.js';
 import {
   DEFAULT_GALLERY_IMAGE_URL,
   blockingWebsiteIssues,
@@ -196,6 +197,19 @@ function healProfile(profile: unknown, changes: WebsiteContentChange[]): unknown
 
   // Too many keywords for the database: keep the first ones that fit. Only whole keywords
   // are dropped; a single keyword that is itself too long is left for the owner to fix.
+  if (
+    next.depositPercentage !== undefined
+    || next.deposit_percentage !== undefined
+    || next.deposit_percent !== undefined
+    || next.deposit_25 !== undefined
+  ) {
+    const depositPercentage = normalizeDepositPercentage(
+      next.depositPercentage ?? next.deposit_percentage ?? next.deposit_percent ?? next.deposit_25 ?? DEFAULT_DEPOSIT_PERCENT
+    );
+    if (next.depositPercentage !== depositPercentage) set({ depositPercentage });
+    if (next.deposit_25 !== DEFAULT_DEPOSIT_PERCENT) set({ deposit_25: DEFAULT_DEPOSIT_PERCENT });
+  }
+
   const keywords = next.seoKeywords;
   if (typeof keywords === 'string' && Array.from(keywords).length > WEBSITE_LIMITS.seoKeywords) {
     const fit = fitSeoKeywords(keywords, WEBSITE_LIMITS.seoKeywords);
