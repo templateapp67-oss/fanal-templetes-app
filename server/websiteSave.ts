@@ -206,15 +206,24 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         });
       }
 
+      const depositPercent = Math.max(0, Math.min(100, Math.round(Number(cleanProfile?.depositPercentage ?? 25) || 25)));
       const extraState = {
         ...(Array.isArray(salonData.appointments) ? { appointments: salonData.appointments } : {}),
         ...(Array.isArray(salonData.clients) ? { clients: salonData.clients } : {}),
         ...(salonData.selectedTemplateId !== undefined ? { selectedTemplateId: salonData.selectedTemplateId } : {}),
+        bookingSettings: (salonData.bookingSettings && typeof salonData.bookingSettings === 'object')
+          ? salonData.bookingSettings
+          : {
+              require_deposit: Boolean(cleanProfile?.requireDeposit),
+              deposit_percent: depositPercent,
+              deposit_percentage: depositPercent,
+              deposit_25: 25,
+            },
       };
       // Use the same transaction as the editor. Never write salon fields into identity profiles.
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const savedState = {
-        profile: cleanProfile,
+        profile: { ...cleanProfile, depositPercentage: depositPercent, deposit_25: 25 },
         ...(salonData.services !== undefined ? { services: content.services } : {}),
         ...(salonData.stylists !== undefined ? { stylists: content.stylists } : {}),
         ...extraState,

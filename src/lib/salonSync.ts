@@ -34,6 +34,7 @@ import { getTikTokValue } from '../utils/social.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from '../types.js';
 import { toDbId, withRetry, describeError, isAuthLikeFailure } from './autoSave.js';
+import { DEFAULT_DEPOSIT_PERCENT, normalizeDepositPercentage } from './advanceDeposit.js';
 
 /** Namespaces keep the same logical id from colliding across tables. */
 export const SERVICE_ID_NAMESPACE = 'nexora-service';
@@ -131,7 +132,7 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     border_radius: profile.borderRadius ?? null,
     appearance: profile.appearance ?? null,
     require_deposit: profile.requireDeposit,
-    deposit_percentage: profile.depositPercentage,
+    deposit_percentage: normalizeDepositPercentage(profile.depositPercentage ?? DEFAULT_DEPOSIT_PERCENT),
     // Home-service toggle/charge/radius (edited in Side Panel Customizer) —
     // previously stored only in localStorage, so it silently reset after a
     // reload and never reached the public site served from the database.

@@ -16,6 +16,24 @@
 
 export const DEFAULT_DEPOSIT_PERCENT = 25;
 
+/**
+ * Integer 0–100 percentage written to `salon_booking_settings`.
+ * Invalid / missing values become 25 so Postgres check constraints such as
+ * `salon_booking_settings_deposit_25_check` accept the row.
+ */
+export function normalizeDepositPercentage(value: unknown): number {
+  if (value === undefined || value === null) return DEFAULT_DEPOSIT_PERCENT;
+  const raw = typeof value === 'string' ? value.trim() : value;
+  if (raw === '') return DEFAULT_DEPOSIT_PERCENT;
+  const n = typeof raw === 'string' && raw.endsWith('%')
+    ? Number(raw.slice(0, -1))
+    : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_DEPOSIT_PERCENT;
+  const rounded = Math.round(n);
+  if (rounded < 0 || rounded > 100) return DEFAULT_DEPOSIT_PERCENT;
+  return rounded;
+}
+
 export interface AdvanceDeposit {
   /** Whole rupees the customer pays now. */
   rupees: number;

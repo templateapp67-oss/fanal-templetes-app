@@ -942,6 +942,12 @@ export async function saveViaWebsiteApi(
           stylists: prepared.payload.stylists,
           loyaltyConfig: payload.loyaltyConfig,
           selectedTemplateId: payload.selectedTemplateId,
+          bookingSettings: {
+            require_deposit: Boolean((prepared.payload.profile as { requireDeposit?: unknown } | undefined)?.requireDeposit),
+            deposit_percent: Number((prepared.payload.profile as { depositPercentage?: unknown } | undefined)?.depositPercentage ?? 25),
+            deposit_percentage: Number((prepared.payload.profile as { depositPercentage?: unknown } | undefined)?.depositPercentage ?? 25),
+            deposit_25: 25,
+          },
         },
       }),
       ...(controller ? { signal: controller.signal } : {}),
