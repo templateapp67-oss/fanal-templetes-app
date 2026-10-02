@@ -338,7 +338,7 @@ test('a verified ACTIVE partner is forwarded to /partner/dashboard (the success 
   }
 });
 
-test('a signed-in normal user gets the exact access denial and can switch account', async () => {
+test('a signed-in normal user gets the exact access denial and can open the direct Sign In flow', async () => {
   clearBrowserStores();
   const signOuts: number[] = [];
   const client = portalClient(
@@ -367,13 +367,23 @@ test('a signed-in normal user gets the exact access denial and can switch accoun
     );
     assert.doesNotMatch(document.body.textContent || '', /ALPHA01/);
     assert.equal(document.getElementById('partner-login-email'), null, 'no login form for a denied account');
+    // Both ways forward are visible on the access card: Sign Up (Become a
+    // Growth Partner) and the promoted, direct Sign In (Login) option.
+    assert.ok(
+      byText(document, 'button', 'Become a Growth Partner'),
+      'the Sign Up CTA stays visible for a signed-in non-partner'
+    );
+    assert.ok(
+      byText(document, 'button', 'Sign In'),
+      'the direct Sign In option is promoted on the access card'
+    );
 
     await click(
-      byText(document, 'button', 'Sign in with a different account') ?? null,
-      'the switch-account button'
+      byText(document, 'button', 'Sign In') ?? null,
+      'the direct Sign In button'
     );
-    assert.equal(signOuts.length, 1, 'switching account must really sign out');
-    assert.ok(document.getElementById('partner-login-email'), 'the login form returns after signing out');
+    assert.equal(signOuts.length, 1, 'Sign In must really sign out the non-partner session');
+    assert.ok(document.getElementById('partner-login-email'), 'the direct login form opens after clicking Sign In');
   } finally {
     await view.unmount();
   }

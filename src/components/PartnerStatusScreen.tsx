@@ -3,9 +3,6 @@ import { AlertCircle, Loader2, LogIn, RefreshCw, ShieldAlert } from 'lucide-reac
 import {
   GROWTH_PARTNER_INACTIVE_BODY,
   GROWTH_PARTNER_INACTIVE_TITLE,
-  GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE,
-  isMissingPartnerSchemaError,
-  toSafePartnerSectionError,
 } from '../lib/growthPartner';
 import { supabaseConfig } from '../lib/supabaseClient';
 
@@ -69,30 +66,22 @@ export const GrowthPartnerSignInPrompt: React.FC<{
   </main>
 );
 
+/**
+ * Access-error card for a signed-in account without the Growth Partner role.
+ * Both ways forward stay visible and clear: "Become a Growth Partner"
+ * (Sign Up) and "Sign In" (the direct login flow for anyone who already has
+ * a Growth Partner account).
+ */
 export const GrowthPartnerUnauthorized: React.FC<{
   onBack?: () => void;
   /** Namespace-specific denial copy (the /partner/* portal shows the spec's exact line). */
   body?: string;
-}> = ({ onBack, body }) => {
-  // The self-enrollment shortcut reports its own outcome: reloading blindly on
-  // failure hid a missing migration behind an unchanged screen.
-  const [notice, setNotice] = useState('');
-  const enrollSelf = async () => {
-    setNotice('');
-    try {
-      const { approveDemoGrowthPartnerAccount } = await import('../lib/growthPartner');
-      await approveDemoGrowthPartnerAccount();
-      if (typeof window !== 'undefined') {
-        window.location.reload();
-      }
-    } catch (error) {
-      setNotice(
-        isMissingPartnerSchemaError(error)
-          ? GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE
-          : toSafePartnerSectionError(error).message
-      );
-    }
-  };
+  /** "Become a Growth Partner" (Sign Up) — start a new partner application. */
+  onApply?: () => void;
+  /** "Sign In" — direct Login / Sign In flow for an existing partner account. */
+  onSignIn?: () => void;
+  accentHex?: string;
+}> = ({ onBack, body, onApply, onSignIn, accentHex = '#C20E5A' }) => {
   return (
   <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <PartnerStatusScreen
@@ -100,6 +89,29 @@ export const GrowthPartnerUnauthorized: React.FC<{
       title={GROWTH_PARTNER_UNAUTHORIZED_TITLE}
       body={body ?? GROWTH_PARTNER_UNAUTHORIZED_BODY}
     >
+      {/* Sign Up: apply for a brand-new Growth Partner account. */}
+      <button
+        type="button"
+        onClick={() => onApply?.()}
+        className="mt-6 w-full py-3 rounded-xl text-white text-sm font-bold cursor-pointer transition-opacity hover:opacity-90"
+        style={{ backgroundColor: accentHex }}
+      >
+        Become a Growth Partner
+      </button>
+      {/* Sign In: promoted directly under Sign Up for existing partner accounts. */}
+      <button
+        type="button"
+        onClick={() => onSignIn?.()}
+        className="mt-3 w-full py-3 rounded-xl border-2 border-slate-900 bg-white text-sm font-bold cursor-pointer text-slate-900 transition-opacity hover:opacity-80"
+      >
+        <span className="inline-flex items-center justify-center gap-2">
+          <LogIn className="w-4 h-4" aria-hidden="true" />
+          Sign In
+        </span>
+      </button>
+      <p className="mt-2 text-xs text-slate-500">
+        Already have a Growth Partner account? Sign in with it.
+      </p>
       <button
         type="button"
         onClick={() => onBack?.()}

@@ -10,6 +10,7 @@ import {
   Hourglass,
   KeyRound,
   Loader2,
+  LogIn,
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
@@ -80,7 +81,12 @@ import {
   validatePartnerApplication,
   type PartnerApplicationFieldErrors,
 } from '../lib/partnerApplicationValidation';
-import { PARTNER_DASHBOARD_PATH } from '../lib/router';
+import {
+  PARTNER_DASHBOARD_PATH,
+  PARTNER_LOGIN_PATH,
+  isGrowthPartnerLoginPath,
+  isPartnerLoginPath,
+} from '../lib/router';
 import brandedLogo from '../assets/nexora-salonos-logo.png';
 import partnerHero from '../assets/nexora-partner-hero.jpg';
 import { Field, FormAlert, SubmitButton } from '../onboarding/screens/Shell';
@@ -548,9 +554,30 @@ export const PartnerPortalMockNotice: React.FC<{ onBack?: () => void; logoSrc?: 
   </main>
 );
 
-/** The exact denial the spec requires for non-partners on `/partner/*`. */
+/**
+ * The exact denial the spec requires for non-partners on `/partner/*`.
+ *
+ * This is the default access-error card for a signed-in account that does not
+ * have the Growth Partner role. It always offers BOTH ways forward, clearly:
+ *
+ *   • "Become a Growth Partner" (Sign Up) — start a new partner application
+ *     with the current account;
+ *   • "Sign In" (Login) — the DIRECT sign-in flow for visitors who already
+ *     have a Growth Partner account: the current (non-partner) session is
+ *     signed out and the partner login form opens immediately.
+ *
+ * The old "Sign in with a different account" wording is gone on purpose: it
+ * read like an account-switcher instead of the login door it actually was.
+ */
 export const PartnerPortalUnauthorized: React.FC<{
   onBack?: () => void;
+  /** Direct Login / Sign In flow for an existing Growth Partner account. */
+  onSignIn?: () => void;
+  /**
+   * Legacy alias for `onSignIn` kept so older call sites keep working:
+   * signing "out of this account and into another one" IS the direct
+   * sign-in flow (it lands on the partner login form).
+   */
   onSwitchAccount?: () => void;
   onApply?: () => void;
   /**
@@ -559,7 +586,9 @@ export const PartnerPortalUnauthorized: React.FC<{
    * for a problem an operator has to fix.
    */
   notice?: string | null;
-}> = ({ onBack, onSwitchAccount, onApply, notice }) => (
+}> = ({ onBack, onSignIn, onSwitchAccount, onApply, notice }) => {
+  const handleSignIn = onSignIn ?? onSwitchAccount;
+  return (
   <main className="min-h-dvh flex items-center justify-center px-4 py-10 bg-slate-50">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
@@ -568,6 +597,7 @@ export const PartnerPortalUnauthorized: React.FC<{
     >
       <p className="mt-2 text-xs text-slate-500">{PARTNER_PORTAL_UNAUTHORIZED_HINT}</p>
       {notice ? <p role="status" className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">{notice}</p> : null}
+      {/* Sign Up: apply for a brand-new Growth Partner account. */}
       <button
         type="button"
         onClick={() => onApply?.()}
@@ -575,13 +605,20 @@ export const PartnerPortalUnauthorized: React.FC<{
       >
         Become a Growth Partner
       </button>
+      {/* Sign In: promoted directly under Sign Up for existing partner accounts. */}
       <button
         type="button"
-        onClick={() => onSwitchAccount?.()}
-        className="mt-3 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-100 text-slate-700 transition-opacity hover:opacity-90"
+        onClick={() => handleSignIn?.()}
+        className="mt-3 w-full py-3 rounded-xl border-2 border-slate-900 bg-white text-sm font-bold cursor-pointer text-slate-900 transition-opacity hover:opacity-80"
       >
-        Sign in with a different account
+        <span className="inline-flex items-center justify-center gap-2">
+          <LogIn className="w-4 h-4" aria-hidden="true" />
+          Sign In
+        </span>
       </button>
+      <p className="mt-2 text-xs text-slate-500">
+        Already have a Growth Partner account? Sign in with it to open your partner dashboard.
+      </p>
       <button
         type="button"
         onClick={() => onBack?.()}
@@ -591,7 +628,8 @@ export const PartnerPortalUnauthorized: React.FC<{
       </button>
     </StateCard>
   </main>
-);
+  );
+};
 
 export const PartnerPortalPendingReview: React.FC<{
   submittedAt?: string | null;
@@ -634,12 +672,13 @@ export const PartnerPortalPendingReview: React.FC<{
         >
           Back to app
         </button>
+        {/* Direct Sign In: opens the partner login form for an existing account. */}
         <button
           type="button"
           onClick={() => onSwitchAccount?.()}
           className="mt-3 w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
         >
-          Sign in with a different account
+          Sign In
         </button>
       </StateCard>
     </main>
@@ -663,12 +702,13 @@ export const PartnerPortalRejected: React.FC<{
       >
         Back to app
       </button>
+      {/* Direct Sign In: opens the partner login form for an existing account. */}
       <button
         type="button"
         onClick={() => onSwitchAccount?.()}
         className="mt-3 w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
       >
-        Sign in with a different account
+        Sign In
       </button>
     </StateCard>
   </main>
@@ -1300,6 +1340,24 @@ export const PartnerPortalLogin: React.FC<{
     setMode('login');
   };
 
+  /**
+   * The DIRECT Login / Sign In flow for visitors who already have a Growth
+   * Partner account but are currently denied (signed in with a non-partner
+   * account, or holding a stale session). It signs the current session out,
+   * opens the partner login form immediately and — when this card is shown
+   * on a protected URL rather than the login route itself — redirects to the
+   * dedicated login page (`/partner/login`).
+   */
+  const handleDirectSignIn = async () => {
+    await clearSession();
+    if (typeof window !== 'undefined') {
+      const path = window.location?.pathname || '';
+      if (!isPartnerLoginPath(path) && !isGrowthPartnerLoginPath(path)) {
+        navigate?.(PARTNER_LOGIN_PATH);
+      }
+    }
+  };
+
   // If the visitor navigated with ?switch=1 or ?signout=1, auto-clear stale non-partner session
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1676,7 +1734,7 @@ export const PartnerPortalLogin: React.FC<{
         ) : null}
         <PartnerPortalUnauthorized
           onBack={onBack}
-          onSwitchAccount={() => void clearSession()}
+          onSignIn={() => void handleDirectSignIn()}
           onApply={() => { setMode('apply'); setFormError(''); }}
           notice={enrollmentNotice}
         />

@@ -489,7 +489,11 @@ test('4. a normal user gets the unauthorized state on the login route, never par
   );
   assert.match(html, new RegExp(GROWTH_PARTNER_LOGIN_UNAUTHORIZED_TITLE));
   assert.match(html, new RegExp(GROWTH_PARTNER_LOGIN_UNAUTHORIZED_BODY));
-  assert.match(html, /Sign in with a different account/);
+  // Both ways forward are visible: Sign Up (Become a Growth Partner) and a
+  // clear, direct Sign In (Login) option — not the old switch-account wording.
+  assert.match(html, /Become a Growth Partner/);
+  assert.match(html, /Sign In/);
+  assert.doesNotMatch(html, /Sign in with a different account/);
   assert.doesNotMatch(html, /Your referral code/);
   assert.doesNotMatch(html, /ALPHA01/);
 });

@@ -3,7 +3,7 @@ import { ShieldAlert } from 'lucide-react';
 import { resolveGrowthPartnerGate, toSafePartnerSectionError, isMissingPartnerSchemaError, GROWTH_PARTNER_SCHEMA_MISSING_MESSAGE, type GrowthPartnerGate } from '../lib/growthPartner';
 import { PartnerLoading } from './PartnerLoading';
 import {
-  PartnerStatusScreen, GrowthPartnerLoading, GrowthPartnerUnauthorized,
+  PartnerStatusScreen, GrowthPartnerLoading, GrowthPartnerSignInPrompt, GrowthPartnerUnauthorized,
   GrowthPartnerInactive, GrowthPartnerMockNotice, GrowthPartnerLoadError,
   GROWTH_PARTNER_SESSION_TITLE, GROWTH_PARTNER_SESSION_BODY, GROWTH_PARTNER_ERROR_TITLE,
 } from './PartnerStatusScreen';
@@ -35,15 +35,19 @@ export function usePartnerRouteGuard(input: GuardInput): GrowthPartnerGate {
 }
 
 /** Never mounts protected children for a loading or denied account. */
-export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,unauthorizedBody,loadingReferralLink}: {
+export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,onApply,error,unauthorizedBody,loadingReferralLink,accentHex}: {
   gate: GrowthPartnerGate;
   children?: React.ReactNode;
   onBack?: () => void;
   onRetry?: () => void;
+  /** Direct Login / Sign In flow (opens the partner login page/form). */
   onSignIn?: () => void;
+  /** "Become a Growth Partner" (Sign Up) for accounts without the partner role. */
+  onApply?: () => void;
   error?: unknown;
   unauthorizedBody?: string;
   loadingReferralLink?: boolean;
+  accentHex?: string;
 }) {
   // Feedback for the self-enrollment shortcut: a failure must be visible. The
   // previous behaviour swallowed it and re-checked, which looked like a dead
@@ -72,10 +76,27 @@ export function PartnerRouteGuard({gate,children,onBack,onRetry,onSignIn,error,u
   };
 
   if (gate === 'ready') return <>{children}</>;
-  if (gate === 'loading' || gate === 'unauthenticated') return loadingReferralLink
+  if (gate === 'loading') return loadingReferralLink
     ? <main className="mx-auto max-w-6xl px-4 py-8"><PartnerLoading kind="link" label="Loading your referral link…" /></main>
     : <GrowthPartnerLoading />;
-  if (gate === 'unauthorized') return <GrowthPartnerUnauthorized onBack={onBack} body={unauthorizedBody} />;
+  // Logged-out visitors never see protected content (or an endless spinner):
+  // the hook above already redirects them to the login route (`/partner/login`
+  // or `/growth-partner/login`); when that redirect is suppressed (shared
+  // dashboard links) this shows a clear Sign In button instead.
+  if (gate === 'unauthenticated') return <GrowthPartnerSignInPrompt
+    onRequireAuth={() => onSignIn?.()}
+    accentHex={accentHex}
+  />;
+  // Signed in but without the Growth Partner role: keep BOTH paths visible —
+  // "Become a Growth Partner" (Sign Up) and "Sign In" (Login with an account
+  // that already is a Growth Partner).
+  if (gate === 'unauthorized') return <GrowthPartnerUnauthorized
+    onBack={onBack}
+    body={unauthorizedBody}
+    onApply={onApply}
+    onSignIn={onSignIn}
+    accentHex={accentHex}
+  />;
   if (gate === 'inactive') return <GrowthPartnerInactive onBack={onBack} />;
   if (gate === 'mock-mode') return <GrowthPartnerMockNotice onBack={onBack} />;
   if (gate === 'pending' || gate === 'rejected') return <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">

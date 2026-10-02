@@ -349,24 +349,24 @@ test('the sign-up switch opens the application form and its button submits the a
 // Signed-in states: pending review, admin queue, partner area
 // ---------------------------------------------------------------------------
 
-test('the "Application under review" card buttons re-check, go back and switch account', async () => {
+test('the "Application under review" card buttons re-check, go back and sign in', async () => {
   const actions: string[] = [];
   const view = await mount(
     React.createElement(GrowthPartnerLoginPendingReview, {
       submittedAt: '2026-09-12T04:29:32.256Z',
       onBack: () => actions.push('back'),
       onCheckAgain: () => actions.push('check-again'),
-      onSwitchAccount: () => actions.push('switch'),
+      onSwitchAccount: () => actions.push('sign-in'),
     })
   );
   try {
     await click(byText(document, 'button', 'Check again') ?? null, 'the Check again button');
     await click(byText(document, 'button', 'Back to app') ?? null, 'the Back to app button');
     await click(
-      byText(document, 'button', 'Sign in with a different account') ?? null,
-      'the switch account button'
+      byText(document, 'button', 'Sign In') ?? null,
+      'the direct Sign In button'
     );
-    assert.deepEqual(actions, ['check-again', 'back', 'switch']);
+    assert.deepEqual(actions, ['check-again', 'back', 'sign-in']);
   } finally {
     await view.unmount();
   }
@@ -419,21 +419,23 @@ test('the admin queue Approve and Reject buttons decide the row they belong to',
   }
 });
 
-test('the unauthorized card buttons go back and switch account', async () => {
+test('the unauthorized card shows both Sign Up and Sign In, and every button works', async () => {
   const actions: string[] = [];
   const view = await mount(
     React.createElement(GrowthPartnerLoginUnauthorized, {
       onBack: () => actions.push('back'),
-      onSwitchAccount: () => actions.push('switch'),
+      onSignIn: () => actions.push('sign-in'),
+      onApply: () => actions.push('apply'),
     })
   );
   try {
+    // Both ways forward are clearly visible for a signed-in non-partner.
+    assert.ok(byText(document, 'button', 'Become a Growth Partner'), 'the Sign Up CTA is visible');
+    assert.ok(byText(document, 'button', 'Sign In'), 'the direct Sign In option is visible');
+    await click(byText(document, 'button', 'Become a Growth Partner') ?? null, 'the Sign Up button');
+    await click(byText(document, 'button', 'Sign In') ?? null, 'the direct Sign In button');
     await click(byText(document, 'button', 'Back to app') ?? null, 'the Back to app button');
-    await click(
-      byText(document, 'button', 'Sign in with a different account') ?? null,
-      'the switch account button'
-    );
-    assert.deepEqual(actions, ['back', 'switch']);
+    assert.deepEqual(actions, ['apply', 'sign-in', 'back']);
   } finally {
     await view.unmount();
   }

@@ -100,20 +100,40 @@
 }
 
 @layer base {
+  /* Mobile-appliance containment: nothing may force horizontal body overflow.
+     Every template surface inherits these rules, so a fixed desktop width in
+     one component can never create a page-level horizontal scrollbar. */
   html {
-    max-width: 100vw;
+    width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
     overflow-y: scroll;
     scroll-behavior: smooth;
     scrollbar-gutter: stable;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body,
   #root {
     width: 100%;
-    max-width: 100vw;
+    max-width: 100%;
     min-height: 100dvh;
     overflow-x: hidden;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    /* Stops accidental double-tap zoom on buttons/links while keeping native
+       scroll + pinch behaviour everywhere else. */
+    touch-action: manipulation;
   }
 
   :root {
@@ -131,11 +151,6 @@
     --font-display: 'Manrope', sans-serif;
     --font-body: 'Hanken Grotesk', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
-  }
-
-  body {
-    margin: 0;
-    font-family: var(--font-body);
   }
 
   button,
@@ -174,9 +189,17 @@
   h1, h2, h3, h4, h5, h6, .font-display {
     font-family: var(--font-display);
     text-shadow: var(--heading-text-shadow, 0 1px 3px rgba(0, 0, 0, 0.45));
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
     word-break: break-word;
     hyphens: auto;
+    /* Titles must wrap as words, never collapse into a one-letter-wide
+       vertical strip because an ancestor squeezed their width. */
+    white-space: normal;
+  }
+
+  /* Long words, URLs and salon names wrap anywhere instead of overflowing. */
+  p, span, a, li, label, button {
+    overflow-wrap: anywhere;
   }
 
   .font-mono-caps {
@@ -337,4 +360,50 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(227, 189, 195, 0.3);
+}
+
+/* ===========================================================================
+   Horizontal-scroll rows: completely hidden scrollbars on every engine.
+   Touch swipe physics and desktop trackpad/wheel horizontal scrolling stay
+   native — only the visible scrollbar chrome is removed. Both class names
+   are used across the template renderers, so both are defined here.
+   =========================================================================== */
+.scrollbar-none,
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / legacy Edge */
+}
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome / Safari / WebKit */
+  width: 0;
+  height: 0;
+}
+
+/* Mobile sheets & modals: always fit the viewport width with breathing room,
+   never exceed a comfortable reading width, and scroll internally instead of
+   pushing the page behind them. */
+.mobile-sheet {
+  width: calc(100% - 24px);
+  max-width: 420px;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Compact app-like spacing for mobile template surfaces. Buttons keep a
+   44px minimum touch area even when their visual padding stays compact. */
+@media (max-width: 767px) {
+  .app-compact-buttons button {
+    min-height: 44px;
+  }
+
+  /* Fixed desktop widths must never reach a phone viewport. These guards stop
+     the historic offenders from forcing horizontal body overflow. */
+  .w-\[400px\],
+  .w-\[500px\],
+  .min-w-\[800px\] {
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
 }

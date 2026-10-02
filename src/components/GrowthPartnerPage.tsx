@@ -599,7 +599,10 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   if (gate !== 'ready') return <PartnerRouteGuard
     gate={gate} loadingReferralLink={contentSection === 'referral-code'}
     onBack={onBack} onRetry={() => setReloadKey(key => key + 1)}
-    onSignIn={() => navigate?.(loginRoute)} error={loadError}
+    onSignIn={() => navigate?.(loginRoute)}
+    onApply={() => navigate?.(loginRoute)}
+    error={loadError}
+    accentHex={accentHex}
     unauthorizedBody={isPartnerNamespace ? PARTNER_PORTAL_UNAUTHORIZED_BODY : undefined}
   />;
 

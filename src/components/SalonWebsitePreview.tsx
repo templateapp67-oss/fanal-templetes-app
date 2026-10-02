@@ -8,9 +8,11 @@ import { WebsiteVideoShowcase } from './WebsiteVideoShowcase';
 import { YouTubeVideoEditor } from './YouTubeVideoEditor';
 import { ContentImageField } from './ContentImageField';
 import { MobileBottomNav } from './MobileBottomNav';
+import { CompactServicesShowcase, groupUniqueServicesByCategory } from './CompactServicesShowcase';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSiteUrl } from '../lib/salonStore';
+import { usePathRoute, MY_BOOKINGS_PATH } from '../lib/router';
 import { useSalonSEO } from '../lib/useSalonSEO';
 import { useSalonFavicon } from '../lib/useSalonFavicon';
 import { copyToClipboard } from '../lib/clipboard';
@@ -42,6 +44,7 @@ import {
   PhoneCall,
   ZoomIn,
   ArrowRight, 
+  ArrowUp,
   Edit3, 
   Sliders, 
   Eye, 
@@ -299,7 +302,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Viewport & Editor Controls
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
+  const { navigate: navigateApp } = usePathRoute();
   const [mobileNavActive, setMobileNavActive] = useState<'home' | 'services' | 'location'>('home');
+  // Floating Back-to-Top appears only once the visitor has scrolled into the
+  // page, and sits above the mobile bottom navigation dock.
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onScroll = () => setShowBackToTop(window.scrollY > 480);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
   useEffect(() => {
     if (forcedDeviceMode) setDeviceMode(forcedDeviceMode);
   }, [forcedDeviceMode]);
@@ -597,6 +611,15 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     ? activeServices
     : activeServices.filter((s) => s.category === activeSubCategory);
 
+  // Read-only (customer-facing) services layout: strict deduplication +
+  // per-category single-line horizontal rows. The owner's edit mode keeps the
+  // rich editable grid below, so both surfaces stay in sync with the same data.
+  const compactServiceGroups = React.useMemo(
+    () => groupUniqueServicesByCategory(activeServices),
+    [activeServices]
+  );
+  const compactUniqueCount = compactServiceGroups.reduce((sum, group) => sum + group.services.length, 0);
+
   // Keep the pre-selected service / stylist valid when the template changes.
   useEffect(() => {
     if (!activeServices.some((s) => s.id === selectedService?.id)) {
@@ -676,6 +699,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     setMobileNavActive(id);
     const target = document.getElementById(`${id}-section`);
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // "More" bottom-sheet targets map onto existing page sections; the reviews
+  // block carries its own anchor (#reviews-section) added above.
+  const scrollToMoreTarget = (target: 'about' | 'gallery' | 'reviews' | 'faq') => {
+    const sectionIds: Record<typeof target, string> = {
+      about: 'home-section',
+      gallery: 'gallery-section',
+      reviews: 'reviews-section',
+      faq: 'location-section',
+    };
+    document.getElementById(sectionIds[target])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   // Complete the booking action that opened the auth dialog. This is keyed by
@@ -1413,7 +1448,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
         {sectionVisibility.header && (
-          <header className={`sticky top-0 z-30 flex min-w-0 flex-wrap sm:flex-nowrap items-center justify-between gap-2 px-3 py-2.5 sm:p-4 w-full max-w-full box-border overflow-hidden border-b transition-colors ${
+          <header className={`sticky top-0 z-30 flex min-w-0 flex-wrap sm:flex-nowrap items-center justify-between gap-2 px-3 py-2 sm:p-4 w-full max-w-full box-border overflow-hidden border-b transition-colors ${
             isDarkCanvas ? 'bg-[#121216]/95 backdrop-blur-md border-neutral-800 text-white' : 'bg-white/95 backdrop-blur-md border-slate-100 text-slate-900'
           }`}>
             <div className="flex min-w-0 max-w-full flex-1 items-center gap-2.5 sm:gap-3">
@@ -1564,7 +1599,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <button
                 type="button"
                 onClick={() => handleOpenBooking()}
-                className="w-full md:w-auto min-h-[48px] font-bold text-xs sm:text-sm px-4 sm:px-5 py-2.5 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-white hover:opacity-90"
+                className="w-full md:w-auto min-h-[44px] font-bold text-xs sm:text-sm px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-white hover:opacity-90"
                 style={{ backgroundColor: activeAccent.primaryHex }}
               >
                 <CalendarCheck className="w-4 h-4 shrink-0" />
@@ -1578,7 +1613,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
         {sectionVisibility.hero && (
-          <section id="home-section" className="relative w-full max-w-full min-w-0 box-border overflow-hidden transition-all bg-slate-950 text-white min-h-[460px] md:min-h-[540px] flex items-center scroll-mt-16">
+          <section id="home-section" className="relative w-full max-w-full min-w-0 box-border overflow-hidden transition-all bg-slate-950 text-white h-auto min-h-0 flex items-center scroll-mt-16">
             <div id="book" className="scroll-mt-20" />
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
             <div className="absolute inset-0 z-0 overflow-hidden">
@@ -1602,11 +1637,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-slate-950/80 to-transparent pointer-events-none" />
             </div>
 
-            {/* Hero Content Container with Dynamic Backdrop Glassmorphism */}
-            <div className="relative z-10 px-4 sm:px-6 md:px-12 py-8 sm:py-10 md:py-16 max-w-4xl w-full box-border mx-auto my-auto">
+            {/* Hero Content Container with Dynamic Backdrop Glassmorphism.
+                Content-based height: the hero grows with its text/CTAs instead
+                of a fixed 460/540px block, keeping it inside one viewport on
+                small phones. */}
+            <div className="relative z-10 px-4 sm:px-6 md:px-12 py-6 sm:py-10 md:py-16 max-w-4xl w-full box-border mx-auto my-auto">
               <div className={`w-full max-w-full box-border ${heroAIStyling.cardBackingClass} transition-all duration-500`}>
                 {/* Category badge & highlight tags */}
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 max-w-full mb-4 min-h-[2rem]">
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 max-w-full mb-3 min-h-[1.75rem]">
                   <span 
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wide uppercase shadow-xs transition-colors"
                     style={{ 
@@ -1726,12 +1764,13 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </div>
                 )}
 
-                {/* Primary Action Buttons */}
-                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 mt-8 w-full max-w-full box-border">
+                {/* Primary Action Buttons — compact paddings on mobile, 44px
+                    minimum touch targets preserved. */}
+                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 mt-5 md:mt-8 w-full max-w-full box-border">
                   <button
                     type="button"
                     onClick={() => handleOpenBooking()}
-                    className="w-full md:w-auto min-h-[48px] font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
+                    className="w-full md:w-auto min-h-[44px] font-bold text-sm px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
                     style={{ 
                       backgroundColor: heroAIStyling.primaryBtnBg,
                       color: heroAIStyling.primaryBtnText 
@@ -1745,7 +1784,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full md:w-auto min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-5 py-3.5 rounded-2xl border border-emerald-400/30 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+                    className="w-full md:w-auto min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl border border-emerald-400/30 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
                   >
                     <MessageSquare className="w-4 h-4 shrink-0" />
                     <span className="truncate">WhatsApp Us ({activeProfile.whatsapp})</span>
@@ -1941,7 +1980,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   >
                     {activeTemplate.title} Menu
                   </span>
-                  <span className="text-xs text-slate-400 font-mono">({filteredServices.length} Treatments)</span>
+                  <span className="text-xs text-slate-400 font-mono">({isEditMode ? filteredServices.length : compactUniqueCount} Treatments)</span>
                 </div>
 
                 <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight mt-1 break-words hyphens-auto">
@@ -1966,8 +2005,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
             </div>
 
-            {/* Elegant Tabbed Navigation Bar for Categories */}
-            <div className="mt-6 sm:mt-8 mb-6 sm:mb-8 border-b border-slate-100 dark:border-neutral-800 pb-2 flex items-center justify-between gap-4 flex-wrap w-full max-w-full box-border">
+            {isEditMode ? (
+            <>
+            {/* Elegant Tabbed Navigation Bar for Categories — owner edit mode only.
+                Customers get the compact single-line horizontal showcase below. */}
+            <div className="mt-4 sm:mt-6 mb-5 sm:mb-6 border-b border-slate-100 dark:border-neutral-800 pb-2 flex items-center justify-between gap-4 flex-wrap w-full max-w-full box-border">
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 max-w-full">
                 {subCategoriesList.map((subCat) => {
                   const isActive = activeSubCategory === subCat;
@@ -2174,6 +2216,26 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 </div>
               ))}
             </div>
+            </>
+            ) : (
+            /* Compact mobile-first showcase: deduplicated services grouped by
+               bold category headings, each in ONE single-line horizontal
+               snap-scroll row (hidden scrollbars + desktop arrow overlays). */
+            <div className="mt-4 sm:mt-6 w-full max-w-full min-w-0 box-border">
+              <CompactServicesShowcase
+                services={activeServices}
+                accentHex={activeAccent.primaryHex}
+                isDarkCanvas={isDarkCanvas}
+                imageFallback={serviceImageFallback(selectedCategoryKey)}
+                acceptsOnlineBookings={activeProfile.acceptsOnlineBookings !== false}
+                whatsappHrefFor={(srv) => bookingWhatsapp
+                  ? `https://wa.me/${bookingWhatsapp}?text=${encodeURIComponent(`Hello ${activeProfile.businessName}, I would like to book ${srv.name} (${srv.durationMinutes} mins) for ₹${srv.price}.`)}`
+                  : ''}
+                onBook={(srv) => handleOpenBooking(srv)}
+                onPreviewIntercept={previewMode ? (event) => { event.preventDefault(); showNotification('Preview Mode: This action is simulated.'); } : undefined}
+              />
+            </div>
+            )}
           </section>
         )}
 
@@ -2395,7 +2457,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* 5. CLIENT REVIEWS & TESTIMONIALS SECTION */}
         {/* ============================================================ */}
         {sectionVisibility.testimonials && (
-          <section className={`px-4 py-6 sm:p-6 md:p-12 border-b ${
+          <section id="reviews-section" className={`scroll-mt-16 px-4 py-6 sm:p-6 md:p-12 border-b ${
             isDarkCanvas ? 'bg-[#0f0f13] border-neutral-800' : 'bg-white border-slate-200'
           }`}>
             <div className="text-center max-w-3xl mx-auto mb-8">
@@ -2754,7 +2816,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* 8. FOOTER WITH DYNAMIC SOCIAL LINKS */}
-        <footer className={`w-full max-w-full box-border py-8 px-4 sm:px-6 md:px-12 border-t text-center ${
+        {/* The heavy footer is desktop-only: on mobile the bottom navigation
+            dock owns the page's end-of-content actions. */}
+        <footer className={`hidden md:block w-full max-w-full box-border py-8 px-4 sm:px-6 md:px-12 border-t text-center ${
           isDarkCanvas ? 'bg-[#0b0b0e] border-neutral-900 text-neutral-400' : 'bg-slate-50 border-slate-200 text-slate-500'
         }`}>
           <div className="max-w-7xl w-full box-border mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
@@ -2846,6 +2910,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           activeSection={mobileNavActive}
           onNavigateSection={scrollToMobileSection}
           onQuickBook={() => handleOpenBooking()}
+          onOpenBookings={() => (publicView ? navigateApp(MY_BOOKINGS_PATH) : handleOpenBooking())}
+          onMoreNavigate={scrollToMoreTarget}
           whatsappNumber={activeProfile.whatsapp}
           phoneNumber={activeProfile.phone}
           businessName={activeProfile.businessName}
@@ -2853,15 +2919,19 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           forceShowInPreview={deviceMode === 'mobile'}
         />
 
+        {/* Spacer so the fixed bottom dock never covers the page's tail on mobile */}
+        <div aria-hidden="true" className="md:hidden h-16 [height:calc(4rem+env(safe-area-inset-bottom))]" />
+
       </div>
 
-      {/* Floating Instant WhatsApp Button */}
+      {/* Floating Instant WhatsApp Button — stacks above the Back-to-Top
+          control on mobile (which itself sits above the bottom dock). */}
       {sectionVisibility.whatsappFloat && activeProfile.whatsapp?.replace(/\D/g, '') && (
         <a
           href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20book%20an%20appointment.`}
           target="_blank"
           rel="noreferrer"
-          className="layout-stable-fixed fixed bottom-6 right-6 mb-16 md:mb-0 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+          className="layout-stable-fixed fixed bottom-6 right-6 max-md:bottom-[8.5rem] max-md:right-4 z-40 bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
           title="Chat on WhatsApp"
         >
           <MessageSquare className="w-5 h-5 fill-white" />
@@ -2869,6 +2939,18 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             WhatsApp Booking
           </span>
         </a>
+      )}
+
+      {/* Floating Back-to-Top — mobile only, clears the bottom navigation dock */}
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Back to top"
+          className="layout-stable-fixed md:hidden fixed bottom-20 right-4 z-40 h-11 w-11 rounded-full shadow-xl backdrop-blur-md flex items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95 bg-white/80 text-slate-800 border border-slate-200/60"
+        >
+          <ArrowUp className="w-5 h-5" />
+        </button>
       )}
 
       {/* Booking Modal Flow */}
