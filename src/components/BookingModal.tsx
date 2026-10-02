@@ -199,6 +199,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     return (services || []).filter((s) => s.category === selectedCategory);
   }, [services, selectedCategory]);
 
+  // Lock background page scroll while the booking flow is open (mobile app
+  // behaviour), restoring the previous value on close/unmount.
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isOpen]);
+
   // Keep track of the active primary service to automatically prune unlinked add-ons/upgrades
   const prevPrimaryIdRef = useRef<string | null>(initialService?.id || (services && services[0]?.id) || null);
   useEffect(() => {
@@ -1294,12 +1305,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs font-sans">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs font-sans">
       <motion.div
         initial={{ opacity: 0, scale: 0.98, y: 48 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.98, y: 48 }}
-        className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[94dvh] sm:max-h-[92dvh] flex flex-col overflow-hidden text-slate-800"
+        className="mobile-sheet bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 w-full max-h-[90dvh] sm:max-h-[88dvh] flex flex-col overflow-hidden text-slate-800"
       >
         {/* MODAL HEADER */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
