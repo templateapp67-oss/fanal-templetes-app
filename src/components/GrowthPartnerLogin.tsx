@@ -1,7 +1,7 @@
 import { safePartnerErrorMessage } from '../lib/partnerUiErrors';
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertCircle, Check, Hourglass, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-react';
+import { AlertCircle, Check, Hourglass, Loader2, LogIn, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import {
   fetchMyGrowthPartnerApplication,
@@ -497,23 +497,51 @@ export const GrowthPartnerLoginMockNotice: React.FC<{ onBack?: () => void }> = (
   </main>
 );
 
+/**
+ * Access-error card for the legacy `/growth-partner/login` route: a signed-in
+ * account that is not a Growth Partner. Both ways forward stay visible and
+ * clear — "Become a Growth Partner" (Sign Up) and "Sign In" (the direct
+ * login flow for anyone who already has a Growth Partner account).
+ */
 export const GrowthPartnerLoginUnauthorized: React.FC<{
   onBack?: () => void;
+  /** Direct Login / Sign In flow for an existing Growth Partner account. */
+  onSignIn?: () => void;
+  /** Legacy alias for `onSignIn` (kept so older call sites keep working). */
   onSwitchAccount?: () => void;
-}> = ({ onBack, onSwitchAccount }) => (
+  /** "Become a Growth Partner" (Sign Up) — start a new partner application. */
+  onApply?: () => void;
+}> = ({ onBack, onSignIn, onSwitchAccount, onApply }) => {
+  const handleSignIn = onSignIn ?? onSwitchAccount;
+  return (
   <main className="min-h-[70dvh] flex items-center justify-center px-4 py-16">
     <StateCard
       icon={<ShieldAlert className="w-7 h-7 text-slate-400" />}
       title={GROWTH_PARTNER_LOGIN_UNAUTHORIZED_TITLE}
       body={GROWTH_PARTNER_LOGIN_UNAUTHORIZED_BODY}
     >
+      {/* Sign Up: apply for a brand-new Growth Partner account. */}
       <button
         type="button"
-        onClick={() => onSwitchAccount?.()}
+        onClick={() => onApply?.()}
         className="mt-6 w-full py-3 rounded-xl text-sm font-bold cursor-pointer bg-slate-900 text-white transition-opacity hover:opacity-90 shadow-sm"
       >
-        Sign in with a different account
+        Become a Growth Partner
       </button>
+      {/* Sign In: promoted directly under Sign Up for existing partner accounts. */}
+      <button
+        type="button"
+        onClick={() => handleSignIn?.()}
+        className="mt-3 w-full py-3 rounded-xl border-2 border-slate-900 bg-white text-sm font-bold cursor-pointer text-slate-900 transition-opacity hover:opacity-80"
+      >
+        <span className="inline-flex items-center justify-center gap-2">
+          <LogIn className="w-4 h-4" aria-hidden="true" />
+          Sign In
+        </span>
+      </button>
+      <p className="mt-2 text-xs text-slate-500">
+        Already have a Growth Partner account? Sign in with it to open your partner area.
+      </p>
       <button
         type="button"
         onClick={() => onBack?.()}
@@ -523,7 +551,8 @@ export const GrowthPartnerLoginUnauthorized: React.FC<{
       </button>
     </StateCard>
   </main>
-);
+  );
+};
 
 export const GrowthPartnerLoginPendingReview: React.FC<{
   submittedAt?: string | null;
@@ -573,12 +602,13 @@ export const GrowthPartnerLoginPendingReview: React.FC<{
         >
           Back to app
         </button>
+        {/* Direct Sign In: opens the partner login form for an existing account. */}
         <button
           type="button"
           onClick={() => onSwitchAccount?.()}
           className="mt-3 w-full text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
         >
-          Sign in with a different account
+          Sign In
         </button>
       </StateCard>
     </main>
@@ -995,7 +1025,7 @@ export const GrowthPartnerLogin: React.FC<{
     return <GrowthPartnerLoginFailure
       title="Application not approved"
       body="Your Growth Partner application was not approved, so this dashboard stays closed for this account."
-      actionLabel="Sign in with a different account"
+      actionLabel="Sign In"
       onAction={() => void clearSession()}
     />;
   if (state === 'unauthorized')
@@ -1012,7 +1042,11 @@ export const GrowthPartnerLogin: React.FC<{
             />
           </div>
         ) : null}
-        <GrowthPartnerLoginUnauthorized onBack={onBack} onSwitchAccount={() => void clearSession()} />
+        <GrowthPartnerLoginUnauthorized
+          onBack={onBack}
+          onSignIn={() => void clearSession()}
+          onApply={() => { void clearSession().then(() => { setSignup(true); setFormError(''); setSignupFieldErrors({}); }); }}
+        />
       </>
     );
   if (state === 'inactive') return <GrowthPartnerLoginInactive onBack={onBack} />;

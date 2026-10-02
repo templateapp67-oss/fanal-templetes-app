@@ -117,20 +117,31 @@ export async function renderPublicSocialShell(
   }
 }
 
-export default async function middleware(request: Request): Promise<Response | undefined> {
+export default function middleware(request: Request): Promise<Response | undefined> {
   try {
-    return await renderPublicSocialShell(request);
+    return renderPublicSocialShell(request);
   } catch {
-    return;
+    // A metadata outage must never take a site down: continue to index.html.
+    return Promise.resolve<Response | undefined>(undefined);
   }
 }
 
 export const config = {
   // '/' is the only route this middleware touches, which is also its whole
   // blast radius: if it ever fails to load, only the home page is affected.
+  //
   // /partner/* and /growth-partner/* are deliberately NOT matched — they must
-  // reach the SPA, where the browser restores its Supabase session and
-  // PartnerRouteGuard decides. Matching them here would only add a second
-  // place that can take those routes down.
+  // reach the SPA, where the browser restores its Supabase session and the
+  // access check runs (usePartnerRouteGuard + PartnerRouteGuard +
+  // PartnerPortalLogin):
+  //   • logged-out visitors are redirected to the login page
+  //     (`/partner/login` or `/growth-partner/login`) — or, on shared
+  //     dashboard links where the redirect is suppressed, shown a clear
+  //     Sign In button;
+  //   • signed-in accounts without the Growth Partner role see the access
+  //     card offering BOTH "Become a Growth Partner" (Sign Up) and
+  //     "Sign In" (direct Login for an existing Growth Partner account).
+  // Matching them here would only add a second place that can take those
+  // routes down.
   matcher: ['/'],
 };

@@ -9,10 +9,12 @@ import { submitGrowthPartnerApplication, type GrowthPartnerAuthClient } from '..
 test('prospective partners see an application CTA instead of a hard lock', () => {
   const html = renderToStaticMarkup(React.createElement(PartnerPortalUnauthorized, {
     onApply: () => {},
-    onSwitchAccount: () => {},
+    onSignIn: () => {},
   }));
+  // Sign Up (application CTA) and a clear, direct Sign In (Login) option.
   assert.match(html, /Become a Growth Partner/);
-  assert.match(html, /Sign in with a different account/);
+  assert.match(html, /Sign In/);
+  assert.doesNotMatch(html, /Sign in with a different account/);
 });
 
 test('an authenticated existing user can submit the secure partner application RPC', async () => {

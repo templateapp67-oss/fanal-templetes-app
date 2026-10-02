@@ -69,6 +69,7 @@ import {
 import {
   PARTNER_PORTAL_LOGIN_TITLE,
   PARTNER_PORTAL_LOGIN_VERIFYING_LABEL,
+  PARTNER_PORTAL_PENDING_TITLE,
   PARTNER_PORTAL_UNAUTHORIZED_TITLE,
 } from '../src/lib/partnerPortalAuth';
 
@@ -280,7 +281,18 @@ test('the brand mark, verifying state and denial cards render without partner da
   const unauthorized = render(React.createElement(PartnerPortalUnauthorized));
   assert.ok(unauthorized.includes(PARTNER_PORTAL_UNAUTHORIZED_TITLE));
   assert.ok(unauthorized.includes('You do not have access to the Growth Partner portal.'));
-  assert.ok(unauthorized.includes('Sign in with a different account'));
+  // The access card promotes BOTH ways forward: Sign Up (Become a Growth
+  // Partner) immediately followed by a clear, direct Sign In (Login) option.
+  assert.ok(unauthorized.includes('Become a Growth Partner'));
+  assert.ok(unauthorized.includes('Sign In'));
+  assert.ok(
+    unauthorized.indexOf('Sign In') > unauthorized.indexOf('Become a Growth Partner'),
+    'the Sign In option is promoted right after the Sign Up button'
+  );
+  assert.ok(
+    !unauthorized.includes('Sign in with a different account'),
+    'the old switch-account wording is replaced by the direct Sign In flow'
+  );
 
   const inactive = render(React.createElement(PartnerPortalInactive));
   assert.ok(inactive.includes(GROWTH_PARTNER_INACTIVE_TITLE));
@@ -289,7 +301,7 @@ test('the brand mark, verifying state and denial cards render without partner da
   const pending = render(
     React.createElement(PartnerPortalPendingReview, { submittedAt: '2026-09-10T00:00:00Z' })
   );
-  assert.ok(pending.includes('Application under review'));
+  assert.ok(pending.includes(PARTNER_PORTAL_PENDING_TITLE));
   assert.doesNotMatch(pending, /ALPHA01/);
 
   const rejected = render(React.createElement(PartnerPortalRejected));
