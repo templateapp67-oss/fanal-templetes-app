@@ -3,10 +3,8 @@ import { AppView, SalonProfile } from '../types';
 import { PartnerProfileModal } from './PartnerProfileModal';
 import { NotificationBell } from './NotificationBell';
 import { AuthModal } from './AuthModal';
-import { isMockSupabase, supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabaseClient';
 import { clearAllLocalUserState } from '../lib/salonStore';
-import { useReferralCode } from '../lib/hooks/useReferralCode';
-import { getMyGrowthReferral } from '../lib/growthPartner';
 import { resolveOwnerProfileName } from '../lib/readPartnerProfile';
 
 interface HeaderProps {
@@ -20,77 +18,6 @@ interface HeaderProps {
   openAuth: (mode: 'login' | 'signup') => void;
   onOpenProfileSettings?: () => void;
 }
-
-const HeaderReferralWidget: React.FC = () => {
-  const { code: referralCode, loading: referralLoading } = useReferralCode();
-  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(null), 2000);
-    return () => clearTimeout(t);
-  }, [copied]);
-
-  if (referralLoading) {
-    return (
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 animate-pulse">
-        <div className="w-2 h-2 rounded-full bg-slate-300" />
-        <div className="w-20 h-3 rounded bg-slate-200" />
-      </div>
-    );
-  }
-
-  // This widget is for a partner sharing THEIR code, not a referred owner.
-  if (!referralCode) return null;
-
-  const referralUrl = `${window.location.origin}/signup?ref=${encodeURIComponent(referralCode)}`;
-
-  const handleCopyCode = () => {
-    if (!referralCode) return;
-    navigator.clipboard.writeText(referralCode).then(() => {
-      setCopied('code');
-    }).catch(() => {});
-  };
-
-  const handleCopyLink = () => {
-    if (!referralCode) return;
-    navigator.clipboard.writeText(referralUrl).then(() => {
-      setCopied('link');
-    }).catch(() => {});
-  };
-
-  return (
-    <div className="flex items-center gap-2 border border-pink-100 bg-rose-50/50 px-3 py-1.5 rounded-full shadow-2xs">
-      <button
-        type="button"
-        onClick={handleCopyCode}
-        className="flex items-center gap-1 text-[11px] font-bold text-[#C20E5A] hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none outline-none"
-        title="Click to copy your referral code"
-      >
-        <span className="material-symbols-outlined text-[14px]">confirmation_number</span>
-        <span className="font-mono tracking-tight">{referralCode}</span>
-        <span className="material-symbols-outlined text-[12px] text-[#C20E5A]/60">
-          {copied === 'code' ? 'check' : 'content_copy'}
-        </span>
-      </button>
-
-      <div className="w-px h-3 bg-pink-200" />
-
-      <button
-        type="button"
-        onClick={handleCopyLink}
-        className="flex items-center gap-1 text-[11px] font-bold text-[#A30B4A] hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none outline-none"
-        title="Copy shareable referral URL"
-      >
-        <span className="material-symbols-outlined text-[14px]">share</span>
-        <span>{copied === 'link' ? 'Copied Link!' : 'Share'}</span>
-        {copied !== 'link' && (
-          <span className="material-symbols-outlined text-[12px] text-[#A30B4A]/60">link</span>
-        )}
-      </button>
-    </div>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // The view switcher.
@@ -157,19 +84,6 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  // Incoming attribution is NOT the partner's own shareable referral code.
-  // Never read the URL or browser storage as evidence of a linked account.
-  const [incomingReferral, setIncomingReferral] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setIncomingReferral(null);
-    if (user?.id && !isMockSupabase) {
-      getMyGrowthReferral().then((relationship) => {
-        if (!cancelled) setIncomingReferral(relationship?.referral_code || null);
-      }).catch((error) => console.error('[Header] Referral relationship lookup failed', error));
-    }
-    return () => { cancelled = true; };
-  }, [user?.id]);
 
 
   // The menu is an overlay on top of the page, so Escape has to close it —
@@ -244,12 +158,6 @@ export const Header: React.FC<HeaderProps> = ({
           
           {user ? (
             <div className="flex items-center gap-4">
-              {/* Desktop Referral Tool */}
-              <div className="hidden sm:block">
-                {incomingReferral ? <span className="text-xs font-semibold text-emerald-800">Linked with code {incomingReferral}</span> : null}
-                <HeaderReferralWidget />
-              </div>
-
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Nexora Partner</span>
                 <span className="text-sm font-bold text-[#C20E5A]">
@@ -315,11 +223,7 @@ export const Header: React.FC<HeaderProps> = ({
           mobileNavOpen ? 'block' : 'hidden'
         }`}
       >
-        {user && (
-          <div className="px-4 pt-4 pb-2 border-b border-outline-variant/20 flex justify-center sm:hidden">
-            <HeaderReferralWidget />
-          </div>
-        )}
+
         <nav className="flex flex-col gap-1 p-4" aria-label="Main navigation">
           {HEADER_NAV_ENTRIES.map((entry) => {
             const active = isHeaderNavEntryActive(entry, currentView);
