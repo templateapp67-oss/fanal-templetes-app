@@ -31,7 +31,7 @@ const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 /** The debounced auto-save effect, from its comment to its dependency array. */
 function autoSaveEffect(): string {
   const start = app.indexOf('// Debounced auto-save.');
-  const end = app.indexOf('// Flush a pending debounced save');
+  const end = app.indexOf('// Cache synchronously on hide/close');
   assert.ok(start > -1 && end > start, 'the auto-save effect must exist');
   return app.slice(start, end);
 }

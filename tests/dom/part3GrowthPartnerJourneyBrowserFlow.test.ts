@@ -323,8 +323,14 @@ test(
       window.history.replaceState(null, '', handoffPath);
       await render(React.createElement(TemplateHandoffPage, { client: ownerClient as any, navigate: (to: string) => { landed = to; } }));
       await wait(() => landed !== '', 'entry into the Template App');
-      assert.equal(landed, '/');
+      assert.equal(landed, '/onboarding/website');
 
+      // Complete the explicit business setup after consuming the handoff.
+      await render(React.createElement(OnboardingApp, { path: '/onboarding/website', client: ownerClient as any, navigate: (to: string) => { landed = to; } }));
+      await wait(() => !!host.querySelector('#business-name'), 'business setup form');
+      await fill('#business-name', 'Part Three Salon');
+      await submit();
+      await wait(() => landed.startsWith('/editor?site='), 'provisioned website editor');
       const workspace = await ownerClient.rpc('get_my_owner_workspace');
       assert.equal(workspace.error, null);
       assert.equal(workspace.data.resolved, true, 'PART 3 provisioned a workspace at the handoff boundary');

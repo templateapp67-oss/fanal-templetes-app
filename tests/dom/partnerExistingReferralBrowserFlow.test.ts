@@ -28,15 +28,14 @@ test('registered visitors get an explicit notice and neither capture nor prefill
       const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
       try {
         await act(async () => root.render(React.createElement(OnboardingApp,{path:'/register',client,navigate:path => paths.push(path)})));
-        await wait(() => !!host.textContent?.includes('This account is already registered.'));
+        await wait(() => !!host.textContent?.includes('You are currently signed in as'));
         assert.equal(captures,0); assert.equal(paths.length,0,'notice precedes redirect');
         assert.equal(host.querySelector('input'),null);
         assert.ok(!calls.includes('link_my_growth_referral'));
         await act(async () => (host.querySelector('button') as HTMLElement).click());
-        await wait(() => !host.textContent?.includes('This account is already registered.') && !!host.querySelector('input, [data-onboarding-shell], main'));
+        assert.deepEqual(paths, ['/owner/dashboard'], 'existing account can open its own dashboard');
         assert.equal(captures,0);
-        if (linked) { assert.match(host.textContent!,/NEXORA-ORIGINAL/); assert.ok(!host.textContent?.includes('NEXORA-OTHER123')); }
-        else { assert.equal(host.querySelector<HTMLInputElement>('input')?.value,'','no new-link prefill for a registered account'); }
+        assert.equal(host.querySelector('input'),null,'no reassignment form for an existing account');
         assert.ok(!calls.includes('link_my_growth_referral'));
       } finally { await act(async () => root.unmount()); host.remove(); }
     }
@@ -64,7 +63,7 @@ test('register validates before redirect, shows invalid-code recovery and hides 
     assert.doesNotMatch(host.textContent!,/SUPERSECRET|secret_table|SQL/);
     mode='valid';
     await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent==='Retry')!.click());
-    await wait(() => host.querySelectorAll('input').length===5);
+    await wait(() => host.querySelectorAll('form input').length===5);
     assert.equal(captured,true);
   } finally { await act(async () => root.unmount()); host.remove(); globalThis.fetch=oldFetch; }
 });

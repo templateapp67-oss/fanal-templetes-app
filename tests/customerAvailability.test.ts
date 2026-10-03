@@ -75,3 +75,11 @@ test('checkout pins the advance to 25% after validating the server quote', async
  assert.equal(req.body.depositPercent,25);
  assert.equal(req.body.totalAmount,450);
 });
+
+test('JSON availability contracts retain actual slots, quote and explicitly selected staff', async()=>{
+ const payload={available_slots:[{time:'08:00',starts_at:'2026-10-10T02:30:00Z',ends_at:'2026-10-10T03:05:00Z'}],total_paise:45000};
+ const result=await customerAvailability(database({slots:payload}),input);
+ assert.equal(result.slots[0].time,'08:00');assert.equal(result.slots[0].staffId,staff);assert.equal(result.slots[0].totalPaise,45000);
+ const any=await customerAvailability(database({slots:payload}),{...input,staff_id:'any'});
+ assert.equal(any.slots[0].staffId,null,'never invent a staff assignment for an any-staff quote');
+});

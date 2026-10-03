@@ -23,7 +23,7 @@ export function usePartnerRouteGuard(input: GuardInput): GrowthPartnerGate {
     (!input.isMockMode && !!input.userId && input.verifiedFor !== input.userId)});
   const lastRedirect = useRef('');
   useEffect(() => {
-    if (input.isLoginPath || input.suppressUnauthenticatedRedirect || (gate !== 'unauthenticated' && gate !== 'session-expired')) {
+    if (input.isLoginPath || (input.suppressUnauthenticatedRedirect && gate === 'unauthenticated') || (gate !== 'unauthenticated' && gate !== 'session-expired')) {
       lastRedirect.current = ''; return;
     }
     const key = `${input.userId}:${gate}:${input.loginRoute}`;

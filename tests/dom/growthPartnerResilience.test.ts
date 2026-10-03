@@ -76,8 +76,8 @@ test('an empty dashboard payload renders honest unknowns — never the root erro
     assert.doesNotMatch(text, /undefined|NaN/);
     // Counts the backend did not send are stated as unknown ('—').
     assert.match(app.host.querySelector('[aria-label="Referral summary"]')!.textContent!, /—/);
-    // The partner card cannot invent a code, so it says so.
-    assert.match(text, /Referral code not available\./);
+    // The verified own-row code remains available when the dashboard omits it.
+    assert.match(text, /NEXORA-TEST01/);
     // No activity rows → the honest empty state, not a blank section.
     assert.match(text, /No referrals yet\./);
   } finally {

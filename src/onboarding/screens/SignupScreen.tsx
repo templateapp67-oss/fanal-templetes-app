@@ -121,7 +121,7 @@ export const SignupScreen: React.FC<{
       >
         <div className="space-y-4">
           <FormAlert tone="success">
-            Account created for {confirmationSent}. Verify your email to continue.
+            Verify your email to continue with {confirmationSent}. If your account is already verified, log in.
           </FormAlert>
           {resendNotice && (
             <FormAlert tone={resendNotice.tone}>{resendNotice.text}</FormAlert>
@@ -226,7 +226,12 @@ export const SignupScreen: React.FC<{
               },
               (error: Error) => {
                 const mapped = toSafeAuthError(error, 'signup');
-                setFormError(mapped.message);
+                if (mapped.code === 'email-in-use') {
+                  // A retry may reach an account awaiting confirmation. Offer
+                  // resend/login without issuing a second signup request.
+                  writePendingConfirmation(submitted.email.trim());
+                  setConfirmationSent(submitted.email.trim());
+                } else setFormError(mapped.message);
               }
             );
         }}

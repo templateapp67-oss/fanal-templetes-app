@@ -265,9 +265,9 @@ test('PART 3 journey: share link → sign up → referral link → handoff → T
       })
     );
     await wait(() => landed !== '', 'entry into the Template App');
-    assert.equal(landed, '/', 'the visitor enters the normal Template App flow');
+    assert.equal(landed, '/onboarding/website', 'the visitor enters the normal Template App flow');
     assert.equal(dom.window.sessionStorage.getItem(HANDOFF_STATE_KEY), null, 'the state is cleared after use');
-    assert.equal(window.location.pathname, '/', 'the token is scrubbed from the address bar');
+    assert.equal(window.location.pathname, '/onboarding/website', 'the token is scrubbed from the address bar');
 
     const entered = await visitor.rpc('get_my_onboarding_status');
     assert.equal(entered.data.status, 'template_started');
@@ -277,6 +277,12 @@ test('PART 3 journey: share link → sign up → referral link → handoff → T
     // The owner now has a workspace to save into. Without it the normalized
     // save raises 'Select a salon owned by this account' and the completion
     // check can never verify — this is the resolution step of the funnel.
+    // Complete the explicit business setup after consuming the handoff.
+    await render(React.createElement(OnboardingApp, { path: '/onboarding/website', client: visitor as any, navigate: (to: string) => { landed = to; } }));
+    await wait(() => !!host.querySelector('#business-name'), 'business setup form');
+    await fill('#business-name', 'Journey Salon');
+    await submit();
+    await wait(() => landed.startsWith('/editor?site='), 'provisioned website editor');
     const workspace = await visitor.rpc('get_my_owner_workspace');
     assert.equal(workspace.error, null);
     assert.equal(workspace.data.resolved, true, 'the owner workspace resolves after entry');

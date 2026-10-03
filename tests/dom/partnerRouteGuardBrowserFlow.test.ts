@@ -34,11 +34,16 @@ test('every canonical and legacy partner page blocks denied accounts before priv
         try {
           await act(async()=>root.render(React.createElement(GrowthPartnerPage,{path,user:state==='anonymous'?null:{id:'partner'},navigate:(to:string)=>navigated.push(to)})));
           if(state==='anonymous'||state==='expired') {
-            await settle(()=>navigated.length>0);
+            if (state === 'anonymous' && path === '/partner/dashboard') {
+              await settle(()=>!!host.querySelector('input[type="email"]'));
+              assert.deepEqual(privateCalls,[]);
+              continue;
+            }
+            try { await settle(()=>navigated.length>0); } catch { assert.fail(`${state} ${path}: ${host.textContent}`); }
             assert.equal(navigated.at(-1),path.startsWith('/growth-partner')?'/growth-partner/login':'/partner/login');
           } else {
-            const expected={normal:'Growth Partners only',suspended:'Your Growth Partner account is currently suspended.',pending:'Your Growth Partner application is under review.',rejected:'Your Growth Partner application was not approved.'}[state];
-            await settle(()=>!!host.textContent?.includes(expected));
+            const expected={normal:'Partner access required',suspended:'Your Growth Partner account is currently suspended.',pending:'Your Growth Partner application is under review.',rejected:'Your Growth Partner application was not approved.'}[state];
+            try { await settle(()=>!!host.textContent?.includes(expected)); } catch { assert.fail(`${state} ${path}: ${host.textContent}`); }
           }
           assert.deepEqual(privateCalls,[],`${state} must not fetch private data at ${path}`);
           assert.doesNotMatch(host.textContent!,/PRIVATE-CODE|Total Referrals|Referred Users/);

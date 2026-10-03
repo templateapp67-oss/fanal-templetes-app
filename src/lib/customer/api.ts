@@ -222,9 +222,9 @@ export function searchSalons(query: SalonSearchQuery): Promise<CustomerResult<Cu
   });
 }
 
-export function getSalon(idOrSubdomain: string): Promise<CustomerResult<CustomerSalon | null>> {
+export function getSalon(idOrSubdomain: string, location?: { latitude?: number; longitude?: number } | null): Promise<CustomerResult<CustomerSalon | null>> {
   return customerRequest<CustomerSalon | null>(
-    `/api/customer/salons/${encodeURIComponent(idOrSubdomain)}`,
+    `/api/customer/salons/${encodeURIComponent(idOrSubdomain)}${toQuery({ lat: location?.latitude, lng: location?.longitude })}`,
     { empty: null }
   );
 }

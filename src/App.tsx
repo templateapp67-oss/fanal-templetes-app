@@ -41,7 +41,6 @@ import { TemplateExplorer } from './components/TemplateExplorer';
 import { WebsiteEditor } from './components/WebsiteEditor';
 import { QuickWebsiteLaunch } from './components/QuickWebsiteLaunch';
 import { SalonWebsitePreview } from './components/SalonWebsitePreview';
-import { VipBlackGoldFullExperience } from './components/VipBlackGoldFullExperience';
 import { SaaSDashboard } from './components/SaaSDashboard';
 import { AuthModal } from './components/AuthModal';
 import { UserProfileSettingsModal } from './components/UserProfileSettingsModal';
@@ -2394,7 +2393,8 @@ export default function App() {
 
   const handleSelectTemplate = (catId: BusinessTypeId) => {
     if (!getTemplateById(catId)) return;
-    // Template selection changes presentation only; starter content is opt-in.
+    // Keep same-tick saves on the newly chosen design, before React rerenders.
+    salonStateRef.current = { ...salonStateRef.current, selectedTemplateId: catId };
     setSelectedTemplateId(catId);
   };
 
@@ -2897,8 +2897,8 @@ export default function App() {
       )}
 
       {currentView === 'templates' && templatePreviewId && (
-        <div className="min-h-dvh w-full max-w-full box-border overflow-x-hidden bg-slate-950 pt-16 sm:pt-20">
-          <div className="sticky top-16 sm:top-20 z-[55] w-full max-w-full box-border border-b border-slate-200/80 bg-white/95 px-3 py-2.5 shadow-md backdrop-blur sm:px-6 sm:py-3">
+        <div className="min-h-dvh w-full max-w-full box-border overflow-x-clip bg-slate-950 pt-16 sm:pt-20">
+          <div data-template-preview-toolbar className="sticky top-16 sm:top-20 z-[55] w-full max-w-full box-border border-b border-slate-200/80 bg-white/95 px-3 py-2.5 shadow-md backdrop-blur sm:px-6 sm:py-3">
             <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2.5">
               <div className="flex min-w-0 items-center gap-3">
                 <button type="button" onClick={() => navigate(templateExplorerPath({ category: templateExplorerRoute.category, query: templateExplorerRoute.query }))} className="min-h-[40px] inline-flex items-center text-xs sm:text-sm font-black text-slate-700 hover:text-[#C20E5A]">← Back to Explorer</button>
@@ -2908,7 +2908,7 @@ export default function App() {
               <button type="button" onClick={() => selectTemplateFromExplorer(templatePreviewId)} className="w-full md:w-auto min-h-[48px] inline-flex items-center justify-center rounded-xl bg-[#C20E5A] px-5 py-2.5 text-sm font-black text-white shadow-sm hover:bg-[#A30B4A]">Select &amp; Customize This Template</button>
             </div>
           </div>
-          {templatePreviewId === 'luxury_hair_salon' ? <VipBlackGoldFullExperience /> : <SalonWebsitePreview
+          {<SalonWebsitePreview
             key={templatePreviewId}
             profile={previewProfile!}
             services={previewTemplate!.defaultData.services}

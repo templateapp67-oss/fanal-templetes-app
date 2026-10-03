@@ -172,7 +172,7 @@ test('an in-flight submit shows the busy state and the fields lock', async () =>
       assert.equal(input.disabled, true, `${input.id} is disabled while busy`);
     }
     release!();
-    await wait(() => !!host.textContent?.includes('Account creation failed'), 'the safe error copy');
+    await wait(() => !!host.textContent?.includes('Account creation could not be completed'), 'the safe error copy');
     assert.equal((host.querySelector('button[type="submit"]') as HTMLButtonElement).disabled, false);
   } finally {
     await close();

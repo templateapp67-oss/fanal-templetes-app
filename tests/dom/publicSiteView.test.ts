@@ -87,8 +87,8 @@ test('a visitor never sees the owner address form or an invented salon address',
     assert.doesNotMatch(text, /Santa Cruz West/);
     // …and the visitor still gets the way to the salon.
     assert.match(text, /Star Salon/);
-    const mapsLinks = Array.from(container.querySelectorAll('a[href*="google.com/maps"]'));
-    assert.ok(mapsLinks.length >= 2, 'the public card keeps View on Google Maps + Get Directions');
+    const mapsLinks = Array.from(container.querySelectorAll('a[href*="openstreetmap.org"]'));
+    assert.ok(mapsLinks.length >= 2, 'the public card keeps View on OpenStreetMap + Get Directions');
     for (const link of mapsLinks) {
       assert.equal(link.getAttribute('target'), '_blank');
       assert.match(link.getAttribute('rel') || '', /noreferrer/);
@@ -108,4 +108,17 @@ test('the owner editor keeps the editable map setup', () => {
   } finally {
     unmount(container, root);
   }
+});
+
+test('blank published cover uses the selected template image and does not claim demo verification or ratings', () => {
+ const {container,root}=mount(React.createElement(SalonWebsitePreview,{
+  profile:{...publicProfile,coverImageUrl:'',isVerified:false},services:INITIAL_SERVICES,stylists:INITIAL_STYLISTS,
+  selectedTemplateId:'luxury_hair_salon',onAddAppointment:()=>{},onRequireAuth:()=>{},publicView:true,
+ }));
+ try {
+  const text=container.textContent || '';
+  assert.doesNotMatch(text,/Verified Indian Salon|980\+/);
+  assert.ok([...container.querySelectorAll('img')].every(img=>img.getAttribute('src')?.trim()),'every image has a usable source');
+  assert.match(text,/No reviews yet/);
+ } finally {unmount(container,root);}
 });

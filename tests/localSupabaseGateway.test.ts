@@ -109,7 +109,7 @@ test('1. sign-up creates a session, a profile row and rejects a wrong password',
   }
 });
 
-test('2. the full partner journey works over HTTP: apply → review → area', async () => {
+test('2. the full partner journey works over HTTP: apply → immediate access → admin review', async () => {
   const gateway = await startGateway();
   try {
     const partner = await signUp(gateway.origin, 'asha@example.com', 'Str0ngPass!1', 'Asha Sharma');
@@ -127,14 +127,13 @@ test('2. the full partner journey works over HTTP: apply → review → area', a
       partner.access_token
     );
     assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
-    assert.equal(submitted.body.status, 'pending');
+    assert.equal(submitted.body.status, 'approved');
     assert.equal(submitted.body.kyc_status, 'submitted');
 
-    // Not a partner yet → the area gate returns null, which the UI renders as
-    // "Growth Partners only".
+    // Submission activates access immediately; KYC remains submitted until review.
     const before = await rpc(gateway.origin, 'get_my_growth_partner', {}, partner.access_token);
     assert.equal(before.status, 200);
-    assert.equal(before.body, null);
+    assert.equal(before.body.is_active, true);
 
     // The documented local admin account reviews it.
     const admin = await signIn(gateway.origin, LOCAL_DEV_ADMIN_EMAIL, LOCAL_DEV_ADMIN_PASSWORD);
@@ -278,17 +277,17 @@ test('5. the area\'s own table read is RLS-scoped: callers see only their own ap
       return { status: res.status, body: await res.json().catch(() => null) };
     };
 
-    // The applicant sees their own pending application (the self-select policy).
+    // The applicant sees their own approved application with submitted KYC.
     const own = await read(asha.access_token);
     assert.equal(own.status, 200);
     assert.equal(Array.isArray(own.body) ? own.body.length : -1, 1);
-    assert.equal(own.body[0].status, 'pending');
+    assert.equal(own.body[0].status, 'approved');
     assert.equal(own.body[0].kyc_status, 'submitted');
 
     // .maybeSingle() style read: one object, and its shape is the same row.
     const single = await read(asha.access_token, 'application/vnd.pgrst.object+json');
     assert.equal(single.status, 200);
-    assert.equal(single.body.status, 'pending');
+    assert.equal(single.body.status, 'approved');
 
     // Another signed-in user gets zero rows — RLS, not application code.
     const other = await read(ravi.access_token);
