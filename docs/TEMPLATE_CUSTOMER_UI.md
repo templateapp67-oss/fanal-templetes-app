@@ -69,3 +69,26 @@ catalogue. Inactive packages and packages containing retired services are hidden
 These checks verify UI and preview interactions. They do not establish that live
 OTP delivery, slot reservations, coupons, tax, refunds or payment capture are
 configured; those backend items remain outside this UI-only change.
+
+
+## VIP source integration
+
+The registry still has 27 entries, including `luxury_hair_salon`. The separate
+`vipBlackGoldSource/App.tsx` is a marketing/admin simulator, not an additional
+registered salon template. Its public-facing Black & Gold composition and local
+salon asset are adapted in `vipBlackGoldSource/SalonWebsite.tsx`.
+`VipBlackGoldFullExperience` now accepts the actual salon profile and catalogue.
+The shared renderer selects it for the VIP hero, so explorer preview, editor live
+preview and published salon sites all take the same path. Other template heroes
+remain on the existing renderer. Services, packages, staff, gallery, location and
+customer screens continue through the shared engine using owner data.
+
+The VIP hero includes inline name/tagline editing, actual cover image, catalogue
+service count and minimum price, and existing booking/profile callbacks. Empty
+catalogues omit prices safely; failed images use the supplied local source image.
+Styles are scoped to the VIP source section. The reference app's Admin #22,
+marketing, settlement and message simulators are not exposed to customers.
+
+Four integration tests verify owner content, action delegation, real editor
+renderer updates and isolation from other templates. Browser coverage also checks
+the VIP source hero and its booking action at 320/390/768/1440px.

@@ -1,3 +1,4 @@
+import { VipBlackGoldFullExperience } from './VipBlackGoldFullExperience';
 import { TemplateCustomerHome } from './TemplateCustomerHome';
 import { TemplatePackages } from './TemplatePackages';
 import { TemplateCustomerHub, TemplateCustomerToolbar, type TemplateCustomerRequest, type TemplateCustomerSection } from './TemplateCustomerHub';
@@ -1624,7 +1625,9 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* ============================================================ */}
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
-        {sectionVisibility.hero && (
+        {sectionVisibility.hero && (selectedCategoryKey === 'luxury_hair_salon' ? (
+          <VipBlackGoldFullExperience profile={activeProfile} services={sectionVisibility.services ? activeServices : []} onBook={handleOpenBooking} onViewSalon={() => openCustomerSection('salon')} editing={isEditMode} onChange={changes => setProfile(previous => ({ ...previous, ...changes }))} />
+        ) : (
           <section id="home-section" className="relative w-full max-w-full min-w-0 box-border overflow-hidden transition-all bg-slate-950 text-white h-auto min-h-0 flex items-center scroll-mt-16">
             <div id="book" className="scroll-mt-20" />
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
@@ -1808,7 +1811,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </div>
             </div>
           </section>
-        )}
+        ))}
 
         <TemplateCustomerHome profile={activeProfile} services={sectionVisibility.services ? activeServices : []} dark={isDarkCanvas} accentHex={isDarkCanvas ? resolvedSecondaryColor : resolvedPrimaryColor} onOpen={openCustomerSection} onBook={handleOpenBooking} />
 

@@ -45,6 +45,16 @@ try {
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 1200 });
     await page.goto('http://127.0.0.1:4192/templates/luxury_hair_salon/preview');
+    const vipHero = page.locator('[data-vip-source-website]');
+    await vipHero.getByRole('heading', { level: 1 }).waitFor();
+    assert.equal(await page.locator('#header-admin-btn').count(), 0);
+    const heroWidth = await vipHero.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
+    assert.ok(heroWidth.scroll <= heroWidth.width + 1, `VIP source hero at ${width}: no overflow`);
+    await vipHero.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+    await page.screenshot({ path: `${output}/vip-source-${width}.png`, clip: await vipHero.boundingBox() });
+    await vipHero.getByRole('button', { name: 'Book appointment', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).waitFor();
+    await page.keyboard.press('Escape');
     await page.locator('[data-template-customer-home]').evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
     assert.equal(await page.locator('[data-template-customer-home]').getByRole('button', { name: 'Book now', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(245, 158, 11)', 'VIP inline booking uses gold accent');
     assert.equal(await page.locator('[data-template-customer-home]').getByRole('button', { name: 'Book now', exact: true }).evaluate(el => getComputedStyle(el).color), 'rgb(9, 9, 11)', 'VIP gold button text has strong contrast');
