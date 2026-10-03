@@ -1,6 +1,14 @@
 import { hasRequiredWebsiteProfile } from '../src/lib/websiteValidation.js';
 import { prepareWebsiteStateForSave } from '../src/lib/websiteContentNormalize.js';
 import { describeWebsiteSaveFailure, summarizeWebsiteIssues } from '../src/lib/websiteSaveErrors.js';
+import {
+  buildBookingSettingsPayload,
+  type BookingSettingsSource,
+} from '../src/lib/advanceDeposit.js';
+import {
+  BOOKING_SETTINGS_REJECTION_MESSAGE,
+  isBookingSettingsRejection,
+} from '../src/lib/bookingSettingsErrors.js';
 import { BackendError, databaseForToken, verifyBackendUser, readDatabase } from './backendContext.js';
 // Authenticated fallback for editor saves. Identity is verified against Supabase
 // Auth, then the caller-scoped workspace RPC enforces ownership and commits
@@ -206,24 +214,56 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         });
       }
 
-      const depositPercent = Math.max(0, Math.min(100, Math.round(Number(cleanProfile?.depositPercentage ?? 25) || 25)));
+      // ------------------------------------------------------------------
+      // Booking settings are DERIVED here, never copied from the request body.
+      //
+      // The route used to forward `salonData.bookingSettings` verbatim when the
+      // client sent one, and to clamp its own copy to 0–100 — so a client (or a
+      // stale browser bundle) could still post `deposit_percent: 20`, which
+      // `salon_booking_settings_deposit_25_check` rejects with 23514 and which
+      // then rolled back the profile, the catalogue and the template selection
+      // committed in the same transaction.
+      //
+      // The advance is fixed at 25%; only the two owner switches (require a
+      // deposit at all, accept online bookings) are taken from the caller, and
+      // an explicit `false` is preserved rather than defaulted away.
+      // ------------------------------------------------------------------
+      const clientBookingSettings =
+        salonData.bookingSettings && typeof salonData.bookingSettings === 'object'
+          ? (salonData.bookingSettings as Record<string, unknown>)
+          : null;
+      const bookingSettings = buildBookingSettingsPayload(
+        cleanProfile as unknown as BookingSettingsSource,
+        clientBookingSettings as unknown as BookingSettingsSource
+      );
+      if (clientBookingSettings) {
+        const requested = Number(
+          clientBookingSettings.deposit_percent ??
+            clientBookingSettings.deposit_percentage ??
+            clientBookingSettings.deposit_25
+        );
+        if (Number.isFinite(requested) && requested !== bookingSettings.deposit_percentage) {
+          // Safe diagnostic: the field and the rejected value only.
+          console.warn(
+            `[Website save] Ignored a booking-settings advance of ${requested}% — ` +
+              `the advance payment is fixed at ${bookingSettings.deposit_percentage}%.`
+          );
+        }
+      }
       const extraState = {
         ...(Array.isArray(salonData.appointments) ? { appointments: salonData.appointments } : {}),
         ...(Array.isArray(salonData.clients) ? { clients: salonData.clients } : {}),
         ...(salonData.selectedTemplateId !== undefined ? { selectedTemplateId: salonData.selectedTemplateId } : {}),
-        bookingSettings: (salonData.bookingSettings && typeof salonData.bookingSettings === 'object')
-          ? salonData.bookingSettings
-          : {
-              require_deposit: Boolean(cleanProfile?.requireDeposit),
-              deposit_percent: depositPercent,
-              deposit_percentage: depositPercent,
-              deposit_25: 25,
-            },
+        bookingSettings,
       };
       // Use the same transaction as the editor. Never write salon fields into identity profiles.
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const savedState = {
-        profile: { ...cleanProfile, depositPercentage: depositPercent, deposit_25: 25 },
+        profile: {
+          ...cleanProfile,
+          depositPercentage: bookingSettings.deposit_percentage,
+          deposit_25: bookingSettings.deposit_25,
+        },
         ...(salonData.services !== undefined ? { services: content.services } : {}),
         ...(salonData.stylists !== undefined ? { stylists: content.stylists } : {}),
         ...extraState,
@@ -261,15 +301,35 @@ export function handleWebsiteSave(deps: WebsiteSaveDeps) {
         });
         if (responseAlreadyEnded(res)) return;
         const code = result.error.code;
-        return res.status(code === '42501' ? 403 : code === '23505' ? 409 : code === '22023' || code === '22P02' ? 400 : 503).json({
+        const detail = String(result.error.message ?? '');
+        // 23514 on salon_booking_settings is NOT a "contact support" failure: it
+        // is the advance-payment check, it is deterministic, and it used to
+        // answer 503 WEBSITE_SAVE_FAILED with the raw constraint name in
+        // `details`. Name it so the editor can tell the owner the one thing
+        // that has to change.
+        const bookingSettingsRejected = isBookingSettingsRejection(detail);
+        const isContentRejection = code === '22023' || code === '22P02' || bookingSettingsRejected;
+        return res.status(
+          code === '42501' ? 403 : code === '23505' ? 409 : isContentRejection ? 400 : 503
+        ).json({
           success: false,
-          code: code === '42501' ? 'DATA_ACCESS_DENIED' : code === '23505' ? 'WEBSITE_ADDRESS_CONFLICT' : code === '22023' || code === '22P02' ? 'INVALID_WEBSITE_CONTENT' : 'WEBSITE_SAVE_FAILED',
+          code: code === '42501' ? 'DATA_ACCESS_DENIED'
+            : code === '23505' ? 'WEBSITE_ADDRESS_CONFLICT'
+            : bookingSettingsRejected ? 'BOOKING_SETTINGS_INVALID'
+            : code === '22023' || code === '22P02' ? 'INVALID_WEBSITE_CONTENT'
+            : 'WEBSITE_SAVE_FAILED',
           dbCode: code ?? null,
           details: result.error.message ?? undefined,
-          ...(code === '22023' || code === '22P02'
-            ? { issues: describeWebsiteSaveFailure(String(result.error.message ?? ''), savedState) }
+          ...(isContentRejection
+            ? { issues: describeWebsiteSaveFailure(detail, savedState) }
             : {}),
-          error: code === '23505' ? 'That website address is already in use. Choose another address.' : code === '22023' || code === '22P02' ? (result.error.message || 'Check your website content, service details and staff schedule before saving.') : 'Your workspace could not be saved. Please retry or contact support.',
+          error: code === '23505'
+            ? 'That website address is already in use. Choose another address.'
+            : bookingSettingsRejected
+              ? BOOKING_SETTINGS_REJECTION_MESSAGE
+              : code === '22023' || code === '22P02'
+                ? (result.error.message || 'Check your website content, service details and staff schedule before saving.')
+                : 'Your workspace could not be saved. Please retry or contact support.',
         });
       }
       if (responseAlreadyEnded(res)) return;

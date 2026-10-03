@@ -1,4 +1,5 @@
 import { prepareWebsiteStateForSave } from './websiteContentNormalize.js';
+import { BOOKING_SETTINGS_REJECTION_MESSAGE } from './bookingSettingsErrors.js';
 import { WEBSITE_LIMITS, formatWebsiteIssue, type WebsiteFieldIssue } from './websiteValidation.js';
 
 // ============================================================================
@@ -116,6 +117,16 @@ const RULES: readonly ErrorRule[] = [
     test: /invalid input syntax for type (?:integer|numeric)/i,
     path: 'services', section: 'Numbers', label: 'Numbers',
     message: 'A number field (service price or duration, or a testimonial rating) contains something that is not a whole number.',
+  },
+  {
+    // SQLSTATE 23514 from `salon_booking_settings` — the advance-payment check.
+    // Because the website save is ONE transaction, this rejection used to look
+    // like a profile or a services failure, and the toast printed the raw
+    // constraint name. Named here so the owner is told the one thing that
+    // actually has to change.
+    test: /salon_booking_settings(?:_[a-z0-9_]*)?_check|deposit_25_check/i,
+    path: 'profile.bookingSettings', section: 'Booking settings', label: 'Booking settings › Advance payment',
+    message: BOOKING_SETTINGS_REJECTION_MESSAGE,
   },
 ];
 

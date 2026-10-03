@@ -4,6 +4,7 @@ import type { SalonProfile } from '../types';
 import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { compressPartnerAvatar, normalizeWhatsApp } from '../lib/partnerProfile';
 import { queueOwnerWrite } from '../lib/ownerEditorState';
+import { describeProfileSaveFailure } from '../lib/bookingSettingsErrors';
 import { AuthModal } from './AuthModal';
 
 export function PartnerProfileModal({ profile, userId, fallbackOwnerName, onSaved, onClose, editable = false }: {
@@ -236,7 +237,13 @@ export function PartnerProfileModal({ profile, userId, fallbackOwnerName, onSave
       if (uploaded && !isMockSupabase) {
         try { await supabase.storage.from('partner-avatars').remove([uploaded]); } catch { /* preserve original save error */ }
       }
-      setError(e.message || 'Profile could not be saved. Please retry.');
+      // Keep the SQLSTATE/message in the console, show the owner an
+      // instruction rather than the raw database text.
+      console.error('[PartnerProfileModal] Profile save failed:', {
+        message: e?.message || String(e),
+        code: e?.code ?? null,
+      });
+      setError(describeProfileSaveFailure(e));
     } finally {
       setBusy(false);
     }

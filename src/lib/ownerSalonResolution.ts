@@ -3,6 +3,7 @@ import type { SalonProfile } from '../types';
 import { slugifySalonName } from './salonStore';
 import { fitSeoKeywords } from './seoKeywords';
 import { WEBSITE_LIMITS } from './websiteValidation';
+import { REQUIRED_ADVANCE_PERCENT } from './advanceDeposit';
 
 export interface OwnerSalonResolutionResult {
   status: 'active' | 'needs_onboarding';
@@ -76,7 +77,7 @@ export function createBlankSalonProfile(user?: any): SalonProfile {
     tiktokHandle: '',
     tiktokProfile: '',
     requireDeposit: false,
-    depositPercentage: 20,
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
     whiteLabelEnabled: true,
     offers: [],
     seoKeywords: fitSeoKeywords(DEFAULT_SEO_KEYWORDS.join(', '), WEBSITE_LIMITS.seoKeywords)?.value ?? '',

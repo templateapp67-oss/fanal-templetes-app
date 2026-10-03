@@ -1,6 +1,7 @@
 import { slugifySalonName } from './lib/salonStore';
 import { BusinessTypeOption, SalonProfile, SalonService, Stylist, Appointment, ClientRecord } from './types';
 import { getTemplateConfig, ALL_CATEGORY_OPTIONS } from './data/templates';
+import { REQUIRED_ADVANCE_PERCENT } from './lib/advanceDeposit';
 
 export const BUSINESS_TYPES: BusinessTypeOption[] = ALL_CATEGORY_OPTIONS;
 
@@ -32,7 +33,7 @@ export const INITIAL_SALON_PROFILE: SalonProfile = {
   tiktokHandle: '',
   tiktokProfile: '',
   requireDeposit: true,
-  depositPercentage: 20,
+  depositPercentage: REQUIRED_ADVANCE_PERCENT,
   whiteLabelEnabled: true,
   promotionalBanner: {
     enabled: true,
@@ -611,7 +612,7 @@ export function createBlankSalonProfile(userMeta?: {
     tiktokHandle: '',
     tiktokProfile: '',
     requireDeposit: true,
-    depositPercentage: 20,
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
     whiteLabelEnabled: true,
     promotionalBanner: {
       enabled: false,

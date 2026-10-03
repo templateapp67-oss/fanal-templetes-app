@@ -738,8 +738,8 @@ const depositSalonBody = {
   bookingRef: 'NX-JPR-53682',
   receipt: 'NX-JPR-53682',
   totalAmount: 1200,
-  amount: 240,
-  depositPercent: 20,
+  amount: 300,
+  depositPercent: 25,
 };
 
 test('a deposit salon refuses to create a booking without a verified payment', async () => {
@@ -747,12 +747,12 @@ test('a deposit salon refuses to create a booking without a verified payment', a
   const { deps } = makeDeps({ db });
   const res = makeRes();
   await createBookingCreateHandler(deps)(
-    { params: {}, query: {}, body: { ...depositSalonBody, advance_paid_amount: 240 } },
+    { params: {}, query: {}, body: { ...depositSalonBody, advance_paid_amount: 300 } },
     res
   );
   assert.equal(res.statusCode, 402, JSON.stringify(res.body));
   assert.equal(res.body.code, 'payment_required');
-  assert.equal(res.body.depositDue, 240);
+  assert.equal(res.body.depositDue, 300);
   assert.equal(db.calls.some((call) => call.table === 'bookings' && call.op === 'insert'), false, 'no unpaid row is invented');
 });
 
@@ -768,7 +768,7 @@ test('a deposit salon creates a confirmed booking only after the gateway HMAC ve
         query: {},
         body: {
           ...depositSalonBody,
-          payment: { ...signed, amount: 240, depositPercent: 20 },
+          payment: { ...signed, amount: 300, depositPercent: 25 },
         },
       },
       res
@@ -776,7 +776,7 @@ test('a deposit salon creates a confirmed booking only after the gateway HMAC ve
     assert.equal(res.statusCode, 200, JSON.stringify(res.body));
     const inserted = db.calls.find((call) => call.table === 'bookings' && call.op === 'insert');
     assert.ok(inserted, 'the paid booking is written');
-    assert.equal(inserted!.body.advance_paid_amount, 240);
+    assert.equal(inserted!.body.advance_paid_amount, 300);
     assert.equal(inserted!.body.payment_status, 'paid_deposit');
     assert.equal(inserted!.body.status, 'confirmed');
     assert.equal(inserted!.body.payment_id, signed.razorpay_payment_id);
@@ -800,7 +800,7 @@ test('a forged gateway signature never creates the appointment', async () => {
             razorpay_order_id: 'order_mock_ABCDEFGHIJKLMN',
             razorpay_payment_id: 'pay_mock_forged',
             razorpay_signature: 'deadbeef',
-            amount: 240,
+            amount: 300,
           },
         },
       },
@@ -828,7 +828,7 @@ test('the same captured payment_id is idempotent — a second create returns the
           payment_status: 'paid_deposit',
           payment_id: signed.razorpay_payment_id,
           total_amount: 1200,
-          advance_paid_amount: 240,
+          advance_paid_amount: 300,
           customer_name: 'Ananya',
           metadata: { booking_ref: 'NX-JPR-53682' },
         },
@@ -840,7 +840,7 @@ test('the same captured payment_id is idempotent — a second create returns the
       {
         params: {},
         query: {},
-        body: { ...depositSalonBody, payment: { ...signed, amount: 240 } },
+        body: { ...depositSalonBody, payment: { ...signed, amount: 300 } },
       },
       res
     );
@@ -887,13 +887,58 @@ test('POST /api/customer/payments/order reuses the unpaid order for the same NX-
     assert.equal(first.statusCode, 200, JSON.stringify(first.body));
     assert.ok(first.body.order?.id);
     assert.equal(first.body.order.receipt, 'NX-JPR-53682');
-    assert.equal(first.body.deposit.rupees, 240);
+    assert.equal(first.body.deposit.rupees, 300);
 
     const second = makeRes();
     await handler({ params: {}, query: {}, body: depositSalonBody }, second);
     assert.equal(second.statusCode, 200, JSON.stringify(second.body));
     assert.equal(second.body.order.id, first.body.order.id, 'retry must not mint a second chargeable order');
     assert.equal(second.body.reused, true);
+    _resetPaymentOrderCache();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The advance percentage the customer is quoted.
+//
+// The deposit tests above are pinned to a hard-coded 2026-09-30 and fail once
+// the clock passes it, so they cannot prove this. These use a computed future
+// date instead. The salon row still holds the legacy 20% — which is exactly the
+// state a pre-fix project is in — and the server must quote 25%.
+// ---------------------------------------------------------------------------
+
+const futureDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+test('a legacy 20% salon row is quoted the required 25% advance', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    _resetPaymentOrderCache();
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const { deps } = makeDeps({ db });
+    const res = makeRes();
+    await createPaymentOrderHandler(deps)(
+      { params: {}, query: {}, body: { ...depositSalonBody, date: futureDate, amount: 300, depositPercent: 25 } },
+      res
+    );
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.deposit.percent, 25, 'the advance is the contract percentage, not the stored one');
+    assert.equal(res.body.deposit.rupees, 300, '25% of ₹1200');
+    assert.equal(res.body.deposit.paise, 30000);
+    _resetPaymentOrderCache();
+  });
+});
+
+test('a client still quoting the legacy 20% is refused rather than under-charged', async () => {
+  await withEnvAsync(MOCK_GATEWAY_ENV, async () => {
+    _resetPaymentOrderCache();
+    const db = bookingTables({ profile: { require_deposit: true, deposit_percentage: 20 } });
+    const { deps } = makeDeps({ db });
+    const res = makeRes();
+    await createPaymentOrderHandler(deps)(
+      { params: {}, query: {}, body: { ...depositSalonBody, date: futureDate, amount: 240, depositPercent: 20 } },
+      res
+    );
+    assert.equal(res.statusCode, 400, JSON.stringify(res.body));
+    assert.equal(res.body.code, 'amount_mismatch');
     _resetPaymentOrderCache();
   });
 });

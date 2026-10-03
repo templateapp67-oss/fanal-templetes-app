@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { injectSocialMetadata } from './src/lib/socialMetadata';
+import { REQUIRED_ADVANCE_PERCENT } from './src/lib/advanceDeposit';
 import { registerReferralAttributionRoutes } from './server/referralAttribution.js';
 import { availabilityHandler, customerPaymentOrderHandler } from './server/customerAvailability.js';
 import { ownerDashboardHandler, salonHoursHandler } from './server/ownerDashboard.js';
@@ -154,7 +155,7 @@ const defaultDemoSalon = {
     state: 'Karnataka',
     instagramHandle: 'luxehair_studio',
     requireDeposit: true,
-    depositPercentage: 20,
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
     themeAccentKey: 'slate',
     whiteLabelEnabled: true,
     offers: [
@@ -465,7 +466,7 @@ async function startServer() {
       tiktokProfile: row.tiktok_profile || undefined,
       googleBusinessUrl: row.google_business_url || undefined,
     requireDeposit: row.require_deposit ?? false,
-    depositPercentage: row.deposit_percentage ?? 20,
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
       themeAccentKey: row.theme_accent_key || 'slate',
       customAccentColor: row.custom_accent_color || undefined,
       landmark: row.landmark || undefined,

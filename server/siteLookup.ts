@@ -7,6 +7,7 @@ import { applyPublicWebsiteContent, mergeServicePresentation, scopedWebsiteSnaps
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SalonProfile, SalonService, Stylist } from '../src/types.js';
 import { runDb, DEFAULT_DB_TIMEOUT_MS } from './dbGuard.js';
+import { REQUIRED_ADVANCE_PERCENT } from '../src/lib/advanceDeposit.js';
 
 
 export const DEMO_SUBDOMAINS = new Set([
@@ -73,7 +74,7 @@ export const defaultDemoSalon: {
     state: 'Karnataka',
     instagramHandle: 'nexorastudio',
     requireDeposit: true,
-    depositPercentage: 20,
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
     themeAccentKey: 'slate',
     whiteLabelEnabled: true,
   },
@@ -129,7 +130,7 @@ export function mapProfileRow(row: any): SalonProfile {
       state: '',
       instagramHandle: '',
       requireDeposit: false,
-      depositPercentage: 20,
+      depositPercentage: REQUIRED_ADVANCE_PERCENT,
       themeAccentKey: 'slate',
       whiteLabelEnabled: true,
     };
@@ -182,7 +183,9 @@ export function mapProfileRow(row: any): SalonProfile {
     tiktokProfile: row.tiktok_profile || data.tiktok_profile || undefined,
     googleBusinessUrl: row.google_business_url || data.google_business_url || undefined,
     requireDeposit: row.require_deposit ?? data.require_deposit ?? false,
-    depositPercentage: row.deposit_percentage ?? data.deposit_percentage ?? 20,
+    // The advance is fixed at 25% — a legacy row holding 20 must not be
+    // served to the public site or echoed back into the next save.
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
     themeAccentKey: row.theme_accent_key || data.theme_accent_key || 'slate',
     primaryColor: row.primary_color || data.primary_color || undefined,
     secondaryColor: row.secondary_color || data.secondary_color || undefined,
@@ -199,7 +202,7 @@ export function mapProfileRow(row: any): SalonProfile {
     lookbookPhotos: Array.isArray(config.lookbookPhotos) ? config.lookbookPhotos : (Array.isArray(data.lookbook_photos) ? data.lookbook_photos : []),
     // The public site payload must carry this setting. Legacy rows with no
     // value retain the database/product default instead of being treated as off.
-    acceptsOnlineBookings: row.accepts_online_bookings ?? true,
+    acceptsOnlineBookings: row.accepts_online_bookings ?? data.accepts_online_bookings ?? true,
     customAccentColor: row.custom_accent_color || data.custom_accent_color || undefined,
     landmark: row.landmark || row.location_landmark || undefined,
     foundingYear: row.founding_year || data.founding_year || undefined,

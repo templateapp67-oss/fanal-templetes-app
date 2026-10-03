@@ -1,6 +1,6 @@
 import { buildYouTubeWatchUrl, extractYouTubeId } from '../utils/youtube.js';
 import { fitSeoKeywords } from './seoKeywords.js';
-import { DEFAULT_DEPOSIT_PERCENT, normalizeDepositPercentage } from './advanceDeposit.js';
+import { REQUIRED_ADVANCE_PERCENT } from './advanceDeposit.js';
 import {
   DEFAULT_GALLERY_IMAGE_URL,
   blockingWebsiteIssues,
@@ -195,21 +195,30 @@ function healProfile(profile: unknown, changes: WebsiteContentChange[]): unknown
     if (healed !== list) set({ [key]: healed });
   }
 
-  // Too many keywords for the database: keep the first ones that fit. Only whole keywords
-  // are dropped; a single keyword that is itself too long is left for the owner to fix.
-  if (
-    next.depositPercentage !== undefined
-    || next.deposit_percentage !== undefined
-    || next.deposit_percent !== undefined
-    || next.deposit_25 !== undefined
-  ) {
-    const depositPercentage = normalizeDepositPercentage(
-      next.depositPercentage ?? next.deposit_percentage ?? next.deposit_percent ?? next.deposit_25 ?? DEFAULT_DEPOSIT_PERCENT
-    );
-    if (next.depositPercentage !== depositPercentage) set({ depositPercentage });
-    if (next.deposit_25 !== DEFAULT_DEPOSIT_PERCENT) set({ deposit_25: DEFAULT_DEPOSIT_PERCENT });
+  // Advance payment is fixed at 25% (see src/lib/advanceDeposit.ts). Heal it on
+  // EVERY save, not only when a deposit key happens to be present: editor state
+  // hydrated from a pre-fix row, a localStorage draft or the 20% demo fixture
+  // can carry 20/0/null with no other deposit key alongside it, and that value
+  // is what `save_owner_editor_state` then writes into salon_booking_settings —
+  // where `salon_booking_settings_deposit_25_check` rejects it with 23514 and
+  // rolls the whole transaction back.
+  for (const key of ['depositPercentage', 'deposit_percentage', 'deposit_percent', 'deposit_25'] as const) {
+    if (next[key] !== undefined && next[key] !== REQUIRED_ADVANCE_PERCENT) {
+      // Safe diagnostic: field name + the value it held. No row, no ids, no
+      // tokens — this is what makes a "why did my 20% become 25%?" support
+      // ticket answerable from the browser console alone.
+      console.info(
+        `[websiteContentNormalize] profile.${key} was ${JSON.stringify(next[key])} — ` +
+          `the advance payment is fixed at ${REQUIRED_ADVANCE_PERCENT}%, so the save sends ${REQUIRED_ADVANCE_PERCENT}.`
+      );
+      const healed: Record<string, unknown> = {};
+      healed[key] = REQUIRED_ADVANCE_PERCENT;
+      set(healed);
+    }
   }
 
+  // Too many keywords for the database: keep the first ones that fit. Only whole keywords
+  // are dropped; a single keyword that is itself too long is left for the owner to fix.
   const keywords = next.seoKeywords;
   if (typeof keywords === 'string' && Array.from(keywords).length > WEBSITE_LIMITS.seoKeywords) {
     const fit = fitSeoKeywords(keywords, WEBSITE_LIMITS.seoKeywords);
