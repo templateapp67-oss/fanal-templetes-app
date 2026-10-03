@@ -1,3 +1,4 @@
+import { PackageManagement } from './TemplatePackages';
 import { ServicePriceFields } from './ServicePriceFields';
 import { parseSeoKeywords } from '../lib/seoKeywords';
 import { SocialSharePreview } from './SocialSharePreview';
@@ -1718,6 +1719,7 @@ export const WebsiteEditor: React.FC<WebsiteEditorProps> = ({
           </div>
         </section>
 
+        <PackageManagement packages={profile.packages} services={services} onChange={packages => upd({ packages })} />
         {/* ===== 5. TEMPLATE & LIVE SITE ===== */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">

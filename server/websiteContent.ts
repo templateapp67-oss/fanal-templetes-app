@@ -25,6 +25,7 @@ export function applyPublicWebsiteContent(profile: SalonProfile, raw: unknown): 
     if (url !== undefined) next[key] = url;
   }
   if (typeof source.whiteLabelEnabled === 'boolean') next.whiteLabelEnabled = source.whiteLabelEnabled;
+  if (Array.isArray(source.packages)) next.packages = source.packages.filter(p => p && typeof p.name === 'string' && Array.isArray(p.serviceIds)).slice(0, 100).map(p => ({ id: String(p.id), name: p.name, description: String(p.description || ''), serviceIds: [...new Set(p.serviceIds.filter(id => typeof id === 'string'))], isActive: p.isActive !== false }));
   if (Array.isArray(source.socialVideos)) {
     next.socialVideos = source.socialVideos.slice(0, 28).flatMap((video): SocialVideo[] => {
       if (!video || typeof video !== 'object') return [];
@@ -78,6 +79,7 @@ export function mergeServicePresentation(services: SalonService[], raw: unknown,
       imageUrl: trimmedSafeImageUrl(saved.imageUrl) ?? service.imageUrl,
       showDuration: typeof saved.showDuration === 'boolean' ? saved.showDuration : service.showDuration,
       category: typeof saved.category === 'string' ? saved.category : service.category,
+      gender: ['All genders', 'Women', 'Men', 'Kids'].includes(saved.gender) ? saved.gender : service.gender,
       icon: typeof saved.icon === 'string' ? saved.icon : service.icon,
     };
   });

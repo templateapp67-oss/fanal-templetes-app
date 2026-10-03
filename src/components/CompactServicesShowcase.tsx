@@ -128,6 +128,7 @@ const CompactServiceCard: React.FC<{
         {service.name}
       </h3>
 
+      <span className="px-0.5 text-[10px] opacity-60">{service.gender || 'All genders'}</span>
       {service.description ? (
         <p
           className={`px-0.5 -mt-1.5 text-[11px] leading-snug break-words line-clamp-2 ${

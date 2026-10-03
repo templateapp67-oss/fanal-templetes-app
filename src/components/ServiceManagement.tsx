@@ -125,6 +125,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
   const [formImage, setFormImage] = useState('');
   const [formDescription, setFormDescription] = useState<string>('');
   const [formPopular, setFormPopular] = useState<boolean>(false);
+  const [formGender, setFormGender] = useState<SalonService['gender']>('All genders');
   const [formShowDuration, setFormShowDuration] = useState<boolean>(true);
   const [formIcon, setFormIcon] = useState<string>('Scissors');
   const [formError, setFormError] = useState<string>('');
@@ -160,6 +161,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
     setFormCategory('Precision Cuts');
     setFormCustomCategory('');
     setFormDuration(45);
+    setFormGender('All genders');
     setFormPrice(650);
     setFormDescription('');
     setFormImage('');
@@ -189,6 +191,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
       setFormCustomCategory(srv.category);
     }
     setFormDuration(srv.durationMinutes || 45);
+    setFormGender(srv.gender || 'All genders');
     setFormPrice(srv.price || 0);
     setFormDescription(srv.description || '');
     setFormImage(srv.imageUrl || '');
@@ -250,6 +253,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
               imageUrl: formImage,
               popular: formPopular,
               showDuration: formShowDuration,
+              gender: formGender,
               icon: formIcon,
             }
           : s
@@ -268,6 +272,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
         icon: formIcon,
         popular: formPopular,
         showDuration: formShowDuration,
+              gender: formGender,
       };
       pendingServiceId.current = newService.id;
       nextServices = [newService, ...services.filter(s => s.id !== newService.id)];
@@ -932,6 +937,7 @@ export const ServiceManagement: React.FC<ServiceManagementProps> = ({
                   </div>
                 </div>
 
+                <label className="block text-xs font-bold text-gray-700">Gender / service type<select value={formGender} onChange={e=>setFormGender(e.target.value as SalonService['gender'])} className="block w-full mt-1 min-h-11 rounded-xl border p-2">{['All genders','Women','Men','Kids'].map(g=><option key={g}>{g}</option>)}</select></label>
                 <button
                   type="button"
                   onClick={() => setShowAdvanced((value) => !value)}
