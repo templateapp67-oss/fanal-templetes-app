@@ -1,4 +1,4 @@
-# Template customer UI completion
+# Template customer UI implementation scope
 
 Scope: the customer's October 3 UI/UX request. OTP, messaging, database
 migrations, payment-provider configuration and production deployment are deferred.
@@ -6,6 +6,24 @@ migrations, payment-provider configuration and production deployment are deferre
 The current registry contains **27 templates including VIP Black & Gold**. The
 attached audit's additional separate VIP count does not match this checkout.
 Every registered template uses the shared customer toolbar and customer panel.
+
+## Correction after PR #160
+
+PR #160 primarily exposed customer screens in a dialog. It did not make the
+requested discovery and booking sections prominent on the main template page.
+The corrective change adds a visible section directly after the hero in all 27
+templates: salon/service/location search, catalogue category/gender/price filters,
+inline service cards with real price/duration and direct booking actions, a featured
+salon card with actual configured rating data, and rewards/account shortcuts.
+The section uses the selected salon's real catalogue, inherits the template theme,
+respects hidden services, and never invents ratings or nearby salon data.
+Preview profiles now select the category accent rather than inheriting the blank
+profile's slate palette; VIP inline booking controls use the gold secondary accent.
+
+Appointments/profile/rewards details still open the existing customer panel.
+This change is not a claim that all customer, owner or internal-admin screens in
+the supplied checklist have been redesigned. Live data/payment/messaging work is
+still deferred as requested.
 
 ## Customer surfaces
 
@@ -41,9 +59,9 @@ catalogue. Inactive packages and packages containing retired services are hidden
 - TypeScript check and production build: pass.
 - Existing website regression suite: **506 passed**.
 - Customer regression suite: **38 passed**.
-- New customer UI tests: **32 passed**; includes package booking, coupon/advance,
+- New customer UI tests: **34 passed**; includes package booking, coupon/advance,
   confirmation, favorites, notification reads, cancellation, rescheduling and reviews.
-- Chromium browser: every **27/27** template opens Packages and Rewards without
+- Chromium browser: every **27/27** template shows inline customer discovery, filters/reset, Packages and Rewards without
   horizontal overflow at 390px; Escape closes the panel.
 - VIP discovery/profile checked at **320, 390, 768 and 1440px**.
 - Browser package booking through confirmation: pass; no browser page errors.

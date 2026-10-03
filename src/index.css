@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+[data-template-customer-home] :is(h2,h3,h4) { text-shadow: none !important; }
+
 /* All template themes share customer interactions while keeping their brand. */
 .template-brand-scope { font-family: var(--template-body-font); }
 .template-brand-scope :is(h1,h2,h3,h4,h5,h6,.font-display) { font-family: var(--template-heading-font) !important; }
