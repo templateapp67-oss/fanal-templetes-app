@@ -433,7 +433,18 @@ test('live mode: /api/website/save uses one caller-authorized workspace transact
     assert.equal(headers.get('authorization'), `Bearer ${OWNER_TEST_TOKEN}`);
     assert.equal(headers.get('apikey'), 'anon-test-key');
     const payload = JSON.parse(writes[0].init.body);
-    assert.deepEqual(payload.p_state.profile, PAYLOAD.profile);
+    // The submitted profile is forwarded unchanged EXCEPT for the advance
+    // payment, which the route derives itself (see server/websiteSave.ts).
+    assert.deepEqual(
+      { ...payload.p_state.profile, depositPercentage: undefined, deposit_25: undefined },
+      { ...PAYLOAD.profile, depositPercentage: undefined, deposit_25: undefined }
+    );
+    assert.equal(payload.p_state.profile.depositPercentage, 25, 'the advance is derived server-side, never trusted from the body');
+    assert.equal(payload.p_state.profile.deposit_25, 25);
+    assert.equal(payload.p_state.bookingSettings.deposit_percent, 25);
+    assert.equal(payload.p_state.bookingSettings.deposit_percentage, 25);
+    assert.equal(payload.p_state.bookingSettings.deposit_25, 25);
+    assert.equal(payload.p_state.bookingSettings.accept_online_bookings, true, 'unspecified means accepting bookings');
     assert.deepEqual(payload.p_state.services, PAYLOAD.services);
     assert.deepEqual(payload.p_state.stylists, PAYLOAD.stylists);
 

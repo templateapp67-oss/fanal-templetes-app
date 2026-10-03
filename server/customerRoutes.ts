@@ -48,7 +48,7 @@ import {
   getRazorpayConfigIssues,
 } from './razorpay.js';
 import type { RazorpayPayment } from './razorpay.js';
-import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT } from '../src/lib/advanceDeposit.js';
+import { computeAdvanceDeposit, DEFAULT_DEPOSIT_PERCENT, normalizeDepositPercentage } from '../src/lib/advanceDeposit.js';
 import { canCancelBooking, validateReview, MAX_REVIEW_LENGTH } from '../src/lib/bookingTabs.js';
 import {
   buildSlotGrid,
@@ -1600,7 +1600,10 @@ async function prepareCustomerBookingIntent(
   const duration = chosen.reduce((total: number, row: any) => total + Number(row.duration_minutes ?? 30), 0);
   const subtotal = chosen.reduce((total: number, row: any) => total + Number(row.price ?? 0), 0);
   const requireDeposit = salonRow.require_deposit === true;
-  const depositPercentage = Math.min(100, Math.max(0, Number(salonRow.deposit_percentage ?? 20)));
+  // Quoted from the contract, not from the row: a legacy 20 in
+  // profiles.deposit_percentage would otherwise charge a different advance
+  // than the one salon_booking_settings now enforces.
+  const depositPercentage = normalizeDepositPercentage(salonRow.deposit_percentage);
   const deposit = requireDeposit ? computeAdvanceDeposit(subtotal, depositPercentage).rupees : 0;
 
   const profileResult = await runDb(

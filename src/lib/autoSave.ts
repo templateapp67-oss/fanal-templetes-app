@@ -29,6 +29,7 @@ import type {
   Stylist,
 } from '../types.js';
 import { prepareWebsiteStateForSave } from './websiteContentNormalize.js';
+import { buildBookingSettingsPayload } from './advanceDeposit.js';
 import {
   GENERIC_CONTENT_MESSAGE,
   classifyWebsiteSaveError,
@@ -942,12 +943,12 @@ export async function saveViaWebsiteApi(
           stylists: prepared.payload.stylists,
           loyaltyConfig: payload.loyaltyConfig,
           selectedTemplateId: payload.selectedTemplateId,
-          bookingSettings: {
-            require_deposit: Boolean((prepared.payload.profile as { requireDeposit?: unknown } | undefined)?.requireDeposit),
-            deposit_percent: Number((prepared.payload.profile as { depositPercentage?: unknown } | undefined)?.depositPercentage ?? 25),
-            deposit_percentage: Number((prepared.payload.profile as { depositPercentage?: unknown } | undefined)?.depositPercentage ?? 25),
-            deposit_25: 25,
-          },
+          // Built by the one helper that owns the advance contract. The old
+          // inline object used `Number(profile.depositPercentage ?? 25)`, which
+          // yields NaN for a non-numeric value and 20 for every state hydrated
+          // from a pre-fix row — both rejected by
+          // salon_booking_settings_deposit_25_check (23514).
+          bookingSettings: buildBookingSettingsPayload(prepared.payload.profile as any),
         },
       }),
       ...(controller ? { signal: controller.signal } : {}),

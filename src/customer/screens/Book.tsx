@@ -48,7 +48,7 @@ import {
   paymentUiFromOutcome,
   type CustomerPaymentUiState,
 } from '../../lib/customer/api';
-import { computeAdvanceDeposit } from '../../lib/advanceDeposit';
+import { computeAdvanceDeposit, normalizeDepositPercentage } from '../../lib/advanceDeposit';
 import { payAdvanceWithRazorpay } from '../../lib/razorpayCheckout';
 import type { RazorpayOutcome } from '../../lib/razorpayCheckout';
 import { loadBookingDraft, saveBookingDraft, clearBookingDraft, buildBookingDraft } from '../../lib/bookingDraft';
@@ -226,7 +226,9 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const chosen = useMemo(() => services.filter((service) => serviceIds.includes(service.id)), [services, serviceIds]);
   const durationMinutes = chosen.reduce((total, service) => total + Number(service.durationMinutes || 0), 0);
   const subtotal = chosen.reduce((total, service) => total + Number(service.price || 0), 0);
-  const depositPercent = salon?.requireDeposit ? Math.min(100, Math.max(0, Number(salon?.depositPercentage ?? 20))) : 0;
+  // 0 only when this salon does not take an online advance at all; otherwise
+  // the fixed contract percentage (never a stale value from the row).
+  const depositPercent = salon?.requireDeposit ? normalizeDepositPercentage(salon?.depositPercentage) : 0;
   const deposit = useMemo(
     () => (depositPercent > 0 ? computeAdvanceDeposit(subtotal, depositPercent) : { rupees: 0, paise: 0, percent: 0 }),
     [subtotal, depositPercent]

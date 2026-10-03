@@ -3,6 +3,7 @@ import { SalonProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { isMockSupabase } from '../lib/supabaseClient';
 import { readPartnerProfile, resolveOwnerProfileName, savePartnerProfileSettings } from '../lib/readPartnerProfile';
+import { describeProfileLoadFailure, describeProfileSaveFailure } from '../lib/bookingSettingsErrors';
 import { normalizeWhatsApp } from '../lib/partnerProfile';
 
 interface UserProfileSettingsModalProps {
@@ -109,8 +110,13 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
         }));
       } catch (error: any) {
         if (active) {
-          console.warn('[UserProfileSettingsModal] Could not load saved profile:', error?.message || error);
-          showToast(error?.message || 'Could not load your saved profile details.', 'error');
+          // Full detail (SQLSTATE + message) stays in the console; the owner
+          // gets a sentence they can act on instead of the raw driver text.
+          console.warn('[UserProfileSettingsModal] Could not load saved profile:', {
+            message: error?.message || String(error),
+            code: error?.code ?? null,
+          });
+          showToast(describeProfileLoadFailure(error), 'error');
         }
       } finally {
         if (active) setIsLoadingProfile(false);
@@ -306,7 +312,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
         },
         timestamp: new Date().toISOString()
       });
-      showToast('Error saving profile settings: ' + (error?.message || 'Database connection problem'), 'error');
+      showToast(describeProfileSaveFailure(error), 'error');
     } finally {
       setIsSaving(false);
     }

@@ -34,7 +34,7 @@ import { getTikTokValue } from '../utils/social.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SalonProfile, SalonService, Stylist, LoyaltyConfig, RewardThreshold } from '../types.js';
 import { toDbId, withRetry, describeError, isAuthLikeFailure } from './autoSave.js';
-import { DEFAULT_DEPOSIT_PERCENT, normalizeDepositPercentage } from './advanceDeposit.js';
+import { REQUIRED_ADVANCE_PERCENT } from './advanceDeposit.js';
 
 /** Namespaces keep the same logical id from colliding across tables. */
 export const SERVICE_ID_NAMESPACE = 'nexora-service';
@@ -131,8 +131,17 @@ export function toProfileRow(profile: SalonProfile, ownerId: string) {
     button_style: profile.buttonStyle ?? null,
     border_radius: profile.borderRadius ?? null,
     appearance: profile.appearance ?? null,
-    require_deposit: profile.requireDeposit,
-    deposit_percentage: normalizeDepositPercentage(profile.depositPercentage ?? DEFAULT_DEPOSIT_PERCENT),
+    // `require_deposit` is the owner's switch (pay now vs. pay at the counter)
+    // and is preserved exactly; a missing value falls back to the
+    // salon_booking_settings default of "required".
+    //
+    // The PERCENTAGE is not a switch. It is fixed at 25 by
+    // salon_booking_settings_deposit_25_check, so it is written from the single
+    // constant instead of from editor state — a stale 20 here is what produced
+    // `23514 … salon_booking_settings_deposit_25_check` and rolled the whole
+    // save transaction back.
+    require_deposit: typeof profile.requireDeposit === 'boolean' ? profile.requireDeposit : true,
+    deposit_percentage: REQUIRED_ADVANCE_PERCENT,
     // Home-service toggle/charge/radius (edited in Side Panel Customizer) —
     // previously stored only in localStorage, so it silently reset after a
     // reload and never reached the public site served from the database.

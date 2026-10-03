@@ -9,7 +9,21 @@ test('owner save uses only the canonical transaction and preserves optional work
   const db: any = { from(){throw Error('Legacy table write is forbidden');}, async rpc(name: string,args: any){write={name,args};return {error:null};} };
   const saved = await saveOwnerEditorState(db,payload);
   assert.equal(saved.ok,true); assert.equal(write.name,'save_owner_editor_state');
-  assert.deepEqual(write.args.p_state.profile,payload.profile);
+  // The editor state is forwarded as given, except for the advance payment —
+  // the one value the database pins with salon_booking_settings_deposit_25_check.
+  assert.deepEqual(
+    { ...write.args.p_state.profile, depositPercentage: undefined, deposit_25: undefined },
+    { ...payload.profile, depositPercentage: undefined, deposit_25: undefined }
+  );
+  assert.equal(write.args.p_state.profile.depositPercentage, 25);
+  assert.equal(write.args.p_state.profile.deposit_25, 25);
+  assert.deepEqual(write.args.p_state.bookingSettings, {
+    require_deposit: true,
+    deposit_percent: 25,
+    deposit_percentage: 25,
+    deposit_25: 25,
+    accept_online_bookings: true,
+  });
   assert.deepEqual(write.args.p_state.appointments,[]); assert.deepEqual(write.args.p_state.clients,[]);
   assert.equal(write.args.p_state.selectedTemplateId,2);
 });

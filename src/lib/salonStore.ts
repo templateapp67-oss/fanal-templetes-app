@@ -10,6 +10,7 @@ import { DEFAULT_CATEGORY_ACCENTS, AccentPaletteKey } from '../themeAccents';
 import { DEFAULT_LOYALTY_CONFIG } from '../loyaltyData';
 import { safeWriteLocalStorage, LocalStorageWriteResult } from './autoSave';
 import { getPublicWebsiteUrl } from './publicSiteUrl';
+import { REQUIRED_ADVANCE_PERCENT } from './advanceDeposit';
 
 // ============================================================================
 // Central persistent salon state.
@@ -436,7 +437,7 @@ export function getBlankOnboardingProfile(user?: any): SalonProfile {
     tiktokHandle: '',
     tiktokProfile: '',
     requireDeposit: false,
-    depositPercentage: 25,
+    depositPercentage: REQUIRED_ADVANCE_PERCENT,
     whiteLabelEnabled: true,
     ownerId: user?.id,
     promotionalBanner: { enabled: false, text: '' },

@@ -21,7 +21,7 @@ import {
 } from './schema.js';
 // Same helper the client's checkout button and the server's advance endpoint use,
 // so the amount shown, charged and recorded can never drift apart.
-import { computeAdvanceDeposit } from '../advanceDeposit.js';
+import { computeAdvanceDeposit, readAdvancePercent } from '../advanceDeposit.js';
 import type { SalonGalleryItem,
   BookingServiceLine,
   CustomerBooking,
@@ -145,7 +145,7 @@ export function toCustomerSalon(
     themePreset: str(row.theme_preset),
     themeAccentKey: str(row.theme_accent_key) || 'slate',
     requireDeposit: bool(row.require_deposit),
-    depositPercentage: num(row.deposit_percentage, 20),
+    depositPercentage: readAdvancePercent(row),
     homeServiceEnabled: bool(homeService.enabled),
     workingHours: hours,
     distanceKm: distanceKm(extras.from, row),

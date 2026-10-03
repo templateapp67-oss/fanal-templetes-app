@@ -258,7 +258,9 @@ test('a salon maps its own columns and leaves the rest blank', () => {
   assert.equal(salon.subdomain, 'glow');
   assert.equal(salon.themeAccentKey, 'rose');
   assert.equal(salon.requireDeposit, true);
-  assert.equal(salon.depositPercentage, 30);
+  // The advance is fixed at 25% (src/lib/advanceDeposit.ts). A legacy row
+  // holding 30 must not be served to the customer or echoed into a save.
+  assert.equal(salon.depositPercentage, 25);
   assert.equal(salon.homeServiceEnabled, true);
   assert.equal(salon.phone, '', 'a column that is absent stays empty rather than gaining a phone number');
   assert.equal(salon.rating.count, 0, 'no reviews yet is not a five-star salon');
