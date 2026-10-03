@@ -67,3 +67,11 @@ test('availability RPC no longer gates on salons.verified, matching the booking 
   // Still restricted to the service role.
   assert.match(aligned,/grant execute on function public\.nexora_customer_booking_options\(uuid,uuid\[\],uuid,date\) to service_role/);
 });
+
+test('checkout pins the advance to 25% after validating the server quote', async () => {
+ const req:any={headers:{authorization:'Bearer token'},body:{...input,time:'08:00',totalAmount:450,depositPercent:1,receipt:'advance-regression'}};
+ const res:any={status(){return res;},json(){return res;}};
+ await customerPaymentOrderHandler(database(),false)(req,res);
+ assert.equal(req.body.depositPercent,25);
+ assert.equal(req.body.totalAmount,450);
+});

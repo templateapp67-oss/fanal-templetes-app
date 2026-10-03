@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { lookupSalon, mapProfileRow } from '../server/siteLookup.js';
 import { ownerBookingChanges, findAuthorizedBooking, presentBooking, updateNormalizedBooking } from '../server/normalizedBookingAccess.js';
@@ -262,4 +263,31 @@ test('malformed owner drafts cannot fabricate free services or public stylists',
   const response = await lookupSalon({ db: db as any, isMockSupabase: false, mockSalons: {} }, 'hello');
   assert.deepEqual(response.salon.services, []);
   assert.deepEqual(response.salon.stylists, []);
+});
+
+test('normalized checkout refuses underpaid or invalid prices before creating a booking', async () => {
+ const body:any={subdomain:'mine',idempotency_key:'advance-test',payment:{razorpay_order_id:'order-1'},booking:{service_id:'cut',booking_date:'2026-10-10',time_slot:'10:00',customer_name:'Riya',customer_phone:'9876543210'}};
+ let writes=0;
+ const integrations:any={gateway:()=>({fetchPayment:async()=>({captured:true,orderId:'order-1',currency:'INR',amountPaidRupees:1})}),userDatabase:()=>({rpc:async()=>{writes++;return result(bookingId);}})};
+ const db=database(c=>result(c.table==='salons'?{id:salonId,timezone:'Asia/Kolkata'}:c.table==='services'?[{id:serviceId,price_paise:49900}]:null));
+ await assert.rejects(createNormalizedBooking(db,{headers:{authorization:'Bearer token'}},actor,body,'pay-1',integrations),(e:any)=>e.code==='payment_advance_insufficient');
+ assert.equal(writes,0);
+ assert.equal(db.calls.find(c=>c.table==='salons')?.filters.deleted_at,null);
+ for(const price of [NaN,Infinity,-1,0,1.5]) {
+   const invalid=database(c=>result(c.table==='salons'?{id:salonId,timezone:'Asia/Kolkata'}:[{id:serviceId,price_paise:price}]));
+   await assert.rejects(createNormalizedBooking(invalid,{headers:{authorization:'Bearer token'}},actor,body,null,integrations),(e:any)=>e.code==='invalid_service_price');
+ }
+ assert.equal(writes,0);
+});
+
+test('a captured 25% advance creates the booking and records the verified payment', async () => {
+ const body:any={subdomain:'mine',idempotency_key:'advance-valid',payment:{razorpay_order_id:'order-1'},booking:{service_id:'cut',booking_date:'2026-10-10',time_slot:'10:00',customer_name:'Riya',customer_phone:'9876543210'}};
+ const db:any=database(c=>result(c.table==='salons'?{id:salonId,timezone:'Asia/Kolkata'}:c.table==='services'?[{id:serviceId,price_paise:49900}]:c.table==='payments'?null:row()));
+ let captured:any;let writes=0;
+ db.rpc=async(name:string,args:any)=>{assert.equal(name,'record_verified_payment_capture');captured=args;return result(null);};
+ const gateway={fetchPayment:async()=>({captured:true,orderId:'order-1',currency:'INR',amountPaidRupees:125}),fetchOrder:async()=>({notes:{nexora_actor:actor,nexora_salon:salonId,nexora_reference:'advance-valid',nexora_start:'2026-10-10T04:30:00.000Z',nexora_services:createHash('sha256').update(serviceId).digest('hex')}})};
+ const integrations:any={gateway:()=>gateway,userDatabase:()=>({rpc:async()=>{writes++;return result(bookingId);}})};
+ const saved=await createNormalizedBooking(db,{headers:{authorization:'Bearer token'}},actor,body,'pay-valid',integrations);
+ assert.equal(saved.id,bookingId);assert.equal(writes,1);
+ assert.equal(captured.p_amount_paise,12500);assert.equal(captured.p_provider_payment_id,'pay-valid');
 });

@@ -1035,10 +1035,11 @@ export function PartnerAccountSettingsPage({
   // manual `retry()` that starts a fresh attempt (see usePartnerSecurityOverview).
   const { overview, error, loading, refreshing, retry } = usePartnerSecurityOverview(resolvedClient);
 
-  // Directly check Supabase Auth MFA factors so 2FA status remains accurate and never shows broken warnings
+  // Auth factors are authoritative; a failed read leaves the state unknown.
   const [direct2fa, setDirect2fa] = useState<TwoFactorState>('unknown');
   useEffect(() => {
     let cancelled = false;
+    setDirect2fa('unknown');
     listPartnerTwoFactorFactors(resolvedClient)
       .then((factors) => {
         if (!cancelled) {
@@ -1047,9 +1048,7 @@ export function PartnerAccountSettingsPage({
         }
       })
       .catch(() => {
-        if (!cancelled && direct2fa === 'unknown') {
-          setDirect2fa('off');
-        }
+        if (!cancelled) setDirect2fa('unknown');
       });
     return () => {
       cancelled = true;
@@ -1063,9 +1062,9 @@ export function PartnerAccountSettingsPage({
   if (loading && !overview) return <PartnerLoading label="Loading your account settings…" kind="profile" />;
 
   const overviewUnavailable = !overview;
-  const twoFactorState: TwoFactorState = direct2fa === 'on' || overview?.two_factor_enabled
-    ? 'on'
-    : (direct2fa === 'off' || overview ? 'off' : 'unknown');
+  const twoFactorState: TwoFactorState = direct2fa !== 'unknown'
+    ? direct2fa
+    : overview ? (overview.two_factor_enabled ? 'on' : 'off') : 'unknown';
   const pendingDeactivation = overview?.deactivation?.status === 'pending' ? overview.deactivation : null;
   const sessionCount = overview?.sessions.length ?? 0;
 
@@ -1112,7 +1111,7 @@ export function PartnerAccountSettingsPage({
         ) : null}
       </section>
 
-      {error && error.kind === 'session' ? <SecurityOverviewNotice error={error} refreshing={refreshing} onRetry={retry} /> : null}
+      {error ? <SecurityOverviewNotice error={error} refreshing={refreshing} onRetry={retry} /> : null}
 
       <section className={cardClass} aria-label="Email and password">
         <PartnerSectionErrorBoundary label="Change email">

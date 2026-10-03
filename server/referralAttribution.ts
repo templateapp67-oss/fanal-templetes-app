@@ -114,6 +114,16 @@ export function registerReferralAttributionRoutes(
     res.set('Vary', 'Origin');
 
     const origin = req.get('origin');
+    const secure = process.env.NODE_ENV === 'production' || req.secure || req.get('x-forwarded-proto') === 'https';
+    const requestOrigin = `${secure ? 'https' : 'http'}://${req.get('host')}`;
+    // The response contains a signup capability backed by an HttpOnly cookie.
+    // Never reflect an arbitrary credentialed Origin or let a cross-site page
+    // replace the browser's attribution cookie.
+    if ((origin && origin !== requestOrigin) || req.get('sec-fetch-site') === 'cross-site') {
+      res.removeHeader('Access-Control-Allow-Origin');
+      res.removeHeader('Access-Control-Allow-Credentials');
+      return void res.status(403).json({ error: 'Referral requests must use the same website.' });
+    }
     if (origin) {
       res.set('Access-Control-Allow-Origin', origin);
       res.set('Access-Control-Allow-Credentials', 'true');
@@ -125,7 +135,6 @@ export function registerReferralAttributionRoutes(
       return void res.status(200).end();
     }
 
-    const secure = process.env.NODE_ENV === 'production' || req.secure || req.get('x-forwarded-proto') === 'https';
     if (req.method !== 'GET' && req.method !== 'POST') return void res.status(405).set('Allow', 'GET, POST, OPTIONS').json({ error: 'Method not allowed.' });
 
     // Counted AFTER the method gates and BEFORE any RPC, so the limit bounds writes.
