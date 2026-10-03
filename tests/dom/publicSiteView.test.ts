@@ -87,8 +87,8 @@ test('a visitor never sees the owner address form or an invented salon address',
     assert.doesNotMatch(text, /Santa Cruz West/);
     // …and the visitor still gets the way to the salon.
     assert.match(text, /Star Salon/);
-    const mapsLinks = Array.from(container.querySelectorAll('a[href*="google.com/maps"]'));
-    assert.ok(mapsLinks.length >= 2, 'the public card keeps View on Google Maps + Get Directions');
+    const mapsLinks = Array.from(container.querySelectorAll('a[href*="openstreetmap.org"]'));
+    assert.ok(mapsLinks.length >= 2, 'the public card keeps View on OpenStreetMap + Get Directions');
     for (const link of mapsLinks) {
       assert.equal(link.getAttribute('target'), '_blank');
       assert.match(link.getAttribute('rel') || '', /noreferrer/);

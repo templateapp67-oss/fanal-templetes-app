@@ -280,8 +280,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   useSalonSEO(activeProfile, true);
 
   const location = websiteLocation(activeProfile);
-  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.query)}`;
-  const googleDirectionsUrl = location.directions;
+  const publicMapUrl = location.mapUrl;
+  const publicDirectionsUrl = location.directions;
 
   const minPrice = React.useMemo(() => {
     if (!activeServices || !Array.isArray(activeServices) || activeServices.length === 0) return null;
@@ -1502,7 +1502,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </span>
                   {!isEditMode && (
                     <a
-                      href={googleMapsUrl}
+                      href={publicMapUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="ml-1 text-[10px] text-emerald-500 hover:text-emerald-400 hover:underline inline-flex items-center gap-0.5 shrink-0 cursor-pointer"
@@ -1622,6 +1622,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 src={heroImageSrc}
                 alt={activeProfile.businessName}
                 onError={(e) => {
+                  if (heroImageSrc === '/gallery-placeholder.svg') return;
                   if (heroImageSrc !== activeTemplate.coverImageUrl && activeTemplate.coverImageUrl) setHeroImageSrc(activeTemplate.coverImageUrl);
                   else if (heroImageSrc !== '/gallery-placeholder.svg') setHeroImageSrc('/gallery-placeholder.svg');
                 }}
@@ -1782,6 +1783,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
 
+                  {publicView && !previewMode && activeProfile.subdomain && <a href={`/app/salon/${encodeURIComponent(activeProfile.subdomain)}`} className="min-h-[44px] rounded-2xl border px-5 py-3 text-sm font-bold text-center">View Profile</a>}
                   <a
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
                     target="_blank"
@@ -1802,7 +1804,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           isDarkCanvas ? 'bg-[#15151c] border-neutral-800 text-neutral-300' : 'bg-slate-50 border-slate-200 text-slate-700'
         }`}>
           <a
-            href={googleMapsUrl}
+            href={publicMapUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex min-h-8 min-w-0 flex-1 items-center gap-2 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
@@ -1822,7 +1824,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               )}
               {!isLoading && (
                 <span className="ml-2 text-[10px] text-emerald-600 font-bold inline-flex items-center gap-0.5">
-                  (View on Google Maps ↗)
+                  (View on OpenStreetMap ↗)
                 </span>
               )}
             </span>
@@ -2675,7 +2677,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                 <div className="flex flex-col gap-3 text-xs w-full max-w-full box-border">
                   <a
-                    href={googleMapsUrl}
+                    href={publicMapUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex min-h-20 items-start gap-3 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
@@ -2688,7 +2690,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       <div className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 flex flex-wrap items-center gap-1.5">
                         <span>Studio Address</span>
                         <span className="text-[11px] font-medium text-emerald-600 font-sans inline-flex items-center gap-0.5">
-                          (View on Google Maps ↗)
+                          (View on OpenStreetMap ↗)
                         </span>
                       </div>
                       <div className="text-slate-900 font-medium text-xs mt-0.5 break-words group-hover:underline underline-offset-2 decoration-emerald-500/50">
@@ -2780,7 +2782,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                   </button>
 
                   <a
-                    href={googleDirectionsUrl}
+                    href={publicDirectionsUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full md:w-auto min-h-[48px] text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"

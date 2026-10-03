@@ -25,7 +25,7 @@ test('map mount never invents contact/location data and accepts newer saved prof
     assert.equal((container.querySelector('[aria-label="Studio street address"]') as HTMLTextAreaElement).value, 'New Studio Road');
     await act(async () => input(container.querySelector('[aria-label="Studio street address"]')!, 'Changed Studio Road'));
     assert.equal(changes, 1); assert.equal(saved.city, 'Jaipur'); assert.equal(saved.phone, '9876543210');
-    assert.match(container.querySelector('iframe')?.src || '', /Changed%20Studio%20Road/);
+    assert.match(container.querySelector<HTMLAnchorElement>('a[href*="openstreetmap.org/search"]')?.href || '', /Changed%20Studio%20Road/);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
 

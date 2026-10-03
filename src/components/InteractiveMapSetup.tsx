@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import type { SalonProfile } from '../types';
 import { WebsiteLocationMap, websiteLocation } from './WebsiteLocationMap';
-import { geocodeAddressWithGoogleMaps } from '../utils/googleGeocoding';
+import { geocodeOpenStreetMap } from '../utils/openStreetMapGeocoding';
 
 interface InteractiveMapSetupProps {
   profile: SalonProfile;
@@ -28,9 +28,9 @@ export function InteractiveMapSetup({ profile, setProfile, themePrimaryColor = '
     const version = ++request.current;
     setBusy(true); setStatus('Looking up this address…');
     try {
-      const result = await geocodeAddressWithGoogleMaps(address);
+      const result = await geocodeOpenStreetMap(address);
       if (version !== request.current || current.current.ownerId !== owner || websiteLocation(current.current).address !== address) return;
-      if (result && result.source !== 'fallback') {
+      if (result) {
         setProfile(p => p.ownerId === owner && websiteLocation(p).address === address ? { ...p, latitude: result.lat, longitude: result.lng } : p);
         setStatus('Address located. Check the map before publishing.');
       } else setStatus('Using your saved address on the map. An exact GPS pin could not be verified.');
@@ -38,7 +38,7 @@ export function InteractiveMapSetup({ profile, setProfile, themePrimaryColor = '
     finally { if (version === request.current) setBusy(false); }
   };
   return <section className="space-y-4 rounded-2xl bg-white p-4 text-slate-900">
-    <div><h3 className="font-bold">Salon Address &amp; Localization Setup</h3><p className="mt-1 text-xs text-slate-500">The saved address is shown immediately; a Google API key is not required to display the map.</p></div>
+    <div><h3 className="font-bold">Salon Address &amp; Localization Setup</h3><p className="mt-1 text-xs text-slate-500">The saved address is shown immediately; OpenStreetMap displays the location without an API key.</p></div>
     <label className="block text-xs font-bold">Street address<textarea aria-label="Studio street address" value={profile.address || ''} onChange={e => update({ address: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" /></label>
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{([
       ['Shop / Flat / Suite No.', 'shopFlatNo'], ['Area / Locality', 'areaLocality'], ['City', 'city'], ['State', 'state'], ['Postal code', 'postalCode'], ['Landmark', 'landmark'],

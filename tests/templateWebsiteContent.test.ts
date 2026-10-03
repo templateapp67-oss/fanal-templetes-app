@@ -30,11 +30,12 @@ for (const template of TEMPLATE_REGISTRY) {
   });
 }
 
-test('map uses saved address without coordinates or a Google API key', () => {
+test('map uses saved address without coordinates using OpenStreetMap', () => {
   const profile = { businessName: 'My Studio', address: '100 Feet Road', city: 'Bengaluru', postalCode: '560038' };
   const html = renderToStaticMarkup(React.createElement(WebsiteLocationMap, { profile }));
   assert.match(html, /100%20Feet%20Road%2C%20Bengaluru%2C%20560038/);
-  assert.match(html, /output=embed/);
+  assert.match(html, /openstreetmap.org/);
+  assert.doesNotMatch(html, /google.com|<iframe/);
   assert.match(html, /Get Directions/);
   assert.doesNotMatch(html, /Mumbai|key=/);
   assert.equal(websiteLocation({ ...profile, latitude: 999, longitude: 12 }).query, '100 Feet Road, Bengaluru, 560038');
@@ -128,4 +129,11 @@ test('upstream lookbook photos render compatibly without resurrecting a delibera
   }));
   assert.match(render(), /legacy-lookbook\.jpg/);
   assert.doesNotMatch(render({ gallery: [] }), /legacy-lookbook\.jpg|Legacy showcase/);
+});
+
+test('saved map pins use OpenStreetMap embedding, including valid zero coordinates',()=>{
+ const location=websiteLocation({businessName:'Equator Studio',latitude:0,longitude:0});
+ assert.equal(location.query,'0,0');assert.ok(location.mapUrl.includes('openstreetmap.org'));
+ const html=renderToStaticMarkup(React.createElement(WebsiteLocationMap,{profile:{businessName:'Equator Studio',latitude:0,longitude:0}}));
+ assert.match(html,/openstreetmap.org\/export\/embed.html/);assert.doesNotMatch(html,/google.com|key=/);
 });
