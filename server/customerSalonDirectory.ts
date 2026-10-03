@@ -1,3 +1,5 @@
+import { resolveWebsitePackages } from '../src/lib/websitePackages.js';
+import { catalogId } from './normalizedBookingCreate.js';
 import { readDatabase } from './backendContext.js';
 import { mapProfileRow, mapServiceRow, mapStylistRow } from './siteLookup.js';
 import { applyPublicWebsiteContent, mergeServicePresentation } from './websiteContent.js';
@@ -63,16 +65,17 @@ export async function readNormalizedSalonDirectory(db: any, query: any = {}, han
     const openNow = todayHours === 'Closed' ? false : openNowFrom(todayHours ? {monFri:todayHours,saturday:todayHours,sunday:todayHours} : mapped.workingHours, localNow);
     return { ...mapped, openNow, verified: row.is_verified === true || row.verified === true, area: row.area || profile.areaLocality || '',
       bookingServiceId: menu[0]?.id || null, normalizedCatalogue: true,
+      serviceNames: menu.map(s => s.name), serviceGenders: [...new Set(menu.map(s => s.gender || 'All genders'))],
       publishedServices: handle ? menu.map(s => toCustomerService({ id:s.id, owner_id:row.id, name:s.name,category:s.category,description:s.description,icon:s.icon,price:s.price,duration_minutes:s.durationMinutes,show_duration:s.showDuration })) : undefined,
       publishedStaff: handle ? (staff || []).filter(s => s.salon_id === row.id).map(s => { const p=mapStylistRow({...s,hide_phone:true}); return toCustomerStaff({ id:p.id,owner_id:row.id,name:p.name,role:p.role,avatar_url:p.avatarUrl,bio:p.bio,hide_phone:true }); }) : undefined,
       publishedReviews: handle ? reviews : undefined,
-      packages: [],
+      packages: resolveWebsitePackages(profile.packages?.map(p => ({ ...p, serviceIds: p.serviceIds.map(id => catalogId(row.id, 'service', id)) })), menu).map(p => ({ id: p.id, name: p.name, price: p.price, serviceIds: p.serviceIds })),
     };
   });
   if (handle) return salons;
   const term = String(query.q || '').trim().toLowerCase();
   const filtered = salons.filter(s => (!query.city || s.city.toLowerCase().includes(String(query.city).toLowerCase())) &&
-    (!term || [s.name,s.city,s.area,...s.categories].some(v => String(v).toLowerCase().includes(term))) &&
+    (!term || [s.name,s.city,s.area,...s.categories,...(s.serviceNames || [])].some(v => String(v).toLowerCase().includes(term))) &&
     (!query.businessType || s.businessType === query.businessType) && (!query.category || s.categories.includes(query.category)) &&
     (!(query.openNow === 'true' || query.openNow === '1') || s.openNow === true) &&
     (!(query.offersOnly === 'true' || query.offersOnly === '1') || s.hasActiveOffers) &&

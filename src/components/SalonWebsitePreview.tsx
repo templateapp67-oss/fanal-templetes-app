@@ -1,3 +1,5 @@
+import { TemplatePackages } from './TemplatePackages';
+import { TemplateCustomerHub, TemplateCustomerToolbar, type TemplateCustomerRequest, type TemplateCustomerSection } from './TemplateCustomerHub';
 import { globalSiteConfig } from '../lib/globalSiteConfig';
 import { ServicePriceFields } from './ServicePriceFields';
 import { serviceImageFallback } from '../data/categoryStarterServices';
@@ -449,6 +451,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
   const [isBookingOpen, setIsBookingOpen] = useState<boolean>(false);
+  const [customerRequest, setCustomerRequest] = useState<TemplateCustomerRequest | null>(null);
+  const openCustomerSection = (section: TemplateCustomerSection) => setCustomerRequest({ section });
   const [selectedService, setSelectedService] = useState<SalonService | undefined>(activeServices[0]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist | undefined>(activeStylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
@@ -671,7 +675,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const bookingWhatsapp = /^\d{7,15}$/.test(whatsappDigits) ? (whatsappDigits.length === 10 ? `91${whatsappDigits}` : whatsappDigits) : '';
   const handleOpenBooking = (srv?: SalonService, stylist?: Stylist) => {
     if (previewMode) {
-      showNotification('Preview Mode: This action is simulated.');
+      setCustomerRequest({ section: 'book', serviceIds: srv ? [srv.id] : undefined });
       return;
     }
     if (activeProfile.acceptsOnlineBookings === false || activeServices.length === 0) {
@@ -974,7 +978,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   return (
     <div 
-      className={`min-h-dvh w-full max-w-full box-border overflow-x-hidden overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${activeProfile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-24 md:pb-16' : 'pt-20 pb-24'}`}
+      className={`template-brand-scope min-h-dvh w-full max-w-full box-border overflow-x-hidden overflow-x-clip flex flex-col items-center text-slate-900 font-sans relative select-text ${activeProfile.appearance === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100'} ${headingStyleClass} ${buttonStyleClass} ${publicView ? 'pt-0 pb-24 md:pb-16' : 'pt-20 pb-24'}`}
       style={{
         '--primary-accent': resolvedPrimaryColor,
         '--theme-primary': resolvedPrimaryColor,
@@ -982,6 +986,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         '--color-primary': resolvedPrimaryColor,
         '--brand-background': activeProfile.backgroundColor || (activeProfile.appearance === 'dark' ? '#020617' : '#ffffff'),
         '--brand-radius': radius,
+        '--template-heading-font': activeProfile.headingFont ? `"${activeProfile.headingFont.replace(/["\\;]/g, '')}", sans-serif` : 'var(--font-display)',
+        '--template-body-font': activeProfile.bodyFont ? `"${activeProfile.bodyFont.replace(/["\\;]/g, '')}", sans-serif` : 'var(--font-body)',
         '--accent-luminance': accentLuminance.toFixed(4),
         '--accent-text-color': contrastTextColor,
         '--accent-contrast-text': contrastTextColor,
@@ -1005,6 +1011,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       }}
     >
       
+      <TemplateCustomerHub request={customerRequest} onClose={() => setCustomerRequest(null)} profile={activeProfile} services={activeServices} previewMode={previewMode || !publicView} accentHex={resolvedPrimaryColor} dark={isDarkCanvas} />
       {/* Toast Notifications */}
       <AnimatePresence>
         {notificationToast && (
@@ -1323,7 +1330,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
       <div 
-        data-salon-canvas data-device-mode={deviceMode}
+        data-salon-canvas data-device-mode={deviceMode} data-template-layout={activeTemplate.layoutStyle}
         className={`@container/salon ${publicView ? 'mt-0 p-0' : 'mt-4 p-0 @min-[640px]/salon:p-2'} w-full max-w-full min-w-0 box-border overflow-x-hidden transition-all duration-300 ${deviceWidthClass} min-h-[800px] [&_*]:max-w-full [&_*]:box-border ${
           isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
         }`}
@@ -1448,6 +1455,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         })()}
 
         {/* ============================================================ */}
+        <TemplateCustomerToolbar profile={activeProfile} onOpen={openCustomerSection} signedIn={Boolean(user?.id)} />
         {/* SECTION: SALON SITE NAV HEADER & STICKY BOOKING TRIGGER */}
         {/* ============================================================ */}
         {sectionVisibility.header && (
@@ -1785,7 +1793,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
 
-                  {publicView && !previewMode && activeProfile.subdomain && <a href={`/app/salon/${encodeURIComponent(activeProfile.subdomain)}`} className="min-h-[44px] rounded-2xl border px-5 py-3 text-sm font-bold text-center">View Profile</a>}
+                  {publicView && !previewMode && activeProfile.subdomain && <button type="button" onClick={() => openCustomerSection('salon')} className="min-h-[44px] rounded-2xl border px-5 py-3 text-sm font-bold text-center">View Profile</button>}
                   <a
                     href={`https://wa.me/${activeProfile.whatsapp.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(activeProfile.businessName)},%20I%20would%20like%20to%20inquire%20about%20booking%20an%20appointment.`}
                     target="_blank"
@@ -1854,6 +1862,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             isDarkCanvas ? 'bg-[#121216] border-neutral-800' : 'bg-white border-slate-200'
           }`}>
             <div className="w-full max-w-4xl box-border mx-auto">
+              {[activeProfile.scentProfile, activeProfile.soundscape, activeProfile.consultationStyle].some(Boolean) && <div className="grid grid-cols-1 @min-[640px]/salon:grid-cols-3 gap-3 mb-6" aria-label="In-salon experience">{[['Scent', activeProfile.scentProfile], ['Soundscape', activeProfile.soundscape], ['Consultation', activeProfile.consultationStyle]].filter(([,value]) => Boolean(value)).map(([label,value]) => <div key={label} className="rounded-2xl border border-current/10 p-4"><p className="text-[10px] uppercase tracking-widest opacity-50">{label}</p><p className="text-sm font-semibold mt-1">{value}</p></div>)}</div>}
               {/* Header */}
               <div className="text-center mb-8">
                 <span 
@@ -2276,6 +2285,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* ============================================================ */}
+        {sectionVisibility.services && <TemplatePackages packages={activeProfile.packages ?? (previewMode && activeServices.length >= 2 ? [{ id: 'sample-duo', name: 'Signature Duo', description: 'Two essentials, one effortless appointment.', serviceIds: activeServices.slice(0,2).map(s=>s.id), isActive: true }] : [])} services={activeServices} onBook={ids => setCustomerRequest({ section: 'book', serviceIds: ids })} />}
         {/* 4. MASTER STYLISTS & SPECIALISTS SECTION (INLINE EDITABLE) */}
         {/* ============================================================ */}
         {sectionVisibility.stylists && (
@@ -2916,8 +2926,12 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           activeSection={mobileNavActive}
           onNavigateSection={scrollToMobileSection}
           onQuickBook={() => handleOpenBooking()}
-          onOpenBookings={() => (publicView ? navigateApp(MY_BOOKINGS_PATH) : handleOpenBooking())}
+          onOpenBookings={() => openCustomerSection('bookings')}
           onMoreNavigate={scrollToMoreTarget}
+          onOpenRewards={() => openCustomerSection('wallet')}
+          onOpenProfile={() => openCustomerSection('profile')}
+          onOpenFavorites={() => openCustomerSection('favourites')}
+          onOpenNotifications={() => openCustomerSection('notifications')}
           whatsappNumber={activeProfile.whatsapp}
           phoneNumber={activeProfile.phone}
           businessName={activeProfile.businessName}

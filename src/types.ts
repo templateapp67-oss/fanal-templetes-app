@@ -319,6 +319,16 @@ export interface SalonProfile {
   seoDescription?: string;
   headingFont?: string;
   bodyFont?: string;
+  /** Website packages bundle existing services; catalogue prices stay authoritative. */
+  packages?: SalonPackage[];
+}
+
+export interface SalonPackage {
+  id: string;
+  name: string;
+  description: string;
+  serviceIds: string[];
+  isActive: boolean;
 }
 
 export interface SalonService {
@@ -335,6 +345,7 @@ export interface SalonService {
   icon: string;
   popular?: boolean;
   showDuration?: boolean; // Defaults to true if undefined. When false, duration is hidden on public website menu.
+  gender?: 'All genders' | 'Women' | 'Men' | 'Kids';
   parentServiceId?: string; // Optional reference to parent service when treated as add-on/upgrade
   serviceId?: string; // Optional reference alias for explicit linking
 }

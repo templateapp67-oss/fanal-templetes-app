@@ -268,6 +268,8 @@ export const HomeScreen: React.FC<DiscoverProps> = ({ userId, accentHex = '#C20E
 };
 
 export interface DiscoveryFilters {
+  gender?: string;
+  maxDistance?: string;
   category: string;
   maxPrice: string;
   minRating: number;
@@ -316,7 +318,7 @@ function useSalonSearch(input: {
       });
       if (cancelled) return;
       if (result.ok) {
-        setState({ data: (result.data as CustomerSalon[]) || [], loading: false, failed: false, error: '', notice: (result as any).notice || '', mode: result.mode });
+        setState({ data: ((result.data as CustomerSalon[]) || []).filter(salon => (!input.filters.gender || (salon.serviceGenders || ['All genders']).includes(input.filters.gender)) && (!input.filters.maxDistance || salon.distanceKm !== null && salon.distanceKm !== undefined && salon.distanceKm <= Number(input.filters.maxDistance))), loading: false, failed: false, error: '', notice: (result as any).notice || '', mode: result.mode });
       } else {
         setState({ data: null, loading: false, failed: true, error: result.error, notice: '', mode: 'live' });
       }
@@ -368,7 +370,7 @@ const DiscoveryFilterBar: React.FC<{
     return [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   }, [salons]);
   const activeCount =
-    (filters.category ? 1 : 0) + (filters.maxPrice ? 1 : 0) + (filters.minRating ? 1 : 0) + (filters.openNow ? 1 : 0) + (filters.offersOnly ? 1 : 0);
+    (filters.gender ? 1 : 0) + (filters.maxDistance ? 1 : 0) + (filters.category ? 1 : 0) + (filters.maxPrice ? 1 : 0) + (filters.minRating ? 1 : 0) + (filters.openNow ? 1 : 0) + (filters.offersOnly ? 1 : 0);
 
   return (
     <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
@@ -426,6 +428,9 @@ const DiscoveryFilterBar: React.FC<{
             title="The salon's cheapest published service price must be at or below this"
           />
         </label>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">Gender / service type<select aria-label="Gender / service type" value={filters.gender || ''} onChange={e=>onChange({...filters,gender:e.target.value})} className="min-h-11 max-w-36 rounded-xl border border-slate-200 bg-white px-2 text-xs"><option value="">Any</option>{['All genders','Women','Men','Kids'].map(g=><option key={g}>{g}</option>)}</select></label>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">Within<select aria-label="Maximum distance" value={filters.maxDistance || ''} onChange={e=>onChange({...filters,maxDistance:e.target.value})} className="min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-xs"><option value="">Any distance</option>{[2,5,10,25].map(d=><option value={d} key={d}>{d} km</option>)}</select></label>
+        {filters.maxDistance && <p className="text-xs text-slate-500">Choose your location to see salons with a known distance.</p>}
         {activeCount ? (
           <button
             id="discover-filter-clear-btn"

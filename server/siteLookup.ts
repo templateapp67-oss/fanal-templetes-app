@@ -1,3 +1,4 @@
+import { catalogId } from './normalizedBookingCreate.js';
 import { applyPublicWebsiteContent, mergeServicePresentation, scopedWebsiteSnapshot } from './websiteContent.js';
 // ============================================================================
 // Multi-tenant site resolution and mapping (shared by dev server.ts and
@@ -466,7 +467,7 @@ export async function lookupSalon(
       salonId: catalogueSalonId,
       // Bookings use the normalized catalogue. Never resurrect hidden/retired
       // services or private staff from a stale editor draft when it is empty.
-      profile: fillProfileFromEditorState(profile, editorState?.profile),
+      profile: (() => { const published = fillProfileFromEditorState(profile, editorState?.profile); return { ...published, packages: published.packages?.map(p => ({ ...p, serviceIds: p.serviceIds.map(id => catalogId(catalogueSalonId, 'service', id)) })) }; })(),
       services: mergeServicePresentation(catalogueServices, presentationServices, catalogueSalonId),
       stylists: catalogueStylists,
       selectedTemplateId: [salonRow.data?.selected_template_id, salonRow.template_key, salonRow.selected_template_id, editorState?.selectedTemplateId].find(value => typeof value === 'string' && value.trim()) || null,

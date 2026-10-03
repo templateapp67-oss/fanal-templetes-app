@@ -75,6 +75,7 @@ import { ServiceList, StaffList } from './Discover';
 
 export interface BookingFlowProps {
   salonId: string;
+  initialServiceIds?: string[];
   userId?: string | null;
   email?: string | null;
   accentHex?: string;
@@ -106,6 +107,7 @@ const STEP_LABEL: Record<Step, string> = {
 
 export const BookingFlow: React.FC<BookingFlowProps> = ({
   salonId,
+  initialServiceIds = [],
   userId,
   email,
   accentHex = '#C20E5A',
@@ -117,7 +119,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   onExit,
 }) => {
   const [step, setStep] = useState<Step>('services');
-  const [serviceIds, setServiceIds] = useState<string[]>([]);
+  const [serviceIds, setServiceIds] = useState<string[]>(initialServiceIds);
   const [staffId, setStaffId] = useState('');
   const [date, setDate] = useState(todayIsoDate());
   const [time, setTime] = useState('');

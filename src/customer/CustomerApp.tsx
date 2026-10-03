@@ -40,6 +40,9 @@ import { referralCodeFromQuery } from '../lib/referralQuery';
 export interface CustomerAppProps {
   /** Current path, from the same `usePathRoute` the owner app uses. */
   path: string;
+  /** Hosted inside a salon template dialog; navigation stays inside that dialog. */
+  embedded?: boolean;
+  initialServiceIds?: string[];
   navigate: (to: string) => void;
   /**
    * Accent from the tenant the request arrived on (white-label subdomain), so a
@@ -63,11 +66,12 @@ const NAV: Array<{ section: CustomerSection; label: string; icon: React.ReactNod
 /** Screens that are meaningless without an account (booking is the whole point). */
 const PRIVATE: CustomerSection[] = ['bookings', 'booking', 'profile', 'settings', 'wallet', 'qr', 'pass', 'membership', 'referral', 'notifications', 'favourites', 'reviews', 'offers'];
 
-export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accentHex: tenantAccentHex = '', tenantSubdomain = '', tenantName = '' }) => {
+export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accentHex: tenantAccentHex = '', tenantSubdomain = '', tenantName = '', embedded = false, initialServiceIds = [] }) => {
   const route = useMemo(() => matchCustomerRoute(path), [path]);
   const [session, setSession] = useState<{ id: string; email?: string } | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [bookingServiceIds, setBookingServiceIds] = useState<string[]>(initialServiceIds);
   const [salon, setSalon] = useState<CustomerSalon | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [pendingAfterAuth, setPendingAfterAuth] = useState('');
@@ -116,8 +120,8 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
   }, [tenantSubdomain, path, navigate]);
 
   const requireAuth = useCallback(
-    (returnTo: string) => {
-      setAuthMode('login');
+    (returnTo: string, mode: 'login' | 'signup' = 'login') => {
+      setAuthMode(mode);
       setPendingAfterAuth(returnTo);
       go('auth');
     },
@@ -170,7 +174,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
 
   // Tenant palette first, then the salon row's own palette once it loads — the
   // same `profiles.theme_accent_key` value, resolved by the same table.
-  const accentHex = useMemo(() => (salon ? accentFrom(salon) : tenantAccentHex || DEFAULT_ACCENT), [salon, tenantAccentHex]);
+  const accentHex = useMemo(() => (embedded && tenantAccentHex ? tenantAccentHex : salon ? accentFrom(salon) : tenantAccentHex || DEFAULT_ACCENT), [salon, tenantAccentHex, embedded]);
   const location = useMemo(() => readLocation(session?.id), [session?.id, refreshToken, path]);
   const needsLocation = route.section === 'book' && !location?.city;
   const needsAuth = !session && (PRIVATE.includes(route.section) || route.section === 'book');
@@ -207,7 +211,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
               <div>
                 <p className="text-base font-extrabold text-slate-900">Sign in to open your salon account</p>
                 <p className={`text-sm mt-1 ${MUTED_CLASS}`}>
-                  Your bookings, wallet and notifications are read from your own rows in this project's Supabase — so the app needs to know it is you.
+                  Sign in to manage your appointments, rewards, favorites and notifications.
                 </p>
               </div>
             </div>
@@ -218,8 +222,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
               <Button
                 variant="secondary"
                 onClick={() => {
-                  setAuthMode('signup');
-                  requireAuth(path);
+                  requireAuth(path, 'signup');
                 }}
               >
                 Create an account
@@ -272,7 +275,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
             refreshToken={refreshToken}
             onBack={() => go('home')}
             onTab={(tab) => go('salon', route.id, tab)}
-            onBook={() => go('book', route.id)}
+            onBook={(ids) => { setBookingServiceIds(ids || []); go('book', route.id); }}
             onRequireAuth={() => requireAuth(customerPath('salon', route.id))}
           />
         );
@@ -280,6 +283,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
         return (
           <BookingFlow
             salonId={route.id}
+            initialServiceIds={bookingServiceIds}
             userId={session?.id}
             email={session?.email}
             accentHex={accentHex}
@@ -357,7 +361,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
               <div>
                 <p className="text-sm font-bold text-slate-900">{session?.email || 'Signed in'}</p>
                 <p className={`text-xs ${MUTED_CLASS}`}>
-                  Session from Supabase Auth · id <span className="font-mono">{String(session?.id || '').slice(0, 8)}…</span>
+                  Manage your personal details and preferences.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -404,7 +408,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
   })();
 
   return (
-    <div className="min-h-dvh bg-slate-50" style={{ backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${hexToRgba(accentHex, 0.1)}, transparent)` }}>
+    <div className={embedded ? 'customer-embedded bg-slate-50' : 'min-h-dvh bg-slate-50'} style={{ backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${hexToRgba(accentHex, 0.1)}, transparent)` }}>
       <div className="max-w-2xl mx-auto px-4 pt-5 pb-28">
         <header className="flex items-center justify-between gap-3 mb-5">
           <button id="customer-header-brand-btn" type="button" onClick={() => go('home')} className="flex items-center gap-2.5 min-w-0 text-left min-h-[44px] cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-300">
@@ -420,9 +424,9 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
             </span>
           </button>
           <div className="flex items-center gap-2 shrink-0">
-            <Chip tone={customerBackendConnected() ? 'success' : 'warn'} title={customerBackendConnected() ? 'The API answered with live Supabase data' : 'No Supabase credentials in this deployment — the app says so instead of showing sample data'}>
+            {!embedded && <Chip tone={customerBackendConnected() ? 'success' : 'warn'} title={customerBackendConnected() ? 'The API answered with live Supabase data' : 'No Supabase credentials in this deployment — the app says so instead of showing sample data'}>
               {customerBackendConnected() ? 'supabase' : 'not connected'}
-            </Chip>
+            </Chip>}
             {session ? (
               <button id="customer-header-profile-btn" type="button" onClick={() => go('profile')} className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full border border-slate-200 bg-white grid place-items-center cursor-pointer hover:bg-slate-50 transition-colors" title={session.email || 'Your profile'} aria-label="Your profile">
                 <User className="w-5 h-5 text-slate-600" />
@@ -453,7 +457,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
         {body}
       </div>
 
-      <nav className="layout-stable-fixed fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur" aria-label="Customer app sections">
+      <nav className={`${embedded ? 'sticky' : 'layout-stable-fixed fixed inset-x-0'} bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur`} aria-label="Customer app sections">
         <div className="max-w-3xl mx-auto grid grid-cols-6">
           {NAV.map((item) => {
             const active =

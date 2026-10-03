@@ -63,6 +63,8 @@ export interface CustomerSalon {
   area?: string;
   bookingServiceId?: string | null;
   normalizedCatalogue?: boolean;
+  serviceNames?: string[];
+  serviceGenders?: string[];
   publishedServices?: CustomerService[];
   publishedStaff?: CustomerStaff[];
   publishedReviews?: CustomerReview[];

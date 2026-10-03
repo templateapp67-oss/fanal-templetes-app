@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   Home,
+  Gift,
+  UserRound,
+  Heart,
+  Bell,
   Scissors,
   CalendarCheck,
   CalendarClock,
@@ -25,6 +29,10 @@ export interface MobileBottomNavProps {
   onQuickBook: () => void;
   /** Opens the customer "My Bookings" area. */
   onOpenBookings?: () => void;
+  onOpenRewards?: () => void;
+  onOpenProfile?: () => void;
+  onOpenFavorites?: () => void;
+  onOpenNotifications?: () => void;
   /** Handles navigation from the "More" bottom sheet (About / Gallery / Reviews / FAQ). */
   onMoreNavigate?: (target: MobileMoreTarget) => void;
   whatsappNumber?: string;
@@ -47,6 +55,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onNavigateSection,
   onQuickBook,
   onOpenBookings,
+  onOpenRewards,
+  onOpenProfile,
+  onOpenFavorites,
+  onOpenNotifications,
   onMoreNavigate,
   whatsappNumber,
   phoneNumber,
@@ -83,7 +95,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   };
 
   const renderNavItems = () => (
-    <div className="mx-auto grid w-full max-w-full grid-cols-5 items-center px-1.5 py-1 box-border">
+    <div className="mx-auto grid w-full max-w-full grid-cols-6 items-center px-1.5 py-1 box-border">
       {/* 1. Explore (/) */}
       <button
         type="button"
@@ -149,6 +161,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <span className="truncate max-w-full">Bookings</span>
       </button>
 
+      <button type="button" onClick={onOpenRewards} aria-label="Rewards" className="flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-bold text-slate-600 cursor-pointer"><Gift className="h-4 w-4" /><span>Rewards</span></button>
       {/* 5. More — opens the bottom sheet (About / Gallery / Reviews / FAQ) */}
       <button
         type="button"
@@ -196,6 +209,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             </button>
           </div>
           <div className="px-3 pb-4 grid grid-cols-2 gap-2">
+            {[{ label: 'Profile', Icon: UserRound, onClick: onOpenProfile }, { label: 'Favorites', Icon: Heart, onClick: onOpenFavorites }, { label: 'Notifications', Icon: Bell, onClick: onOpenNotifications }].filter(link => link.onClick).map(({ label, Icon, onClick }) => <button type="button" key={label} onClick={() => { closeMoreSheet(); onClick?.(); }} className="flex min-h-[48px] items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-left text-xs font-bold text-slate-800"><Icon className="w-5 h-5" />{label}</button>)}
             {MORE_LINKS.map(({ target, label, Icon }) => (
               <button
                 key={target}
