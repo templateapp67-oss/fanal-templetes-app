@@ -1,3 +1,4 @@
+import { TemplateCustomerHome } from './TemplateCustomerHome';
 import { TemplatePackages } from './TemplatePackages';
 import { TemplateCustomerHub, TemplateCustomerToolbar, type TemplateCustomerRequest, type TemplateCustomerSection } from './TemplateCustomerHub';
 import { globalSiteConfig } from '../lib/globalSiteConfig';
@@ -1808,6 +1809,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             </div>
           </section>
         )}
+
+        <TemplateCustomerHome profile={activeProfile} services={sectionVisibility.services ? activeServices : []} dark={isDarkCanvas} accentHex={isDarkCanvas ? resolvedSecondaryColor : resolvedPrimaryColor} onOpen={openCustomerSection} onBook={handleOpenBooking} />
 
         {/* Location Banner Bar with Live Hours */}
         <div data-layout-stable-location className={`px-6 py-3 flex min-h-[4.75rem] flex-wrap @min-[768px]/salon:flex-nowrap items-center justify-between gap-3 text-xs border-b [contain:layout] ${

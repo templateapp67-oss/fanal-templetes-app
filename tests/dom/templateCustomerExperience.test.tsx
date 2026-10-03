@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
+import { TemplateCustomerHome } from "../../src/components/TemplateCustomerHome";
 import { TemplateCustomerDemo } from "../../src/components/TemplateCustomerDemo";
 import { TemplateCustomerToolbar } from "../../src/components/TemplateCustomerHub";
 import { resolveWebsitePackages } from "../../src/components/TemplatePackages";
@@ -63,6 +64,10 @@ async function setup(section: any = "home") {
 for (const t of TEMPLATE_REGISTRY) {
   test(`${t.id}: customer toolbar and package/rewards screens render with its own services`, () => {
     const p = { ...profile, businessType: t.id, businessName: t.name };
+    const homepage = renderToStaticMarkup(<TemplateCustomerHome profile={p} services={t.config.services} dark={false} onOpen={() => {}} onBook={() => {}} />);
+    for (const label of ["Quick booking", "Featured studio", "Your rewards", "Customer account shortcuts", "Search this salon", "All categories"])
+      assert.ok(homepage.includes(label), `${t.id}: ${label} is visible on the page`);
+    assert.ok(!homepage.includes("<dialog"));
     const toolbar = renderToStaticMarkup(
       <TemplateCustomerToolbar profile={p} onOpen={() => {}} />,
     );
@@ -240,4 +245,39 @@ test('reschedule updates the appointment and completed visits accept a rated rev
     assert.match(app.node.textContent || '', /Verified sample visit/);
     assert.match(app.node.textContent || '', /Thoughtful care/);
   } finally { await app.dispose(); }
+});
+
+
+test("inline homepage filters services and books the selected catalogue item", async () => {
+  const node = document.createElement("div"); document.body.append(node);
+  const root = createRoot(node);
+  const catalogue = [
+    { id: "hair", name: "Haircut", category: "Hair", gender: "Men" as const, price: 400, durationMinutes: 30, description: "", icon: "" },
+    { id: "spa", name: "Facial", category: "Skin", gender: "Women" as const, price: 1500, durationMinutes: 60, description: "", icon: "" },
+  ];
+  let booked: string | undefined;
+  let opened: string | undefined;
+  await act(async () => root.render(<TemplateCustomerHome profile={profile} services={catalogue} dark={false} onBook={service => { booked = service?.id; }} onOpen={section => { opened = section; }} />));
+  const select = node.querySelector<HTMLSelectElement>('[aria-label="Service type"]')!;
+  await act(async () => { select.value = "Women"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  assert.ok(node.querySelector('[aria-label="Book Facial"]'));
+  assert.equal(node.querySelector('[aria-label="Book Haircut"]'), null);
+  await act(async () => (node.querySelector('[aria-label="Book Facial"]') as HTMLButtonElement).click());
+  assert.equal(booked, "spa");
+  const price = node.querySelector<HTMLSelectElement>('[aria-label="Price range"]')!;
+  await act(async () => { price.value = "500"; price.dispatchEvent(new Event("change", { bubbles: true })); });
+  assert.match(node.textContent || "", /No matching services/);
+  await act(async () => Array.from(node.querySelectorAll("button")).find(button => button.textContent === "Clear filters")!.click());
+  assert.ok(node.querySelector('[aria-label="Book Haircut"]'));
+  await act(async () => Array.from(node.querySelectorAll("button")).find(button => button.textContent?.includes("Your rewards"))!.click());
+  assert.equal(opened, "wallet");
+  await act(async () => root.unmount()); node.remove();
+});
+
+test("inline homepage empty catalogue has no invented rating or Infinity price", () => {
+  const html = renderToStaticMarkup(<TemplateCustomerHome profile={profile} services={[]} dark={true} onOpen={() => {}} onBook={() => {}} />);
+  assert.ok(!html.includes("Infinity"));
+  assert.ok(!html.includes("4.9 ·"));
+  assert.match(html, /No matching services/);
+  assert.match(html, /Reviews coming soon/);
 });

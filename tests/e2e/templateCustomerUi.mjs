@@ -20,7 +20,17 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`http://127.0.0.1:4192/templates/${id}/preview`);
     await page.locator('[data-salon-canvas]').waitFor();
-    await page.getByRole('button', { name: 'Packages', exact: true }).click();
+    const homepage = page.locator('[data-template-customer-home]');
+    await homepage.getByRole('heading', { name: 'Quick booking', exact: true }).waitFor();
+    assert.ok(await homepage.locator('article').count() >= 1, `${id}: cards exist without opening a dialog`);
+    const homeWidth = await homepage.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
+    assert.ok(homeWidth.scroll <= homeWidth.width + 1, `${id}: inline home does not overflow`);
+    const search = homepage.getByRole('searchbox');
+    await search.fill('no-such-service-123');
+    await homepage.getByRole('heading', { name: 'No matching services', exact: true }).waitFor();
+    await homepage.getByRole('button', { name: 'Clear filters', exact: true }).evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+    await homepage.getByRole('button', { name: 'Clear filters', exact: true }).click();
+    await page.getByRole('button', { name: 'Packages', exact: true }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Signature Duo', { exact: true }).waitFor();
     assert.equal(await dialog.getByRole('button', { name: 'Book package', exact: true }).count(), 2);
@@ -30,11 +40,15 @@ try {
     await dialog.getByText('Current points', { exact: true }).waitFor();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
-    console.log(`PASS ${id}: packages, rewards, Escape close and mobile width`);
+    console.log(`PASS ${id}: visible homepage, search/reset, packages, rewards, Escape and mobile width`);
   }
   for (const width of [320, 390, 768, 1440]) {
-    await page.setViewportSize({ width, height: 900 });
+    await page.setViewportSize({ width, height: 1200 });
     await page.goto('http://127.0.0.1:4192/templates/luxury_hair_salon/preview');
+    await page.locator('[data-template-customer-home]').evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+    assert.equal(await page.locator('[data-template-customer-home]').getByRole('button', { name: 'Book now', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(245, 158, 11)', 'VIP inline booking uses gold accent');
+    assert.equal(await page.locator('[data-template-customer-home]').getByRole('button', { name: 'Book now', exact: true }).evaluate(el => getComputedStyle(el).color), 'rgb(9, 9, 11)', 'VIP gold button text has strong contrast');
+    await page.screenshot({ path: `${output}/vip-inline-home-${width}.png`, clip: await page.locator('[data-template-customer-home]').boundingBox() });
     await page.getByRole('button', { name: 'Search salons & services', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Make time for yourself').waitFor();
@@ -49,7 +63,7 @@ try {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('http://127.0.0.1:4192/templates/hair_salon/preview');
-  await page.getByRole('button', { name: 'Packages', exact: true }).click();
+  await page.getByRole('button', { name: 'Packages', exact: true }).first().click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Book package', exact: true }).first().click();
   assert.equal(await dialog.locator('input[type=checkbox]:checked').count(), 2);

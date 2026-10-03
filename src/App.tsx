@@ -32,7 +32,7 @@ import { supabase, allowMockAuth, isMockSupabase } from './lib/supabaseClient';
 import { AppView, SalonProfile, SalonService, Stylist, Appointment, ClientRecord, BusinessTypeId, LoyaltyConfig, RewardThreshold } from './types';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES, INITIAL_STYLISTS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from './mockData';
 import { getTemplateById } from './data/templates';
-import { ACCENT_PALETTES, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
+import { ACCENT_PALETTES, DEFAULT_CATEGORY_ACCENTS, applyPrimaryAccentCssVar, AccentPaletteKey } from './themeAccents';
 import { applyGoogleFonts } from './utils/fontHelper';
 import { DEFAULT_LOYALTY_CONFIG, calculateLoyaltyTier } from './loyaltyData';
 import { Header } from './components/Header';
@@ -2578,6 +2578,7 @@ export default function App() {
     ownerPhotoUrl: previewTemplate.config.ownerPhotoUrl,
     coverImageUrl: previewTemplate.defaultData.hero.imageUrl,
     themePreset: previewTemplate.config.themePreset,
+    themeAccentKey: DEFAULT_CATEGORY_ACCENTS[previewTemplate.id],
     address: previewTemplate.defaultData.contact.address,
     city: previewTemplate.defaultData.contact.city,
     postalCode: previewTemplate.config.defaultPostalCode,
