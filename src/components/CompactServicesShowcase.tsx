@@ -14,11 +14,11 @@ import { shortServiceDescription } from './SalonWebsitePreview';
 //   • Each category renders its items in ONE single-line horizontal row with
 //     native touch-swipe physics (`overflow-x-auto snap-x snap-mandatory`)
 //     and completely hidden scrollbars (`.scrollbar-none`).
-//   • Compact cards: `w-[170px] sm:w-[220px] flex-shrink-0 snap-start` —
+//   • Compact cards: `w-[170px] @min-[640px]/salon:w-[220px] flex-shrink-0 snap-start` —
 //     several items fit side-by-side without ever forcing horizontal page
 //     overflow on the outer wrapper.
 //   • Desktop mouse users get circular 32×32 overlay arrow controls
-//     (`hidden md:flex`); touch devices keep their native swipe.
+//     (`hidden @min-[768px]/salon:flex`); touch devices keep their native swipe.
 //
 // The owner's editable grid (edit mode) is untouched — this component only
 // replaces the READ-ONLY customer-facing rendering.
@@ -90,7 +90,7 @@ const CompactServiceCard: React.FC<{
   return (
     <div
       data-testid="compact-service-card"
-      className={`w-[170px] sm:w-[220px] flex-shrink-0 snap-start rounded-2xl border overflow-hidden flex flex-col gap-2 p-2.5 transition-all duration-300 group ${
+      className={`w-[170px] @min-[640px]/salon:w-[220px] flex-shrink-0 snap-start rounded-2xl border overflow-hidden flex flex-col gap-2 p-2.5 transition-all duration-300 group ${
         isDarkCanvas
           ? 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'
           : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
@@ -101,7 +101,7 @@ const CompactServiceCard: React.FC<{
           src={service.imageUrl || imageFallback}
           alt={service.name}
           loading="lazy"
-          className="h-24 sm:h-28 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className="h-24 @min-[640px]/salon:h-28 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           onError={(event) => {
             const img = event.currentTarget;
             if (!img.src.endsWith('/service-placeholder.svg')) {
@@ -121,7 +121,7 @@ const CompactServiceCard: React.FC<{
       </div>
 
       <h3
-        className={`px-0.5 text-[13px] sm:text-sm font-extrabold leading-snug break-words hyphens-auto line-clamp-2 ${
+        className={`px-0.5 text-[13px] @min-[640px]/salon:text-sm font-extrabold leading-snug break-words hyphens-auto line-clamp-2 ${
           isDarkCanvas ? 'text-white' : 'text-slate-900'
         }`}
       >
@@ -141,7 +141,7 @@ const CompactServiceCard: React.FC<{
       <div className="mt-auto px-0.5 flex items-center justify-between gap-1.5">
         <div className="min-w-0 flex items-baseline gap-1.5 font-mono">
           <span
-            className={`text-sm sm:text-base font-extrabold ${
+            className={`text-sm @min-[640px]/salon:text-base font-extrabold ${
               isDarkCanvas ? 'text-emerald-400' : 'text-emerald-700'
             }`}
           >
@@ -240,7 +240,7 @@ const CompactCategoryRow: React.FC<{
     <div className="w-full max-w-full min-w-0">
       <div className="flex items-baseline justify-between gap-2 mb-2">
         <h3
-          className={`text-base sm:text-lg font-extrabold tracking-tight break-words hyphens-auto ${
+          className={`text-base @min-[640px]/salon:text-lg font-extrabold tracking-tight break-words hyphens-auto ${
             isDarkCanvas ? 'text-white' : 'text-slate-900'
           }`}
         >
@@ -258,7 +258,7 @@ const CompactCategoryRow: React.FC<{
             type="button"
             aria-label={`Scroll ${group.label} left`}
             onClick={() => scrollByPage(-1)}
-            className={`hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 items-center justify-center rounded-full border shadow-md backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${
+            className={`hidden @min-[768px]/salon:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 items-center justify-center rounded-full border shadow-md backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${
               isDarkCanvas
                 ? 'bg-neutral-900/90 border-neutral-700 text-white'
                 : 'bg-white/95 border-slate-200 text-slate-700'
@@ -272,7 +272,7 @@ const CompactCategoryRow: React.FC<{
             type="button"
             aria-label={`Scroll ${group.label} right`}
             onClick={() => scrollByPage(1)}
-            className={`hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 items-center justify-center rounded-full border shadow-md backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${
+            className={`hidden @min-[768px]/salon:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 items-center justify-center rounded-full border shadow-md backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${
               isDarkCanvas
                 ? 'bg-neutral-900/90 border-neutral-700 text-white'
                 : 'bg-white/95 border-slate-200 text-slate-700'
@@ -339,7 +339,7 @@ export const CompactServicesShowcase: React.FC<CompactServicesShowcaseProps> = (
   if (groups.length === 0) return null;
 
   return (
-    <div data-testid="compact-services" className="w-full max-w-full min-w-0 flex flex-col gap-6 sm:gap-8">
+    <div data-testid="compact-services" className="w-full max-w-full min-w-0 flex flex-col gap-6 @min-[640px]/salon:gap-8">
       {groups.map((group) => (
         <CompactCategoryRow
           key={group.label}

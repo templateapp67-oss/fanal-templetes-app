@@ -342,7 +342,7 @@ test('the public salon layout reserves dynamic content and uses stable viewport 
   assert.doesNotMatch(preview, /min-h-screen|max-h-\[[0-9]+vh\]/, 'the salon preview must use dynamic viewport units');
   assert.match(preview, /data-layout-stable-location/, 'the changing location strip must reserve a stable footprint');
   assert.match(preview, /min-h-\[4\.75rem\]/, 'the location strip must fit both short and wrapped addresses');
-  assert.match(preview, /data-layout-stable-contact[^>]*lg:min-h-\[36rem\]/, 'the contact and map row must not resize when profile address snapshots change');
+  assert.match(preview, /data-layout-stable-contact[^>]*@min-\[1024px\]\/salon:min-h-\[36rem\]/, 'the contact and map row must not resize when profile address snapshots change');
   assert.match(preview, /className="flex min-h-20 items-start gap-3 group/, 'the studio address details must reserve their wrapped-address footprint');
   assert.match(mapsView, /\[contain:layout\]/, 'the map fallback must contain its changing address layout');
   assert.match(preview, /data-layout-stable-media/, 'the videos and reels section must reserve space while media loads');

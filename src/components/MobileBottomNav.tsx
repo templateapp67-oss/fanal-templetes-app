@@ -249,27 +249,16 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
   return (
     <>
-      {/* Native fixed bottom navigation bar on mobile viewports */}
-      <nav
-        aria-label="Salon quick actions"
-        className="block md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-neutral-950/90 backdrop-blur-md border-t border-gray-200 dark:border-neutral-800 shadow-lg [padding-bottom:env(safe-area-inset-bottom)]"
-      >
-        {renderNavItems()}
-      </nav>
-      {renderMoreSheet('flex md:hidden')}
-
-      {/* In-frame sticky bottom navigation bar when previewing Mobile mode on desktop */}
-      {forceShowInPreview && (
-        <>
-          <nav
-            aria-label="Salon quick actions mobile preview"
-            className="hidden md:block sticky bottom-0 left-0 right-0 z-40 w-full max-w-full bg-white/90 dark:bg-neutral-950/90 backdrop-blur-md border-t border-gray-200 dark:border-neutral-800 shadow-lg"
-          >
-            {renderNavItems()}
-          </nav>
-          {renderMoreSheet('hidden md:flex')}
-        </>
+      {forceShowInPreview ? (
+        <nav aria-label="Salon quick actions mobile preview" className="sticky bottom-0 z-40 w-full max-w-full bg-white/90 dark:bg-neutral-950/90 backdrop-blur-md border-t border-gray-200 dark:border-neutral-800 shadow-lg [padding-bottom:env(safe-area-inset-bottom)]">
+          {renderNavItems()}
+        </nav>
+      ) : (
+        <nav aria-label="Salon quick actions" className="block @min-[768px]/salon:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-neutral-950/90 backdrop-blur-md border-t border-gray-200 dark:border-neutral-800 shadow-lg [padding-bottom:env(safe-area-inset-bottom)]">
+          {renderNavItems()}
+        </nav>
       )}
+      {renderMoreSheet(forceShowInPreview ? 'flex' : 'flex @min-[768px]/salon:hidden')}
     </>
   );
 };

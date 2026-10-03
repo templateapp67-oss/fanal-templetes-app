@@ -12,7 +12,7 @@ export function WebsiteVideoShowcase({ videos, dark = false }: { videos: SocialV
   return <div className="space-y-10">
     {groups.map(group => group.items.length > 0 && <div key={group.title}>
       <div className="mb-5 flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-rose-500" /><h3 className="text-xl font-bold">{group.title}</h3><span className="text-xs opacity-60">{group.items.length} videos</span></div>
-      <div className={`grid gap-5 ${group.short ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
+      <div className={`grid gap-5 ${group.short ? 'grid-cols-1 @min-[640px]/salon:grid-cols-2 @min-[1024px]/salon:grid-cols-3' : 'grid-cols-1 @min-[768px]/salon:grid-cols-2'}`}>
         {group.items.map(video => {
           const id = resolveYouTubeVideoId(video.videoId, video.youtubeUrl);
           return <article key={video.id} className={`overflow-hidden rounded-2xl border ${dark ? 'border-neutral-700 bg-neutral-950' : 'border-slate-200 bg-slate-50'}`}>
