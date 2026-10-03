@@ -358,9 +358,9 @@ test(
       const laterRef = `${origin}/onboarding/signup?ref=${codeB}`;
       window.history.replaceState(null, '', laterRef);
       await render(React.createElement(VisitorBrowser, { initialPath: `/onboarding/signup?ref=${codeB}` }));
-      await wait(() => text().includes('This account is already registered.'), 'existing-account notice for a signed-in owner');
+      await wait(() => text().includes('You are currently signed in as'), 'existing-account notice for a signed-in owner');
       assert.ok(
-        text().includes('Opening a referral link does not change your existing attribution.'),
+        text().includes("It will not change this account's existing attribution."),
         'the notice states the attribution rule'
       );
       assert.equal(captureAttempts(), capturesBeforeLaterLink, 'a signed-in owner captures nothing from a referral link');

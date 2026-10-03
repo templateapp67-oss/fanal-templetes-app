@@ -132,7 +132,7 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
   }, [photo]);
   if (loading) return <div className="min-w-0"><PartnerLoading label="Loading your profile…" kind="profile" /><PartnerToastCenter /></div>;
   if (!profile) return <div role="alert" className="p-6 text-rose-700">{error || 'Partner access required.'}
-    <button type="button" onClick={() => setRetry(value => value + 1)}>Retry</button></div>;
+    <button type="button" onClick={() => setRetry(value => value + 1)}>Retry profile</button></div>;
   const avatar = preview || (!removePhoto && growthPartnerPhotoUrl(profile.photo_path, client)) || '';
   const inputClass = 'mt-1 min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-2 focus:outline-slate-900';
   const errInput = 'border-rose-300 focus:outline-rose-500';
@@ -343,7 +343,8 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
             <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-slate-50 p-4 border border-slate-100">
               <img
                 src={avatar || '/nexora-salonos-logo.png'}
-                alt="Profile photo / Logo"
+                alt={avatar ? "Your profile photo" : "Nexora logo"}
+                aria-label={!avatar ? "No profile photo" : undefined}
                 className="h-20 w-20 rounded-full object-cover border-2 border-pink-300 bg-slate-900 shadow-md shrink-0"
               />
               <div className="min-w-0 basis-full sm:flex-1">
@@ -416,7 +417,8 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                     value={(formData.phone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
                     maxLength={10}
                     onChange={e => {
-                      const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      const digits = e.target.value.replace(/\D/g, '');
+                      const clean = (digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits).slice(0, 10);
                       setFormData(prev => ({ ...prev, phone: clean ? `+91 ${clean}` : '' }));
                     }}
                     aria-invalid={contactErrors.phone ? true : undefined}
@@ -441,7 +443,8 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                     value={(formData.whatsapp || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
                     maxLength={10}
                     onChange={e => {
-                      const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      const digits = e.target.value.replace(/\D/g, '');
+                      const clean = (digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits).slice(0, 10);
                       setFormData(prev => ({ ...prev, whatsapp: clean ? `+91 ${clean}` : '' }));
                     }}
                     aria-invalid={contactErrors.whatsappPhone ? true : undefined}
@@ -468,7 +471,8 @@ export function GrowthPartnerProfilePage({ client, navigate, onProfileChange }: 
                     value={(formData.alternatePhone || '').replace(/^\+91\s?|^91\s?/, '').replace(/\D/g, '').slice(0, 10)}
                     maxLength={10}
                     onChange={e => {
-                      const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      const digits = e.target.value.replace(/\D/g, '');
+                      const clean = (digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits).slice(0, 10);
                       setFormData(prev => ({ ...prev, alternatePhone: clean ? `+91 ${clean}` : '' }));
                     }}
                     aria-invalid={contactErrors.alternatePhone ? true : undefined}

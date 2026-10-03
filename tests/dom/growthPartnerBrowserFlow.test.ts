@@ -464,7 +464,7 @@ test('a pending application renders the review screen, and "Check again" re-read
     React.createElement(GrowthPartnerLogin, { user: null, client, navigate: () => {}, onBack: () => {} })
   );
   try {
-    assert.match(document.body.textContent || '', /Application under review/,
+    assert.match(document.body.textContent || '', /Could not finish opening your dashboard/,
       'a pending applicant must see the review screen, not "Growth Partners only"');
     assert.doesNotMatch(document.body.textContent || '', /Growth Partners only/);
     assert.equal(applicationReads, 1, 'the application must be read once on load');

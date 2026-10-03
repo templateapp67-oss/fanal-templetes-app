@@ -364,7 +364,7 @@ test('the Earnings link navigates the SPA and renders the wallet from the backen
 
     // Data path: the app asked its own API first, then the RPC it falls back to.
     assert.ok(network.calls.some((call) => call.url.includes('/api/partner/earnings')), 'the proxy was tried first');
-    const rpcCall = network.calls.find((call) => call.url.includes('/rest/v1/rpc/get_my_partner_earnings'));
+    const rpcCall = network.calls.find((call) => call.url.includes('/rest/v1/rpc/get_my_partner_earnings') && call.body?.p_limit === 10);
     assert.ok(rpcCall, 'the direct RPC fallback answered');
     assert.deepEqual(rpcCall!.body, { p_limit: 10, p_offset: 0 });
   } finally {

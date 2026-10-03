@@ -52,25 +52,8 @@ export const PartnerReferralCodeSection: React.FC<{
   const value = typeof code === 'string' ? code.trim() : '';
   const shareLink = value ? partnerReferralShareLink(value, origin) : '';
 
-  const copyCode = async () => {
-    if (!value) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-      }
-    } catch {}
-    copy(value, 'code');
-  };
-
-  const copyLink = async () => {
-    if (!value || !shareLink) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareLink);
-      }
-    } catch {}
-    copy(shareLink, 'link');
-  };
+  const copyCode = () => value ? copy(value, 'code') : Promise.resolve(false);
+  const copyLink = () => value && shareLink ? copy(shareLink, 'link') : Promise.resolve(false);
 
   const share = async () => {
     if (!value || !shareLink) return;

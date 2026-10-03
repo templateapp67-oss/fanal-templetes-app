@@ -43,10 +43,10 @@ test('profile shows protected fields read-only, persists profile + account setti
     assert.ok(settingsCall,'account settings saved in the same submit');
     assert.equal(settingsCall.args.p_patch.city,'Bengaluru');
     assert.match(host.textContent!,/Rahul Kumar/);
-    await click(button('Remove photo'),'remove-photo');await click(button('Save Profile & Account Settings'),'save-2');await wait(()=>profile.photo_path===null);
+    await click(button('Reset to permanent Nexora logo'),'remove-photo');await click(button('Save Profile & Account Settings'),'save-2');await wait(()=>profile.photo_path===null);
     assert.ok(host.querySelector('[aria-label="No profile photo"]'));
     // Unsupported image formats are rejected before any upload/save.
-    const fileInput=input('Profile Photo');Object.defineProperty(fileInput,'files',{configurable:true,value:[new dom.window.File(['svg'],'avatar.svg',{type:'image/svg+xml'})]});
+    const fileInput=host.querySelector<HTMLInputElement>('input[type="file"]')!;Object.defineProperty(fileInput,'files',{configurable:true,value:[new dom.window.File(['svg'],'avatar.svg',{type:'image/svg+xml'})]});
     await act(async()=>fileInput.dispatchEvent(new dom.window.Event('change',{bubbles:true})));
     assert.match(host.textContent!,/Choose a JPG, PNG or WebP/);
     // Email changes moved to Account Settings: the profile page renders the

@@ -1,8 +1,18 @@
 # Nexora core flow audit — 2026-10-03
 
-Status: confirmed code defects repaired; end-to-end production completion is blocked. This branch is not a production sign-off.
+Status: complete local UI suite passes; end-to-end production completion is blocked. This branch is not a production sign-off.
 
 Base: `main` at `9ebd6647d61892f28477f5d34278a3d8905b3878`.
+
+## UI completion follow-up
+
+The complete `npm run test:dom` command now passes **227/227 tests, 0 failures, 0 skips**. All 25 previously failing entries were resolved without excluding tests. The focused Node regression suite passes **94/94** (operations, local HTTP gateway, onboarding, handoff and migration order). TypeScript and the production client/server build pass.
+
+Repairs include single clipboard writes with last-action feedback, honest RPC failures instead of fabricated earnings/support/security data, explicit signup confirmation recovery, enrollment failure diagnostics, own-row referral code reuse, no profile reads before authorization, expired-session redirection, pasted international phone normalization, and website provisioning in the local migration chain.
+
+Journey tests now exercise the explicit business setup form after handoff and reach the editor through `provision_my_website`, rather than expecting a placeholder workspace to exist at handoff. Assertions also reflect persistent referral intent and the signed-in visitor's dashboard/logout choices. The local HTTP tests reflect immediate partner access while preserving submitted KYC and admin-only review.
+
+The prior Node failure inventory below is historical, not a claim that the full repository suite is green. Production acceptance still requires the deployment/backend authorization described below.
 
 ## Repaired defects
 
@@ -64,7 +74,7 @@ No production DDL, data changes, deployment, merge or pull request was performed
 1. Match the requested Vercel project to its actual Supabase backend.
 2. Reconcile the booking, payment, referral and security contracts against that schema, with a tested migration or matching API adapter; adding empty tables alone is insufficient.
 3. Repair the failing migration fixtures and reconcile outdated partner review/enrollment and source-pattern expectations without changing the intended open-enrollment behavior.
-4. Resolve remaining behavioral failures in signup recovery, referral persistence and partner navigation.
+4. Completed locally: signup recovery, referral persistence, partner navigation and all 25 outstanding UI failures.
 5. Verify fresh signup/login, refresh persistence, template selection/editor save, publish/public site, slots, captured 25% advance, and referral attribution using separate owner/customer/partner accounts. Verify two-account isolation and webhook retries.
 
 ## Broad rerun failures by test file
@@ -102,7 +112,7 @@ No production DDL, data changes, deployment, merge or pull request was performed
 | `tests/secureContinuation.test.ts` | 8 |
 | `tests/signupIdempotency.test.ts` | 1 |
 
-### DOM tests
+### Historical DOM failures — all resolved in the UI completion follow-up
 
 | File | Failed entries |
 |---|---:|

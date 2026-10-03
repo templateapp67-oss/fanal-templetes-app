@@ -13,6 +13,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Home, LogOut } from 'lucide-react';
 import {
   fetchMyGrowthPartnerRow,
+  resolveGrowthPartnerGate,
   ensureMyGrowthPartner,
   fetchMyGrowthPartnerApplication,
   fetchMyPartnerDashboard,
@@ -262,7 +263,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   /** Section URLs for the legacy namespace's section tabs. */
   const sectionPathFor = growthPartnerPath;
   const userId = user?.id || null;
-  const { code: referralCode, loading: referralCodeLoading } = useReferralCode();
+  const { code: liveReferralCode, loading: liveReferralCodeLoading } = useReferralCode();
 
   // Gate: RLS decides authorization (non-partners get zero rows → unauthorized).
   const [savedProfileName, setSavedProfileName] = useState<{ owner: string; name: string } | null>(null);
@@ -270,33 +271,14 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   const [partner, setPartner] = useState<GrowthPartner | null>(null);
   const [gateLoading, setGateLoading] = useState(true);
   const [verifiedFor, setVerifiedFor] = useState<string | null>(null);
+  // The gate has already read this user's own database row. Reuse its code
+  // when the separate code RPC is unavailable during a rolling deployment.
+  const ownReferralCode = verifiedFor === userId ? partner?.referral_code?.trim() : null;
+  const referralCode = ownReferralCode || liveReferralCode;
+  const referralCodeLoading = !ownReferralCode && liveReferralCodeLoading;
   const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
-
-  // Synchronize partner profile avatar and name immediately on mount so the shell header matches the Profile page
-  useEffect(() => {
-    if (!userId || isMockSupabase) {
-      setSavedProfileAvatar('');
-      return;
-    }
-    let cancelled = false;
-    fetchGrowthPartnerProfile(supabase as any)
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.photo_path) {
-          const url = growthPartnerPhotoUrl(data.photo_path, supabase as any);
-          if (url) setSavedProfileAvatar(url);
-        }
-        if (data?.full_name) {
-          setSavedProfileName({ owner: data.partner_id, name: data.full_name });
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
 
   // Section data (each fetched once per visit from its backend RPC).
   const [dashboardState, setDashboard] = useState<SectionState<PartnerDashboardData>>(initialSectionState);
@@ -348,7 +330,7 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
 
         // Fetch partner profile so header avatar and display name are populated
         // immediately without requiring the user to navigate to /partner/profile first.
-        if (row && !isMockSupabase) {
+        if (row && !isMockSupabase && resolveGrowthPartnerGate({ loading: false, isMockMode: false, userId, partnerRow: row, loadError: null }) === 'ready') {
           try {
             const profileData = await fetchGrowthPartnerProfile();
             if (!cancelled && profileData) {
@@ -570,21 +552,6 @@ export const GrowthPartnerPage: React.FC<GrowthPartnerPageProps> = ({
   // stays at /partner/dashboard; successful sign-in still unlocks the real
   // dashboard only after the normal partner/RLS gate reaches ready.
   if (keepDashboardUrlForGuests && gate === 'unauthenticated') {
-    return (
-      <PartnerPortalLogin
-        user={user}
-        navigate={navigate}
-        onBack={onBack}
-        accentHex={accentHex}
-        onLogout={onLogout}
-      />
-    );
-  }
-
-  // A signed-in user with no partner row is a prospective partner, not an
-  // intruder. Keep protected sections closed, but render the portal's public
-  // sign-up/application surface instead of the old hard-denial screen.
-  if (gate === 'unauthorized') {
     return (
       <PartnerPortalLogin
         user={user}

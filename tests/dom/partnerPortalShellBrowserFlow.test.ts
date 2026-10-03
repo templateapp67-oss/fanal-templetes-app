@@ -530,7 +530,7 @@ test('a partner share link (?ref=CODE) pre-fills the onboarding referral code in
 
       // No link → no capture (the normal direct visit).
       window.history.replaceState(null, '', '/onboarding/referral');
-      assert.equal(readSharedReferralCode(), '');
+      assert.equal(readSharedReferralCode(), 'ALPHA01', 'intent survives query removal until account registration');
     } finally {
       await act(() => root.unmount());
       container.remove();

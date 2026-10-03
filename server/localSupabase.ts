@@ -139,6 +139,7 @@ export const LOCAL_GROWTH_CHAIN = [
   // plus the authenticated get_my_referral_code() read used by the UI hook.
   '20261011000000_growth_partner_referral_source.sql',
   '20261012000000_fix_growth_partner_referral_lookup.sql',
+  '20261012_unified_owner_website_provisioning.sql',
   '20261014000000_generate_nex_partner_codes.sql',
   '20261015000000_get_my_partner_referred_salons.sql',
   '20261016000000_partner_portal_strict_role_check.sql',

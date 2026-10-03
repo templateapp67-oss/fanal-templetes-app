@@ -56,7 +56,7 @@ test('incoming link is validated before navigation; cookie attribution reaches s
     root = createRoot(host);
     await act(async () => root.render(React.createElement(OnboardingApp, { path: '/onboarding/signup', client, navigate: () => {} })));
     // Field order is full name, email, phone, password, confirm (PHASE 2).
-    const inputs = [...host.querySelectorAll('input')];
+    const inputs = [...host.querySelectorAll('form input')];
     assert.equal(inputs.length, 5);
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
     await act(async () => {
@@ -78,7 +78,7 @@ test('incoming link is validated before navigation; cookie attribution reaches s
     assert.match(host.textContent!, /Check your inbox/);
     // Failure is actionable, not silently dropped attribution.
     globalThis.fetch = async () => new Response('{}', { status: 503 });
-    await assert.rejects(prepareSignupAttribution(), /Please retry/);
+    await assert.rejects(prepareSignupAttribution('NEXORA-RAHUL25'), /Please retry/);
   } finally {
     await act(async () => root.unmount());
     host.remove();

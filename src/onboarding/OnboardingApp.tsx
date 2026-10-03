@@ -237,20 +237,21 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
           try {
             const code = await captureFlight.current;
             if (!code) {
-              // An invalid share link must not block an organic signup. The
-              // server did not create a usable capability, so this is display
-              // state only and cannot affect signup attribution.
+              // Stop before redirecting away from the referral-bearing URL.
+              // The visitor can retry or explicitly continue without it.
               setInvalidReferral(true);
+              setBootError('Invalid referral code. Continue without a referral or retry.');
+              setBoot('error');
+              captureFlight.current = null;
+              return;
             } else {
               setInvalidReferral(false);
               setSharedReferralCode(code);
               try { sessionStorage.setItem('nexora_ref_code', code); } catch {}
             }
-          } catch {
-            // Network/API failure is actionable; a syntactically valid but
-            // unknown code is handled above as an optional referral.
+          } catch (error) {
             captureFlight.current = null;
-            setInvalidReferral(true);
+            throw error;
           }
         }
         if (cancelled || !mounted.current) return;
@@ -344,10 +345,10 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
 
   // Sync the URL to the resolved route (converges in one step — no loops).
   useEffect(() => {
-    if (boot !== 'ready' || existingAccountNotice || passwordRecovery) return;
+    if (boot !== 'ready' || existingAccountNotice || passwordRecovery || invalidReferral) return;
     const canonical = onboardingPath(effectiveResolved);
     if (normalizePath(path) !== normalizePath(canonical)) navigate(canonical);
-  }, [boot, effectiveResolved, path, navigate, existingAccountNotice, passwordRecovery]);
+  }, [boot, effectiveResolved, path, navigate, existingAccountNotice, passwordRecovery, invalidReferral]);
 
   // Hand the user their website URL the moment they land on the status screen
   // (immediately after sign-up's referral step and after every sign-in).
@@ -446,7 +447,7 @@ export const OnboardingApp: React.FC<OnboardingAppProps> = ({
   if (boot === 'loading' || (refreshing && !snapshot && !!viewer)) return <OnboardingBootLoading />;
   if (boot === 'error') {
     return <><OnboardingBootError message={bootError} onRetry={() => setBootKey((key) => key + 1)} />
-      {invalidReferral && <div className="mx-auto max-w-md px-6 pb-8"><button type="button" className="min-h-11 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold" onClick={() => { setInvalidReferral(false); setSharedReferralCode(''); captureFlight.current = null; setBootKey(key => key + 1); }}>Continue without a referral</button></div>}</>;
+      {invalidReferral && <div className="mx-auto max-w-md px-6 pb-8"><button type="button" className="min-h-11 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold" onClick={() => { clearReferralIntent(); setInvalidReferral(false); setSharedReferralCode(''); captureFlight.current = null; setBootKey(key => key + 1); }}>Continue without a referral</button></div>}</>;
   }
 
   if (existingAccountNotice) return (

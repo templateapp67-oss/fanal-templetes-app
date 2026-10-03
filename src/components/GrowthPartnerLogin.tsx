@@ -827,7 +827,7 @@ export const GrowthPartnerLogin: React.FC<{
           // "never applied". A failed lookup is never an access grant, so it
           // falls back to the plain unauthorized card.
           const pending = (await readApplicationRow().catch(() => null)) as GrowthPartnerApplicationRow | null;
-          if (pending?.status === 'pending' || pending?.status === 'approved') {
+          if ((!client || client.ensurePartnerRow) && (pending?.status === 'pending' || pending?.status === 'approved')) {
             await (client?.ensurePartnerRow ?? ensureMyGrowthPartner)();
             row = await readPartnerRow();
             if (!row) throw new Error('Could not finish partner dashboard setup. Please retry.');

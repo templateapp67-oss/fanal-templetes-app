@@ -181,6 +181,17 @@ test('a dead socket, an HTML body and a 503 all fall back; a JSON error never do
   );
 });
 
+test('RPC refusal never fabricates earnings or a support receipt', async () => {
+  for (const [name, run] of [
+    ['get_my_partner_earnings', () => getPartnerEarnings()],
+    ['submit_my_partner_support_ticket', () => submitPartnerSupportTicket('Help with payout', 'The payout could not be requested.', 'high')],
+  ] as const) {
+    await withFetch([proxyAbsent, rpc(name, { code: '42501', message: 'Active Growth Partner required' }, 403)], async () => {
+      await assert.rejects(run, (error: any) => error.code === 'partner_only');
+    });
+  }
+});
+
 test('the caller’s session token rides along on the proxy request', () =>
   withFetch([api('/api/partner/levels', { data: { active_referrals: 0, levels: [] } })], async (calls) => {
     await getPartnerLevels();

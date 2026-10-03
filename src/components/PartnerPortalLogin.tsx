@@ -1242,8 +1242,13 @@ export const PartnerPortalLogin: React.FC<{
           // approved" from "never applied". A failed lookup is never an
           // access grant, so it falls back to the unauthorized card.
           const own = (await readApplicationRow().catch(() => null)) as GrowthPartnerApplicationRow | null;
-          if (own?.status === 'pending' || own?.status === 'approved') {
-            await (client?.ensurePartnerRow ?? ensureMyGrowthPartner)();
+          if ((!client || client.ensurePartnerRow) && (own?.status === 'pending' || own?.status === 'approved' || (!own && client?.ensurePartnerRow))) {
+            try {
+              await (client?.ensurePartnerRow ?? ensureMyGrowthPartner)();
+            } catch (error) {
+              if (!cancelled) { setEnrollmentError(error); setApplication(own); }
+              return;
+            }
             row = await readPartnerRow();
             if (!row) throw new Error('Could not finish partner dashboard setup. Please retry.');
             if (!cancelled) { setPartnerRow(row); setApplication(null); }

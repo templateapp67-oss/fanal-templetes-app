@@ -39,7 +39,7 @@ after(() => dom.window.close());
 const USER = { id: 'b0000000-0000-4000-8000-0000000000aa', email: 'partner@example.com' };
 
 const PARTNER_ROW: GrowthPartner = {
-  user_id: 'a0000000-0000-4000-8000-000000000001',
+  user_id: USER.id,
   referral_code: 'NEXORA-SELF01',
   is_active: true,
   created_at: '2026-09-22T00:00:00Z',
