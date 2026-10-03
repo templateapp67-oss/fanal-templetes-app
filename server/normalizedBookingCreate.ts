@@ -3,6 +3,7 @@ export { appointmentInstant } from './appointmentTime.js';
 import { createHash } from 'node:crypto';
 import { BackendError, databaseForToken, readDatabase } from './backendContext.js';
 import { createRazorpayClient } from './razorpay.js';
+import { computeAdvanceDeposit } from '../src/lib/advanceDeposit.js';
 import { NORMALIZED_BOOKING_SELECT, presentBooking } from './normalizedBookingAccess.js';
 
 export function catalogId(salon: string, kind: string, id: string) {
@@ -15,7 +16,7 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   const booking = body.booking;
   if (booking?.booking_type === 'home') throw new BackendError(422, 'Home visits are not available through this booking service yet. Please contact the salon.', 'home_booking_unavailable');
   const slug = String(body.subdomain || booking?.subdomain || '').trim().toLowerCase();
-  let query = db.from('salons').select('id,timezone,accepts_online_bookings').eq('is_active', true);
+  let query = db.from('salons').select('id,timezone,accepts_online_bookings').eq('is_active', true).is('deleted_at', null);
   if (slug) query = query.eq('slug', slug);
   else if (body.salon_id) query = query.eq('id', body.salon_id);
   else throw new BackendError(400, 'A salon must be selected.');
@@ -27,7 +28,9 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   const ids = [...new Set<string>((booking.services?.length ? booking.services.map((s: any)=>String(s.service_id)) : [String(booking.service_id || '')]).map((id: string)=>catalogId(salon.id,'service',id)))];
   const services = await readDatabase(() => db.from('services').select('id,price_paise').eq('salon_id', salon.id).eq('is_active', true).eq('is_bookable_online', true).in('id', ids));
   if (!ids.length || services?.length !== ids.length) throw new BackendError(409, 'The selected service is no longer available. Reload the salon menu.');
+  if (services.some((s: any) => !Number.isSafeInteger(Number(s.price_paise)) || Number(s.price_paise) < 0)) throw new BackendError(409, 'The service price is invalid. Reload the salon menu.', 'invalid_service_price');
   const totalPaise = services.reduce((sum: number,s: any)=>sum+Number(s.price_paise),0);
+  if (!Number.isSafeInteger(totalPaise) || totalPaise <= 0) throw new BackendError(409, 'The service price is invalid. Reload the salon menu.', 'invalid_service_price');
   const reference = String(body.idempotency_key || booking.payment_id || '').trim();
   if (!reference || reference.length > 200) throw new BackendError(400, 'A booking reference is required.');
   const idempotencyKey = createHash('sha256').update(`${actor}:${reference}`).digest('hex');
@@ -49,6 +52,8 @@ export async function createNormalizedBooking(db: any, req: any, actor: string, 
   if (verifiedPaymentId) {
     payment = await integrations.gateway()?.fetchPayment?.(verifiedPaymentId,req.res?.locals?.requestDeadlineAt);
     if (!payment?.captured || payment.orderId !== body.payment?.razorpay_order_id || payment.currency !== 'INR' || payment.amountPaidRupees <= 0 || Math.round(payment.amountPaidRupees*100) > totalPaise) throw new BackendError(409,'The gateway payment could not be matched to this booking.','payment_unverified');
+    const paidPaise = Math.round(payment.amountPaidRupees * 100);
+    if (!Number.isSafeInteger(paidPaise) || paidPaise < computeAdvanceDeposit(totalPaise / 100).paise) throw new BackendError(409, 'The payment does not cover the required 25% advance.', 'payment_advance_insufficient');
     const order=await integrations.gateway()?.fetchOrder?.(payment.orderId,req.res?.locals?.requestDeadlineAt);
     if (!order || order.notes?.nexora_actor !== actor || order.notes?.nexora_salon !== salon.id || order.notes?.nexora_reference !== reference || order.notes?.nexora_start !== start || order.notes?.nexora_services !== createHash('sha256').update(ids.slice().sort().join(',')).digest('hex')) throw new BackendError(409,'This payment order does not match your account and booking.','payment_order_mismatch');
     const used = await readDatabase(() => db.from('payments').select('booking_id').eq('provider_payment_id',verifiedPaymentId).maybeSingle());

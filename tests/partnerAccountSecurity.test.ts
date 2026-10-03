@@ -308,3 +308,12 @@ test('legacy social handle text migrates into the structured link fields', () =>
   assert.deepEqual(normalizeSocialLinks({ instagram: 'https://i.example', extra: 'dropped' }).instagram, 'https://i.example');
   assert.deepEqual(normalizeSocialLinks('junk').facebook, '');
 });
+
+test('a missing overview RPC never manufactures a session or a clean security log', async () => {
+ const client:any=mockClient();
+ let tableReads=0;
+ client.rpc=async()=>({data:null,error:{code:'PGRST202',message:'missing overview'}});
+ client.from=()=>{tableReads++;throw new Error('private table unavailable');};
+ await assert.rejects(fetchPartnerSecurityOverview(client),(e:any)=>e.kind==='unavailable');
+ assert.equal(tableReads,0);
+});

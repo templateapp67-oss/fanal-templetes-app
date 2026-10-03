@@ -1484,7 +1484,7 @@ async function prepareCustomerBookingIntent(
   deadlineAt: number | undefined,
   requestId: string
 ): Promise<BookingIntent | BookingIntentFailure> {
-  const problems = validateCustomerBooking(body);
+  const problems = validateCustomerBooking(body, (deps.now ?? Date.now)());
   if (problems.length) {
     return { ok: false, status: 422, code: 'invalid_booking', error: problems[0], fieldErrors: problems };
   }
@@ -2255,7 +2255,7 @@ export function createBookingCreateHandler(deps: CustomerRoutesDeps) {
   };
 }
 
-function validateCustomerBooking(body: any): string[] {
+function validateCustomerBooking(body: any, nowMs: number): string[] {
   const problems: string[] = [];
   if (!body || typeof body !== 'object') return ['A booking object is required.'];
   if (!String(body.salonId || '').trim()) problems.push('A salon is required.');
@@ -2263,7 +2263,7 @@ function validateCustomerBooking(body: any): string[] {
   if (!/^\d{1,2}:\d{2}$/.test(String(body.time || '').trim())) problems.push('Choose a start time.');
   if (!Array.isArray(body.serviceIds) || !body.serviceIds.filter(Boolean).length) problems.push('Select at least one service.');
   if (body.bookingType === 'home' && String(body.homeAddress || '').trim().length < 8) problems.push('A home-visit address is required.');
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = new Date(nowMs).toISOString().slice(0, 10);
   if (isValidIsoDate(body.date) && String(body.date) < todayIso) problems.push('That date is in the past.');
   return problems;
 }

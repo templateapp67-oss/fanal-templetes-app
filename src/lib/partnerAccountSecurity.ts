@@ -64,119 +64,8 @@ export async function fetchPartnerSecurityOverview(client: SecurityOverviewClien
     };
   }
 
-  const failure = classifySecurityOverviewFailure(error ?? new Error('The security overview came back empty.'));
-  if (failure.kind === 'unavailable') {
-    const fallback = await tryFallbackSecurityOverview(client);
-    if (fallback) return fallback;
-  }
-
-  throw failure;
-}
-
-async function tryFallbackSecurityOverview(client: SecurityOverviewClient): Promise<PartnerSecurityOverview | null> {
-  if (typeof (client as any).from !== 'function') {
-    return null;
-  }
-
-  try {
-    let twoFactorEnabled = false;
-    let deactivation: PartnerDeactivationRequest | null = null;
-    let events: PartnerSecurityEvent[] = [];
-
-    // 1. Check Auth MFA factors
-    try {
-      if (client.auth?.mfa?.listFactors) {
-        const { data: mfaData } = await client.auth.mfa.listFactors();
-        const factors = (mfaData as any)?.factors || (mfaData as any)?.all || [];
-        if (Array.isArray(factors) && factors.some((f: any) => f.status === 'verified')) {
-          twoFactorEnabled = true;
-        }
-      }
-    } catch {
-      // MFA check is optional
-    }
-
-    // 2. Identify user & partner row
-    const { data: userRes } = (await (client as any).auth?.getUser?.()) ?? {};
-    const userId = userRes?.user?.id;
-
-    if (userId) {
-      let partnerId: string | undefined;
-      try {
-        const { data: partnerRow } = await client.rpc('get_my_growth_partner');
-        partnerId = partnerRow?.id;
-      } catch {
-        // Fallback for mock/test environments
-      }
-
-      if (partnerId) {
-        if (!twoFactorEnabled) {
-          const { data: settings } = await (client as any)
-            .from('partner_account_settings')
-            .select('two_factor_enabled')
-            .eq('partner_id', partnerId)
-            .maybeSingle();
-          if (settings?.two_factor_enabled) {
-            twoFactorEnabled = true;
-          }
-        }
-
-        const { data: deact } = await (client as any)
-          .from('partner_deactivation_requests')
-          .select('id, reason, status, requested_at')
-          .eq('partner_id', partnerId)
-          .eq('status', 'pending')
-          .order('requested_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (deact) {
-          deactivation = {
-            id: String(deact.id),
-            reason: deact.reason ?? null,
-            status: String(deact.status || 'pending'),
-            requested_at: String(deact.requested_at || new Date().toISOString()),
-          };
-        }
-
-        const { data: evts } = await (client as any)
-          .from('partner_security_events')
-          .select('id, event_type, detail, created_at')
-          .eq('partner_id', partnerId)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        if (Array.isArray(evts)) {
-          events = evts.map((e: any) => ({
-            id: String(e.id),
-            event_type: String(e.event_type),
-            detail: e.detail ?? null,
-            created_at: String(e.created_at || new Date().toISOString()),
-          }));
-        }
-      }
-    }
-
-    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
-    const sessions: PartnerSecuritySession[] = [
-      {
-        id: 'current-session',
-        user_agent: userAgent,
-        ip: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_current: true,
-      },
-    ];
-
-    return {
-      two_factor_enabled: twoFactorEnabled,
-      sessions_available: true,
-      sessions,
-      events,
-      deactivation,
-    };
-  } catch {
-    return null;
-  }
+  // An unavailable overview is not proof of an empty log or a single session.
+  throw classifySecurityOverviewFailure(error ?? new Error('The security overview came back empty.'));
 }
 
 // ---------------------------------------------------------------------------
@@ -385,8 +274,10 @@ export async function listPartnerTwoFactorFactors(client: SecurityOverviewClient
   if (!mfa?.listFactors) throw mfaUnavailable();
   const { data, error } = await mfa.listFactors();
   if (error) throw new Error(safePartnerErrorMessage(error, 'Could not read your authenticator status. Please retry.'));
-  const factors = data?.factors;
-  return Array.isArray(factors) ? factors : [];
+  // Supabase Auth returns `all`, plus per-type verified factor lists.
+  const factors = data?.all ?? data?.factors;
+  if (!Array.isArray(factors)) throw mfaUnavailable();
+  return factors;
 }
 
 export async function beginPartnerTwoFactorEnrollment(client: SecurityOverviewClient): Promise<TotpEnrollment> {

@@ -111,6 +111,7 @@ function page(client: SecurityOverviewClient) {
 
 test('a failed security overview degrades that section only — the rest of Account Settings stays usable', async () => {
   const client = failingClient({ failTimes: 99, error: { code: 'PGRST202', message: 'Could not find the function public.get_my_partner_security_overview() in the schema cache' } });
+  client.auth!.mfa!.listFactors = async () => ({ data: null, error: new Error('MFA unavailable') });
   const ui = page(client);
   try {
     await ui.mount();
@@ -196,4 +197,14 @@ test('a transient failure is retried automatically before the error is shown', a
   } finally {
     await ui.unmount();
   }
+});
+
+test('Auth all-factor response overrides a stale overview and detects enabled 2FA', async () => {
+ const client=failingClient({failTimes:0});
+ client.auth!.mfa!.listFactors=async()=>({data:{all:[{id:'verified-totp',status:'verified',factor_type:'totp'}]},error:null});
+ const ui=page(client);
+ try {
+   await ui.mount();
+   await wait(()=>ui.host.querySelector('[data-account-2fa-state]')?.getAttribute('data-account-2fa-state')==='on','verified Auth factor is shown as enabled');
+ } finally {await ui.unmount();}
 });

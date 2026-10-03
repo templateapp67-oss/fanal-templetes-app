@@ -3,6 +3,7 @@ import { BackendError, readDatabase, verifyBackendUser } from './backendContext.
 import { catalogId } from './normalizedBookingCreate.js';
 import { appointmentInstant } from './appointmentTime.js';
 import { handleCreateRazorpayOrder } from './razorpay.js';
+import { REQUIRED_ADVANCE_PERCENT } from '../src/lib/advanceDeposit.js';
 
 export async function customerAvailability(db: any, input: any) {
   const slug = String(input.subdomain || '').trim().toLowerCase();
@@ -49,7 +50,7 @@ export function customerPaymentOrderHandler(db:any,isMock:boolean) {
       const option=availability.slots.find((slot:any)=>slot.time===input.time && slot.staffId===input.staff_id);
       if (!option) throw new BackendError(409,'This slot is no longer available. Choose another time.','slot_unavailable');
       if (Math.round(Number(input.totalAmount)*100)!==option.totalPaise) throw new BackendError(409,'The service price changed. Reload the salon menu before paying.','price_changed');
-      req.body={...input,totalAmount:option.totalPaise/100,receipt:createHash('sha256').update(user.id+':'+String(input.receipt||'')).digest('hex').slice(0,40),notes:{...input.notes,nexora_actor:user.id,nexora_salon:availability.salonId,nexora_reference:String(input.receipt||''),nexora_start:new Date(option.start).toISOString(),nexora_services:createHash('sha256').update(availability.serviceIds.slice().sort().join(',')).digest('hex')}};
+      req.body={...input,totalAmount:option.totalPaise/100,depositPercent:REQUIRED_ADVANCE_PERCENT,receipt:createHash('sha256').update(user.id+':'+String(input.receipt||'')).digest('hex').slice(0,40),notes:{...input.notes,nexora_actor:user.id,nexora_salon:availability.salonId,nexora_reference:String(input.receipt||''),nexora_start:new Date(option.start).toISOString(),nexora_services:createHash('sha256').update(availability.serviceIds.slice().sort().join(',')).digest('hex')}};
       return handleCreateRazorpayOrder(req,res);
     }catch(e:any){res.status(e instanceof BackendError?e.status:503).json({success:false,error:e instanceof BackendError?e.message:'Checkout could not be prepared.',code:e.code});}
   };

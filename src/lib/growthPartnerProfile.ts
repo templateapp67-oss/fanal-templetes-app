@@ -80,7 +80,7 @@ export interface GrowthPartnerProfileClient {
     updateUser: (attributes: { email?: string; password?: string }, options?: { emailRedirectTo?: string }) => Promise<{ data: any; error: any }>;
     signInWithPassword?: (credentials: { email: string; password: string }) => Promise<{ data: any; error: any }>;
     mfa?: {
-      listFactors: () => Promise<{ data: { factors?: any[] } | null; error: any }>;
+      listFactors: () => Promise<{ data: { all?: any[]; factors?: any[]; totp?: any[]; phone?: any[] } | null; error: any }>;
       enroll: (attrs: { factorType: 'totp'; friendlyName?: string; issuer?: string }) => Promise<{ data: any; error: any }>;
       challenge: (attrs: { factorId: string }) => Promise<{ data: any; error: any }>;
       verify: (attrs: { factorId: string; challengeId: string; code: string }) => Promise<{ data: any; error: any }>;
