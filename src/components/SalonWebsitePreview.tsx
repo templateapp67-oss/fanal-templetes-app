@@ -251,6 +251,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
     { profile, services, stylists, selectedTemplateId: selectedTemplateId || null },
     publicView ? user?.id : null,
   );
+  const resolvedTemplateId = publicView ? publicSalon.data.selectedTemplateId || selectedTemplateId : selectedTemplateId;
   const resolvedProfile = publicView ? publicSalon.data.profile : profile;
   const resolvedServices = publicView ? publicSalon.data.services : services;
   const resolvedStylists = publicView ? publicSalon.data.stylists : stylists;
@@ -332,25 +333,25 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // IGNORE: single active template is controlled by the parent (App) via
   // selectedTemplateId. Only ONE template ever renders on this view.
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<BusinessTypeId>(
-    selectedTemplateId || activeProfile.businessType || 'hair_salon'
+    resolvedTemplateId || activeProfile.businessType || 'hair_salon'
   );
 
   // The parent is the single source of truth. When the parent changes
   // selectedTemplateId, sync this preview to it (and vice-versa).
   useEffect(() => {
-    if (selectedTemplateId && selectedTemplateId !== selectedCategoryKey) {
-      setSelectedCategoryKey(selectedTemplateId);
+    if (resolvedTemplateId && resolvedTemplateId !== selectedCategoryKey) {
+      setSelectedCategoryKey(resolvedTemplateId as BusinessTypeId);
     }
-  }, [selectedTemplateId]);
+  }, [resolvedTemplateId]);
 
   // Also keep businessType in sync so the canvas always renders the right
   // template even if the parent's profile businessType changes.
   useEffect(() => {
-    const source = selectedTemplateId || activeProfile.businessType;
+    const source = resolvedTemplateId || activeProfile.businessType;
     if (source && source !== selectedCategoryKey) {
       setSelectedCategoryKey(source as BusinessTypeId);
     }
-  }, [selectedTemplateId, activeProfile.businessType]);
+  }, [resolvedTemplateId, activeProfile.businessType]);
 
 
   // Side Panel Section Visibility
@@ -417,11 +418,11 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   }, [primaryAccentColor, activeAccent]);
 
   // Dynamic Image-Based AI Styling State
-  const resolvedHeroUrl = activeProfile.coverImageUrl ?? activeTemplate.coverImageUrl ?? "";
+  const resolvedHeroUrl = activeProfile.coverImageUrl?.trim() || activeTemplate.coverImageUrl || "/gallery-placeholder.svg";
   const [heroImageSrc, setHeroImageSrc] = useState<string>(resolvedHeroUrl);
 
   useEffect(() => {
-    setHeroImageSrc(activeProfile.coverImageUrl ?? activeTemplate.coverImageUrl ?? "");
+    setHeroImageSrc(activeProfile.coverImageUrl?.trim() || activeTemplate.coverImageUrl || "/gallery-placeholder.svg");
   }, [activeProfile.coverImageUrl, activeTemplate.coverImageUrl]);
 
   const [heroAIStyling, setHeroAIStyling] = useState<HeroAIStyling>(() =>
@@ -458,7 +459,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   const handledRebookAtRef = useRef<number>(0);
 
   // Dynamic client testimonials state
-  const activeReviews: Testimonial[] = activeProfile.testimonials ?? baseStandardData.reviews;
+  const activeReviews: Testimonial[] = activeProfile.testimonials ?? (publicView && !previewMode ? [] : baseStandardData.reviews);
   const setActiveReviews: React.Dispatch<React.SetStateAction<Testimonial[]>> = next => setProfile(p => ({
     ...p, testimonials: typeof next === 'function' ? next(p.testimonials ?? baseStandardData.reviews) : next,
   }));
@@ -1621,7 +1622,8 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 src={heroImageSrc}
                 alt={activeProfile.businessName}
                 onError={(e) => {
-                  if (heroImageSrc) setHeroImageSrc('');
+                  if (heroImageSrc !== activeTemplate.coverImageUrl && activeTemplate.coverImageUrl) setHeroImageSrc(activeTemplate.coverImageUrl);
+                  else if (heroImageSrc !== '/gallery-placeholder.svg') setHeroImageSrc('/gallery-placeholder.svg');
                 }}
                 className={`w-full max-w-full box-border h-full object-cover object-center ${heroAIStyling.imageFilterClass} transition-all duration-700 hover:scale-105`}
               />
@@ -1664,7 +1666,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-mono transition-colors ${heroAIStyling.verifiedBadgeClass}`}>
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Verified Indian Salon</span>
+                    <span>{!publicView || previewMode || activeProfile.isVerified ? "Verified Indian Salon" : "Salon profile"}</span>
                   </span>
 
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-mono transition-colors ${heroAIStyling.cityBadgeClass}`}>
@@ -1757,7 +1759,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       ) : (
                         <div className="text-xs sm:text-sm font-bold flex items-center gap-1 text-amber-400 truncate">
                           <Star className="w-3.5 h-3.5 fill-amber-400 shrink-0" />
-                          <span className="truncate">{standardData.averageRating} ({standardData.totalReviewCount}+)</span>
+                          <span className="truncate">{publicView && !previewMode ? (activeProfile.publicRating?.count ? `${activeProfile.publicRating.average.toFixed(1)} (${activeProfile.publicRating.count} reviews)` : "No reviews yet") : `${standardData.averageRating} (${standardData.totalReviewCount}+)`}</span>
                         </div>
                       )}
                     </div>

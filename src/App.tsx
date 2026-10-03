@@ -2394,7 +2394,8 @@ export default function App() {
 
   const handleSelectTemplate = (catId: BusinessTypeId) => {
     if (!getTemplateById(catId)) return;
-    // Template selection changes presentation only; starter content is opt-in.
+    // Keep same-tick saves on the newly chosen design, before React rerenders.
+    salonStateRef.current = { ...salonStateRef.current, selectedTemplateId: catId };
     setSelectedTemplateId(catId);
   };
 

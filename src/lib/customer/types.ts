@@ -59,6 +59,14 @@ export interface CustomerLocation {
 export interface CustomerSalon {
   id: string;
   ownerId: string;
+  verified?: boolean;
+  area?: string;
+  bookingServiceId?: string | null;
+  normalizedCatalogue?: boolean;
+  publishedServices?: CustomerService[];
+  publishedStaff?: CustomerStaff[];
+  publishedReviews?: CustomerReview[];
+  packages?: Array<{ id: string; name: string; price: number; serviceIds: string[] }>;
   name: string;
   subdomain: string;
   businessType: string;

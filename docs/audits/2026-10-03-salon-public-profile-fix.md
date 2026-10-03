@@ -1,0 +1,11 @@
+# Published salon template and customer profile fixes
+
+The public template now follows the published selected template rather than the browser/editor default. Selecting a template updates the save snapshot immediately. Empty or failed cover images fall back to the selected template image. Public views no longer inherit demo verification, rating totals or testimonials.
+
+Customer discovery reads active, listed normalized salons and their actual service catalogue before the legacy profile fallback. Detail responses include sanitized services, public staff and review metadata, with real prices and stable booking IDs. No customer contact data enters review responses. Unlisted normalized salons are excluded. Coordinates at zero remain valid, opening status uses the salon timezone, and offer filtering does not invent promotions.
+
+Cards include covers, verification, qualified Top Rated/Trending labels, opening status, review count, area, price, location-dependent distance, availability, View Profile and Book Now. Profiles include hours, gallery, services, reviews and packages with explicit empty states when unpublished. Profile and booking buttons have separate tested actions. Availability accepts both tabular and JSON RPC responses without inventing an any-staff assignment.
+
+Validation: full DOM suite 229/229; focused customer/public routing suite 83/83; TypeScript and production build pass. The broader historical Node suite has unrelated failures documented in the previous core-flow audit; this does not claim the entire repository suite is green.
+
+Live deployment constraints: the saved new-salon template is luxury_hair_salon (VIP Black & Gold), while its business category is hair_salon. Selecting Hair & Styling must publish that template choice; the category does not override a saved design. Its cover is empty and verification is false. No published packages or geolocation pin exist. The live JSON availability RPC references booking columns/time-off relations absent from the live schema. The response adapter cannot repair that database mismatch. Apply a schema-compatible availability migration and verify booking/payment transactions before claiming production E2E completion. No live schema, template selection or production deployment was changed during this patch.

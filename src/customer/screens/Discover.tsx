@@ -38,6 +38,7 @@ import {
   searchSuggestions,
   toggleFavourite,
 } from '../../lib/customer/api';
+import { useCustomerAvailability } from '../../lib/useCustomerAvailability';
 import { readLocation } from '../../lib/customer/deviceStore';
 import { readSearchHistory } from '../../lib/customer/deviceStore';
 import type { CustomerFavourite, CustomerReview, CustomerSalon, CustomerService, CustomerStaff } from '../../lib/customer/types';
@@ -568,18 +569,19 @@ const SaveButton: React.FC<{ saved: boolean; label: string; onSave: () => void; 
   </button>
 );
 
-const SalonCard: React.FC<{ salon: CustomerSalon; accentHex: string; onOpen: () => void; onBook: () => void }> = ({ salon, accentHex, onOpen, onBook }) => (
+export const SalonCard: React.FC<{ salon: CustomerSalon; accentHex: string; onOpen: () => void; onBook: () => void }> = ({ salon, accentHex, onOpen, onBook }) => (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${CARD_CLASS} overflow-hidden flex flex-col`}>
       <button type="button" onClick={onOpen} className="text-left cursor-pointer">
         <div className="h-28 w-full bg-slate-100 relative">
-          {salon.coverImageUrl ? <img src={salon.coverImageUrl} alt="" className="w-full h-full object-cover" /> : null}
+          <SalonCover src={salon.coverImageUrl} name={salon.name} />
           {salon.openNow === true ? (
             <span className="absolute top-2 left-2 px-2 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wide">open now</span>
           ) : salon.openNow === false ? (
             <span className="absolute top-2 left-2 px-2 py-1 rounded-full bg-slate-800/80 text-white text-[10px] font-bold uppercase tracking-wide">closed</span>
-          ) : null}
+          ) : <span className="absolute top-2 left-2 px-2 py-1 rounded-full bg-slate-800/80 text-white text-[10px]">Hours unavailable</span>}
         </div>
         <div className="p-4">
+          <SalonBadges salon={salon} />
           <div className="flex items-start gap-3">
             {salon.logoUrl ? <Avatar src={salon.logoUrl} name={salon.name} size={40} /> : null}
             <div className="min-w-0 flex-1">
@@ -597,9 +599,9 @@ const SalonCard: React.FC<{ salon: CustomerSalon; accentHex: string; onOpen: () 
               <span className="text-slate-400 font-semibold">No reviews yet</span>
             )}
             <span className="inline-flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5" /> {[salon.address, salon.city].filter(Boolean).join(', ') || 'Address not set'}
+              <MapPin className="w-3.5 h-3.5" /> {[salon.area || salon.address, salon.city].filter(Boolean).join(', ') || 'Area not set'}
             </span>
-            {salon.distanceKm !== null ? <span className="font-semibold">{salon.distanceKm} km</span> : null}
+            <span className="font-semibold">{salon.distanceKm !== null ? `${salon.distanceKm} km away` : 'Enable location for distance'}</span>
             <span className="inline-flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5" /> {salon.serviceCount} services
             </span>
@@ -630,21 +632,43 @@ const SalonCard: React.FC<{ salon: CustomerSalon; accentHex: string; onOpen: () 
           ) : null}
         </div>
       </button>
+      <div className="px-4 pb-3"><TodaySalonSlots salon={salon} onBook={onBook} /></div>
       <div className="mt-auto px-4 pb-4 flex items-center gap-2">
         <Button onClick={onBook} accentHex={accentHex} className="flex-1">
-          <Calendar className="w-4 h-4" /> Book
+          <Calendar className="w-4 h-4" /> Book Now
         </Button>
         <Button onClick={onOpen} variant="secondary">
-          View
+          View Profile
         </Button>
       </div>
     </motion.div>
 );
 
+function SalonCover({ src, name }: { src: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  return <img src={!src || failed ? '/gallery-placeholder.svg' : src} alt={`${name} cover`} loading="lazy" className="h-full w-full object-cover" onError={() => setFailed(true)} />;
+}
+function SalonBadges({ salon }: { salon: CustomerSalon }) {
+  return <div className="mb-3 flex flex-wrap gap-2 text-xs font-bold" aria-label="Salon status">
+    <Chip tone={salon.verified ? 'success' : 'neutral'}>{salon.verified ? 'Verified' : 'Not verified'}</Chip>
+    {salon.rating.count >= 5 && salon.rating.average >= 4.5 && <Chip tone="accent">Top Rated</Chip>}
+    {salon.recentBookings >= 10 && <Chip tone="warn" title="10 or more bookings in the last 30 days">Trending</Chip>}
+  </div>;
+}
+function TodaySalonSlots({ salon, onBook }: { salon: CustomerSalon; onBook: () => void }) {
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const availability = useCustomerAvailability(Boolean(salon.bookingServiceId), salon.subdomain, salon.bookingServiceId || '', 'any', date);
+  const slots = [...new Set(availability.slots.filter(s => new Date(s.start).getTime() > Date.now()).map(s => s.time))];
+  return <div className="text-xs" aria-label="Today's available slots"><p className="font-bold text-slate-800">Today's available slots</p>
+    {!salon.bookingServiceId ? <p className="mt-1 text-slate-500">Select a service to check live availability.</p> : availability.loading ? <p role="status">Checking availability…</p> : availability.error ? <div><p role="alert" className="mt-1 text-slate-600">Availability could not be loaded.</p><button type="button" onClick={availability.refetchSlots} className="min-h-11 font-bold underline">Retry availability</button></div> : <><p className="mt-1 text-slate-500">{slots.length ? `${slots.length} slots for the first menu service. Confirm your services when booking.` : 'No available slots today for the first menu service.'}</p><div className="mt-2 flex flex-wrap gap-2">{slots.slice(0,4).map(time => <button key={time} type="button" onClick={onBook} className="min-h-11 rounded-lg border border-slate-200 px-3 font-bold">{time}</button>)}</div></>}
+  </div>;
+}
+
 // ---------------------------------------------------------------------------
 // Salon profile (with services / staff / reviews tabs)
 // ---------------------------------------------------------------------------
-export type SalonTab = 'overview' | 'services' | 'staff' | 'reviews';
+export type SalonTab = 'overview' | 'services' | 'packages' | 'staff' | 'reviews';
 
 export const SalonScreen: React.FC<{
   salonId: string;
@@ -657,7 +681,7 @@ export const SalonScreen: React.FC<{
   onBook: (serviceIds?: string[]) => void;
   onRequireAuth?: () => void;
 }> = ({ salonId, tab = 'overview', accentHex = '#C20E5A', userId, refreshToken = 0, onBack, onTab, onBook, onRequireAuth }) => {
-  const salonState = useCustomerLoad(() => getSalon(salonId), [salonId, refreshToken]);
+  const salonState = useCustomerLoad(() => getSalon(salonId, readLocation(userId)), [salonId, userId, refreshToken]);
   const salon = salonState.data as CustomerSalon | null;
 
   const servicesState = useCustomerLoad(() => listSalonServices(salonId), [salonId, refreshToken]);
@@ -728,9 +752,9 @@ export const SalonScreen: React.FC<{
     );
   }
 
-  const services = (servicesState.data as CustomerService[] | null) || [];
-  const staff = (staffState.data as CustomerStaff[] | null) || [];
-  const reviews = (reviewsState.data as CustomerReview[] | null) || [];
+  const services = salon.publishedServices ?? (servicesState.data as CustomerService[] | null) ?? [];
+  const staff = salon.publishedStaff ?? (staffState.data as CustomerStaff[] | null) ?? [];
+  const reviews = salon.publishedReviews ?? (reviewsState.data as CustomerReview[] | null) ?? [];
 
   return (
     <div className="space-y-4">
@@ -745,7 +769,7 @@ export const SalonScreen: React.FC<{
 
       <div className={`${CARD_CLASS} overflow-hidden`}>
         <div className="h-36 w-full bg-slate-100 relative">
-          {salon.coverImageUrl ? <img src={salon.coverImageUrl} alt="" className="w-full h-full object-cover" /> : null}
+          <SalonCover src={salon.coverImageUrl} name={salon.name} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
           <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-3">
             <div className="min-w-0">
@@ -765,6 +789,7 @@ export const SalonScreen: React.FC<{
           </div>
         </div>
 
+        <div className="px-4 pt-4"><SalonBadges salon={salon} /></div>
         <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatTile
             label="Rating"
@@ -781,16 +806,18 @@ export const SalonScreen: React.FC<{
           <Chip tone="neutral">
             <MapPin className="w-3 h-3" /> {salon.address || 'Address not set'}{salon.city ? `, ${salon.city}` : ''}
           </Chip>
-          {salon.distanceKm !== null ? <Chip tone="accent">{salon.distanceKm} km away</Chip> : null}
+          <Chip tone="accent">{salon.distanceKm !== null ? `${salon.distanceKm} km away` : 'Enable location to see distance'}</Chip>
+          <Chip>{salon.openNow === true ? 'Open Now' : salon.openNow === false ? 'Closed' : 'Opening status unavailable'}</Chip>
           {salon.phone ? <Chip tone="neutral"><Clock className="w-3 h-3" /> {salon.phone}</Chip> : null}
           {salon.workingHours.monFri ? <Chip tone="neutral">Mon–Fri {salon.workingHours.monFri}</Chip> : null}
+          {salon.workingHours.saturday ? <Chip tone="neutral">Sat {salon.workingHours.saturday}</Chip> : null}
           {salon.workingHours.sunday ? <Chip tone="neutral">Sun {salon.workingHours.sunday}</Chip> : null}
           <SourceChip source="supabase" mode={salonState.mode} loading={salonState.loading} title={mappingNote('salons')} />
         </div>
       </div>
 
       <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 w-fit overflow-x-auto" role="tablist">
-        {(['overview', 'services', 'staff', 'reviews'] as SalonTab[]).map((value) => (
+        {(['overview', 'services', 'packages', 'staff', 'reviews'] as SalonTab[]).map((value) => (
           <button
             key={value}
             id={`salon-tab-${value}`}
@@ -807,6 +834,7 @@ export const SalonScreen: React.FC<{
         ))}
       </div>
 
+      {tab === 'overview' ? <section className={`${CARD_CLASS} p-5`}><SectionTitle title="Opening hours" /><InfoRow label="Monday–Friday" value={salon.workingHours.monFri || 'Not published'} /><InfoRow label="Saturday" value={salon.workingHours.saturday || 'Not published'} /><InfoRow label="Sunday" value={salon.workingHours.sunday || 'Not published'} /></section> : null}
       {tab === 'overview' ? (
         <div className={`${CARD_CLASS} p-5 space-y-4`}>
           <SectionTitle title={`About ${salon.name}`} subtitle="Written by the salon owner" action={<Button onClick={() => onBook()} accentHex={accentHex}><Calendar className="w-4 h-4" /> Book a slot</Button>} />
@@ -820,6 +848,7 @@ export const SalonScreen: React.FC<{
         </div>
       ) : null}
 
+      {tab === 'overview' && !salon.gallery.length ? <section className={`${CARD_CLASS} p-5`}><SectionTitle title="Gallery" /><p className={MUTED_CLASS}>No gallery photos published yet.</p></section> : null}
       {tab === 'overview' && salon.gallery.length ? (
         <div className={`${CARD_CLASS} p-4`}>
           <div className="flex items-baseline justify-between gap-3">
@@ -854,10 +883,10 @@ export const SalonScreen: React.FC<{
         </div>
       ) : null}
 
-      {tab === 'services' ? (
+      {tab === 'services' || tab === 'overview' ? (
         <ServiceList
           services={services}
-          state={servicesState}
+          state={salon.publishedServices ? { ...servicesState, loading: false, failed: false } : servicesState}
           accentHex={accentHex}
           onBook={(ids) => onBook(ids)}
           salonName={salon.name}
@@ -868,10 +897,12 @@ export const SalonScreen: React.FC<{
       ) : null}
 
       {tab === 'staff' ? (
-        <StaffList staff={staff} state={staffState} salonName={salon.name} savedIds={savedStaffIds} onToggleSave={toggleStaffSave} />
+        <StaffList staff={staff} state={salon.publishedStaff ? { ...staffState, loading: false, failed: false } : staffState} salonName={salon.name} savedIds={savedStaffIds} onToggleSave={toggleStaffSave} />
       ) : null}
 
-      {tab === 'reviews' ? <ReviewList reviews={reviews} state={reviewsState} rating={salon.rating} /> : null}
+      {tab === 'overview' || tab === 'reviews' ? <ReviewList reviews={reviews} state={salon.publishedReviews ? { ...reviewsState, loading: false, failed: false } : reviewsState} rating={salon.rating} /> : null}
+      {(tab === 'overview' || tab === 'packages') && <section className={`${CARD_CLASS} p-5`} aria-label="Salon packages"><SectionTitle title="Packages" />{salon.packages?.length ? salon.packages.map(p => <div key={p.id} className="flex items-center justify-between gap-3 py-3"><span>{p.name} · {money(p.price, salon.currency)}</span><Button onClick={() => onBook(p.serviceIds)}>Book package</Button></div>) : <p className={MUTED_CLASS}>No packages published by this salon yet.</p>}</section>}
+      <section className={`${CARD_CLASS} p-4`} aria-label="Today's availability"><TodaySalonSlots salon={salon} onBook={() => onBook()} /><Button onClick={() => onBook()} accentHex={accentHex} className="mt-3 w-full">Book Now</Button></section>
     </div>
   );
 };

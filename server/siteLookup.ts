@@ -149,6 +149,7 @@ export function mapProfileRow(row: any): SalonProfile {
   const state = row.state ?? '';
 
   return {
+    isVerified: row.is_verified === true || row.verified === true,
     workingHoursMonFri: workingHours.monFri || (row.opening_time ? `${row.opening_time} - ${row.closing_time}` : ''),
     workingHoursSat: workingHours.saturday || '',
     workingHoursSun: workingHours.sunday || '',
@@ -468,7 +469,7 @@ export async function lookupSalon(
       profile: fillProfileFromEditorState(profile, editorState?.profile),
       services: mergeServicePresentation(catalogueServices, presentationServices, catalogueSalonId),
       stylists: catalogueStylists,
-      selectedTemplateId: typeof salonRow.data?.selected_template_id === 'string' ? salonRow.data.selected_template_id : (typeof editorState?.selectedTemplateId === 'string' ? editorState.selectedTemplateId : null),
+      selectedTemplateId: [salonRow.data?.selected_template_id, salonRow.template_key, salonRow.selected_template_id, editorState?.selectedTemplateId].find(value => typeof value === 'string' && value.trim()) || null,
       loyaltyConfig: publicLoyaltyConfig(loyaltyRes.data, editorState),
     } };
   } catch (error) {

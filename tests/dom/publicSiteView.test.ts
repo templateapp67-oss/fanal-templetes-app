@@ -109,3 +109,16 @@ test('the owner editor keeps the editable map setup', () => {
     unmount(container, root);
   }
 });
+
+test('blank published cover uses the selected template image and does not claim demo verification or ratings', () => {
+ const {container,root}=mount(React.createElement(SalonWebsitePreview,{
+  profile:{...publicProfile,coverImageUrl:'',isVerified:false},services:INITIAL_SERVICES,stylists:INITIAL_STYLISTS,
+  selectedTemplateId:'luxury_hair_salon',onAddAppointment:()=>{},onRequireAuth:()=>{},publicView:true,
+ }));
+ try {
+  const text=container.textContent || '';
+  assert.doesNotMatch(text,/Verified Indian Salon|980\+/);
+  assert.ok([...container.querySelectorAll('img')].every(img=>img.getAttribute('src')?.trim()),'every image has a usable source');
+  assert.match(text,/No reviews yet/);
+ } finally {unmount(container,root);}
+});

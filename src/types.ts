@@ -280,6 +280,8 @@ export interface SalonProfile {
   socialVideos?: SocialVideo[];
   testimonials?: Array<{ id: string; name: string; location: string; rating: number; serviceName: string; comment: string; avatarUrl: string; date: string }>;
   gallery?: Array<{ id: string; url: string; title: string; tag: string }>;
+  isVerified?: boolean;
+  publicRating?: { average: number; count: number };
   sectionVisibility?: Partial<Record<'header' | 'hero' | 'metrics' | 'about' | 'services' | 'offers' | 'promoPopup' | 'stylists' | 'testimonials' | 'gallery' | 'location' | 'whatsappFloat', boolean>>;
   sectionHeadings?: Record<string, string>;
   /** Dashboard-managed portfolio images. An explicit empty list stays empty. */

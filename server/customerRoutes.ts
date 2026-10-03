@@ -1,3 +1,4 @@
+import { readNormalizedSalonDirectory } from './customerSalonDirectory.js';
 // ============================================================================
 // Nexora SalonOS — Customer App API.
 //
@@ -503,6 +504,8 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
         return void ok(res, deps, requestId, [], { ...notConnectedNotice(deps), filtersApplied: { ...req.query } });
       }
 
+      const normalized = await readNormalizedSalonDirectory(deps.db, req.query || {}, undefined, deadlineAt);
+      if (normalized) return void ok(res, deps, requestId, normalized);
       const query = req.query || {};
       const limit = Math.min(60, Math.max(1, Number(query.limit || deps.discoveryLimit || 24)));
       const city = String(query.city || '').trim();
@@ -619,6 +622,9 @@ export function createSalonDetailHandler(deps: CustomerRoutesDeps) {
         return void answer(res, 400, { success: false, code: 'invalid_request', requestId, error: 'A salon id or subdomain is required.' });
       }
       if (deps.isMock) return void ok(res, deps, requestId, null, notConnectedNotice(deps));
+
+      const normalized = await readNormalizedSalonDirectory(deps.db, req.query || {}, handle, deadlineAt);
+      if (normalized) return void ok(res, deps, requestId, normalized[0] || null);
 
       const lookup = isUuidLike(handle)
         ? deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('id', handle).maybeSingle()

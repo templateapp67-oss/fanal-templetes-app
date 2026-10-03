@@ -30,7 +30,7 @@ export async function customerAvailability(db: any, input: any) {
   appointmentInstant(input.date, '12:00',salon.timezone);
   const rows = await readDatabase(() => db.rpc('nexora_customer_booking_options',{p_salon_id:salon.id,p_service_ids:ids,p_staff_id:staff,p_date:input.date}));
   const formatter = new Intl.DateTimeFormat('en-GB',{timeZone:salon.timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-  return {success:true,salonId:salon.id,serviceIds:ids,timezone:salon.timezone,slots:(rows || []).map((row: any)=>({time:formatter.format(new Date(row.slot_start)),start:row.slot_start,end:row.slot_end,staffId:row.staff_id,totalPaise:Number(row.total_paise)}))};
+  return {success:true,salonId:salon.id,serviceIds:ids,timezone:salon.timezone,slots:(Array.isArray(rows) ? rows : (rows?.available_slots || []).map((slot:any) => ({slot_start:slot.starts_at,slot_end:slot.ends_at,staff_id:slot.staff_id || staff,total_paise:rows.total_paise}))).map((row: any)=>({time:formatter.format(new Date(row.slot_start)),start:row.slot_start,end:row.slot_end,staffId:row.staff_id,totalPaise:Number(row.total_paise)}))};
 }
 export function availabilityHandler(db: any) {
   return async (req:any,res:any) => {
