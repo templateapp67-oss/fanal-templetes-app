@@ -2,6 +2,7 @@ import { CategoryTemplateConfig, BusinessTypeOption } from '../types';
 import { ADDITIONAL_TEMPLATE_SERVICES } from './additionalTemplateServices';
 import { getDefaultVideosForTemplate } from '../templateSocialVideos';
 import { SALON_IMAGES } from '../assets/images';
+import vipStudioImage from '../vipBlackGoldSource/assets/images/luxury_spa_service_1780900684934.png';
 import { CATEGORY_STANDARDIZED_DATA as CATEGORY_CONTENT, type CategoryStandardData } from './templateContent';
 
 export type TemplateCategory =
@@ -1742,15 +1743,121 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     ]
   },
 
-  // 16. VIP Black & Gold — reusable premium design for every business type.
+  // 16. Original Premium Luxury Hair Salon; separate from the all-purpose VIP design.
   luxury_hair_salon: {
     id: 'luxury_hair_salon',
+    title: 'Maison Éclat Hair Atelier',
+    shortName: 'Premium Luxury Hair Salon',
+    tagline: 'Haute Hair Couture, Kérastase Rituals & Red-Carpet Precision Gloss',
+    about: 'Housed in a private atelier on Lavelle Road, New Delhi, Maison Éclat is a luxury hair house where every appointment opens with a bespoke hair-mapping consultation. Our Kérastase-certified master artists craft precision dry sculpting, hand-painted balayage, Olaplex molecular repair, and mirror-gloss keratin rituals with couture precision.',
+    icon: 'workspace_premium',
+    layoutStyle: 'haute_luxe',
+    paletteLabel: 'Onyx & Champagne Gold Theme',
+    themePreset: 'onyx_champagne_gold',
+    subCategories: ['Precision Sculpting', 'Color & Glossing', 'Bond Repair & Care', 'Smoothing & Gloss'],
+    defaultCity: 'New Delhi',
+    defaultAddress: 'Lavelle Road, South Extension II, Near ITC Maurya',
+    defaultPostalCode: '110049',
+    phone: '+91 98108 55672',
+    whatsapp: '+91 98108 55672',
+    ownerName: 'Aarav Malhotra',
+    ownerRole: 'Founder & Creative Hair Director',
+    ownerPhotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
+    coverImageUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=80',
+    instagramHandle: '@maisoneclat.delhi',
+    themeStyle: {
+      heroBackground: 'bg-[#101014]',
+      heroTextColor: 'text-[#f6f1e7]',
+      cardBorder: 'border-[#e6d9bd]',
+      cardBackground: 'bg-[#fdfbf7]',
+      cardRadius: 'rounded-xl',
+      accentColor: 'text-[#a0824a]',
+      accentBg: 'bg-[#a0824a]',
+      badgeBg: 'bg-[#f3ead6]',
+      badgeText: 'text-[#6f5827]',
+      buttonBg: 'bg-[#a0824a] hover:bg-[#8a6d3c]',
+      buttonText: 'text-white',
+      priceColor: 'text-[#8a6d3c]',
+      isDark: false,
+      headerBanner: 'bg-[#faf7f0] border-b border-[#e6d9bd]'
+    },
+    services: [
+      {
+        id: 'lhx-1',
+        name: 'Precision Sculpt & Hair Design',
+        category: 'Precision Sculpting',
+        durationMinutes: 60,
+        price: 4500,
+        description: 'Every cut opens with a bespoke hair-mapping consultation where the master artist reads your face geometry, density, and growth patterns before sculpting begins. Haute-styling techniques—dry-cut architecture, razor-pointing, and thermal memory styling sealed with Kérastase Élixir Ultime—deliver a precision silhouette with long-lasting shape and mirror-finish gloss.',
+        icon: 'content_cut',
+        popular: true
+      },
+      {
+        id: 'lhx-2',
+        name: 'Balayage & French Glossing',
+        category: 'Color & Glossing',
+        durationMinutes: 180,
+        price: 12000,
+        description: 'Hand-painted balayage is artfully mapped to your face and skin undertones, then sealed with a Kérastase Gloss Absolu tonal gloss that wraps every strand in liquid-light shine. The couture finish keeps dimension luminous and the gloss long-lasting for up to eight weeks after your visit.',
+        icon: 'brush',
+        popular: true
+      },
+      {
+        id: 'lhx-3',
+        name: 'Olaplex Bond Repair Spa',
+        category: 'Bond Repair & Care',
+        durationMinutes: 90,
+        price: 6500,
+        description: 'A personalized hair-mapping diagnosis pinpoints broken disulfide bonds, then Olaplex No. 1, No. 2, and No. 3 rebuild strength from within the fiber in a haute-styling molecular repair ritual. The session closes with a Kérastase rescue mask and silk pressing, leaving every strand fortified, elastic, and resilient.',
+        icon: 'auto_awesome'
+      },
+      {
+        id: 'lhx-4',
+        name: 'Keratin Smoothing Treatment',
+        category: 'Smoothing & Gloss',
+        durationMinutes: 150,
+        price: 15000,
+        description: 'Following a strand-by-strand hair-mapping assessment, a Kérastase-infused formaldehyde-light keratin complex is bonded into the fiber with couture-grade flat-iron sealing, erasing up to 95% of frizz from root to tip. The result is long-lasting strength and a liquid gloss that keeps hair smooth, bouncy, and mirror-shine for up to four months.',
+        icon: 'auto_fix_high'
+      }
+    ],
+    stylists: [
+      {
+        id: 'lhx-st-1',
+        name: 'Aarav Malhotra',
+        role: 'Creative Director & Master Stylist',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Precision Dry Cutting', 'Face-Geometry Mapping', 'Haute Styling'],
+        rating: 4.99
+      },
+      {
+        id: 'lhx-st-2',
+        name: 'Ishita Kapoor',
+        role: 'Director of Color & Gloss',
+        avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+        specialties: ['French Balayage', 'Tonal Glossing', 'Kérastase Color'],
+        rating: 4.96
+      },
+      {
+        id: 'lhx-st-3',
+        name: 'Zoya Fernandes',
+        role: 'Senior Keratin & Texture Stylist',
+        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        specialties: ['Keratin Smoothing', 'Thermal Sculpting', 'Olaplex Rituals'],
+        rating: 4.92
+      }
+    ]
+  },
+
+  // VIP Black & Gold — distinct all-purpose signature template.
+  vip_black_gold: {
+    id: 'vip_black_gold',
     title: 'VIP Black & Gold — All-Purpose Signature',
     shortName: 'VIP Black & Gold',
     tagline: 'An all-purpose premium experience for beauty, grooming, wellness and signature services',
     about: 'VIP Black & Gold is Nexora’s all-purpose premium website design. Its onyx-and-champagne-gold visual system adapts to your own services, team, photos, offers and booking settings—whether you run a salon, barber shop, spa, skin clinic, nail studio, tattoo studio or wellness business.',
     icon: 'workspace_premium',
-    layoutStyle: 'haute_luxe',
+    layoutStyle: 'black_gold_signature',
     paletteLabel: 'Onyx & Champagne Gold Theme',
     themePreset: 'onyx_champagne_gold',
     subCategories: ['Beauty & Grooming', 'Wellness & Care', 'Private Appointments', 'Signature Experiences'],
@@ -1762,7 +1869,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     ownerName: 'Your Brand',
     ownerRole: 'Founder & Experience Director',
     ownerPhotoUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=500&q=80',
-    coverImageUrl: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1400&q=85',
+    coverImageUrl: vipStudioImage,
     instagramHandle: '',
     themeStyle: {
       heroBackground: 'bg-[#101014]',
@@ -1782,7 +1889,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     },
     services: [
       {
-        id: 'lhx-1',
+        id: 'vip-1',
         name: 'Signature Consultation & Personal Plan',
         category: 'VIP Consultation',
         durationMinutes: 60,
@@ -1792,7 +1899,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
         popular: true
       },
       {
-        id: 'lhx-2',
+        id: 'vip-2',
         name: 'Premium Signature Experience',
         category: 'Featured Service',
         durationMinutes: 90,
@@ -1802,7 +1909,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
         popular: true
       },
       {
-        id: 'lhx-3',
+        id: 'vip-3',
         name: 'Private VIP Appointment',
         category: 'Concierge Care',
         durationMinutes: 90,
@@ -1811,7 +1918,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
         icon: 'person_pin_circle'
       },
       {
-        id: 'lhx-4',
+        id: 'vip-4',
         name: 'Membership & Aftercare',
         category: 'VIP Benefits',
         durationMinutes: 30,
@@ -1822,7 +1929,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
     ],
     stylists: [
       {
-        id: 'lhx-st-1',
+        id: 'vip-st-1',
         name: 'Your Lead Specialist',
         role: 'Experience Director',
         avatarUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=400&q=80',
@@ -1830,7 +1937,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
         rating: 4.99
       },
       {
-        id: 'lhx-st-2',
+        id: 'vip-st-2',
         name: 'Your Senior Specialist',
         role: 'Senior Specialist',
         avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
@@ -1838,7 +1945,7 @@ export const CATEGORY_TEMPLATES: Record<string, CategoryTemplateConfig> = {
         rating: 4.96
       },
       {
-        id: 'lhx-st-3',
+        id: 'vip-st-3',
         name: 'Your VIP Concierge',
         role: 'Client Concierge',
         avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
@@ -3252,12 +3359,12 @@ export const ALL_CATEGORY_OPTIONS: BusinessTypeOption[] = [
   },
   {
     id: 'luxury_hair_salon',
-    title: 'VIP Black & Gold — All-Purpose',
-    categoryTag: 'All-Purpose VIP',
+    title: 'Premium Luxury Hair Salon',
+    categoryTag: 'Premium Hair Studio',
     icon: 'workspace_premium',
-    aestheticDescription: 'All-purpose premium layout for any salon, grooming, beauty or wellness business.',
+    aestheticDescription: 'Refined hair atelier with couture styling, colour and restorative treatments.',
     paletteName: 'Onyx & Champagne Gold',
-    badge: 'Exclusive VIP',
+    badge: 'Premium',
     defaultServices: CATEGORY_TEMPLATES.luxury_hair_salon.services.map((s) => ({
       name: s.name,
       price: s.price,
@@ -3434,7 +3541,8 @@ export const ALL_CATEGORY_OPTIONS: BusinessTypeOption[] = [
 
 // Keep the VIP choice first anywhere the legacy business-type selector is
 // rendered, too (the Explorer has its own immutable registry order below).
-ALL_CATEGORY_OPTIONS.sort((a, b) => Number(b.id === 'luxury_hair_salon') - Number(a.id === 'luxury_hair_salon'));
+ALL_CATEGORY_OPTIONS.push({ id: 'vip_black_gold', title: 'VIP Black & Gold — All-Purpose Signature', categoryTag: 'VIP', icon: 'workspace_premium', aestheticDescription: 'Black & gold source design', paletteName: 'Black & Gold', badge: 'Exclusive VIP', defaultServices: CATEGORY_TEMPLATES.vip_black_gold.services.map(service => ({ name: service.name, price: service.price, duration: service.durationMinutes, category: service.category })) });
+ALL_CATEGORY_OPTIONS.sort((a, b) => Number(b.id === 'vip_black_gold') - Number(a.id === 'vip_black_gold'));
 
 // Keep category assignment explicit and stable. It is intentionally keyed by
 // the existing persisted template id, never a display label or random UUID.
@@ -3443,7 +3551,7 @@ const TEMPLATE_CATEGORY: Record<TemplateId, TemplateCategory> = {
   nail_studio: 'nails', hair_spa: 'spa', skincare_clinic: 'skin', makeup_studio: 'beauty',
   massage_wellness: 'spa', hair_coloring: 'hair', bridal_lounge: 'beauty', tattoo_studio: 'tattoo',
   lash_brow: 'nails', ayurvedic_spa: 'ayurvedic', ayurvedic_wellness_spa: 'ayurvedic',
-  luxury_hair_salon: 'hair', bridal_makeover_studio: 'beauty', family_salon: 'hair',
+  luxury_hair_salon: 'hair', vip_black_gold: 'hair', bridal_makeover_studio: 'beauty', family_salon: 'hair',
   barber_grooming_club: 'barber', nails_lash_brow_bar: 'nails', medispa_aesthetics: 'skin',
   organic_bio_salon: 'ayurvedic', express_beauty_bar: 'nails', thai_massage_center: 'spa',
   kids_teens_studio: 'kids', resort_spa: 'spa', vedic_ayurveda_studio: 'ayurvedic',
@@ -3466,7 +3574,8 @@ const TEMPLATE_EXPLORER_NAMES: Record<TemplateId, string> = {
   lash_brow: 'Arch & Flutter Lash & Brow Bar',
   ayurvedic_spa: 'Veda Sanjeevani Ayurvedic Wellness & Spa',
   ayurvedic_wellness_spa: 'Sattva Ayurvedic & Wellness Spa',
-  luxury_hair_salon: 'VIP Black & Gold — All-Purpose Signature',
+  luxury_hair_salon: 'Maison Éclat Luxury Hair Atelier',
+  vip_black_gold: 'VIP Black & Gold — All-Purpose Signature',
   bridal_makeover_studio: 'Rose & Ivory Bridal Atelier',
   family_salon: 'Cedar & Bloom Family Salon',
   barber_grooming_club: 'The Iron Standard Barber & Grooming Club',
@@ -3500,13 +3609,13 @@ function toRegisteredTemplate(config: CategoryTemplateConfig): RegisteredTemplat
     // value; display names are never identity.
     slug: id,
     name: TEMPLATE_EXPLORER_NAMES[id],
-    isVip: id === 'luxury_hair_salon',
+    isVip: id === 'vip_black_gold',
     tagline: config.tagline,
     category: TEMPLATE_CATEGORY[id],
     description: config.about,
     keywords: [...new Set([
       TEMPLATE_CATEGORY[id], TEMPLATE_EXPLORER_NAMES[id], config.title, config.shortName, ...config.subCategories,
-      ...(id === 'luxury_hair_salon' ? ['all-purpose', 'universal', 'barber', 'beauty', 'nails', 'spa', 'skin', 'tattoo', 'kids'] : []),
+      ...(id === 'vip_black_gold' ? ['all-purpose', 'universal', 'barber', 'beauty', 'nails', 'spa', 'skin', 'tattoo', 'kids'] : []),
     ].map((value) => value.toLowerCase()))],
     keyFeatures: content?.specialties || [],
     thumbnailUrl: config.coverImageUrl,

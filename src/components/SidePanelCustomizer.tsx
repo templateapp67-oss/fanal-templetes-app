@@ -985,7 +985,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
             </div>
 
             {/* VIP Black & Gold is a single special template, never a copied salon. */}
-            {profile.businessType === 'luxury_hair_salon' && (
+            {profile.businessType === 'vip_black_gold' && (
               <div className="bg-gradient-to-br from-[#16120a] to-[#050505] border border-[#d4af37]/45 rounded-2xl p-3.5 space-y-3 text-[#f7edcf]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">

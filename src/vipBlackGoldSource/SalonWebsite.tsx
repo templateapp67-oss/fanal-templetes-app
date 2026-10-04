@@ -40,7 +40,7 @@ export function VipSalonWebsite({ profile, services, onBook, onViewSalon, editin
       </div>
       <div className="vip-source-frame">
         <div className="vip-source-photo">
-          <img src={profile.coverImageUrl || vipStudioImage} alt={profile.businessName || 'Signature studio'} onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = vipStudioImage; }} />
+          <img src={profile.coverImageUrl || vipStudioImage} alt={profile.businessName || 'Signature studio'} onError={event => { if (event.currentTarget.getAttribute('src') !== vipStudioImage) event.currentTarget.src = vipStudioImage; }} />
           <div className="vip-source-vignette" aria-hidden="true" />
           <span className="vip-source-photo-label"><Crown size={14} />Private care. Signature style.</span>
           <div className="vip-source-photo-caption"><p>{profile.businessName || 'Your Signature Studio'}</p><span>{profile.tagline || 'Designed around you'}</span></div>

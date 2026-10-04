@@ -175,6 +175,7 @@ export const DEFAULT_CATEGORY_ACCENTS: Record<BusinessTypeId, AccentPaletteKey> 
   ayurvedic_spa: 'emerald',
   ayurvedic_wellness_spa: 'emerald',
   luxury_hair_salon: 'obsidian',
+  vip_black_gold: 'obsidian',
   bridal_makeover_studio: 'rose',
   family_salon: 'ocean',
   barber_grooming_club: 'mahogany',

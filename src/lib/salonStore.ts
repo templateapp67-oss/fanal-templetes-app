@@ -254,7 +254,7 @@ export function mergeTemplatePreservingUserData(
       ? prev.ownerPhotoUrl
       : (tmpl.ownerPhotoUrl || '/nexora-salonos-logo.png'),
     coverImageUrl:
-      prev.coverImageUrl?.startsWith('data:') || prev.coverImageUrl === prevTmpl?.coverImageUrl
+      prev.coverImageUrl?.trim() && prev.coverImageUrl !== prevTmpl?.coverImageUrl
         ? prev.coverImageUrl
         : (tmpl.coverImageUrl || prev.coverImageUrl || ''),
     subdomain: slugifySalonName(resolvedBusinessName),

@@ -8,7 +8,7 @@ import { DynamicTemplateRenderer } from '../../src/components/DynamicTemplateRen
 import { VipBlackGoldFullExperience } from '../../src/components/VipBlackGoldFullExperience';
 import { INITIAL_SALON_PROFILE, INITIAL_SERVICES } from '../../src/mockData';
 
-const profile = { ...INITIAL_SALON_PROFILE, businessType: 'luxury_hair_salon' as const, businessName: 'Vijay Signature Studio', tagline: 'Your own salon tagline', city: 'Jaipur', coverImageUrl: '/owner-cover.jpg' };
+const profile = { ...INITIAL_SALON_PROFILE, businessType: 'vip_black_gold' as const, businessName: 'Vijay Signature Studio', tagline: 'Your own salon tagline', city: 'Jaipur', coverImageUrl: '/owner-cover.jpg' };
 if (!(globalThis as any).Image) (globalThis as any).Image = window.Image;
 
 test('VIP source uses owner content and local source image fallback, with no admin/showcase controls', () => {
@@ -34,7 +34,7 @@ test('VIP source booking/profile actions delegate to the existing customer flow'
 
 test('real editor renderer selects VIP source and immediately updates profile and service totals', async () => {
   const node = document.createElement('div'); document.body.append(node); const root = createRoot(node);
-  const config = { templateId: 'luxury_hair_salon' as const, profile, services: [{ ...INITIAL_SERVICES[0], price: 987, durationMinutes: 45 }], siteUrl: '/?site=vijay-studio' };
+  const config = { templateId: 'vip_black_gold' as const, profile, services: [{ ...INITIAL_SERVICES[0], price: 987, durationMinutes: 45 }], siteUrl: '/?site=vijay-studio' };
   const render = async (next: typeof config) => act(async () => root.render(React.createElement(DynamicTemplateRenderer, { config: next, activeSection: 'hero', deviceMode: 'mobile' })));
   await render(config);
   const hero = node.querySelector('[data-vip-source-website]'); assert.ok(hero);

@@ -16,6 +16,7 @@ try {
   await page.goto('http://127.0.0.1:4192/templates/barber/preview');
   await page.locator('[data-salon-canvas]').waitFor();
   const ids = await page.evaluate(async () => (await import('/src/data/templates.ts')).TEMPLATE_REGISTRY.map(t => t.id));
+  assert.equal(ids.length, 28, 'all original 27 plus separate VIP are registered');
   for (const id of ids) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`http://127.0.0.1:4192/templates/${id}/preview`);
@@ -30,6 +31,10 @@ try {
     await homepage.getByRole('heading', { name: 'No matching services', exact: true }).waitFor();
     await homepage.getByRole('button', { name: 'Clear filters', exact: true }).evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
     await homepage.getByRole('button', { name: 'Clear filters', exact: true }).click();
+    await homepage.locator('article').first().getByRole('button').click();
+    await page.getByRole('dialog').locator('input[type=checkbox]:checked').waitFor();
+    assert.equal(await page.getByRole('dialog').locator('input[type=checkbox]:checked').count(), 1, `${id}: selected catalogue service is passed to booking`);
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Packages', exact: true }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Signature Duo', { exact: true }).waitFor();
@@ -40,11 +45,11 @@ try {
     await dialog.getByText('Current points', { exact: true }).waitFor();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
-    console.log(`PASS ${id}: visible homepage, search/reset, packages, rewards, Escape and mobile width`);
+    console.log(`PASS ${id}: visible home, filters, selected-service booking, packages, rewards and mobile width`);
   }
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 1200 });
-    await page.goto('http://127.0.0.1:4192/templates/luxury_hair_salon/preview');
+    await page.goto('http://127.0.0.1:4192/templates/vip_black_gold/preview');
     const vipHero = page.locator('[data-vip-source-website]');
     await vipHero.getByRole('heading', { level: 1 }).waitFor();
     assert.equal(await page.locator('#header-admin-btn').count(), 0);

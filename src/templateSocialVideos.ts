@@ -1,6 +1,6 @@
 import { SocialVideo, VideoCategoryTag } from './types';
 
-// Per-template default YouTube videos & shorts for all 27 business categories.
+// Per-template default YouTube videos & shorts for all registered business categories.
 // Each category gets unique URLs, titles, thumbnails, tags, and channel context.
 
 export const TEMPLATE_DEFAULT_VIDEOS: Record<string, SocialVideo[]> = {
@@ -117,6 +117,8 @@ export const TEMPLATE_DEFAULT_VIDEOS: Record<string, SocialVideo[]> = {
 
 /** Mock cards intentionally use a labelled sample player, not unrelated music
  * presented as real customer results. Owners replace these with their own links. */
+TEMPLATE_DEFAULT_VIDEOS.vip_black_gold = (TEMPLATE_DEFAULT_VIDEOS.luxury_hair_salon || []).map(video => ({ ...video, id: `vip-${video.id}` }));
+
 export function getDefaultVideosForTemplate(categoryId?: string): SocialVideo[] {
   const source = TEMPLATE_DEFAULT_VIDEOS[categoryId || ''] || [];
   if (!source.length) return [];

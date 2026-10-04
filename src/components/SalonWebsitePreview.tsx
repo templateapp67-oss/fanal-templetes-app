@@ -382,7 +382,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
   // Active template configuration
   const activeTemplate = getTemplateConfig(selectedCategoryKey) || getTemplateConfig('hair_salon')!;
   const TemplateIcon = /barber|hair|salon|grooming/.test(selectedCategoryKey) ? Scissors : Sparkles;
-  const isVipTemplate = selectedCategoryKey === 'luxury_hair_salon' && activeProfile.vipExperience?.enabled !== false;
+  const isVipTemplate = selectedCategoryKey === 'vip_black_gold' && activeProfile.vipExperience?.enabled !== false;
   const vipLabel = activeProfile.vipExperience?.conciergeLabel?.trim() || 'VIP Concierge';
 
   // Active Accent Palette selection
@@ -1625,7 +1625,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         {/* ============================================================ */}
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
-        {sectionVisibility.hero && (selectedCategoryKey === 'luxury_hair_salon' ? (
+        {sectionVisibility.hero && (selectedCategoryKey === 'vip_black_gold' ? (
           <VipBlackGoldFullExperience profile={activeProfile} services={sectionVisibility.services ? activeServices : []} onBook={handleOpenBooking} onViewSalon={() => openCustomerSection('salon')} editing={isEditMode} onChange={changes => setProfile(previous => ({ ...previous, ...changes }))} />
         ) : (
           <section id="home-section" className="relative w-full max-w-full min-w-0 box-border overflow-hidden transition-all bg-slate-950 text-white h-auto min-h-0 flex items-center scroll-mt-16">
