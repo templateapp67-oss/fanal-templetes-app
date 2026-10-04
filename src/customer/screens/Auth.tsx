@@ -14,10 +14,23 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Lock, Mail, Phone, User, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Lock, Mail, Phone, User, ShieldCheck } from 'lucide-react';
 import { supabase, isMockSupabase } from '../../lib/supabaseClient';
 import { logPasswordLengths } from '../../lib/authPasswordDiagnostics';
+import {
+  RESET_SENT_MESSAGE,
+  completeCustomerPasswordReset,
+  sendCustomerPasswordReset,
+} from '../../lib/customer/authRecovery';
 import { Button, CARD_CLASS, MUTED_CLASS } from '../ui';
+
+/**
+ * `recover` asks for the reset email; `reset` is the form a customer lands on
+ * after following the link, when Supabase Auth has already exchanged the token
+ * for a recovery session (the shell switches the screen into it on
+ * PASSWORD_RECOVERY).
+ */
+export type CustomerAuthMode = 'login' | 'signup' | 'recover' | 'reset';
 
 export interface AuthScreenProps {
   accentHex?: string;
@@ -25,11 +38,12 @@ export interface AuthScreenProps {
   onAuthenticated: (user: { id: string; email?: string }) => void;
   /** Guests may browse salons; only booking needs an account. */
   onContinueAsGuest: () => void;
-  mode?: 'login' | 'signup';
+  mode?: CustomerAuthMode;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', onAuthenticated, onContinueAsGuest, mode: initialMode = 'login' }) => {
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
+  const [mode, setMode] = useState<CustomerAuthMode>(initialMode);
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -49,14 +63,49 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
     // validated as a stale shorter state value.
     const form = new FormData(event.currentTarget as HTMLFormElement);
     const submittedEmail = String(form.get('customer-email') ?? email);
-    const submittedPassword = String(form.get('customer-password') ?? password);
+    const submittedPassword = String(
+      form.get(mode === 'reset' ? 'customer-new-password' : 'customer-password') ?? password
+    );
+    const submittedConfirm = String(form.get('customer-new-password-confirm') ?? confirmPassword);
     const submittedFullName = String(form.get('customer-full-name') ?? fullName);
     const submittedPhone = String(form.get('customer-phone') ?? phone);
     setEmail(submittedEmail);
     setPassword(submittedPassword);
+    setConfirmPassword(submittedConfirm);
     setFullName(submittedFullName);
     setPhone(submittedPhone);
     logPasswordLengths(`customer-auth:${mode}`, password, submittedPassword);
+
+    // Recovery runs before the mock guard below: `sendCustomerPasswordReset`
+    // reports the unconfigured deployment in its own words, and a reset request
+    // must not be rejected as "enter your email and password" for want of a
+    // password field this form does not have.
+    if (mode === 'recover' || mode === 'reset') {
+      setBusy(true);
+      try {
+        if (mode === 'recover') {
+          await sendCustomerPasswordReset(submittedEmail);
+          // Same copy whether or not the address has an account, so this form
+          // cannot be used to enumerate registered customers.
+          setNotice(RESET_SENT_MESSAGE);
+          setEmail('');
+        } else {
+          await completeCustomerPasswordReset(submittedPassword, submittedConfirm);
+          // The recovery session Supabase created from the link is a real
+          // session, so the customer is signed in the moment the password is
+          // accepted — no second email and no re-entry of the old one.
+          const { data } = await supabase.auth.getSession();
+          const user = data?.session?.user;
+          if (!user?.id) throw new Error('Your session expired. Sign in with your new password.');
+          onAuthenticated({ id: String(user.id), email: user.email ?? undefined });
+        }
+      } catch (err: any) {
+        setError(describeAuthError(String(err?.message || err || '')));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
 
     if (isMockSupabase) {
       setError(
@@ -123,12 +172,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
           <ShieldCheck className="w-4 h-4" style={{ color: accentHex }} />
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Nexora customer account</span>
         </div>
-        <h1 className="text-xl font-extrabold text-slate-900">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-        <p className={`text-sm mt-1 ${MUTED_CLASS}`}>
-          {mode === 'login'
-            ? 'Your bookings, rewards and notifications all live in your salon’s database.'
-            : 'One account covers every salon you book through Nexora.'}
-        </p>
+        <h1 className="text-xl font-extrabold text-slate-900">{headingFor(mode)}</h1>
+        <p className={`text-sm mt-1 ${MUTED_CLASS}`}>{subheadingFor(mode)}</p>
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           {mode === 'signup' ? (
@@ -157,29 +202,63 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
             </>
           ) : null}
 
-          <Labeled icon={<Mail className="w-4 h-4" />}>
-            <input
-              name="customer-email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              type="email"
-              className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
-              autoComplete="email"
-            />
-          </Labeled>
+          {/* Recovery asks for the address only; the reset form asks for the new
+              password twice and never for the old one — the recovery session
+              already proved who is asking. */}
+          {mode !== 'reset' ? (
+            <Labeled icon={<Mail className="w-4 h-4" />}>
+              <input
+                name="customer-email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
+                autoComplete="email"
+              />
+            </Labeled>
+          ) : null}
 
-          <Labeled icon={<Lock className="w-4 h-4" />}>
-            <input
-              name="customer-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={mode === 'signup' ? 'Create a password (6+ characters)' : 'Your password'}
-              type="password"
-              className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            />
-          </Labeled>
+          {mode === 'login' || mode === 'signup' ? (
+            <Labeled icon={<Lock className="w-4 h-4" />}>
+              <input
+                name="customer-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={mode === 'signup' ? 'Create a password (6+ characters)' : 'Your password'}
+                type="password"
+                className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              />
+            </Labeled>
+          ) : null}
+
+          {mode === 'reset' ? (
+            <>
+              <Labeled icon={<Lock className="w-4 h-4" />}>
+                <input
+                  name="customer-new-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="New password (6+ characters)"
+                  type="password"
+                  className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
+                  autoComplete="new-password"
+                />
+              </Labeled>
+              <Labeled icon={<Lock className="w-4 h-4" />}>
+                <input
+                  name="customer-new-password-confirm"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Repeat the new password"
+                  type="password"
+                  className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
+                  autoComplete="new-password"
+                />
+              </Labeled>
+            </>
+          ) : null}
 
           {error ? (
             <p className="text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5" role="alert">
@@ -193,21 +272,45 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
           ) : null}
 
           <Button type="submit" busy={busy} accentHex={accentHex} className="w-full">
-            {mode === 'login' ? 'Sign in' : 'Create account'}
+            {submitLabelFor(mode)}
             <ArrowRight className="w-4 h-4" />
           </Button>
         </form>
 
-        <div className="mt-5 flex items-center justify-between text-sm">
-          <button
-            id="auth-toggle-mode-btn"
-            type="button"
-            className="font-bold cursor-pointer min-h-[44px] px-2 -ml-2 inline-flex items-center rounded-lg hover:underline"
-            style={{ color: accentHex }}
-            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
-          >
-            {mode === 'login' ? 'Create an account' : 'I already have an account'}
-          </button>
+        <div className="mt-5 flex items-center justify-between gap-2 text-sm">
+          {mode === 'login' || mode === 'signup' ? (
+            <button
+              id="auth-toggle-mode-btn"
+              type="button"
+              className="font-bold cursor-pointer min-h-[44px] px-2 -ml-2 inline-flex items-center rounded-lg hover:underline"
+              style={{ color: accentHex }}
+              onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setNotice(''); }}
+            >
+              {mode === 'login' ? 'Create an account' : 'I already have an account'}
+            </button>
+          ) : (
+            <button
+              id="auth-back-to-login-btn"
+              type="button"
+              className="font-bold cursor-pointer min-h-[44px] px-2 -ml-2 inline-flex items-center gap-1.5 rounded-lg hover:underline"
+              style={{ color: accentHex }}
+              onClick={() => { setMode('login'); setError(''); setNotice(''); setPassword(''); setConfirmPassword(''); }}
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to sign in
+            </button>
+          )}
+
+          {mode === 'login' ? (
+            <button
+              id="auth-forgot-password-btn"
+              type="button"
+              onClick={() => { setMode('recover'); setError(''); setNotice(''); setPassword(''); }}
+              className={`${MUTED_CLASS} font-semibold hover:text-slate-900 cursor-pointer min-h-[44px] px-2 inline-flex items-center rounded-lg`}
+            >
+              Forgot password?
+            </button>
+          ) : null}
+
           <button
             id="auth-browse-guest-btn"
             type="button"
@@ -227,10 +330,38 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ accentHex = '#C20E5A', o
   );
 };
 
+/** Copy per mode, kept next to the screen that renders it. */
+function headingFor(mode: CustomerAuthMode): string {
+  if (mode === 'signup') return 'Create your account';
+  if (mode === 'recover') return 'Reset your password';
+  if (mode === 'reset') return 'Choose a new password';
+  return 'Welcome back';
+}
+
+function subheadingFor(mode: CustomerAuthMode): string {
+  if (mode === 'signup') return 'One account covers every salon you book through Nexora.';
+  if (mode === 'recover') {
+    return 'Enter the email on your account and we will send a link to set a new password.';
+  }
+  if (mode === 'reset') {
+    return 'Your reset link is verified — set a new password and you are signed straight in.';
+  }
+  return 'Your bookings, rewards and notifications all live in your salon’s database.';
+}
+
+function submitLabelFor(mode: CustomerAuthMode): string {
+  if (mode === 'signup') return 'Create account';
+  if (mode === 'recover') return 'Send reset link';
+  if (mode === 'reset') return 'Save new password';
+  return 'Sign in';
+}
+
 /**
  * Supabase Auth returns raw GoTrue strings. Customers cannot act on
  * "Invalid login credentials", so each known case is translated once, here,
- * rather than in three places on the form.
+ * rather than in three places on the form. Recovery copy comes from
+ * `src/lib/customer/authRecovery.ts#describeResetError`, which already returns
+ * customer-ready text — the fallback at the bottom passes it through untouched.
  */
 export function describeAuthError(message: string): string {
   if (/invalid login credentials|invalid credentials/i.test(message)) {

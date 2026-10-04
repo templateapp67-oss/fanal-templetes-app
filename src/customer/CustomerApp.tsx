@@ -22,10 +22,10 @@ import { Bell, CalendarDays, Compass, LogOut, QrCode, Sparkles, User, Wallet } f
 import { customerPath, matchCustomerRoute, normalizePath, type CustomerSection } from '../lib/router';
 import { currentCustomerUser, customerBackendConnected, getSalon, invalidateCustomerData } from '../lib/customer/api';
 import { readLocation } from '../lib/customer/deviceStore';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, isMockSupabase } from '../lib/supabaseClient';
 import { ACCENT_PALETTES, type AccentPaletteKey } from '../themeAccents';
 import type { CustomerSalon } from '../lib/customer/types';
-import { AuthScreen } from './screens/Auth';
+import { AuthScreen, type CustomerAuthMode } from './screens/Auth';
 import { HomeScreen, SalonScreen, type SalonTab } from './screens/Discover';
 import { BookingFlow } from './screens/Book';
 import { BookingsScreen } from './screens/Bookings';
@@ -74,7 +74,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
   const [refreshToken, setRefreshToken] = useState(0);
   const [bookingServiceIds, setBookingServiceIds] = useState<string[]>(initialServiceIds);
   const [salon, setSalon] = useState<CustomerSalon | null>(null);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<CustomerAuthMode>('login');
   const [pendingAfterAuth, setPendingAfterAuth] = useState('');
 
   // The session is read once here and pushed down; screens never call
@@ -105,6 +105,29 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
     return () => window.removeEventListener('focus', onFocus);
   }, []);
 
+  // A reset email links back to `/app/auth` with a recovery token. Supabase
+  // Auth exchanges it, persists the recovery session and fires
+  // PASSWORD_RECOVERY — without this listener the customer lands on the sign-in
+  // form holding a session they cannot use and no field to set a password in, so
+  // the reset flow dead-ends exactly where it used to not exist at all.
+  useEffect(() => {
+    if (isMockSupabase || typeof supabase.auth?.onAuthStateChange !== 'function') return;
+    const { data } = supabase.auth.onAuthStateChange((event: string, changed: any) => {
+      if (event !== 'PASSWORD_RECOVERY') return;
+      const user = changed?.user;
+      if (user?.id) {
+        setSession({ id: String(user.id), email: user.email ?? undefined });
+        setRefreshToken((token) => token + 1);
+      }
+      // Keep whatever screen the customer was heading to: after the password is
+      // saved, `onAuthenticated` resumes that target instead of dumping them on
+      // the home rail.
+      setAuthMode('reset');
+      navigate(customerPath('auth'));
+    });
+    return () => data?.subscription?.unsubscribe?.();
+  }, [navigate]);
+
   const go = useCallback(
     (section: CustomerSection, id = '', tab = '') => navigate(customerPath(section, id, tab)),
     [navigate]
@@ -121,7 +144,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
   }, [tenantSubdomain, path, navigate]);
 
   const requireAuth = useCallback(
-    (returnTo: string, mode: 'login' | 'signup' = 'login') => {
+    (returnTo: string, mode: CustomerAuthMode = 'login') => {
       setAuthMode(mode);
       setPendingAfterAuth(returnTo);
       go('auth');

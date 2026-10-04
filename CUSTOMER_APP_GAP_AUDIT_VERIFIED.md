@@ -279,3 +279,95 @@ pure code-level the — isliye ye batch bina deployment risk ke merge ho sakta h
 Tier 1 ke baaki: G1 forgot/reset password · G11 review tags · G15 recently viewed ·
 G10 promo banner/featured/similar/quick booking. Phir Tier 3 billing (G2/G3/G4)
 jisme migration lagegi. G14 (area search) is batch me ho gaya.
+
+---
+
+## 6. FIX BATCH 2 — G1: forgot / reset password (2026-10-04)
+
+**Gap:** Customer app me password bhoolne ka koi raasta hi nahi tha — na "Forgot
+password?" link, na reset request, na new-password form. `Auth.tsx` sirf account
+bana sakta tha aur sign in kar sakta tha. Password bhoola = bookings, rewards aur
+pass permanently lock. Audit ka #1 gap.
+
+**Fix:** Supabase Auth ka apna recovery flow — wahi jo partner portal
+(`src/lib/partnerPortalAuth.ts`) aur onboarding app (`src/onboarding/lib/auth.ts`)
+pehle se use karte hain. **Koi naya table nahi, koi custom email nahi, koi
+password is app me store nahi hota, koi migration nahi.**
+
+Flow:
+
+1. `/app/auth` par **Forgot password?** → screen `recover` mode me jaata hai
+   (sirf email field; password box deliberately nahi dikhta).
+2. `sendCustomerPasswordReset()` → `supabase.auth.resetPasswordForEmail(email,
+   { redirectTo: <origin>/app/auth })`.
+3. Link `/app/auth` par land karta hai. Public client me `detectSessionInUrl`
+   default true hai (`src/lib/supabaseClient.ts:284-298`), isliye token wahi
+   exchange hota hai aur `PASSWORD_RECOVERY` fire hota hai.
+4. `CustomerApp.tsx` ka naya `onAuthStateChange` listener recovery session set
+   karta hai, `authMode = 'reset'`, aur auth route par navigate karta hai.
+5. `reset` mode: new password + confirm → `completeCustomerPasswordReset()` →
+   `supabase.auth.updateUser({ password })`.
+6. Recovery session ek **real** session hai, isliye password accept hote hi
+   `getSession()` → `onAuthenticated(...)` → customer seedha andar, aur
+   `pendingAfterAuth` wahi screen resume karta hai jahan wo ja raha tha. Doosra
+   email nahi, purana password dobara nahi maanga jaata.
+
+**Security / UX rules (partner portal wale hi teen):**
+
+- **Enumeration-safe:** har syntactically valid address par same
+  `RESET_SENT_MESSAGE`. Is form se pata nahi chalta ki email registered hai ya
+  nahi — na provider ke jawab se, na screen ki copy se.
+- **Raw provider strings customer tak nahi jaate.** `describeResetError()` GoTrue
+  ke messages ko translate karta hai: rate limit, invalid email, expired/missing
+  recovery session, weak password, aur "redirect_to not allowed" (deployment
+  misconfigured). Jo pehchana na jaye wo generic copy banta hai, echo nahi.
+- **Strength check UX only hai** — Auth `updateUser` par khud dobara validate
+  karta hai. Minimum 6 characters, yaani signup rule ke saath identical, taaki
+  ek hi screen ke do forms aapas me disagree na karein.
+- **Mock deployment** (Supabase keys absent) me saaf copy milti hai, transport
+  error nahi — signup/sign-in ke stance ke saath consistent.
+- **Autofill-safe:** `reset` mode bhi `FormData(event.currentTarget)` se padhta
+  hai, wahi contract jo baaki auth forms ke liye
+  `tests/dom/passwordAutofillFix.test.ts` pin karta hai. Password manager DOM
+  bhar de to bhi visible value hi validate hoti hai.
+
+**Files:**
+
+```
+new   src/lib/customer/authRecovery.ts    flow helpers: redirectTo, send, validate,
+                                          complete, describeResetError
+mod   src/customer/screens/Auth.tsx       CustomerAuthMode = login|signup|recover|reset,
+                                          mode-aware fields/copy/buttons
+mod   src/customer/CustomerApp.tsx        PASSWORD_RECOVERY listener, authMode widen
+new   tests/customerAuthRecoveryFix.test.ts   27 unit tests
+new   tests/dom/customerAuthRecovery.test.ts  21 DOM tests (real clicks + events)
+```
+
+Do jaan-boojh kar liye gaye faisle:
+
+- `authRecovery.ts` **`src/lib/router.ts` se import nahi karta** — router.ts React
+  hooks import karta hai, aur ek non-React module usse jodna coupling (aur bundle)
+  dono bigaadta. Isliye `CUSTOMER_AUTH_PATH = '/app/auth'` literal hai, aur ek test
+  assert karta hai ki wo `customerPath('auth')` ke barabar hi rahe — drift pakda
+  jayega.
+- Existing DOM ids aur input names **untouched** hain (`auth-toggle-mode-btn`,
+  `auth-browse-guest-btn`, `customer-email`, `customer-password`,
+  `customer-full-name`, `customer-phone`), kyunki purane DOM tests un par depend
+  karte hain. Naye ids: `auth-forgot-password-btn`, `auth-back-to-login-btn`,
+  inputs `customer-new-password`, `customer-new-password-confirm`.
+
+**Verification:** `tsc --noEmit` clean · 27/27 unit · 21/21 DOM · regressions:
+`tests/customer*.test.ts` 142/142 (115 purane + 27 naye),
+`tests/dom/passwordAutofillFix.test.ts` 32/32, `tests/customerScreens.test.ts` 8/8.
+
+**Ek asli bug jo test ne pakda:** `describeResetError` pehle sirf `refresh_token`
+match karta tha, lekin GoTrue "Refresh Token Not Found" (space ke saath) bhi
+bhejta hai. Regex `refresh[ _]?token` hua — warna ek expired link customer ko
+"expired" kehne ke bajaye generic error dikhata, aur wo dobara link maangne ke
+bajaye retry karta rehta.
+
+### 6.1 Ab bhi khula
+
+Tier 1 ke baaki: G11 review tags · G15 recently viewed · G10 promo banner /
+featured / similar / quick booking. Phir Tier 3 billing (G2/G3/G4), jisme
+migration lagegi.
