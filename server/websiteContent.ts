@@ -2,6 +2,7 @@ import { trimmedSafeImageUrl } from '../src/lib/websiteValidation.js';
 import type { SalonProfile, SalonService, SocialVideo } from '../src/types.js';
 import { extractYouTubeId, buildYouTubeWatchUrl, buildYouTubeThumbnailUrl } from '../src/utils/youtube.js';
 import { catalogId } from './normalizedBookingCreate.js';
+import { normalizeServiceGender } from '../src/lib/serviceGender.js';
 
 /** Public presentation data only. Never spread an owner snapshot: it contains
  * account identifiers, private settings and potentially booking/customer data. */
@@ -79,7 +80,11 @@ export function mergeServicePresentation(services: SalonService[], raw: unknown,
       imageUrl: trimmedSafeImageUrl(saved.imageUrl) ?? service.imageUrl,
       showDuration: typeof saved.showDuration === 'boolean' ? saved.showDuration : service.showDuration,
       category: typeof saved.category === 'string' ? saved.category : service.category,
-      gender: ['All genders', 'Women', 'Men', 'Kids'].includes(saved.gender) ? saved.gender : service.gender,
+      // The editor stores a picklist value, but owners have typed free text into
+      // it in the wild; `normalizeServiceGender` maps the obvious spellings and
+      // leaves anything unknown as the catalogue's own value rather than
+      // silently widening the service's audience to "All genders".
+      gender: normalizeServiceGender(saved.gender) ?? service.gender,
       icon: typeof saved.icon === 'string' ? saved.icon : service.icon,
     };
   });

@@ -210,6 +210,13 @@ export interface SalonSearchQuery {
   minRating?: number;
   openNow?: boolean;
   offersOnly?: boolean;
+  /**
+   * Filter on the gender tags the salon publishes on its services
+   * ('All genders' | 'Women' | 'Men' | 'Kids'). Applied server-side so it
+   * narrows the whole catalogue, not just the page requested. A salon that
+   * publishes no gender tags still matches — see src/lib/serviceGender.ts.
+   */
+  gender?: string;
   sort?: 'nearby' | 'rating' | 'name' | 'trending' | 'price';
   latitude?: number;
   longitude?: number;

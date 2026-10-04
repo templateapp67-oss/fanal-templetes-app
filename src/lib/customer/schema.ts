@@ -4,17 +4,37 @@
 // WHY THIS FILE EXISTS
 // --------------------
 // The Customer App is specced against 18 logical tables (`salons`,
-// `salon_services`, `staff_slots`, `reward_wallets`, …). The Supabase project
-// this app is connected to ships a *salon-owner* schema (see
-// `supabase/migrations/00001_init.sql`) with 13 physical tables, and only two
-// of the 18 names (`profiles`, `bookings`) exist literally.
+// `salon_services`, `staff_slots`, `reward_wallets`, …). This module is the one
+// place where that vocabulary is translated to the physical schema, and it is
+// rendered to customers verbatim by the Activity → Data panel
+// (`src/customer/screens/Activity.tsx`) and by `/api/customer/connection`. So an
+// out-of-date entry here is not a stale comment — it is the app telling a
+// customer something false about where their data lives.
 //
-// The instruction was explicit: do NOT create, rename or drop tables, and do
-// not overwrite existing data. So this module is the one place where the
-// customer vocabulary is translated to the physical schema. Every customer
-// screen and every `/api/customer/*` handler resolves its data through here,
-// which means re-pointing the app at a real 18-table schema later is a
-// one-file change instead of a rewrite.
+// TWO CATALOGUE PATHS (this is the part that used to be documented wrongly)
+// ------------------------------------------------------------------------
+// The project originally shipped only the salon-owner schema
+// (`supabase/migrations/00001_init.sql`), where a "salon" is a `profiles` row,
+// staff live in `stylists`, and loyalty lives in `clients`. Later migrations
+// added a real normalized catalogue:
+//
+//   • `salons`              — 20261002_owner_workspace_provisioning.sql:175,
+//                             columns completed by
+//                             20261031000000_fix_website_save_and_public_site.sql:56
+//   • `services.salon_id`, `price_paise`, `is_bookable_online` — same migration
+//   • `staff`, `salon_hours` — used by server/customerSalonDirectory.ts and
+//                             server/customerAvailability.ts
+//
+// Every discovery/detail handler tries the normalized catalogue FIRST
+// (`readNormalizedSalonDirectory`) and falls back to the `profiles` path when a
+// deployment has no `salons` rows. The two paths are NOT feature-equal:
+// packages, service gender tags, `area`, and the published services/staff/
+// reviews payload exist only on the normalized path (the legacy path resolves
+// packages and gender from `profiles.data.editor_*` on a salon's own page, but
+// not for a card list, because discovery never selects that jsonb).
+//
+// The original build rule — do NOT create, rename or drop tables — still holds
+// for this module: nothing here writes schema, it only reports what exists.
 //
 // KINDS OF MAPPING (this distinction matters when you audit the app):
 //   'table'    — a physical table, read/queried directly (possibly a filtered
@@ -65,7 +85,15 @@ export interface CustomerEntityMap {
   note: string;
 }
 
-/** The physical tables this app is allowed to touch. Nothing else. */
+/**
+ * The physical tables this app is allowed to touch. Nothing else.
+ *
+ * The first group is the original owner schema; the second is the normalized
+ * catalogue that later migrations added and that every discovery/detail handler
+ * now prefers (see the header note). Listing only the first group made the
+ * in-app Data panel report the customer app's own primary read path as
+ * "does not exist".
+ */
 export const PHYSICAL_TABLES = [
   'profiles',
   'services',
@@ -80,6 +108,11 @@ export const PHYSICAL_TABLES = [
   'loyalty_redeemed_rewards',
   'social_videos',
   'salon_youtube_videos',
+  // Normalized catalogue (20261002_owner_workspace_provisioning.sql,
+  // 20261031000000_fix_website_save_and_public_site.sql).
+  'salons',
+  'staff',
+  'salon_hours',
 ] as const;
 
 export type PhysicalTable = (typeof PHYSICAL_TABLES)[number];
@@ -129,41 +162,18 @@ export const CUSTOMER_SCHEMA_MAP: CustomerEntityMap[] = [
   },
   {
     logical: 'salons',
-    table: 'profiles',
-    tables: ['profiles'],
-    kind: 'table',
-    columns: [
-      'id',
-      'salon_name',
-      'business_type',
-      'tagline',
-      'about',
-      'logo_url',
-      'cover_image_url',
-      'city',
-      'state',
-      'full_address',
-      'postal_code',
-      'latitude',
-      'longitude',
-      'phone_number',
-      'whatsapp',
-      'instagram_handle',
-      'subdomain',
-      'currency',
-      'theme_preset',
-      'theme_accent_key',
-      'working_hours',
-      'home_service',
-      'require_deposit',
-      'deposit_percentage',
-      'founding_year',
-    ],
-    filters: ['salon_name=not.is.null', 'subdomain=not.is.null'],
+    // Resolved at request time from whichever catalogue this deployment has, so
+    // no single physical table owns it — hence `derived`, with both sources
+    // named. The handler order is fixed: normalized first, `profiles` fallback.
+    table: null,
+    tables: ['salons', 'services', 'staff', 'salon_hours', 'bookings', 'profiles'],
+    kind: 'derived',
+    columns: [],
+    filters: ['salons: is_active=eq.true, deleted_at=is.null, is_listed=neq.false', 'profiles: salon_name=not.is.null, subdomain=not.is.null'],
     readScope: 'public-active',
     writeScope: 'none',
     endpoint: '/api/customer/salons',
-    note: 'A salon IS an owner profile row: profiles holds the published name, address, geo, images and hours. Read-only for customers; discovery filters to rows that actually published a salon (salon_name + subdomain), which is what "active" means in this schema.',
+    note: 'TWO read paths, normalized first. `readNormalizedSalonDirectory` (server/customerSalonDirectory.ts) builds a salon from `salons` + its `services`, `staff`, `salon_hours` and completed `bookings` (the rating is the average of reviews really stored on those bookings). When a deployment has no `salons` rows it falls back to the legacy path, where a salon IS an owner `profiles` row filtered to published ones (salon_name + subdomain). The response says which one answered (`normalizedCatalogue: true`). Packages, service gender tags and `area` are resolved on the normalized path and, for a single salon page, from `profiles.data.editor_profile` on the legacy one — a card list on the legacy path carries none of them, because discovery never selects that jsonb.',
   },
   {
     logical: 'salon_services',
@@ -187,12 +197,12 @@ export const CUSTOMER_SCHEMA_MAP: CustomerEntityMap[] = [
     readScope: 'public-active',
     writeScope: 'owner-only',
     endpoint: '/api/customer/salons/{salonId}/services',
-    note: '`services` is the salon service catalogue, ordered by sort_order exactly as the owner edits it in ServiceManagement. Customers can list it, never write it.',
+    note: 'One physical `services` table, two key spaces. The legacy path reads it by `owner_id` (price in `price`, duration in `duration_minutes`, ordered by `sort_order` exactly as the owner edits it in ServiceManagement); the normalized catalogue reads the same rows by `salon_id` with `price_paise` and `is_bookable_online`. There is NO `gender` column — a service gender tag exists only in the owner\'s published website payload (`salons.data.editor_services[].gender`), merged in by `mergeServicePresentation` and normalized by src/lib/serviceGender.ts. Customers can list the menu, never write it.',
   },
   {
     logical: 'salon_staff',
     table: 'stylists',
-    tables: ['stylists'],
+    tables: ['stylists', 'staff'],
     kind: 'table',
     columns: [
       'id',
@@ -213,19 +223,19 @@ export const CUSTOMER_SCHEMA_MAP: CustomerEntityMap[] = [
     readScope: 'public-active',
     writeScope: 'owner-only',
     endpoint: '/api/customer/salons/{salonId}/staff',
-    note: '`stylists` is the staff table. `status` (Available/Busy/On Leave/Inactive) and `hide_phone` are respected: inactive staff are excluded from the customer app and phone numbers are stripped when the owner hid them.',
+    note: 'Two staff tables, one logical entity. The legacy path reads `stylists` by `owner_id`, respecting `status` (Available/Busy/On Leave/Inactive) and `hide_phone` — inactive staff are excluded and phone numbers are stripped when the owner hid them. The normalized catalogue reads `staff` by `salon_id` with `is_active` + `is_public` (server/customerSalonDirectory.ts). Neither path exposes a staff member the owner did not publish.',
   },
   {
     logical: 'staff_slots',
     table: null,
-    tables: ['stylists', 'bookings'],
+    tables: ['stylists', 'bookings', 'salon_hours'],
     kind: 'derived',
     columns: [],
     filters: ['date=eq.{day}', 'stylist_id=eq.{staffId}'],
     readScope: 'public-active',
     writeScope: 'none',
     endpoint: '/api/customer/salons/{salonId}/slots',
-    note: 'There is no slots table, and adding one is out of scope. Slots are computed live from the two tables that do exist: `stylists.schedule` (the owner-editable weekly opening hours) minus every `bookings` row on that date for that stylist (pending/confirmed/in_progress hold a slot). So availability is always the real database state, and it is the same computation the owner sees in TeamManagement.',
+    note: 'There is no slots table, and adding one is out of scope. Slots are computed live from what does exist: on the legacy path `stylists.schedule` (falling back to the salon\'s published `working_hours`) minus every `bookings` row on that date for that stylist (pending/confirmed/in_progress hold a slot); on the normalized path the `nexora_customer_booking_options` RPC answers from `salon_hours` + `staff` + `bookings` (server/customerAvailability.ts). Availability is therefore always real database state — and because nothing reserves a row while a customer hesitates on the slot screen, two customers can be offered the same slot until one of them creates the booking.',
   },
   {
     logical: 'bookings',
@@ -515,8 +525,8 @@ export const CUSTOMER_SCHEMA_GAPS = [
   },
   {
     logical: 'customer_qr_payments',
-    why: 'no QR table; recorded as loyalty_point_transactions of type qr_payment',
-    needs: 'a `customer_qr_payments` table (user_id, salon_id, amount, reference, status) if QR payments must exist independently of the points ledger',
+    why: 'the table EXISTS (supabase/migrations/20260908_complete_rewards_qr_referrals_backend.sql:438, owner-scoped RLS) but no code path reads or writes it — a QR reward scan is recorded as a loyalty_point_transactions row of type qr_payment, so the points ledger stays the single book of record',
+    needs: 'either write the relational row alongside the ledger row (one transaction, both tables) or drop the unused table; today it is schema that claims a capability the app does not have',
   },
   {
     logical: 'memberships',
@@ -535,8 +545,8 @@ export const CUSTOMER_SCHEMA_GAPS = [
   },
   {
     logical: 'salons',
-    why: 'a salon is an owner profile row, not a salons table',
-    needs: 'a `salons` table if one owner must run several salons',
+    why: 'resolved at request time from two catalogues: the normalized `salons` rows when a deployment has them, otherwise the legacy "a salon is an owner `profiles` row" path. The two are not feature-equal — packages, service gender tags and `area` are only fully resolved on the normalized path',
+    needs: 'one authoritative catalogue. Either backfill `salons` for every published `profiles` salon and delete the legacy branch, or accept the fallback and label it as a degraded mode in the response (today only `normalizedCatalogue: true` marks the good path)',
   },
   {
     logical: 'notifications',
@@ -552,10 +562,19 @@ export const CUSTOMER_SCHEMA_GAPS = [
 
 /**
  * RLS reality of the existing schema, as recorded so the access model is not
- * folklore: every salon table is owner-scoped, there is no customer SELECT
- * policy, so a customer token asking Supabase directly for `services` gets zero
- * rows. That is why the Customer App reads through `/api/customer/*`, which
- * runs on the service-role key and applies the ownership check itself.
+ * folklore.
+ *
+ * The original owner schema is owner-scoped with no customer SELECT policy: a
+ * customer token asking Supabase directly for `stylists` or `clients` gets zero
+ * rows, which is why private customer data is read through `/api/customer/*` on
+ * the service-role key with the ownership check applied in SQL.
+ *
+ * The normalized catalogue added later is deliberately different — it publishes
+ * read policies for `anon`/`authenticated`, because a public storefront has to
+ * show a salon, its menu, its public staff and its opening hours to a signed-out
+ * visitor (20261031000000_fix_website_save_and_public_site.sql:270-326). That
+ * is public business data, not customer data; nothing in it is scoped to a
+ * person.
  */
 export const RLS_REALITY = {
   ownerScoped: [
@@ -571,10 +590,18 @@ export const RLS_REALITY = {
     'loyalty_redeemed_rewards',
     'social_videos',
   ],
+  /**
+   * Catalogue tables a signed-out visitor may SELECT directly, each limited to
+   * rows the owner published (`is_active`, `deleted_at is null`). `services`
+   * appears in both lists: its legacy rows are owner-scoped by `owner_id`, and
+   * the public-read policy added for the normalized catalogue exposes active
+   * rows of every salon.
+   */
+  publicRead: ['salons', 'services', 'staff', 'salon_hours'],
   recipientScoped: ['in_app_notifications'],
   customerScoped: [] as string[],
   realtimeSafeWithoutChanges: ['in_app_notifications'],
-  note: 'Adding customer policies would be an RLS change; the chosen plan is zero schema/RLS changes, so private customer reads are scoped in SQL by the trusted API instead of by RLS.',
+  note: 'Private customer reads (bookings, profile, rewards, notifications) are still scoped in SQL by the trusted API rather than by RLS: no customer-facing policy exists on any of those tables, and adding one would be an RLS change this module only reports on.',
 };
 
 /** Deterministic, verifiable referral code for a customer uid. */

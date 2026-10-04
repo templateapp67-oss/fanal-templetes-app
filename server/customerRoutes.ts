@@ -88,6 +88,9 @@ import {
   QR_PAYMENT_TYPE,
   QR_STATE_BELOW_MINIMUM,
 } from '../src/lib/customer/mappers.js';
+import { buildCatalogPackages } from './catalogPackages.js';
+import { mergeServicePresentation } from './websiteContent.js';
+import { salonMatchesGender, normalizeServiceGender } from '../src/lib/serviceGender.js';
 import {
   runDb,
   withDbTimeout,
@@ -119,7 +122,16 @@ export interface CustomerRoutesDeps {
 }
 
 const DISCOVERY_COLUMNS =
-  'id, salon_name, business_type, tagline, about, logo_url, cover_image_url, city, state, full_address, address_line2, postal_code, latitude, longitude, phone_number, whatsapp, instagram_handle, subdomain, currency, theme_preset, theme_accent_key, working_hours, home_service, require_deposit, deposit_percentage, founding_year';
+  'id, salon_name, business_type, tagline, about, logo_url, cover_image_url, city, state, area, full_address, address_line2, postal_code, latitude, longitude, phone_number, whatsapp, instagram_handle, subdomain, currency, theme_preset, theme_accent_key, working_hours, home_service, require_deposit, deposit_percentage, founding_year';
+
+/**
+ * A salon's own page needs the published website payload (`data.editor_profile`,
+ * `data.editor_services`) because that is the only place packages and service
+ * gender tags live on this schema. Discovery deliberately does NOT select `data`:
+ * a card list would drag every salon's whole editor payload down the wire to
+ * show fields it never renders.
+ */
+const SALON_DETAIL_COLUMNS = `${DISCOVERY_COLUMNS}, landmark, data`;
 
 const SALON_SUMMARY_COLUMNS = 'id, salon_name, logo_url, cover_image_url, city, currency';
 
@@ -428,7 +440,45 @@ function numberOr(value: unknown): number | null {
 }
 
 function matchesTerm(salon: any, term: string): boolean {
-  return `${salon.name} ${salon.tagline} ${salon.city} ${salon.businessType}`.toLowerCase().includes(term);
+  // `area` is part of how customers describe where a salon is ("Niwaru Road"),
+  // and the normalized catalogue path already searches it — the legacy path used
+  // to search only name/tagline/city/businessType, so the same query returned
+  // different salons depending on which schema the deployment had.
+  return `${salon.name} ${salon.tagline} ${salon.city} ${salon.area || ''} ${salon.address || ''} ${salon.businessType}`.toLowerCase().includes(term);
+}
+
+/**
+ * Legacy (`profiles`-backed) catalogue facts for one salon: the service menu the
+ * customer may book, the gender tags published on it, and the packages resolved
+ * against that same menu.
+ *
+ * This is the parity half of `server/customerSalonDirectory.ts`. Before it
+ * existed the legacy path emitted no `packages` and no `serviceGenders` at all,
+ * so on any deployment without normalized `salons` rows the Packages tab was
+ * empty by construction and the gender filter wiped the list.
+ */
+function legacySalonCatalogueFacts(
+  row: any,
+  serviceRows: any[] | undefined,
+): { services: any[]; packages: any[]; packageNotes: string[] } {
+  const mapped = (Array.isArray(serviceRows) ? serviceRows : []).map((serviceRow) => toCustomerService(serviceRow));
+  // The owner's published editor payload is the only place a service gender can
+  // come from: there is no `services.gender` column in this schema.
+  const menu = mergeServicePresentation(
+    // `mergeServicePresentation` speaks the website-editor shape
+    // (`durationMinutes`), the customer mapper speaks the API shape
+    // (`durationMinutes` + `gender`), so bridge the two before merging.
+    mapped.map((service) => ({ ...service, durationMinutes: service.durationMinutes })) as any,
+    row?.data?.editor_services,
+    String(row?.id || ''),
+  );
+  const editorProfile = row?.data?.editor_profile && typeof row.data.editor_profile === 'object' ? row.data.editor_profile : row?.data;
+  const savedPackages = editorProfile && typeof editorProfile === 'object' && Array.isArray(editorProfile.packages) ? editorProfile.packages : [];
+  const resolved = buildCatalogPackages(savedPackages, menu as any, String(row?.id || ''));
+  // `menu` carries the customer mapper's fields plus the gender merged in from
+  // the editor payload — exactly what `toCustomerSalon` needs to derive
+  // `serviceGenders` without a second pass over the rows.
+  return { services: menu as any[], packages: resolved.packages, packageNotes: resolved.notes };
 }
 
 /**
@@ -505,7 +555,9 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
       }
 
       const normalized = await readNormalizedSalonDirectory(deps.db, req.query || {}, undefined, deadlineAt);
-      if (normalized) return void ok(res, deps, requestId, normalized);
+      // `catalogueMode` mirrors the legacy branch's label so a screen can tell
+      // the two apart without sniffing for absent fields.
+      if (normalized) return void ok(res, deps, requestId, normalized, { catalogueMode: 'normalized-salons' });
       const query = req.query || {};
       const limit = Math.min(60, Math.max(1, Number(query.limit || deps.discoveryLimit || 24)));
       const city = String(query.city || '').trim();
@@ -520,26 +572,49 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
       const minRating = Number.isFinite(Number(query.minRating)) && Number(query.minRating) > 0 ? Number(query.minRating) : null;
       const openOnly = query.openNow === 'true' || query.openNow === '1';
       const offersOnly = query.offersOnly === 'true' || query.offersOnly === '1';
+      // Gender is a filter on what the salon publishes, not on the salon's
+      // owner: `normalizeServiceGender` rejects anything outside the picklist,
+      // so a junk query value becomes "no filtering" instead of an empty list.
+      const gender = normalizeServiceGender(query.gender) || null;
 
       // Published salons only: a customer's `profiles` row has no salon_name,
       // so without this filter every customer in the app would list as a salon.
-      let builder = deps.db
-        .from('profiles')
-        .select(DISCOVERY_COLUMNS)
-        .not('salon_name', 'is', null)
-        .not('subdomain', 'is', null);
-      if (city) builder = builder.ilike('city', `%${city}%`);
-      if (businessType) builder = builder.eq('business_type', businessType);
-      if (term && term.length <= 40) {
-        builder = builder.or(`salon_name.ilike.%${term}%,tagline.ilike.%${term}%,city.ilike.%${term}%,business_type.ilike.%${term}%`);
-      }
-      builder = builder.order('salon_name', { ascending: true }).limit(Math.min(300, limit * 6));
+      //
+      // `area` and `address_line2` are how customers actually name a place
+      // ("Niwaru Road"), and the normalized catalogue path already searches
+      // them. Both columns are added by optional migrations, so a project that
+      // never ran them answers 42703 (column does not exist) — that is retried
+      // once without the locality terms rather than failing the whole search.
+      const discoveryQuery = (searchLocality: boolean) => {
+        let query_builder = deps.db
+          .from('profiles')
+          .select(DISCOVERY_COLUMNS)
+          .not('salon_name', 'is', null)
+          .not('subdomain', 'is', null);
+        if (city) query_builder = query_builder.ilike('city', `%${city}%`);
+        if (businessType) query_builder = query_builder.eq('business_type', businessType);
+        if (term && term.length <= 40) {
+          const fields = ['salon_name', 'tagline', 'city', 'business_type'];
+          if (searchLocality) fields.push('area', 'address_line2');
+          query_builder = query_builder.or(fields.map((field) => `${field}.ilike.%${term}%`).join(','));
+        }
+        return query_builder.order('salon_name', { ascending: true }).limit(Math.min(300, limit * 6));
+      };
 
-      const { data, error } = await runDb(() => builder, {
+      let { data, error } = await runDb(() => discoveryQuery(true), {
         label: 'customer salon discovery',
         timeoutMs: DEFAULT_DB_TIMEOUT_MS,
         deadlineAt,
       });
+      const missingLocalityColumns = error?.code === '42703' && /area|address_line2/i.test(String(error?.message || ''));
+      if (missingLocalityColumns) {
+        console.warn(`[Customer] (${requestId}) Locality columns missing — retrying search without area/address_line2:`, error?.message);
+        ({ data, error } = await runDb(() => discoveryQuery(false), {
+          label: 'customer salon discovery (no locality columns)',
+          timeoutMs: DEFAULT_DB_TIMEOUT_MS,
+          deadlineAt,
+        }));
+      }
       if (error) {
         console.error(`[Customer] (${requestId}) Discovery failed:`, error.message || error);
         return void fail(res, requestId, error, 'Salons could not be loaded right now.');
@@ -560,6 +635,12 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
           serviceCount: offered.length,
           minServicePrice: prices.length ? Math.min(...prices) : null,
           categories,
+          // Discovery never selects `profiles.data`, so the legacy path has no
+          // editor payload here: `services` carries no gender tags and packages
+          // stay empty. Both are honest — `serviceGenders: []` means "not
+          // published", which the filter matches instead of hiding the salon,
+          // and the salon's own page (which does select `data`) resolves them.
+          services: offered,
           hasActiveOffers: catalogue.offerOwnerIds.has(String(row.id)),
           recentBookings: catalogue.recentBookings.get(String(row.id)) || 0,
         });
@@ -573,6 +654,11 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
         .filter((salon: any) => (minRating === null ? true : salon.rating.count > 0 && salon.rating.average >= minRating))
         .filter((salon: any) => (openOnly ? salon.openNow === true : true))
         .filter((salon: any) => (offersOnly ? salon.hasActiveOffers : true))
+        // Same rule as the normalized path (src/lib/serviceGender.ts): a salon
+        // matches when it publishes the requested gender or a unisex service,
+        // and a salon that publishes no gender tags at all still matches — the
+        // filter narrows, it never wipes the list.
+        .filter((salon: any) => salonMatchesGender(salon.serviceGenders, gender))
         .sort((a: any, b: any) => {
           if (sort === 'rating') return b.rating.average - a.rating.average || a.name.localeCompare(b.name);
           if (sort === 'name') return a.name.localeCompare(b.name);
@@ -593,8 +679,15 @@ export function createSalonListHandler(deps: CustomerRoutesDeps) {
           minRating,
           openNow: openOnly,
           offersOnly,
+          gender,
           sort,
         },
+        // Which catalogue answered. The normalized path marks its own salons
+        // (`normalizedCatalogue: true`); this label says it for the whole
+        // response, so a screen — or whoever is debugging one — can tell a
+        // deployment running the legacy `profiles` fallback from one on the
+        // normalized catalogue instead of inferring it from missing fields.
+        catalogueMode: 'legacy-profiles',
       });
     } catch (err: any) {
       console.error(`[Customer] (${requestId}) Discovery threw:`, err?.stack || err);
@@ -612,6 +705,69 @@ function serviceMatchesTerm(services: any[] | undefined, term: string): boolean 
   );
 }
 
+/**
+ * Build the legacy (`profiles`-backed) salon page response.
+ *
+ * Split out of the handler so the "columns this project does not have yet"
+ * retry can answer from the same code path — a narrower SELECT must produce the
+ * same shape, not a second, subtly different implementation.
+ */
+async function answerSalonDetail(
+  res: any,
+  deps: CustomerRoutesDeps,
+  requestId: string,
+  profileRow: any,
+  req: any,
+  deadlineAt: number | undefined
+): Promise<void> {
+  if (!profileRow || !isSalonProfile(profileRow)) {
+    // 200 + null means "not published", which the screen renders as an empty
+    // state. A 404 here would be indistinguishable from a broken route.
+    return void ok(res, deps, requestId, null, { notice: 'This salon is not published yet.' });
+  }
+
+  const [galleryRows, catalogue] = await Promise.all([
+    runDb(
+      () =>
+        deps.db
+          .from('social_videos')
+          .select('id, title, youtube_url, thumbnail_url, category_tag')
+          .eq('owner_id', profileRow.id)
+          .order('sort_order', { ascending: true })
+          .limit(12),
+      { label: 'salon gallery', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
+    ),
+    attachCatalogueFacts(deps, [profileRow], deadlineAt),
+  ]);
+  if (galleryRows.error) {
+    // A missing showcase is decoration, not a broken page: log and continue.
+    console.warn(`[Customer] (${requestId}) Gallery lookup failed (salon page shows none):`, galleryRows.error.message || galleryRows.error);
+  }
+  // Packages and service gender tags come from the published editor payload on
+  // `profiles.data`, resolved against this salon's live `services` rows — the
+  // same rules the normalized catalogue path uses (server/catalogPackages.ts).
+  const facts = legacySalonCatalogueFacts(profileRow, catalogue.services.get(String(profileRow.id)) || []);
+  if (facts.packageNotes.length) {
+    console.warn(`[Customer] (${requestId}) Package resolution for ${profileRow.id}:`, facts.packageNotes.join(' | '));
+  }
+
+  const [withRating] = await attachRatings(
+    deps,
+    [
+      toCustomerSalon(profileRow, {
+        from: { latitude: numberOr(req.query?.lat), longitude: numberOr(req.query?.lng) },
+        gallery: toSalonGallery(galleryRows.data || []),
+        services: facts.services,
+        packages: facts.packages,
+        packageNotes: facts.packageNotes,
+      }),
+    ],
+    deadlineAt
+  );
+  const [withCounts] = await attachServiceCounts(deps, [withRating], deadlineAt);
+  ok(res, deps, requestId, withCounts);
+}
+
 export function createSalonDetailHandler(deps: CustomerRoutesDeps) {
   return async function salonDetail(req: any, res: any): Promise<void> {
     const requestId = newRequestId('custsalon');
@@ -624,52 +780,40 @@ export function createSalonDetailHandler(deps: CustomerRoutesDeps) {
       if (deps.isMock) return void ok(res, deps, requestId, null, notConnectedNotice(deps));
 
       const normalized = await readNormalizedSalonDirectory(deps.db, req.query || {}, handle, deadlineAt);
-      if (normalized) return void ok(res, deps, requestId, normalized[0] || null);
+      // A hit answers. A miss must FALL THROUGH to the legacy `profiles` path
+      // rather than answer "not published": on a project that has a `salons`
+      // table, any salon not yet migrated to it would otherwise 200-with-null on
+      // its own page while still listing fine in discovery. Only `null` (no
+      // normalized catalogue at all) and a resolved salon are terminal here.
+      if (normalized && normalized[0]) return void ok(res, deps, requestId, normalized[0]);
 
       const lookup = isUuidLike(handle)
-        ? deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('id', handle).maybeSingle()
-        : deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('subdomain', handle.toLowerCase()).maybeSingle();
+        ? deps.db.from('profiles').select(SALON_DETAIL_COLUMNS).eq('id', handle).maybeSingle()
+        : deps.db.from('profiles').select(SALON_DETAIL_COLUMNS).eq('subdomain', handle.toLowerCase()).maybeSingle();
       const { data: profileRow, error } = await runDb(() => lookup, {
         label: 'salon detail profile',
         timeoutMs: DEFAULT_DB_TIMEOUT_MS,
         deadlineAt,
       });
+      if (error?.code === '42703' || error?.code === '42P01') {
+        // An older project without `profiles.data`/`landmark` still has a salon
+        // page to show; drop to the discovery columns instead of failing.
+        console.warn(`[Customer] (${requestId}) Detail columns unavailable, retrying with discovery columns:`, error.message || error);
+        const narrow = isUuidLike(handle)
+          ? deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('id', handle).maybeSingle()
+          : deps.db.from('profiles').select(DISCOVERY_COLUMNS).eq('subdomain', handle.toLowerCase()).maybeSingle();
+        const retry = await runDb(() => narrow, { label: 'salon detail profile (narrow)', timeoutMs: DEFAULT_DB_TIMEOUT_MS, deadlineAt });
+        if (retry.error) {
+          console.error(`[Customer] (${requestId}) Salon detail failed:`, retry.error.message || retry.error);
+          return void fail(res, requestId, retry.error, 'This salon could not be loaded right now.');
+        }
+        return answerSalonDetail(res, deps, requestId, retry.data, req, deadlineAt);
+      }
       if (error) {
         console.error(`[Customer] (${requestId}) Salon detail failed:`, error.message || error);
         return void fail(res, requestId, error, 'This salon could not be loaded right now.');
       }
-      if (!profileRow || !isSalonProfile(profileRow)) {
-        // 200 + null means "not published", which the screen renders as an empty
-        // state. A 404 here would be indistinguishable from a broken route.
-        return void ok(res, deps, requestId, null, { notice: 'This salon is not published yet.' });
-      }
-
-      const galleryRows = await runDb(
-        () =>
-          deps.db
-            .from('social_videos')
-            .select('id, title, youtube_url, thumbnail_url, category_tag')
-            .eq('owner_id', profileRow.id)
-            .order('sort_order', { ascending: true })
-            .limit(12),
-        { label: 'salon gallery', timeoutMs: LOOKUP_DB_TIMEOUT_MS, deadlineAt }
-      );
-      if (galleryRows.error) {
-        // A missing showcase is decoration, not a broken page: log and continue.
-        console.warn(`[Customer] (${requestId}) Gallery lookup failed (salon page shows none):`, galleryRows.error.message || galleryRows.error);
-      }
-      const [withRating] = await attachRatings(
-        deps,
-        [
-          toCustomerSalon(profileRow, {
-            from: { latitude: numberOr(req.query?.lat), longitude: numberOr(req.query?.lng) },
-            gallery: toSalonGallery(galleryRows.data || []),
-          }),
-        ],
-        deadlineAt
-      );
-      const [withCounts] = await attachServiceCounts(deps, [withRating], deadlineAt);
-      ok(res, deps, requestId, withCounts);
+      return answerSalonDetail(res, deps, requestId, profileRow, req, deadlineAt);
     } catch (err: any) {
       console.error(`[Customer] (${requestId}) Salon detail threw:`, err?.stack || err);
       sendSafeError(res, err, { requestId, context: 'database', fallbackMessage: 'This salon could not be loaded right now.' });

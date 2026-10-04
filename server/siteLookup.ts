@@ -1,5 +1,6 @@
 import { catalogId } from './normalizedBookingCreate.js';
 import { applyPublicWebsiteContent, mergeServicePresentation, scopedWebsiteSnapshot } from './websiteContent.js';
+import { normalizeServiceGender } from '../src/lib/serviceGender.js';
 // ============================================================================
 // Multi-tenant site resolution and mapping (shared by dev server.ts and
 // Vercel serverless api/index.ts).
@@ -225,6 +226,12 @@ export function mapServiceRow(row: any): SalonService {
     durationMinutes: row.duration_minutes ?? 45,
     popular: row.popular ?? row.is_featured ?? false,
     showDuration: row.show_duration ?? true,
+    // There is no `services.gender` column (supabase/migrations/00001_init.sql:109);
+    // the owner's website editor payload is the only source, merged in by
+    // `mergeServicePresentation`. Passing the column through when a deployment
+    // does add one costs nothing and keeps the customer gender filter honest —
+    // an unmapped field is why every salon used to look unisex-only.
+    gender: normalizeServiceGender(row?.gender),
   };
 }
 
