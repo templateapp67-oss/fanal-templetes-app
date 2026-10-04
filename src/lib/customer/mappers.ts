@@ -22,6 +22,9 @@ import {
 // Same helper the client's checkout button and the server's advance endpoint use,
 // so the amount shown, charged and recorded can never drift apart.
 import { computeAdvanceDeposit, readAdvancePercent } from '../advanceDeposit.js';
+// The one gender vocabulary + matching rule, shared with the server so a filter
+// can never mean two different things on the two sides of the API.
+import { normalizeServiceGender, serviceGendersOf } from '../serviceGender.js';
 import type { SalonGalleryItem,
   BookingServiceLine,
   CustomerBooking,
@@ -114,6 +117,17 @@ export function toCustomerSalon(
     gallery?: SalonGalleryItem[];
     rating?: { average: number; count: number };
     favourite?: boolean;
+    /**
+     * The salon's live service menu, used only to derive `serviceGenders`.
+     * Pass it and the gender filter has something real to filter on; omit it and
+     * the salon publishes no gender tags (which matches every request rather
+     * than disappearing from the list).
+     */
+    services?: Array<{ gender?: unknown } | null | undefined>;
+    /** Packages already resolved against the live menu (see server/catalogPackages.ts). */
+    packages?: CustomerSalon['packages'];
+    /** Why a saved package is missing or shortened; rendered next to the tab. */
+    packageNotes?: string[];
     now?: Date;
   } = {}
 ): CustomerSalon {
@@ -134,6 +148,11 @@ export function toCustomerSalon(
     coverImageUrl: str(row.cover_image_url || row.logo_url),
     city: str(row.city),
     state: str(row.state),
+    // The locality is what a customer actually searches and reads ("Niwaru
+    // Road"). The normalized catalogue set it after mapping, so the legacy
+    // `profiles` path returned a salon with no `area` at all — which is why
+    // searching a locality found nothing there.
+    area: str(row.area || row.area_locality),
     address: [str(row.full_address), str(row.address_line2), str(row.landmark)].filter(Boolean).join(', '),
     postalCode: str(row.postal_code),
     latitude: row.latitude === null || row.latitude === undefined ? null : num(row.latitude),
@@ -153,6 +172,12 @@ export function toCustomerSalon(
     serviceCount: num(extras.serviceCount),
     minServicePrice: extras.minServicePrice === undefined || extras.minServicePrice === null ? null : num(extras.minServicePrice),
     categories: Array.isArray(extras.categories) ? extras.categories.filter(Boolean).map((entry) => String(entry)) : [],
+    // Derived from the live menu, never guessed: an empty list means the salon
+    // published no gender tags, and `salonMatchesGender` treats that as a match
+    // for every request instead of hiding the salon.
+    serviceGenders: serviceGendersOf(extras.services),
+    packages: Array.isArray(extras.packages) ? extras.packages : [],
+    packageNotes: Array.isArray(extras.packageNotes) ? extras.packageNotes.filter(Boolean).map(String) : [],
     hasActiveOffers: extras.hasActiveOffers === true,
     recentBookings: num(extras.recentBookings),
     rating: extras.rating ?? { average: 0, count: 0 },
@@ -264,6 +289,10 @@ export function toCustomerService(row: any, extras: { rewards?: any[] } = {}): C
     popular: bool(row.popular),
     showDuration: row.show_duration === false ? false : true,
     sortOrder: num(row.sort_order),
+    // No `services.gender` column exists, so this is undefined on the legacy
+    // path unless the caller merged the owner's editor payload in. Undefined is
+    // "not published", which the discovery filter matches against any request.
+    gender: normalizeServiceGender(row.gender),
     discountLabel: discount.label,
     discountPercent: discount.percent,
     discountPoints: discount.points,

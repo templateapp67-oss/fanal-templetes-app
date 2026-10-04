@@ -1,8 +1,8 @@
-import { resolveWebsitePackages } from '../src/lib/websitePackages.js';
-import { catalogId } from './normalizedBookingCreate.js';
+import { catalogPackagesForSalon } from './catalogPackages.js';
 import { readDatabase } from './backendContext.js';
 import { mapProfileRow, mapServiceRow, mapStylistRow } from './siteLookup.js';
 import { applyPublicWebsiteContent, mergeServicePresentation } from './websiteContent.js';
+import { salonMatchesGender } from '../src/lib/serviceGender.js';
 import { toCustomerSalon, toCustomerService, toCustomerReview, toCustomerStaff, openNowFrom } from '../src/lib/customer/mappers.js';
 import type { CustomerSalon } from '../src/lib/customer/types.js';
 
@@ -38,9 +38,17 @@ export async function readNormalizedSalonDirectory(db: any, query: any = {}, han
   const now = new Date();
   const coordinate = (value: unknown) => value === undefined || value === null || value === '' ? undefined : Number.isFinite(Number(value)) ? Number(value) : undefined;
   const salons = rows.map(row => {
-    const profile = applyPublicWebsiteContent(mapProfileRow(row), row.data?.editor_profile);
+    // Same published-content precedence the public website uses
+    // (server/siteLookup.ts:469): the curated `editor_profile` payload wins, and
+    // the rest of `salons.data` is only a fallback for older saves. Both are
+    // already public — `applyPublicWebsiteContent` whitelists presentation keys
+    // and the save RPC strips PII before `editor_profile` is written.
+    const profile = applyPublicWebsiteContent(mapProfileRow(row), row.data?.editor_profile ?? row.data);
     const menuRows = (services || []).filter(s => s.salon_id === row.id && s.is_bookable_online !== false);
     const menu = mergeServicePresentation(menuRows.map(mapServiceRow), row.data?.editor_services, row.id);
+    // Packages are resolved against this live menu once, so the tab and the
+    // "book package" action can never disagree about price or service ids.
+    const resolvedPackages = catalogPackagesForSalon(profile, menu, row.id);
     const completed = (bookings || []).filter(b => b.salon_id === row.id && ['completed','checked_out'].includes(b.status));
     const reviews = completed.flatMap(b => { const review = toCustomerReview({ ...b, owner_id: row.id, salon_name: row.name }); return review ? [review] : []; });
     const clockParts = Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:row.timezone || 'Asia/Kolkata',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(now).map(p=>[p.type,p.value]));
@@ -58,6 +66,7 @@ export async function readNormalizedSalonDirectory(db: any, query: any = {}, han
     }, { from: { latitude: coordinate(query.latitude ?? query.lat), longitude: coordinate(query.longitude ?? query.lng) },
       serviceCount: menu.length, minServicePrice: menu.length ? Math.min(...menu.map(s => s.price)) : null,
       categories: [...new Set(menu.map(s => s.category))], rating: { count: reviews.length, average: reviews.length ? reviews.reduce((sum,r) => sum + r.rating,0)/reviews.length : 0 },
+      services: menu, packages: resolvedPackages.packages, packageNotes: resolvedPackages.notes,
       recentBookings: (bookings || []).filter(b => b.salon_id === row.id && !['cancelled','rejected'].includes(b.status) && new Date(b.created_at).getTime() >= now.getTime() - 30*86400000).length,
       gallery: (profile.gallery || []).map(p => ({ id: p.id, title: p.title || '', url: p.url, thumbnailUrl: p.url, kind: 'image' as const })),
     });
@@ -65,11 +74,10 @@ export async function readNormalizedSalonDirectory(db: any, query: any = {}, han
     const openNow = todayHours === 'Closed' ? false : openNowFrom(todayHours ? {monFri:todayHours,saturday:todayHours,sunday:todayHours} : mapped.workingHours, localNow);
     return { ...mapped, openNow, verified: row.is_verified === true || row.verified === true, area: row.area || profile.areaLocality || '',
       bookingServiceId: menu[0]?.id || null, normalizedCatalogue: true,
-      serviceNames: menu.map(s => s.name), serviceGenders: [...new Set(menu.map(s => s.gender || 'All genders'))],
-      publishedServices: handle ? menu.map(s => toCustomerService({ id:s.id, owner_id:row.id, name:s.name,category:s.category,description:s.description,icon:s.icon,price:s.price,duration_minutes:s.durationMinutes,show_duration:s.showDuration })) : undefined,
+      serviceNames: menu.map(s => s.name),
+      publishedServices: handle ? menu.map(s => toCustomerService({ id:s.id, owner_id:row.id, name:s.name,category:s.category,description:s.description,icon:s.icon,price:s.price,duration_minutes:s.durationMinutes,show_duration:s.showDuration,gender:s.gender })) : undefined,
       publishedStaff: handle ? (staff || []).filter(s => s.salon_id === row.id).map(s => { const p=mapStylistRow({...s,hide_phone:true}); return toCustomerStaff({ id:p.id,owner_id:row.id,name:p.name,role:p.role,avatar_url:p.avatarUrl,bio:p.bio,hide_phone:true }); }) : undefined,
       publishedReviews: handle ? reviews : undefined,
-      packages: resolveWebsitePackages(profile.packages?.map(p => ({ ...p, serviceIds: p.serviceIds.map(id => catalogId(row.id, 'service', id)) })), menu).map(p => ({ id: p.id, name: p.name, price: p.price, serviceIds: p.serviceIds })),
     };
   });
   if (handle) return salons;
@@ -80,7 +88,11 @@ export async function readNormalizedSalonDirectory(db: any, query: any = {}, han
     (!(query.openNow === 'true' || query.openNow === '1') || s.openNow === true) &&
     (!(query.offersOnly === 'true' || query.offersOnly === '1') || s.hasActiveOffers) &&
     (!query.minRating || s.rating.count > 0 && s.rating.average >= Number(query.minRating)) &&
-    (!query.maxPrice || s.minServicePrice !== null && s.minServicePrice <= Number(query.maxPrice)));
+    (!query.maxPrice || s.minServicePrice !== null && s.minServicePrice <= Number(query.maxPrice)) &&
+    // Server-side so the filter narrows the whole catalogue, not just the page
+    // the client happened to ask for. A salon with no published gender tags
+    // still matches — see src/lib/serviceGender.ts.
+    salonMatchesGender(s.serviceGenders, query.gender));
   filtered.sort((a,b) => query.sort === 'rating' ? b.rating.average-a.rating.average : query.sort === 'trending' ? b.recentBookings-a.recentBookings : query.sort === 'price' ? (a.minServicePrice ?? Infinity)-(b.minServicePrice ?? Infinity) : query.sort === 'nearby' ? (a.distanceKm ?? Infinity)-(b.distanceKm ?? Infinity) : a.name.localeCompare(b.name));
   return filtered.slice(0,Math.min(60,Math.max(1,Number(query.limit)||24)));
 }

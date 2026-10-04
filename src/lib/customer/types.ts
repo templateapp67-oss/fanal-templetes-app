@@ -64,11 +64,38 @@ export interface CustomerSalon {
   bookingServiceId?: string | null;
   normalizedCatalogue?: boolean;
   serviceNames?: string[];
+  /**
+   * The distinct gender tags this salon's published services carry, in the
+   * canonical order. EMPTY means "this salon publishes no gender tags at all" —
+   * which the discovery filter treats as matching any request, never as
+   * "unisex only". `src/lib/serviceGender.ts` owns both the vocabulary and that
+   * rule; screens must not re-implement the fallback.
+   */
   serviceGenders?: string[];
   publishedServices?: CustomerService[];
   publishedStaff?: CustomerStaff[];
   publishedReviews?: CustomerReview[];
-  packages?: Array<{ id: string; name: string; price: number; serviceIds: string[] }>;
+  /**
+   * Packages the salon published, resolved against its LIVE service menu:
+   * `serviceIds` are real `services.id` values a booking can be created from,
+   * and `price` is the sum of those services (never the editor's own number).
+   */
+  packages?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    price: number;
+    durationMinutes?: number;
+    serviceIds: string[];
+    items?: Array<{ id: string; name: string; price: number; durationMinutes: number }>;
+  }>;
+  /**
+   * Why a saved package is missing or shorter than the owner expects. The tab
+   * used to say only "No packages published", which is indistinguishable from
+   * "your package points at a service you renamed" — so the reason travels with
+   * the data instead of living in a server log nobody reads.
+   */
+  packageNotes?: string[];
   name: string;
   subdomain: string;
   businessType: string;
@@ -139,6 +166,12 @@ export interface CustomerService {
   discountPoints: number | null;
   showDuration: boolean;
   sortOrder: number;
+  /**
+   * Who this service is for, when the salon published it. `undefined` means
+   * "no gender tag" — not "unisex" — and the discovery filter treats it as
+   * matching every request. Vocabulary: `src/lib/serviceGender.ts`.
+   */
+  gender?: string;
   source: DataSource;
 }
 

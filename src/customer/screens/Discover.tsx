@@ -42,6 +42,10 @@ import { useCustomerAvailability } from '../../lib/useCustomerAvailability';
 import { readLocation } from '../../lib/customer/deviceStore';
 import { readSearchHistory } from '../../lib/customer/deviceStore';
 import type { CustomerFavourite, CustomerReview, CustomerSalon, CustomerService, CustomerStaff } from '../../lib/customer/types';
+// The gender vocabulary and its matching rule live in one module shared with the
+// API, so "Women" can never mean one thing in the browser and another on the
+// server.
+import { SERVICE_GENDERS, salonMatchesGender } from '../../lib/serviceGender';
 import {
   Button,
   CARD_CLASS,
@@ -277,7 +281,32 @@ export interface DiscoveryFilters {
   offersOnly: boolean;
 }
 
-export const EMPTY_DISCOVERY_FILTERS: DiscoveryFilters = { category: '', maxPrice: '', minRating: 0, openNow: false, offersOnly: false };
+/**
+ * Every filter the panel renders has a key here. `gender` and `maxDistance`
+ * used to be optional-and-absent, so "clear" reset the panel's counter while
+ * leaving the two selects visually stuck on their last value.
+ */
+export const EMPTY_DISCOVERY_FILTERS: DiscoveryFilters = {
+  gender: '',
+  maxDistance: '',
+  category: '',
+  maxPrice: '',
+  minRating: 0,
+  openNow: false,
+  offersOnly: false,
+};
+
+/**
+ * "Within N km" only means something for a salon whose distance is known. A
+ * salon with no coordinates is excluded once the customer picks a radius — that
+ * is the choice the panel states in plain words next to the select — while an
+ * unset radius keeps every salon in the list.
+ */
+function withinDistance(distanceKm: number | null | undefined, maxDistance: string | undefined): boolean {
+  const limit = Number(maxDistance);
+  if (!maxDistance || !Number.isFinite(limit) || limit <= 0) return true;
+  return typeof distanceKm === 'number' && Number.isFinite(distanceKm) && distanceKm <= limit;
+}
 
 function useSalonSearch(input: {
   query: string;
@@ -310,6 +339,9 @@ function useSalonSearch(input: {
         minRating: input.filters.minRating > 0 ? input.filters.minRating : undefined,
         openNow: input.filters.openNow || undefined,
         offersOnly: input.filters.offersOnly || undefined,
+        // Server-side: the filter has to narrow the whole catalogue, not just
+        // the 60 rows this screen asked for.
+        gender: input.filters.gender || undefined,
         latitude: input.location?.latitude ?? undefined,
         longitude: input.location?.longitude ?? undefined,
         // Rails are derived from this one response, so ask for a fuller page than
@@ -318,7 +350,16 @@ function useSalonSearch(input: {
       });
       if (cancelled) return;
       if (result.ok) {
-        setState({ data: ((result.data as CustomerSalon[]) || []).filter(salon => (!input.filters.gender || (salon.serviceGenders || ['All genders']).includes(input.filters.gender)) && (!input.filters.maxDistance || salon.distanceKm !== null && salon.distanceKm !== undefined && salon.distanceKm <= Number(input.filters.maxDistance))), loading: false, failed: false, error: '', notice: (result as any).notice || '', mode: result.mode });
+        const salons = ((result.data as CustomerSalon[]) || []).filter((salon) =>
+          // The gender pass is the same helper the API uses, so re-applying it
+          // here is a no-op on a current backend and still correct on one that
+          // predates the `gender` query param. The old inline version defaulted
+          // an untagged salon to ['All genders'], which emptied the list the
+          // moment a customer picked "Women".
+          salonMatchesGender(salon.serviceGenders, input.filters.gender) &&
+          withinDistance(salon.distanceKm, input.filters.maxDistance)
+        );
+        setState({ data: salons, loading: false, failed: false, error: '', notice: (result as any).notice || '', mode: result.mode });
       } else {
         setState({ data: null, loading: false, failed: true, error: result.error, notice: '', mode: 'live' });
       }
@@ -428,7 +469,7 @@ const DiscoveryFilterBar: React.FC<{
             title="The salon's cheapest published service price must be at or below this"
           />
         </label>
-        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">Gender / service type<select aria-label="Gender / service type" value={filters.gender || ''} onChange={e=>onChange({...filters,gender:e.target.value})} className="min-h-11 max-w-36 rounded-xl border border-slate-200 bg-white px-2 text-xs"><option value="">Any</option>{['All genders','Women','Men','Kids'].map(g=><option key={g}>{g}</option>)}</select></label>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">Gender / service type<select aria-label="Gender / service type" value={filters.gender || ''} onChange={e=>onChange({...filters,gender:e.target.value})} className="min-h-11 max-w-36 rounded-xl border border-slate-200 bg-white px-2 text-xs" title="Matches salons that publish this gender on any service, plus salons that publish no gender tags at all"><option value="">Any</option>{SERVICE_GENDERS.map(g=><option key={g} value={g}>{g}</option>)}</select></label>
         <label className="flex items-center gap-2 text-xs font-bold text-slate-600">Within<select aria-label="Maximum distance" value={filters.maxDistance || ''} onChange={e=>onChange({...filters,maxDistance:e.target.value})} className="min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-xs"><option value="">Any distance</option>{[2,5,10,25].map(d=><option value={d} key={d}>{d} km</option>)}</select></label>
         {filters.maxDistance && <p className="text-xs text-slate-500">Choose your location to see salons with a known distance.</p>}
         {activeCount ? (
@@ -670,6 +711,76 @@ function TodaySalonSlots({ salon, onBook }: { salon: CustomerSalon; onBook: () =
   </div>;
 }
 
+/**
+ * Packages, resolved server-side against the salon's LIVE service menu
+ * (`server/catalogPackages.ts`): `serviceIds` are real rows a booking can be
+ * created from and `price` is their sum, so "Book package" can never quote a
+ * price the checkout will not honour.
+ *
+ * `packageNotes` explains anything the owner saved that could not be shown —
+ * a package pointing at a renamed or deactivated service used to vanish without
+ * a trace, which reads exactly like "this salon has no packages".
+ */
+function SalonPackages({
+  salon,
+  accentHex,
+  onBook,
+  detailed,
+}: {
+  salon: CustomerSalon;
+  accentHex: string;
+  onBook: (serviceIds?: string[]) => void;
+  detailed?: boolean;
+}) {
+  const packages = salon.packages || [];
+  const notes = salon.packageNotes || [];
+  return (
+    <section className={`${CARD_CLASS} p-5`} aria-label="Salon packages">
+      <SectionTitle
+        title="Packages"
+        subtitle={detailed ? 'Bundles the salon published, priced from its live service menu' : undefined}
+      />
+      {packages.length ? (
+        <ul className="divide-y divide-slate-100">
+          {packages.map((pkg) => (
+            <li key={pkg.id} className="py-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-900">{pkg.name}</p>
+                <p className="text-sm font-extrabold text-slate-900">{money(pkg.price, salon.currency)}</p>
+                {pkg.items?.length ? (
+                  <p className={`text-xs ${MUTED_CLASS} mt-0.5`}>
+                    {pkg.items.map((item) => item.name).join(' + ')}
+                    {typeof pkg.durationMinutes === 'number' && pkg.durationMinutes > 0 ? ` · ${pkg.durationMinutes} min` : ''}
+                  </p>
+                ) : null}
+                {pkg.description ? <p className={`text-xs ${MUTED_CLASS} mt-0.5 line-clamp-2`}>{pkg.description}</p> : null}
+              </div>
+              <Button onClick={() => onBook(pkg.serviceIds)} accentHex={accentHex} className="shrink-0">
+                <Calendar className="w-4 h-4" /> Book package
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={MUTED_CLASS}>
+          {notes.length
+            ? 'This salon saved packages, but none of them can be booked right now — the reasons are listed below.'
+            : 'No packages published by this salon yet.'}
+        </p>
+      )}
+      {notes.length ? (
+        <ul className="mt-3 space-y-1" aria-label="Why a package is not shown">
+          {notes.map((note) => (
+            <li key={note} className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+              {note}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Salon profile (with services / staff / reviews tabs)
 // ---------------------------------------------------------------------------
@@ -906,7 +1017,9 @@ export const SalonScreen: React.FC<{
       ) : null}
 
       {tab === 'overview' || tab === 'reviews' ? <ReviewList reviews={reviews} state={salon.publishedReviews ? { ...reviewsState, loading: false, failed: false } : reviewsState} rating={salon.rating} /> : null}
-      {(tab === 'overview' || tab === 'packages') && <section className={`${CARD_CLASS} p-5`} aria-label="Salon packages"><SectionTitle title="Packages" />{salon.packages?.length ? salon.packages.map(p => <div key={p.id} className="flex items-center justify-between gap-3 py-3"><span>{p.name} · {money(p.price, salon.currency)}</span><Button onClick={() => onBook(p.serviceIds)}>Book package</Button></div>) : <p className={MUTED_CLASS}>No packages published by this salon yet.</p>}</section>}
+      {(tab === 'overview' || tab === 'packages') && (
+        <SalonPackages salon={salon} accentHex={accentHex} onBook={onBook} detailed={tab === 'packages'} />
+      )}
       <section className={`${CARD_CLASS} p-4`} aria-label="Today's availability"><TodaySalonSlots salon={salon} onBook={() => onBook()} /><Button onClick={() => onBook()} accentHex={accentHex} className="mt-3 w-full">Book Now</Button></section>
     </div>
   );
