@@ -21,6 +21,21 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`http://127.0.0.1:4192/templates/${id}/preview`);
     await page.locator('[data-salon-canvas]').waitFor();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForFunction(() => document.querySelector('[data-salon-canvas]')?.clientWidth >= 768);
+    const layout = await page.evaluate(async () => {
+      const canvas = document.querySelector('[data-salon-canvas]');
+      const grid = document.querySelector('.template-service-grid');
+      const registry = (await import('/src/data/templates.ts')).TEMPLATE_REGISTRY;
+      const recipe = (await import('/src/data/templateLayouts.ts')).TEMPLATE_LAYOUTS[registry.find(t => t.id === location.pathname.split('/')[2]).config.layoutStyle];
+      return { composition: canvas.dataset.templateComposition, expected: recipe.composition, columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : null, expectedColumns: recipe.columns, width: canvas.clientWidth, scroll: canvas.scrollWidth };
+    });
+    assert.equal(layout.composition, layout.expected, `${id}: desktop composition`);
+    if (layout.columns !== null) assert.equal(layout.columns, layout.expectedColumns, `${id}: desktop service grid`);
+    assert.ok(layout.scroll <= layout.width + 1, `${id}: desktop has no overflow`);
+    await page.waitForFunction(() => { const heading = document.querySelector('#home-section h1'); return heading && (!heading.style.color || (getComputedStyle(heading).color === heading.style.color && [...heading.querySelectorAll('span')].every(span => getComputedStyle(span).color === heading.style.color))); });
+    if (['barber','hair_salon','resort_spa','vip_black_gold'].includes(id)) await page.screenshot({ path: `${output}/${id}-desktop.png` });
+    await page.setViewportSize({ width: 390, height: 844 });
     const homepage = page.locator('[data-template-customer-home]');
     await homepage.getByRole('heading', { name: 'Quick booking', exact: true }).waitFor();
     assert.ok(await homepage.locator('article').count() >= 1, `${id}: cards exist without opening a dialog`);

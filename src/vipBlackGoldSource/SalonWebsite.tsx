@@ -1,3 +1,4 @@
+import { templateRatingLabel } from '../lib/templateRating';
 import React from 'react';
 import { ArrowRight, Clock, Crown, MapPin, Sparkles, Star } from 'lucide-react';
 import type { SalonProfile, SalonService } from '../types';
@@ -16,9 +17,11 @@ export function VipSalonWebsite({ profile, services, onBook, onViewSalon, editin
   onChange?: (changes: Partial<SalonProfile>) => void;
 }) {
   const accent = profile.primaryColor || profile.customAccentColor || profile.secondaryColor || '#D4AF37';
+  const background = profile.backgroundColor || '#080808';
+  const lightBackground = getLuminance(background) > 0.179;
   const prices = services.map(service => service.price).filter(price => Number.isFinite(price) && price >= 0);
   const price = prices.length ? Math.min(...prices) : null;
-  return <section id="home-section" data-vip-source-website className="vip-source-website @container/vip-source" style={{ '--vip-gold': accent, '--vip-on-gold': getLuminance(accent) > 0.179 ? '#09090b' : '#fff' } as React.CSSProperties}>
+  return <section id="home-section" data-vip-source-website className="vip-source-website @container/vip-source" style={{ backgroundColor: background, '--vip-ink': lightBackground ? '#16161b' : '#ffffff', '--vip-muted': lightBackground ? '#45454d' : '#b9b9bd', '--vip-border': lightBackground ? '#00000025' : '#ffffff25', '--vip-gold': accent, '--vip-on-gold': getLuminance(accent) > 0.179 ? '#09090b' : '#fff' } as React.CSSProperties}>
     <div id="book" className="scroll-mt-20" />
     <div className="vip-source-glow" aria-hidden="true" />
     <div className="vip-source-grid">
@@ -32,7 +35,7 @@ export function VipSalonWebsite({ profile, services, onBook, onViewSalon, editin
           <button type="button" onClick={onViewSalon} className="vip-source-secondary">View salon</button>
         </div>
         <div className="vip-source-details">
-          <div><Star size={17} /><span>{profile.publicRating?.count ? `${profile.publicRating.average.toFixed(1)} (${profile.publicRating.count} reviews)` : 'No reviews yet'}</span></div>
+          <div><Star size={17} /><span>{templateRatingLabel(profile)}</span></div>
           <div><Sparkles size={17} /><span>{services.length} {services.length === 1 ? 'signature service' : 'signature services'}</span></div>
           <div><Clock size={17} /><span>{price !== null ? `Services from ₹${price.toLocaleString('en-IN')}` : 'Services coming soon'}</span></div>
           {[profile.areaLocality, profile.city].some(Boolean) ? <div><MapPin size={17} /><span>{[profile.areaLocality, profile.city].filter(Boolean).join(', ')}</span></div> : null}

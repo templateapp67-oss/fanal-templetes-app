@@ -1,3 +1,5 @@
+import { TEMPLATE_LAYOUTS } from '../data/templateLayouts';
+import { templateRatingLabel } from '../lib/templateRating';
 import { VipBlackGoldFullExperience } from './VipBlackGoldFullExperience';
 import { TemplateCustomerHome } from './TemplateCustomerHome';
 import { TemplatePackages } from './TemplatePackages';
@@ -381,6 +383,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   // Active template configuration
   const activeTemplate = getTemplateConfig(selectedCategoryKey) || getTemplateConfig('hair_salon')!;
+  const templateLayout = TEMPLATE_LAYOUTS[activeTemplate.layoutStyle];
   const TemplateIcon = /barber|hair|salon|grooming/.test(selectedCategoryKey) ? Scissors : Sparkles;
   const isVipTemplate = selectedCategoryKey === 'vip_black_gold' && activeProfile.vipExperience?.enabled !== false;
   const vipLabel = activeProfile.vipExperience?.conciergeLabel?.trim() || 'VIP Concierge';
@@ -988,6 +991,10 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         '--color-primary': resolvedPrimaryColor,
         '--brand-background': activeProfile.backgroundColor || (activeProfile.appearance === 'dark' ? '#020617' : '#ffffff'),
         '--brand-radius': radius,
+        '--template-hero-width': `${templateLayout.width}%`,
+        '--template-service-columns': templateLayout.columns,
+        '--template-grid-gap': `${templateLayout.gap}px`,
+        '--template-gallery-ratio': templateLayout.galleryRatio,
         '--template-heading-font': activeProfile.headingFont ? `"${activeProfile.headingFont.replace(/["\\;]/g, '')}", sans-serif` : 'var(--font-display)',
         '--template-body-font': activeProfile.bodyFont ? `"${activeProfile.bodyFont.replace(/["\\;]/g, '')}", sans-serif` : 'var(--font-body)',
         '--accent-luminance': accentLuminance.toFixed(4),
@@ -1332,7 +1339,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       {/* 2. UNIFIED SALON WEBSITE PREVIEW CANVAS */}
       {/* ============================================================ */}
       <div 
-        data-salon-canvas data-device-mode={deviceMode} data-template-layout={activeTemplate.layoutStyle}
+        data-salon-canvas data-device-mode={deviceMode} data-template-layout={activeTemplate.layoutStyle} data-template-composition={templateLayout.composition}
         className={`@container/salon ${publicView ? 'mt-0 p-0' : 'mt-4 p-0 @min-[640px]/salon:p-2'} w-full max-w-full min-w-0 box-border overflow-x-hidden transition-all duration-300 ${deviceWidthClass} min-h-[800px] [&_*]:max-w-full [&_*]:box-border ${
           isDarkCanvas ? 'bg-[#0f0f13] text-neutral-100' : 'bg-white text-slate-900'
         }`}
@@ -1631,7 +1638,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
           <section id="home-section" className="relative w-full max-w-full min-w-0 box-border overflow-hidden transition-all bg-slate-950 text-white h-auto min-h-0 flex items-center scroll-mt-16">
             <div id="book" className="scroll-mt-20" />
             {/* Background Image & Gentle Ambient Mask (15-25% Overlay Max) */}
-            <div className="absolute inset-0 z-0 overflow-hidden">
+            <div className="template-hero-image absolute inset-0 z-0 overflow-hidden">
               <img
                 src={heroImageSrc}
                 alt={activeProfile.businessName}
@@ -1658,7 +1665,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 Content-based height: the hero grows with its text/CTAs instead
                 of a fixed 460/540px block, keeping it inside one viewport on
                 small phones. */}
-            <div className="relative z-10 px-4 @min-[640px]/salon:px-6 @min-[768px]/salon:px-12 py-6 @min-[640px]/salon:py-10 @min-[768px]/salon:py-16 max-w-4xl w-full box-border mx-auto my-auto">
+            <div className="template-hero-copy relative z-10 px-4 @min-[640px]/salon:px-6 @min-[768px]/salon:px-12 py-6 @min-[640px]/salon:py-10 @min-[768px]/salon:py-16 max-w-4xl w-full box-border mx-auto my-auto">
               <div className={`w-full max-w-full box-border ${heroAIStyling.cardBackingClass} transition-all duration-500`}>
                 {/* Category badge & highlight tags */}
                 <div className="flex flex-wrap items-center justify-center @min-[640px]/salon:justify-start gap-1.5 @min-[640px]/salon:gap-2 max-w-full mb-3 min-h-[1.75rem]">
@@ -1774,7 +1781,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                       ) : (
                         <div className="text-xs @min-[640px]/salon:text-sm font-bold flex items-center gap-1 text-amber-400 truncate">
                           <Star className="w-3.5 h-3.5 fill-amber-400 shrink-0" />
-                          <span className="truncate">{publicView && !previewMode ? (activeProfile.publicRating?.count ? `${activeProfile.publicRating.average.toFixed(1)} (${activeProfile.publicRating.count} reviews)` : "No reviews yet") : `${standardData.averageRating} (${standardData.totalReviewCount}+)`}</span>
+                          <span className="truncate">{publicView && !previewMode ? templateRatingLabel(activeProfile) : `${standardData.averageRating} (${standardData.totalReviewCount}+)`}</span>
                         </div>
                       )}
                     </div>
@@ -1824,7 +1831,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             className="flex min-h-8 min-w-0 flex-1 items-center gap-2 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
-            title="Click to show location on Google Maps"
+            title="Click to show location on OpenStreetMap"
           >
             <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
               <MapPin className="w-3.5 h-3.5" />
@@ -2074,7 +2081,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
             {/* Services Grid */}
             <div
               key={activeSubCategory}
-              className="grid grid-cols-1 @min-[768px]/salon:grid-cols-2 gap-4 w-full max-w-full box-border"
+              className="template-service-grid grid grid-cols-1 @min-[768px]/salon:grid-cols-2 gap-4 w-full max-w-full box-border"
             >
               {filteredServices.map((srv, idx) => (
                 <div
@@ -2499,7 +2506,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                 />
               </h2>
               <p className={`text-xs @min-[768px]/salon:text-sm mt-1 ${isDarkCanvas ? 'text-neutral-400' : 'text-slate-500'}`}>
-                Verified Google & Practo reviews from clients across {activeProfile.city}.
+                Salon testimonials and customer feedback{activeProfile.city ? ` from ${activeProfile.city}` : ''}.
               </p>
 
               {isEditMode && (
@@ -2622,7 +2629,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 @min-[640px]/salon:grid-cols-4 gap-3 w-full max-w-full box-border">
+            <div className="template-gallery-grid grid grid-cols-2 @min-[640px]/salon:grid-cols-4 gap-3 w-full max-w-full box-border">
               {activeGalleryPhotos.map((photo, idx) => (
                 <div
                   key={idx}
@@ -2699,7 +2706,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex min-h-20 items-start gap-3 group hover:opacity-90 transition-opacity cursor-pointer text-inherit"
-                    title="Click to view studio location on Google Maps"
+                    title="Click to view studio location on OpenStreetMap"
                   >
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
                       <MapPin className="w-4 h-4" />
@@ -2804,7 +2811,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                     target="_blank"
                     rel="noreferrer"
                     className="w-full @min-[768px]/salon:w-auto min-h-[48px] text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-1.5 cursor-pointer bg-white shadow-xs transition-colors"
-                    title="Get directions on Google Maps"
+                    title="Get directions on OpenStreetMap"
                   >
                     <Navigation className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                     <span>Get Directions</span>

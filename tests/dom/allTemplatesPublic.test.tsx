@@ -14,7 +14,7 @@ test('the published template matrix contains all 28 distinct designs',()=>{
 for(const template of TEMPLATE_REGISTRY) {
  test(`${template.id}: published design wins over editor default; content, profile and booking remain usable`,async()=>{
   const savedFetch=globalThis.fetch;
-  const profile={...INITIAL_SALON_PROFILE,businessName:`Published ${template.id}`,subdomain:`test-${template.id}`,businessType:'hair_salon' as const,coverImageUrl:'',isVerified:false,offers:[],testimonials:[],gallery:template.defaultData.gallery,acceptsOnlineBookings:true};
+  const profile={...INITIAL_SALON_PROFILE,businessName:`Published ${template.id}`,subdomain:`test-${template.id}`,businessType:'hair_salon' as const,coverImageUrl:'',isVerified:false,offers:[],testimonials:[],gallery:template.defaultData.gallery,acceptsOnlineBookings:true,headingFont:'Georgia',bodyFont:'Arial',borderRadius:'none' as const,whiteLabelEnabled:true,publicRating:{average:4.4,count:12},scentProfile:'Cedar',soundscape:'Quiet jazz',consultationStyle:'Personal consultation'};
   const services=template.defaultData.services.map(s=>({...s,name:`Saved ${s.name}`}));
   globalThis.fetch=(async()=>({ok:true,json:async()=>({found:true,salon:{profile,services,stylists:template.defaultData.staff,selectedTemplateId:template.id}})})) as any;
   const container=document.createElement('div');document.body.append(container);const root=createRoot(container);let auth=0;
@@ -24,6 +24,14 @@ for(const template of TEMPLATE_REGISTRY) {
    assert.ok(container.querySelector('[data-template-customer-home]'), 'shared discovery and quick booking are present on every published template');
    assert.ok(container.querySelector('.template-customer-toolbar'), 'shared customer navigation is present on every published template');
    assert.ok(text.includes(profile.businessName));
+   const brand=container.querySelector<HTMLElement>('.template-brand-scope')!;
+   assert.match(brand.style.getPropertyValue('--template-heading-font'), /Georgia/);
+   assert.match(brand.style.getPropertyValue('--template-body-font'), /Arial/);
+   assert.equal(brand.style.getPropertyValue('--brand-radius'), '0px');
+   assert.ok(container.querySelector('[data-template-composition]'));
+   assert.match(text, /4.4/);
+   assert.ok(!text.includes('Powered by Nexora Salon Platform'));
+   assert.match(text, /Cedar/); assert.match(text, /Quiet jazz/); assert.match(text, /Personal consultation/);
    assert.ok(text.includes(services[0].name),'published menu, not demo/default menu');
    assert.doesNotMatch(text,/₹\s*Infinity|Verified Indian Salon|980\+/);
    assert.doesNotMatch(text,/Salon Address & Localization Setup|Inline Edit Mode/);

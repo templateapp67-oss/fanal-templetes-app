@@ -46,3 +46,13 @@ These checks fail if a template loses the shared toolbar or visible customer hom
 visible discovery, filters, selected-service booking, packages, rewards and mobile
 width. VIP additionally runs at 320/390/768/1440px and through package confirmation.
 TypeScript and the production build are also checked before updating the PR.
+
+
+## Attached audit reconciliation
+
+See `TEMPLATE_AUDIT_RECONCILIATION.md` for every finding in sections A–F of the
+uploaded audit, including inaccurate field assumptions and deferred backend work.
+All 28 layouts now have explicit hero/catalogue/gallery composition recipes.
+Publishing settings expose custom domain, footer branding and messaging preference;
+25% advance remains the platform rule. Live checkout itemizes advance/balance,
+existing charges and refund guidance without creating client-only discounts.

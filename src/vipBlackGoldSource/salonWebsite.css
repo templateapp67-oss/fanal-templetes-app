@@ -1,20 +1,20 @@
 /* Scoped source design: legacy admin/demo styles never affect Nexora. */
-.vip-source-website { position: relative; width: 100%; min-width: 0; overflow: hidden; padding: 40px 24px; background: #080808; color: #fff; scroll-margin-top: 80px; }
+.vip-source-website { position: relative; width: 100%; min-width: 0; overflow: hidden; padding: 40px 24px; background: #080808; color: var(--vip-ink, #fff); scroll-margin-top: 80px; }
 .vip-source-glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 72% 30%, color-mix(in srgb,var(--vip-gold) 12%,transparent), transparent 60%); }
 .vip-source-grid { position: relative; max-width: 1280px; margin: auto; display: grid; gap: 32px; align-items: center; }
 .vip-source-copy { min-width: 0; }
 .vip-source-eyebrow { color: var(--vip-gold); display: flex; gap: 10px; align-items: center; font-size: 10px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; margin-bottom: 20px; }
 .vip-source-website h1 { font-size: clamp(30px,5cqw,60px); font-weight: 500; line-height: 1.15; letter-spacing: -.025em; overflow-wrap: anywhere; text-shadow: none !important; }
 .vip-source-tagline { color: var(--vip-gold); font-size: clamp(16px,2cqw,22px); line-height: 1.5; margin-top: 16px; }
-.vip-source-description { margin-top: 16px; font-size: 13px; line-height: 1.8; color: #b9b9bd; overflow-wrap: anywhere; }
+.vip-source-description { margin-top: 16px; font-size: 13px; line-height: 1.8; color: var(--vip-muted, #b9b9bd); overflow-wrap: anywhere; }
 .vip-source-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .vip-source-primary,.vip-source-secondary { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 10px; padding: 12px 20px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: transform .2s,box-shadow .2s; }
 .vip-source-primary { background: var(--vip-gold); color: var(--vip-on-gold); border: 1px solid var(--vip-gold); box-shadow: 0 0 24px color-mix(in srgb,var(--vip-gold) 16%,transparent); }
-.vip-source-secondary { background: #ffffff05; color: #fff; border: 1px solid color-mix(in srgb,var(--vip-gold) 40%,transparent); }
+.vip-source-secondary { background: #ffffff05; color: var(--vip-ink, #fff); border: 1px solid color-mix(in srgb,var(--vip-gold) 40%,transparent); }
 .vip-source-primary:hover,.vip-source-secondary:hover { transform: translateY(-2px); }
 .vip-source-website button:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
-.vip-source-details { border-top: 1px solid #ffffff18; margin-top: 28px; padding-top: 20px; display: flex; flex-wrap: wrap; gap: 16px; }
-.vip-source-details > div { display: flex; align-items: center; gap: 7px; color: #c8c8ca; font-size: 11px; }
+.vip-source-details { border-top: 1px solid var(--vip-border, #ffffff18); margin-top: 28px; padding-top: 20px; display: flex; flex-wrap: wrap; gap: 16px; }
+.vip-source-details > div { display: flex; align-items: center; gap: 7px; color: var(--vip-muted, #c8c8ca); font-size: 11px; }
 .vip-source-details svg { color: var(--vip-gold); flex-shrink: 0; }
 .vip-source-frame { min-width: 0; border: 1px solid color-mix(in srgb,var(--vip-gold) 50%,transparent); background: #ffffff05; padding: 8px; border-radius: 16px; box-shadow: 0 16px 64px #0008; }
 .vip-source-photo { position: relative; aspect-ratio: 4/3; overflow: hidden; border-radius: 9px; }

@@ -151,7 +151,7 @@ export const InlineEditable: React.FC<InlineEditableProps> = ({
   return (
     <Tag
       onClick={handleStartEdit}
-      className={`inline group/editable relative transition-all duration-200 ${
+      className={`inline group/editable relative transition-[background-color,outline-color] duration-200 ${
         isEditingActive
           ? 'cursor-pointer hover:outline-dashed hover:outline-2 hover:outline-amber-400 hover:outline-offset-2 hover:bg-amber-400/10 rounded-sm'
           : ''

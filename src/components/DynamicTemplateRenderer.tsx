@@ -18,13 +18,7 @@ interface DynamicTemplateRendererProps {
   deviceMode?: 'desktop' | 'tablet' | 'mobile';
 }
 
-/**
- * One renderer for every registered Nexora template. Individual layouts can be
- * added to this map later; the standard renderer already receives the selected
- * template ID plus the exact live editor state, so no template has stale data.
- */
-const templateMap: Partial<Record<BusinessTypeId, React.ComponentType<DynamicTemplateRendererProps>>> = {};
-
+/** All 28 composition recipes live in templateLayouts; sections and actions stay shared. */
 const DefaultTemplate: React.FC<DynamicTemplateRendererProps> = ({ config, deviceMode = 'desktop' }) => (
   <SalonWebsitePreview
     profile={config.profile}
@@ -40,6 +34,5 @@ const DefaultTemplate: React.FC<DynamicTemplateRendererProps> = ({ config, devic
 );
 
 export function DynamicTemplateRenderer({ config, activeSection, deviceMode = 'desktop' }: DynamicTemplateRendererProps) {
-  const TemplateComponent = templateMap[config.templateId] ?? DefaultTemplate;
-  return <TemplateComponent config={config} activeSection={activeSection} deviceMode={deviceMode} />;
+  return <DefaultTemplate config={config} activeSection={activeSection} deviceMode={deviceMode} />;
 }

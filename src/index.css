@@ -491,3 +491,25 @@
   [data-template-layout="bento_grid"] #packages-section article,
   [data-template-layout="candy_playroom"] #packages-section article { border-radius: 28px; }
 }
+
+/* All registered designs have explicit desktop compositions; phones share a
+   readable single-column hero and keep customer actions in the common engine. */
+@container salon (min-width: 768px) {
+  [data-template-composition] #home-section:not([data-vip-source-website]) { min-height: 520px; }
+  [data-template-composition] .template-hero-copy { max-width: var(--template-hero-width); }
+  [data-template-composition="split-left"] .template-hero-copy { margin-left: 0; margin-right: auto; }
+  [data-template-composition="split-left"] .template-hero-image { left: 35%; }
+  [data-template-composition="split-right"] .template-hero-copy { margin-right: 0; margin-left: auto; }
+  [data-template-composition="split-right"] .template-hero-image { right: 35%; }
+  [data-template-composition="centered"] .template-hero-copy { text-align: center; }
+  [data-template-composition="editorial"] .template-hero-copy { margin-left: 4%; margin-right: auto; border-left: 2px solid var(--theme-secondary); }
+  [data-template-composition="panorama"] #home-section { align-items: flex-end; min-height: 600px; }
+  [data-template-composition="panorama"] .template-hero-copy { margin-bottom: 0; }
+  [data-template-composition] .template-service-grid { grid-template-columns: repeat(var(--template-service-columns), minmax(0, 1fr)); gap: var(--template-grid-gap); }
+  [data-template-composition] .template-gallery-grid > div { aspect-ratio: var(--template-gallery-ratio); }
+}
+.template-brand-scope .vip-source-primary,
+.template-brand-scope .vip-source-secondary,
+.template-brand-scope .vip-source-frame,
+.template-brand-scope .vip-source-photo { border-radius: var(--brand-radius, 1rem); }
+.template-brand-scope .vip-source-website { background-color: var(--brand-background, #080808); }
