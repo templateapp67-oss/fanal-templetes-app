@@ -513,3 +513,15 @@
 .template-brand-scope .vip-source-frame,
 .template-brand-scope .vip-source-photo { border-radius: var(--brand-radius, 1rem); }
 .template-brand-scope .vip-source-website { background-color: var(--brand-background, #080808); }
+
+.template-customer-desktop { width:100%; scroll-margin-top:80px; border-bottom:1px solid #cbd5e1; background:#f8fafc; color:#17202d; }
+.template-customer-desktop-grid { display:grid; grid-template-columns:240px minmax(0,1fr); gap:32px; padding:32px; max-width:1440px; margin:auto; }
+.template-customer-desktop aside nav { display:flex; flex-direction:column; gap:8px; position:sticky; top:100px; }
+.template-customer-desktop aside button { min-height:48px; padding:12px 16px; text-align:left; border-radius:12px; font-weight:600; font-size:14px; }
+.template-customer-desktop aside button[aria-current="page"] { background:var(--customer-accent); color:var(--customer-on-accent); }
+.template-customer-desktop .customer-desktop-hidden { display:none; }
+.template-customer-desktop .customer-demo-main { width:100%; max-width:none; padding:24px; }
+.template-customer-desktop .customer-desktop-content { max-width:none; min-height:60vh; }
+.template-customer-desktop.customer-dark { background:#101014; color:#f3f4f6; border-color:#ffffff24; }
+
+@media (prefers-reduced-motion:reduce) { .animate-service-enter { animation:none; opacity:1; transform:none; } }

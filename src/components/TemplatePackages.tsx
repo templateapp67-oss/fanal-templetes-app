@@ -1,3 +1,4 @@
+import { PublishedSectionEmpty } from './PublishedSectionEmpty';
 import React, { useState } from "react";
 import { Check, Gift, Pencil, Trash2 } from "lucide-react";
 import type { SalonPackage, SalonService } from "../types";
@@ -9,13 +10,15 @@ export function TemplatePackages({
   packages,
   services,
   onBook,
+  onViewServices,
 }: {
   packages?: SalonPackage[];
   services: SalonService[];
   onBook: (ids: string[]) => void;
+  onViewServices?: () => void;
 }) {
   const visible = resolveWebsitePackages(packages, services);
-  if (!visible.length) return null;
+
   return (
     <section
       id="packages-section"
@@ -25,6 +28,7 @@ export function TemplatePackages({
         Thoughtfully paired
       </span>
       <h2 className="text-2xl font-bold mt-2 mb-6">Packages & rituals</h2>
+      {!visible.length && <PublishedSectionEmpty title="Packages are being curated" detail="No packages have been published yet. You can still choose individual services and build your own appointment." action="View all services" onAction={onViewServices} />}
       <div className="grid @min-[640px]/salon:grid-cols-2 gap-4">
         {visible.map((p) => (
           <article

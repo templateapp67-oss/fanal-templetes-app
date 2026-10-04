@@ -1,3 +1,5 @@
+import { PublishedSectionEmpty, PublishedOwnerCard } from './PublishedSectionEmpty';
+import { useTemplateCustomerNavigation } from '../lib/templateCustomerNavigation';
 import { TEMPLATE_LAYOUTS } from '../data/templateLayouts';
 import { templateRatingLabel } from '../lib/templateRating';
 import { VipBlackGoldFullExperience } from './VipBlackGoldFullExperience';
@@ -451,13 +453,14 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   const baseStandardData = getTemplateContent(selectedCategoryKey) || getTemplateContent('hair_salon')!;
   const standardData = baseStandardData;
-  const activeGalleryPhotos = (activeProfile.gallery ?? activeProfile.lookbookPhotos ?? baseStandardData.gallery).filter(photo => Boolean(photo.url));
+  const gallerySource = activeProfile.gallery ?? activeProfile.lookbookPhotos ?? (publicView && !previewMode ? [] : baseStandardData.gallery);
+  const activeGalleryPhotos = gallerySource.filter((photo, index, list) => Boolean(photo.url) && list.findIndex(other => other.url === photo.url) === index);
 
   // Interactive filters & booking modals
   const [activeSubCategory, setActiveSubCategory] = useState<string>('All');
   const [isBookingOpen, setIsBookingOpen] = useState<boolean>(false);
-  const [customerRequest, setCustomerRequest] = useState<TemplateCustomerRequest | null>(null);
-  const openCustomerSection = (section: TemplateCustomerSection) => setCustomerRequest({ section });
+  const customerNavigation = useTemplateCustomerNavigation();
+  const { request: customerRequest, setRequest: setCustomerRequest, open: openCustomerSection } = customerNavigation;
   const [selectedService, setSelectedService] = useState<SalonService | undefined>(activeServices[0]);
   const [selectedStylist, setSelectedStylist] = useState<Stylist | undefined>(activeStylists[0]);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState<string | null>(null);
@@ -618,6 +621,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
 
   const subCategoriesList = ['All', ...Array.from(new Set(activeServices.map(s => s.category).filter(Boolean)))];
 
+  useEffect(() => { if (activeSubCategory !== 'All' && !activeServices.some(service => service.category === activeSubCategory)) setActiveSubCategory('All'); }, [activeServices, activeSubCategory]);
   const filteredServices = activeSubCategory === 'All' || !subCategoriesList.includes(activeSubCategory)
     ? activeServices
     : activeServices.filter((s) => s.category === activeSubCategory);
@@ -1020,7 +1024,6 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
       }}
     >
       
-      <TemplateCustomerHub request={customerRequest} onClose={() => setCustomerRequest(null)} profile={activeProfile} services={activeServices} previewMode={previewMode || !publicView} accentHex={resolvedPrimaryColor} dark={isDarkCanvas} />
       {/* Toast Notifications */}
       <AnimatePresence>
         {notificationToast && (
@@ -1630,6 +1633,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* ============================================================ */}
+        <TemplateCustomerHub request={customerRequest} onClose={customerNavigation.close} onOpen={openCustomerSection} onNavigate={customerNavigation.navigate} onBookServices={ids => setCustomerRequest({ section: 'book', serviceIds: ids })} profile={activeProfile} services={activeServices} previewMode={previewMode || !publicView} accentHex={resolvedPrimaryColor} dark={isDarkCanvas} forceMobile={previewMode && deviceMode !== 'desktop'} />
         {/* 1. HERO SECTION WITH DYNAMIC AI IMAGE MOOD STYLING */}
         {/* ============================================================ */}
         {sectionVisibility.hero && (selectedCategoryKey === 'vip_black_gold' ? (
@@ -2078,6 +2082,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               )}
             </div>
 
+            {activeServices.length === 0 && <PublishedSectionEmpty title="Service menu coming soon" detail="The studio has not published bookable services yet. Please check its location and contact details for appointment enquiries." action="Studio details" onAction={() => openCustomerSection('location')} />}
             {/* Services Grid */}
             <div
               key={activeSubCategory}
@@ -2298,7 +2303,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* ============================================================ */}
-        {sectionVisibility.services && <TemplatePackages packages={activeProfile.packages ?? (previewMode && activeServices.length >= 2 ? [{ id: 'sample-duo', name: 'Signature Duo', description: 'Two essentials, one effortless appointment.', serviceIds: activeServices.slice(0,2).map(s=>s.id), isActive: true }] : [])} services={activeServices} onBook={ids => setCustomerRequest({ section: 'book', serviceIds: ids })} />}
+        {sectionVisibility.services && <TemplatePackages packages={activeProfile.packages ?? (previewMode && activeServices.length >= 2 ? [{ id: 'sample-duo', name: 'Signature Duo', description: 'Two essentials, one effortless appointment.', serviceIds: activeServices.slice(0,2).map(s=>s.id), isActive: true }] : [])} services={activeServices} onBook={ids => setCustomerRequest({ section: 'book', serviceIds: ids })} onViewServices={() => openCustomerSection('services')} />}
         {/* 4. MASTER STYLISTS & SPECIALISTS SECTION (INLINE EDITABLE) */}
         {/* ============================================================ */}
         {sectionVisibility.stylists && (
@@ -2351,6 +2356,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               )}
             </div>
 
+            {activeStylists.length === 0 && <PublishedOwnerCard profile={activeProfile} onBook={handleOpenBooking} />}
             {/* Stylists Grid */}
             <motion.div 
               variants={{
@@ -2523,6 +2529,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               )}
             </div>
 
+            {activeReviews.length === 0 && <PublishedSectionEmpty title="Be the first to share your experience" detail="Customer experiences will appear here once they have been shared. You can review your completed appointments from My appointments." action="My appointments" onAction={() => openCustomerSection('bookings')} />}
             <div className="grid w-full max-w-full grid-cols-1 gap-4 @min-[768px]/salon:grid-cols-3">
               {(activeReviews || []).length > 0 && (
                 <div
@@ -2564,7 +2571,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
                         </div>
                         <div>
                           <div className="font-bold text-xs">{currentReview.name}</div>
-                          <div className="text-[10px] text-slate-400">{currentReview.location || activeProfile.city} • Verified</div>
+                          <div className="text-[10px] text-slate-400">{currentReview.location || activeProfile.city} • Salon testimonial</div>
                         </div>
                       </div>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 max-w-[120px] truncate">
@@ -2629,6 +2636,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
               </span>
             </div>
 
+            {activeGalleryPhotos.length === 0 && <PublishedSectionEmpty title="Studio portfolio coming soon" detail="The studio has not published lookbook or transformation photos yet. Explore its available treatments while the portfolio is being prepared." action="View all services" onAction={() => openCustomerSection('services')} />}
             <div className="template-gallery-grid grid grid-cols-2 @min-[640px]/salon:grid-cols-4 gap-3 w-full max-w-full box-border">
               {activeGalleryPhotos.map((photo, idx) => (
                 <div
@@ -2662,7 +2670,7 @@ export const SalonWebsitePreview: React.FC<SalonWebsitePreviewProps> = ({
         )}
 
         {/* 7.5 Social Proof & Reels Showcase */}
-        {sectionVisibility.gallery && ((activeProfile.socialVideos?.length || 0) > 0 || isEditMode) && (
+        {sectionVisibility.gallery && (
           <section data-layout-stable-media className={`layout-stable-media min-h-[42rem] w-full max-w-full box-border px-4 py-6 @min-[640px]/salon:p-6 @min-[768px]/salon:p-12 border-b ${isDarkCanvas ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
             <div className="max-w-7xl w-full box-border mx-auto">
               <h2 className="text-xl @min-[640px]/salon:text-2xl @min-[768px]/salon:text-3xl font-extrabold mb-2 break-words hyphens-auto">Featured Videos &amp; Reels</h2>

@@ -1,3 +1,5 @@
+import { TemplateCustomerCatalogue } from './TemplateCustomerCatalogue';
+import { templateCustomerPath } from '../lib/templateCustomerNavigation';
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -41,6 +43,7 @@ export type TemplateCustomerSection =
 export interface TemplateCustomerRequest {
   section: TemplateCustomerSection;
   serviceIds?: string[];
+  path?: string;
 }
 
 export function TemplateCustomerToolbar({
@@ -126,117 +129,55 @@ export function TemplateCustomerToolbar({
   );
 }
 
-export function TemplateCustomerHub({
-  request,
-  onClose,
-  profile,
-  services,
-  previewMode,
-  accentHex,
-  dark,
-}: {
-  request: TemplateCustomerRequest | null;
-  onClose: () => void;
-  profile: SalonProfile;
-  services: SalonService[];
-  previewMode: boolean;
-  accentHex: string;
-  dark: boolean;
+const DESKTOP_SECTIONS: Array<{ section: TemplateCustomerSection; label: string }> = [
+  { section: 'services', label: 'All services' }, { section: 'packages', label: 'Packages' },
+  { section: 'bookings', label: 'My appointments' }, { section: 'favourites', label: 'Favorites' },
+  { section: 'wallet', label: 'Rewards' }, { section: 'profile', label: 'My profile' },
+  { section: 'notifications', label: 'Notifications' }, { section: 'settings', label: 'Settings' },
+];
+
+export function TemplateCustomerHub({ request, onClose, onOpen, onNavigate, profile, services, previewMode, accentHex, dark, forceMobile = false, onBookServices }: {
+  request: TemplateCustomerRequest | null; onClose: () => void;
+  onBookServices?: (ids: string[]) => void;
+  onOpen?: (section: TemplateCustomerSection) => void; onNavigate?: (path: string) => void;
+  profile: SalonProfile; services: SalonService[]; previewMode: boolean; accentHex: string; dark: boolean; forceMobile?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [path, setPath] = useState("/app");
+  const pageRef = useRef<HTMLElement>(null);
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
+  const [localPath, setLocalPath] = useState('/app');
   const [activated, setActivated] = useState(false);
+  const desktop = wide && !forceMobile;
+  const path = request ? templateCustomerPath(request, profile.subdomain) : localPath;
+  const navigate = (next: string) => { setLocalPath(next); onNavigate?.(next); };
   useEffect(() => {
+    const resize = () => setWide(window.innerWidth >= 1024);
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+  useEffect(() => {
+    if (request) { setActivated(true); setLocalPath(templateCustomerPath(request, profile.subdomain)); }
     const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (request) {
-      setActivated(true);
-      const section =
-        request.section === "services" || request.section === "packages"
-          ? "salon"
-          : request.section;
-      const id = ["salon", "book"].includes(section)
-        ? `/${encodeURIComponent(profile.subdomain)}`
-        : "";
-      const tab = ["services", "packages"].includes(request.section)
-        ? `/${request.section}`
-        : "";
-      setPath(`/app/${section === "home" ? "" : section}${id}${tab}`);
-      if (!dialog.open) dialog.showModal();
-    } else if (dialog.open) dialog.close();
-  }, [request, profile.subdomain]);
+    if (!desktop && request && dialog && !dialog.open) dialog.showModal();
+    else if ((desktop || !request) && dialog?.open) dialog.close();
+    if (desktop && request) { pageRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); pageRef.current?.focus({ preventScroll: true }); }
+  }, [request, profile.subdomain, desktop]);
   useEffect(() => {
-    if (!request) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [Boolean(request)]);
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <dialog
-      ref={dialogRef}
-      onCancel={onClose}
-      className={`template-customer-dialog ${dark ? "customer-dark" : ""}`}
-      aria-label={`${profile.businessName} customer area`}
-      style={
-        {
-          "--customer-accent": accentHex,
-          "--customer-nav-accent":
-            dark && getLuminance(accentHex) < 0.2 ? "#d4af37" : accentHex,
-          "--customer-on-accent": getContrastTextColor(accentHex),
-        } as React.CSSProperties
-      }
-    >
-      <header className="customer-panel-header flex items-center justify-between gap-3 px-4 py-3 border-b sticky top-0 z-50">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-widest opacity-60">
-            Your salon, your time
-          </p>
-          <h2 className="text-base font-bold truncate">
-            {profile.businessName}
-          </h2>
-        </div>
-        <button
-          type="button"
-          autoFocus
-          aria-label="Close customer area"
-          onClick={onClose}
-          className="min-h-11 min-w-11 rounded-full border flex items-center justify-center"
-        >
-          <X size={20} />
-        </button>
-      </header>
-      <React.Suspense
-        fallback={
-          <p className="p-6 text-sm" role="status">
-            Opening your customer area…
-          </p>
-        }
-      >
-        {activated &&
-          (previewMode ? (
-            <TemplateCustomerDemo
-              key={profile.businessType}
-              request={request}
-              profile={profile}
-              services={services}
-            />
-          ) : (
-            request && (
-              <CustomerApp
-                embedded
-                path={path}
-                navigate={setPath}
-                accentHex={accentHex}
-                tenantName={profile.businessName}
-                initialServiceIds={request.serviceIds}
-              />
-            )
-          ))}
-      </React.Suspense>
-    </dialog>,
-    document.body,
-  );
+    if (!request || desktop) return;
+    const previous = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [Boolean(request), desktop]);
+  if (typeof document === 'undefined') return null;
+  const style = { '--customer-accent': accentHex, '--customer-nav-accent': dark && getLuminance(accentHex) < 0.2 ? '#d4af37' : accentHex, '--customer-on-accent': getContrastTextColor(accentHex) } as React.CSSProperties;
+  const header = <header className="customer-panel-header flex items-center justify-between gap-3 px-4 py-3 border-b">
+    <div className="min-w-0"><p className="text-xs uppercase tracking-widest opacity-60">Your salon, your time</p><h2 className="text-base font-bold truncate">{profile.businessName}</h2></div>
+    <button type="button" aria-label={desktop ? 'Back to salon website' : 'Close customer area'} onClick={onClose} className="min-h-11 min-w-11 rounded-full border flex items-center justify-center">{desktop ? <span className="px-3 text-sm">Back to website</span> : <X size={20} />}</button>
+  </header>;
+  const content = <React.Suspense fallback={<p className="p-6 text-sm" role="status">Opening your customer area…</p>}>
+    {activated && (previewMode ? <TemplateCustomerDemo key={profile.businessType} request={request} profile={profile} services={services} onNavigateSection={onOpen} desktop={desktop} /> : request && (request.section === 'services' || request.section === 'packages') ? <TemplateCustomerCatalogue section={request.section} profile={profile} services={services} onBook={ids => onBookServices?.(ids)} onServices={() => onOpen?.('services')} /> : request && <CustomerApp embedded desktopLayout={desktop} path={path} navigate={navigate} accentHex={accentHex} tenantName={profile.businessName} initialServiceIds={request.serviceIds} />)}
+  </React.Suspense>;
+  if (desktop) return request ? <section ref={pageRef} tabIndex={-1} data-template-customer-page className={`template-customer-desktop ${dark ? 'customer-dark' : ''}`} style={style} aria-label={`${profile.businessName} customer area`}>
+    {header}<div className="template-customer-desktop-grid"><aside><nav aria-label="Salon customer pages">{DESKTOP_SECTIONS.map(item => <button type="button" key={item.section} aria-current={request.section === item.section ? 'page' : undefined} onClick={() => onOpen ? onOpen(item.section) : navigate(templateCustomerPath({ section: item.section }, profile.subdomain))}>{item.label}</button>)}</nav></aside><div className="template-customer-main min-w-0">{content}</div></div>
+  </section> : null;
+  return createPortal(<dialog ref={dialogRef} onCancel={onClose} className={`template-customer-dialog ${dark ? 'customer-dark' : ''}`} aria-label={`${profile.businessName} customer area`} style={style}>{header}{content}</dialog>, document.body);
 }

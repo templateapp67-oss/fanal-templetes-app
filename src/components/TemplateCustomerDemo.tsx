@@ -63,11 +63,16 @@ export function TemplateCustomerDemo({
   request,
   profile: initialProfile,
   services: initialServices,
+  onNavigateSection,
+  desktop = false,
 }: {
   request: TemplateCustomerRequest | null;
   profile: SalonProfile;
   services: SalonService[];
+  onNavigateSection?: (section: TemplateCustomerSection) => void;
+  desktop?: boolean;
 }) {
+  const internalNavigation = useRef<TemplateCustomerSection | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const imageFallback = (event: React.SyntheticEvent<HTMLImageElement>) => {
     const image = event.currentTarget;
@@ -210,6 +215,7 @@ export function TemplateCustomerDemo({
   }, [holdRemaining, request]);
   useEffect(() => {
     if (!request) return;
+    if (internalNavigation.current === request.section) { internalNavigation.current = null; return; }
     setDemoTemplateId(null);
     setSection(request.section);
     setError("");
@@ -326,6 +332,8 @@ export function TemplateCustomerDemo({
                 : 0,
     );
   const go = (to: TemplateCustomerSection) => {
+    if (onNavigateSection) internalNavigation.current = to;
+    onNavigateSection?.(to);
     setSection(to);
     setDetail(null);
     setAction(null);
@@ -1881,7 +1889,7 @@ export function TemplateCustomerDemo({
           </>
         )}
       </div>
-      <nav className="customer-demo-nav" aria-label="Customer preview sections">
+      <nav className={`customer-demo-nav ${desktop ? "customer-desktop-hidden" : ""}`} aria-label="Customer preview sections">
         {TABS.map(({ section: to, label, Icon }) => (
           <button
             key={to}

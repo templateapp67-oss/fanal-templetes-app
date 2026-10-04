@@ -51,3 +51,23 @@ for(const template of TEMPLATE_REGISTRY) {
   } finally {act(()=>root.unmount());container.remove();globalThis.fetch=savedFetch;}
  });
 }
+
+for (const template of TEMPLATE_REGISTRY) {
+ test(`${template.id}: an incomplete published site shows real services and owner with honest empty sections`,async()=>{
+  const savedFetch=globalThis.fetch;
+  const profile={...INITIAL_SALON_PROFILE,businessName:'Real published studio',subdomain:`empty-${template.id}`,ownerName:'Published owner',ownerRole:'Salon owner',ownerPhotoUrl:'',ownerBio:'Saved owner biography',packages:[],gallery:[],lookbookPhotos:[],socialVideos:[],testimonials:[],offers:[],sectionVisibility:undefined};
+  const services=template.defaultData.services.slice(0,2).map(service=>({...service,name:`Real ${service.name}`}));
+  globalThis.fetch=(async()=>({ok:true,json:async()=>({found:true,salon:{profile,services,stylists:[],selectedTemplateId:template.id}})})) as any;
+  const container=document.createElement('div');document.body.append(container);const root=createRoot(container);
+  try {
+   await act(async()=>root.render(<SalonWebsitePreview profile={profile} services={[]} stylists={[]} selectedTemplateId={template.id} publicView onAddAppointment={()=>{}}/>));
+   for (const service of services) assert.ok(container.querySelector('#services-section')?.textContent?.includes(service.name));
+   assert.match(container.querySelector('[data-published-owner]')?.textContent || '',/Published owner/);
+   assert.ok(container.querySelectorAll('[data-published-empty]').length>=4);
+   assert.match(container.textContent || '',/Studio showcases coming soon/);
+   assert.match(container.textContent || '',/Short films coming soon/);
+   assert.equal(container.querySelectorAll('iframe').length,0);
+   assert.ok(!container.textContent?.includes('Signature Duo'));
+  } finally {await act(async()=>root.unmount());container.remove();globalThis.fetch=savedFetch;}
+ });
+}
