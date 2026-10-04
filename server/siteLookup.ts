@@ -200,8 +200,8 @@ export function mapProfileRow(row: any): SalonProfile {
     promotionalBanner: row.promotional_banner || data.promotional_banner || config.promotionalBanner || undefined,
     sectionVisibility: row.template_settings?.sectionVisibility || data.template_settings?.sectionVisibility || config.sectionVisibility || undefined,
     sectionHeadings: row.template_settings?.sectionHeadings || data.template_settings?.sectionHeadings || config.sectionHeadings || undefined,
-    socialVideos: Array.isArray(config.socialVideos) ? config.socialVideos : (Array.isArray(data.social_videos) ? data.social_videos : []),
-    lookbookPhotos: Array.isArray(config.lookbookPhotos) ? config.lookbookPhotos : (Array.isArray(data.lookbook_photos) ? data.lookbook_photos : []),
+    socialVideos: Array.isArray(config.socialVideos) ? config.socialVideos : (Array.isArray(data.social_videos) ? data.social_videos : undefined),
+    lookbookPhotos: Array.isArray(config.lookbookPhotos) ? config.lookbookPhotos : (Array.isArray(data.lookbook_photos) ? data.lookbook_photos : undefined),
     // The public site payload must carry this setting. Legacy rows with no
     // value retain the database/product default instead of being treated as off.
     acceptsOnlineBookings: row.accepts_online_bookings ?? data.accepts_online_bookings ?? true,
@@ -258,7 +258,7 @@ export function mapStylistRow(row: any): Stylist {
 // The editor draft is therefore consulted as a FALLBACK only:
 //   • the normalized catalogue always wins when it has rows (it is what the
 //     booking engine and every RLS-protected read use);
-//   • the draft only fills EMPTY catalogue slots;
+//   • catalogue rows stay authoritative, including explicit empty results;
 //   • the draft only fills EMPTY profile text fields — never overwrites
 //     published values.
 // Nothing here can widen access: the read is scoped to the salon's own owner
@@ -324,10 +324,15 @@ function publicLoyaltyConfig(row: any, editorState: any): any | null {
  * A published value is never replaced, and identity/contact columns that the
  * public site renders from the salon row (name, phone, city…) are untouched.
  */
-function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): SalonProfile {
+export function fillProfileFromEditorState(profile: SalonProfile, draft: unknown): SalonProfile {
   if (!draft || typeof draft !== 'object') return profile;
   const source = draft as Record<string, any>;
-  const merged: SalonProfile = applyPublicWebsiteContent(profile, source);
+  const draftPresentation = applyPublicWebsiteContent({} as SalonProfile, source);
+  const merged: SalonProfile = { ...profile };
+  for (const [key, value] of Object.entries(draftPresentation)) {
+    const current = (profile as any)[key];
+    if (current === undefined || current === null || (typeof current === 'string' && !current.trim())) (merged as any)[key] = value;
+  }
   const fill = (key: keyof SalonProfile, value: unknown) => {
     const current = (merged as Record<string, any>)[key];
     if (current !== undefined && current !== null && String(current).trim() !== '') return;
@@ -461,7 +466,7 @@ export async function lookupSalon(
     const catalogueServices = (servicesRes.data || []).map(mapServiceRow);
     const catalogueStylists = (staffRes.data || []).map(row => mapStylistRow({ ...row, hide_phone: true,
       assigned_services: (row.staff_services || []).filter((link: any) => link.is_active).map((link: any) => link.service_id) }));
-    const profile = { ...applyPublicWebsiteContent(mapProfileRow(salonRow), salonRow.data?.editor_profile), ownerId: undefined, ...publicHours(hoursRes.data || []) };
+    const profile = { ...applyPublicWebsiteContent(mapProfileRow(salonRow), salonRow.data?.editor_profile ?? salonRow.data), ownerId: undefined, ...publicHours(hoursRes.data || []) };
 
     return { found: true, salon: {
       salonId: catalogueSalonId,

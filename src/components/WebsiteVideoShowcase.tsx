@@ -1,3 +1,4 @@
+import { PublishedSectionEmpty } from './PublishedSectionEmpty';
 import React, { useState } from 'react';
 import { Play, X, ExternalLink } from 'lucide-react';
 import type { SocialVideo } from '../types';
@@ -10,8 +11,9 @@ export function WebsiteVideoShowcase({ videos, dark = false }: { videos: SocialV
     { title: 'Featured Showcases', items: videos.filter(v => v.categoryTag !== 'SHORT'), short: false },
   ];
   return <div className="space-y-10">
-    {groups.map(group => group.items.length > 0 && <div key={group.title}>
+    {groups.map(group => <div key={group.title}>
       <div className="mb-5 flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-rose-500" /><h3 className="text-xl font-bold">{group.title}</h3><span className="text-xs opacity-60">{group.items.length} videos</span></div>
+      {!group.items.length && <PublishedSectionEmpty title={group.short ? "Short films coming soon" : "Studio showcases coming soon"} detail="Videos will appear here when the studio publishes its own work." />}
       <div className={`grid gap-5 ${group.short ? 'grid-cols-1 @min-[640px]/salon:grid-cols-2 @min-[1024px]/salon:grid-cols-3' : 'grid-cols-1 @min-[768px]/salon:grid-cols-2'}`}>
         {group.items.map(video => {
           const id = resolveYouTubeVideoId(video.videoId, video.youtubeUrl);

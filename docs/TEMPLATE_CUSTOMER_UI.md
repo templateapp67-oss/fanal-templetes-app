@@ -1,71 +1,89 @@
-# Template customer UI implementation scope
+# Customer UI coverage across all 28 templates
 
-Scope: the customer's October 3 UI/UX request. OTP, messaging, database
-migrations, payment-provider configuration and production deployment are deferred.
+The registry contains the 27 original template IDs plus `vip_black_gold`.
+`luxury_hair_salon` retains the Maison Éclat hair atelier, hair catalogue and
+`haute_luxe` layout. VIP has a separate identity, signature catalogue and
+`black_gold_signature` layout. Both appear in explorer, preview and editor routes.
 
-The current registry contains **27 templates including VIP Black & Gold**. The
-attached audit's additional separate VIP count does not match this checkout.
-Every registered template uses the shared customer toolbar and customer panel.
+All 28 use `SalonWebsitePreview` and its shared `TemplateCustomerHome`,
+customer toolbar and customer panel. New customer UI should be implemented in
+these shared components so every template receives it. VIP's source hero uses
+owner data and the same customer actions; the remaining sections stay shared.
+The standalone source marketing/admin simulator is not mounted.
 
-## Correction after PR #160
+## Shared customer surfaces
 
-PR #160 primarily exposed customer screens in a dialog. It did not make the
-requested discovery and booking sections prominent on the main template page.
-The corrective change adds a visible section directly after the hero in all 27
-templates: salon/service/location search, catalogue category/gender/price filters,
-inline service cards with real price/duration and direct booking actions, a featured
-salon card with actual configured rating data, and rewards/account shortcuts.
-The section uses the selected salon's real catalogue, inherits the template theme,
-respects hidden services, and never invents ratings or nearby salon data.
-Preview profiles now select the category accent rather than inheriting the blank
-profile's slate palette; VIP inline booking controls use the gold secondary accent.
-
-Appointments/profile/rewards details still open the existing customer panel.
-This change is not a claim that all customer, owner or internal-admin screens in
-the supplied checklist have been redesigned. Live data/payment/messaging work is
-still deferred as requested.
-
-## Customer surfaces
-
-| Requested area | Template UI |
+| Surface | UI behavior |
 | --- | --- |
-| Home, location, salon/service search, listings | Search toolbar opens discovery inside the template. Preview has category/gender/price/rating/distance/availability filters, recommended/nearby/top-rated/trending/featured lists, recent views, favorites and quick booking. Existing live discovery is embedded and now includes gender/distance controls and service-name matches. |
-| Salon profile, services, packages | Profile, gallery, location, hours, reviews, similar salons, service selection and package details. Configured packages render on the main template; starter packages appear only in preview. |
-| Booking, dates, slots, customer details | Interactive preview supports multiple services, available/disabled times, a labelled demo hold, contact details, saved/new address and notes. Live booking continues to use the existing account and booking screens. |
-| Summary, payment, confirmation | Preview shows subtotal, coupon discount, sample fee/tax, total, 25% advance, remaining amount, simulated payment and appointment details. No real payment occurs in preview. Live payment rules are unchanged. |
-| Appointments, details, rescheduling, cancellation, reviews | Preview has Upcoming/Completed/Cancelled tabs, appointment details, cancellation reason/refund information, rescheduling, star/text/tag reviews and rebooking. Live account screens open inside the template. |
-| Favorites, rewards, notifications | Save/remove/book favorites; dedicated Rewards navigation; points/activity screens; all/unread notifications and mark-read actions. Preview mutations stay in memory. |
-| Profile, addresses, settings, authentication | Photo/name/email/phone/gender/DOB/language, address add/edit/delete/default, preferences, login/signup/forgot/reset screens. Preview credentials create no account and send no messages. Live authentication reuses existing screens. |
+| Home and search | Visible discovery below the hero, salon/service/location search, category/gender/price filters, service cards with configured price and duration, direct service booking, featured salon, rewards/account shortcuts. |
+| Salon, services and packages | Profile, gallery, location, hours, reviews, service catalogue, package details and selection. Published sites use configured content; starter packages are preview-only. |
+| Booking | Interactive preview service/date/time/details/summary/advance/confirmation flow, disabled slots, demo hold, coupon, 25% advance and remaining amount. Preview payment is simulated. Live sites embed existing customer booking screens. |
+| Appointments | Upcoming/completed/cancelled, details, reschedule, cancellation reason/refund information, completed-appointment reviews and rebooking. |
+| Favorites and rewards | Save/remove/book favorites; dedicated Rewards navigation with points and activity. |
+| Notifications | All/unread lists and mark-read actions. |
+| Profile, addresses and settings | Personal details, language, address add/edit/delete/default and preferences. |
+| Authentication | Login/signup/forgot/reset screens. Preview sends no messages and creates no accounts; live screens reuse existing authentication. |
 
-## Owner and presentation UI
+Discovery preview shows example nearby/trending/recommended lists. Published
+inline discovery uses the owner's catalogue and actual rating data; it does not
+invent nearby businesses or ratings. Preview mutations remain in memory.
+OTP, messaging, payment-provider setup and database changes are deferred.
 
-- Package management in Website Editor: create, edit, delete, activate/deactivate,
-  select included services, show catalogue-derived total price and duration.
-- Service management: gender/service-type selector; public service cards show it.
-- Shared template: scoped heading/body fonts, brand radius, and saved scent,
-  soundscape and consultation information.
-- Category-dependent desktop hero composition; responsive customer panel;
-  accessible native dialog, focus containment, Escape close and scroll lock.
-- VIP customer panel preserves the dark appearance and readable active navigation.
-- Image failures use the existing local placeholder.
-- Platform admin remains an internal surface; it is not added to customer UI.
+## Owner configuration
 
-Read-side package/gender mapping passes existing editor presentation data to the
-public template. Package service IDs are resolved against the actual salon
-catalogue. Inactive packages and packages containing retired services are hidden.
+Package CRUD and activation, included services, price and duration; service gender
+selection; saved theme and profile settings continue through the shared editor.
+Changing template preserves customized owner details and cover photos; template
+default covers change to the newly selected design. VIP settings target only the
+new VIP ID. Template selection does not create or duplicate a business.
 
-## Validation
+## Regression coverage
 
-- TypeScript check and production build: pass.
-- Existing website regression suite: **506 passed**.
-- Customer regression suite: **38 passed**.
-- New customer UI tests: **34 passed**; includes package booking, coupon/advance,
-  confirmation, favorites, notification reads, cancellation, rescheduling and reviews.
-- Chromium browser: every **27/27** template shows inline customer discovery, filters/reset, Packages and Rewards without
-  horizontal overflow at 390px; Escape closes the panel.
-- VIP discovery/profile checked at **320, 390, 768 and 1440px**.
-- Browser package booking through confirmation: pass; no browser page errors.
+`npm run test:website` includes the registry and routing checks, all 28 published
+renderer hydration checks, and all 13 customer sections for every template.
+These checks fail if a template loses the shared toolbar or visible customer home.
+`tests/e2e/templateCustomerUi.mjs` discovers all 28 IDs and verifies each preview's
+visible discovery, filters, selected-service booking, packages, rewards and mobile
+width. VIP additionally runs at 320/390/768/1440px and through package confirmation.
+TypeScript and the production build are also checked before updating the PR.
 
-These checks verify UI and preview interactions. They do not establish that live
-OTP delivery, slot reservations, coupons, tax, refunds or payment capture are
-configured; those backend items remain outside this UI-only change.
+
+## Attached audit reconciliation
+
+See `TEMPLATE_AUDIT_RECONCILIATION.md` for every finding in sections A–F of the
+uploaded audit, including inaccurate field assumptions and deferred backend work.
+All 28 layouts now have explicit hero/catalogue/gallery composition recipes.
+Publishing settings expose custom domain, footer branding and messaging preference;
+25% advance remains the platform rule. Live checkout itemizes advance/balance,
+existing charges and refund guidance without creating client-only discounts.
+
+## Responsive published-site repair
+
+At 1024px and above the shared customer hub renders inside the salon canvas,
+between its website header and hero, with a sidebar and full-width main panel.
+Appointments, packages, favorites, profile, rewards and services no longer open
+a modal on desktop. Below 1024px they retain the native dialog and scroll lock.
+Resize switches layouts without leaving a stale modal or body scroll lock.
+
+The `customer` query parameter preserves the salon's `site` URL and the current
+customer section/path. `customerServices` preserves selected service IDs through
+booking/auth navigation and history. Back/forward and direct links restore the
+section. Returning to the website clears both parameters.
+
+Live services/packages reuse the site's already-loaded published catalogue,
+preventing an extra account/API response from making the menu appear empty.
+Missing services, packages, testimonials, gallery and both video placements have
+explicit empty states. A saved public owner profile can introduce the studio
+when no staff profiles exist; this does not fabricate a bookable staff record.
+Explicitly empty published arrays remain authoritative. Sanitized legacy draft
+presentation only fills missing fields and cannot overwrite published content.
+
+The Gelexy public API snapshot retrieved on October 4, 2026 contains five services
+and the owner's profile, but no staff/package/gallery/testimonial/video lists.
+Those genuinely missing lists require owner content; demo content is never
+published as the studio's own work. No production records were written.
+
+`tests/e2e/templateResponsiveCustomer.mjs` verifies all six desktop shortcuts and
+mobile drawers across all 28 templates, deep links, history, the exact breakpoint,
+and optionally the real Gelexy API snapshot via `LIVE_SITE_FIXTURE`. The published
+DOM matrix also covers incomplete sites for all 28 templates.

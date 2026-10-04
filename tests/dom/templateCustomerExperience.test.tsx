@@ -281,3 +281,23 @@ test("inline homepage empty catalogue has no invented rating or Infinity price",
   assert.match(html, /No matching services/);
   assert.match(html, /Reviews coming soon/);
 });
+
+
+for (const template of TEMPLATE_REGISTRY) {
+  test(`${template.id}: all 13 customer sections share the same UI coverage`, () => {
+    const owner = { ...profile, businessType: template.id, businessName: `Owner ${template.id}` };
+    const sections = {
+      home: 'Make time for yourself', salon: owner.businessName, services: 'All services',
+      packages: 'Book package', book: 'Book your next visit', bookings: 'My appointments',
+      wallet: 'Current points', notifications: 'Mark all as read', favourites: 'Your favorites',
+      profile: 'Your profile', location: 'Your location & addresses', settings: 'Account / password settings', auth: 'Forgot password',
+    };
+    for (const [section, text] of Object.entries(sections)) {
+      const html = renderToStaticMarkup(<TemplateCustomerDemo request={{ section: section as any }} profile={owner} services={template.config.services} />);
+      const panel = document.createElement('div'); panel.innerHTML = html;
+      assert.ok(panel.textContent?.includes(text), `${template.id}/${section}: ${text}`);
+      assert.ok(!panel.textContent?.includes('Infinity'));
+      if (['services', 'book'].includes(section)) assert.ok(panel.textContent?.includes(template.config.services[0].name), 'selected template catalogue is used');
+    }
+  });
+}

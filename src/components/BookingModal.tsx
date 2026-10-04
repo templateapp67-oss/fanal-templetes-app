@@ -1,3 +1,4 @@
+import { BookingPriceBreakdown } from './BookingPriceBreakdown';
 import { useCustomerAvailability } from '../lib/useCustomerAvailability';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -2372,6 +2373,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   </div>
                 </div>
 
+                <BookingPriceBreakdown total={totalAmount} />
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div>
                     <span className="text-slate-400 block font-mono text-[10px]">Date & Time</span>
@@ -2407,7 +2409,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       Pay ₹{advanceTokenAmount.toLocaleString('en-IN')} token via UPI to secure slot. Remaining ₹{remainingAmount.toLocaleString('en-IN')} at salon.
                     </p>
                     <span className="text-[10px] font-mono text-emerald-700 font-bold">
-                      VIP Priority Slot Hold
+                      Slot availability is confirmed when booking succeeds
                     </span>
                   </div>
                 </div>

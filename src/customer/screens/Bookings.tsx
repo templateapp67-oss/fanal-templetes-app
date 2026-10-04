@@ -112,7 +112,7 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
     <div className="space-y-4">
       <SectionTitle
         title="My bookings"
-        subtitle="Read from your own rows in the `bookings` table through the app API — the salon's dashboard is looking at the same rows."
+        subtitle="Manage your upcoming visits, completed appointments and cancellations."
         action={
           <Chip
             tone="neutral"
@@ -132,7 +132,7 @@ export const BookingsScreen: React.FC<BookingsProps> = ({
         <EmptyState
           icon={<CalendarDays className="w-6 h-6 text-slate-400" />}
           title="You have no bookings yet"
-          body="This is not a loading problem: the API returned zero rows for your account. Book an appointment and it appears here immediately."
+          body="Your appointments will appear here after you book. Explore services to plan your first visit."
         />
       ) : (
         <>

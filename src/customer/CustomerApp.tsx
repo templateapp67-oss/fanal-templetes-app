@@ -42,6 +42,7 @@ export interface CustomerAppProps {
   path: string;
   /** Hosted inside a salon template dialog; navigation stays inside that dialog. */
   embedded?: boolean;
+  desktopLayout?: boolean;
   initialServiceIds?: string[];
   navigate: (to: string) => void;
   /**
@@ -66,7 +67,7 @@ const NAV: Array<{ section: CustomerSection; label: string; icon: React.ReactNod
 /** Screens that are meaningless without an account (booking is the whole point). */
 const PRIVATE: CustomerSection[] = ['bookings', 'booking', 'profile', 'settings', 'wallet', 'qr', 'pass', 'membership', 'referral', 'notifications', 'favourites', 'reviews', 'offers'];
 
-export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accentHex: tenantAccentHex = '', tenantSubdomain = '', tenantName = '', embedded = false, initialServiceIds = [] }) => {
+export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accentHex: tenantAccentHex = '', tenantSubdomain = '', tenantName = '', embedded = false, desktopLayout = false, initialServiceIds = [] }) => {
   const route = useMemo(() => matchCustomerRoute(path), [path]);
   const [session, setSession] = useState<{ id: string; email?: string } | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -409,14 +410,14 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
 
   return (
     <div className={embedded ? 'customer-embedded bg-slate-50' : 'min-h-dvh bg-slate-50'} style={{ backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${hexToRgba(accentHex, 0.1)}, transparent)` }}>
-      <div className="max-w-2xl mx-auto px-4 pt-5 pb-28">
+      <div className={desktopLayout ? "customer-desktop-content px-6 py-6" : "max-w-2xl mx-auto px-4 pt-5 pb-28"}>
         <header className="flex items-center justify-between gap-3 mb-5">
           <button id="customer-header-brand-btn" type="button" onClick={() => go('home')} className="flex items-center gap-2.5 min-w-0 text-left min-h-[44px] cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-300">
             <span className="w-10 h-10 rounded-2xl grid place-items-center text-white shrink-0" style={{ backgroundColor: accentHex }}>
               <Sparkles className="w-5 h-5" />
             </span>
             <span className="min-w-0">
-              <span className="block text-sm font-extrabold text-slate-900 truncate">{salon?.name || 'Nexora SalonOS'}</span>
+              <span className="block text-sm font-extrabold text-slate-900 truncate">{salon?.name || tenantName || 'Nexora SalonOS'}</span>
               <span className={`block text-[11px] ${MUTED_CLASS}`}>
                 {salon?.name ? 'Customer app' : 'Find a salon, book, earn rewards'}
                 {location?.city ? ` · ${location.city}` : ''}
@@ -457,7 +458,7 @@ export const CustomerApp: React.FC<CustomerAppProps> = ({ path, navigate, accent
         {body}
       </div>
 
-      <nav className={`${embedded ? 'sticky' : 'layout-stable-fixed fixed inset-x-0'} bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur`} aria-label="Customer app sections">
+      <nav className={`${desktopLayout ? 'customer-desktop-hidden' : ''} ${embedded ? 'sticky' : 'layout-stable-fixed fixed inset-x-0'} bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur`} aria-label="Customer app sections">
         <div className="max-w-3xl mx-auto grid grid-cols-6">
           {NAV.map((item) => {
             const active =

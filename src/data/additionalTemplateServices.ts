@@ -5,6 +5,7 @@ const details: Record<string, [string, string, number, number, string]> = {
   tattoo_studio: ['Tattoo Design Consultation & Stencil Fitting', 'Design Consultation', 45, 800, 'Discuss placement, scale and style with an artist. Includes a custom sketch consultation, stencil fitting and aftercare planning. Tattooing is quoted separately.'],
   ayurvedic_spa: ['Herbal Foot & Lower Leg Ritual', 'Ayurvedic Care', 40, 1400, 'A warm herbal foot soak followed by gentle lower-leg massage and a nourishing oil finish. Includes a comfort and sensitivity consultation.'],
   ayurvedic_wellness_spa: ['Abhyanga Warm Oil Massage', 'Ayurvedic Care', 60, 2200, 'A personalized warm-oil body massage with gentle pressure, a relaxing rest period and guidance on post-treatment care.'],
+  vip_black_gold: ['Signature Care Consultation', 'Signature Services', 45, 1800, 'A tailored consultation and care session for your chosen service.'],
   luxury_hair_salon: ['Signature Gloss & Blowout', 'Hair Styling', 60, 2800, 'Consultation, gloss refresh, conditioning wash and a polished blowout. Includes styling advice for maintaining your finish at home.'],
   bridal_makeover_studio: ['Bridal Makeup Trial & Look Planning', 'Bridal Trials', 90, 4500, 'Create your wedding-day look with a skin-prep consultation, trial makeup, colour matching and a personalized product and timing plan.'],
   family_salon: ['Family Occasion Styling', 'Occasion Styling', 45, 1200, 'Consultation, gentle wash and occasion-ready hair styling for one guest. Choose a smooth blowout or soft waves suited to your hair.'],

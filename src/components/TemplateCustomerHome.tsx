@@ -1,3 +1,4 @@
+import { templateRating } from '../lib/templateRating';
 import React, { useState } from 'react';
 import { ArrowRight, CalendarDays, Clock, Gift, Heart, MapPin, Search, Star } from 'lucide-react';
 import { getLuminance } from '../themeAccents';
@@ -28,9 +29,9 @@ export function TemplateCustomerHome({ profile, services, dark, accentHex = '#0f
   );
   const prices = services.map(service => service.price).filter(price => Number.isFinite(price) && price >= 0);
   const startingPrice = prices.length ? Math.min(...prices) : null;
-  const reviews = profile.testimonials ?? [];
-  const ratingCount = profile.publicRating?.count ?? reviews.length;
-  const rating = profile.publicRating?.average ?? (reviews.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : null);
+  const ratingData = templateRating(profile);
+  const ratingCount = ratingData?.count ?? 0;
+  const rating = ratingData?.average ?? null;
   const card = dark ? 'bg-white/[0.045] border-white/10' : 'bg-white border-slate-200';
   const muted = dark ? 'text-neutral-400' : 'text-slate-500';
   const field = `min-h-11 rounded-xl border px-3 text-sm w-full ${dark ? 'bg-neutral-900 border-white/15 text-white' : 'bg-white border-slate-200 text-slate-900'}`;
@@ -72,7 +73,7 @@ export function TemplateCustomerHome({ profile, services, dark, accentHex = '#0f
         <aside className="flex flex-col gap-4">
           <article className={`rounded-2xl border overflow-hidden ${card}`} aria-label="Featured salon">
             <div className="relative h-36"><img src={profile.coverImageUrl || '/gallery-placeholder.svg'} alt={profile.businessName} className="w-full h-full object-cover" loading="lazy" onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = '/gallery-placeholder.svg'; }} /><button type="button" aria-label="Manage salon favorites" onClick={() => onOpen('favourites')} className="absolute right-3 top-3 min-h-11 min-w-11 rounded-full bg-white text-slate-900 flex items-center justify-center shadow"><Heart size={18} fill="none" /></button><span className="absolute bottom-3 left-3 rounded-full bg-black/70 text-white text-[10px] px-3 py-1.5">Featured studio</span></div>
-            <div className="p-4"><h3 className="text-lg font-bold">{profile.businessName}</h3><p className={`text-xs flex items-center gap-1 mt-1 ${muted}`}><MapPin size={13} />{[profile.areaLocality, profile.city].filter(Boolean).join(', ') || 'Location coming soon'}</p><div className="flex flex-wrap justify-between gap-2 mt-3 text-xs">{rating !== null && ratingCount > 0 ? <span className="flex items-center gap-1"><Star size={13} />{rating.toFixed(1)} · {ratingCount} reviews</span> : <span className={muted}>Reviews coming soon</span>}{startingPrice !== null ? <span>From <strong>₹{startingPrice.toLocaleString('en-IN')}</strong></span> : null}</div><div className="flex gap-2 mt-4"><button type="button" className="min-h-11 flex-1 rounded-xl border border-current/20 text-xs font-semibold" onClick={() => onOpen('salon')}>View salon</button><button type="button" className="min-h-11 flex-1 rounded-xl text-xs font-bold" style={primary} onClick={() => onBook()}>Book now</button></div></div>
+            <div className="p-4"><h3 className="text-lg font-bold">{profile.businessName}</h3><p className={`text-xs flex items-center gap-1 mt-1 ${muted}`}><MapPin size={13} />{[profile.areaLocality, profile.city].filter(Boolean).join(', ') || 'Location coming soon'}</p><div className="flex flex-wrap justify-between gap-2 mt-3 text-xs">{rating !== null && ratingCount > 0 ? <span className="flex items-center gap-1"><Star size={13} />{rating.toFixed(1)} · {ratingCount} {ratingData?.label}</span> : <span className={muted}>Reviews coming soon</span>}{startingPrice !== null ? <span>From <strong>₹{startingPrice.toLocaleString('en-IN')}</strong></span> : null}</div><div className="flex gap-2 mt-4"><button type="button" className="min-h-11 flex-1 rounded-xl border border-current/20 text-xs font-semibold" onClick={() => onOpen('salon')}>View salon</button><button type="button" className="min-h-11 flex-1 rounded-xl text-xs font-bold" style={primary} onClick={() => onBook()}>Book now</button></div></div>
           </article>
           <button type="button" onClick={() => onOpen('wallet')} className={`rounded-2xl border p-4 text-left flex items-center gap-3 ${card}`}><span className="rounded-xl p-3" style={primary}><Gift size={20} /></span><span className="flex-1"><strong className="block text-sm">Your rewards</strong><span className={`text-xs ${muted}`}>Points, benefits & activity</span></span><ArrowRight size={16} /></button>
         </aside>

@@ -1,3 +1,4 @@
+import { TemplatePublishingSettings } from './TemplatePublishingSettings';
 import { WebsiteContentEditor } from './WebsiteContentEditor';
 import React, { useState, useEffect } from 'react';
 import { 
@@ -414,6 +415,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
         {/* ============================================================ */}
         {activeTab === 'branding' && (
           <div className="flex flex-col gap-5">
+            <TemplatePublishingSettings profile={profile} onChange={patch => setProfile(previous => ({ ...previous, ...patch }))} />
             {/* 1. Salon Header Logo Section */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
               <div className="flex items-center justify-between">
@@ -985,7 +987,7 @@ export const SidePanelCustomizer: React.FC<SidePanelCustomizerProps> = ({
             </div>
 
             {/* VIP Black & Gold is a single special template, never a copied salon. */}
-            {profile.businessType === 'luxury_hair_salon' && (
+            {profile.businessType === 'vip_black_gold' && (
               <div className="bg-gradient-to-br from-[#16120a] to-[#050505] border border-[#d4af37]/45 rounded-2xl p-3.5 space-y-3 text-[#f7edcf]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">

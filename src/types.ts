@@ -32,6 +32,7 @@ export type BusinessTypeId =
   | 'lash_brow'          // Lash & Brow Bar
   | 'ayurvedic_spa'      // Ayurvedic Rejuvenation Spa
   | 'ayurvedic_wellness_spa' // Ayurvedic & Wellness Spa
+  | 'vip_black_gold' // Separate all-purpose Black & Gold source design
   | 'luxury_hair_salon' // Premium Luxury Hair Salon
   | 'bridal_makeover_studio' // Bridal & Makeover Studio
   | 'family_salon' // Modern Unisex Family Salon
@@ -61,6 +62,7 @@ export type LayoutStyle =
   | 'chic_nude'
   | 'ayurvedic_terracotta'
   | 'botanical_wellness'
+  | 'black_gold_signature'
   | 'haute_luxe'
   | 'ivory_pearl_bridal'
   | 'family_fresh'

@@ -16,10 +16,26 @@ try {
   await page.goto('http://127.0.0.1:4192/templates/barber/preview');
   await page.locator('[data-salon-canvas]').waitFor();
   const ids = await page.evaluate(async () => (await import('/src/data/templates.ts')).TEMPLATE_REGISTRY.map(t => t.id));
+  assert.equal(ids.length, 28, 'all original 27 plus separate VIP are registered');
   for (const id of ids) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`http://127.0.0.1:4192/templates/${id}/preview`);
     await page.locator('[data-salon-canvas]').waitFor();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForFunction(() => document.querySelector('[data-salon-canvas]')?.clientWidth >= 768);
+    const layout = await page.evaluate(async () => {
+      const canvas = document.querySelector('[data-salon-canvas]');
+      const grid = document.querySelector('.template-service-grid');
+      const registry = (await import('/src/data/templates.ts')).TEMPLATE_REGISTRY;
+      const recipe = (await import('/src/data/templateLayouts.ts')).TEMPLATE_LAYOUTS[registry.find(t => t.id === location.pathname.split('/')[2]).config.layoutStyle];
+      return { composition: canvas.dataset.templateComposition, expected: recipe.composition, columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : null, expectedColumns: recipe.columns, width: canvas.clientWidth, scroll: canvas.scrollWidth };
+    });
+    assert.equal(layout.composition, layout.expected, `${id}: desktop composition`);
+    if (layout.columns !== null) assert.equal(layout.columns, layout.expectedColumns, `${id}: desktop service grid`);
+    assert.ok(layout.scroll <= layout.width + 1, `${id}: desktop has no overflow`);
+    await page.waitForFunction(() => { const heading = document.querySelector('#home-section h1'); return heading && (!heading.style.color || (getComputedStyle(heading).color === heading.style.color && [...heading.querySelectorAll('span')].every(span => getComputedStyle(span).color === heading.style.color))); });
+    if (['barber','hair_salon','resort_spa','vip_black_gold'].includes(id)) await page.screenshot({ path: `${output}/${id}-desktop.png` });
+    await page.setViewportSize({ width: 390, height: 844 });
     const homepage = page.locator('[data-template-customer-home]');
     await homepage.getByRole('heading', { name: 'Quick booking', exact: true }).waitFor();
     assert.ok(await homepage.locator('article').count() >= 1, `${id}: cards exist without opening a dialog`);
@@ -30,6 +46,10 @@ try {
     await homepage.getByRole('heading', { name: 'No matching services', exact: true }).waitFor();
     await homepage.getByRole('button', { name: 'Clear filters', exact: true }).evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
     await homepage.getByRole('button', { name: 'Clear filters', exact: true }).click();
+    await homepage.locator('article').first().getByRole('button').click();
+    await page.getByRole('dialog').locator('input[type=checkbox]:checked').waitFor();
+    assert.equal(await page.getByRole('dialog').locator('input[type=checkbox]:checked').count(), 1, `${id}: selected catalogue service is passed to booking`);
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Packages', exact: true }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Signature Duo', { exact: true }).waitFor();
@@ -40,25 +60,38 @@ try {
     await dialog.getByText('Current points', { exact: true }).waitFor();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
-    console.log(`PASS ${id}: visible homepage, search/reset, packages, rewards, Escape and mobile width`);
+    console.log(`PASS ${id}: visible home, filters, selected-service booking, packages, rewards and mobile width`);
   }
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 1200 });
-    await page.goto('http://127.0.0.1:4192/templates/luxury_hair_salon/preview');
+    await page.goto('http://127.0.0.1:4192/templates/vip_black_gold/preview');
+    const vipHero = page.locator('[data-vip-source-website]');
+    await vipHero.getByRole('heading', { level: 1 }).waitFor();
+    assert.equal(await page.locator('#header-admin-btn').count(), 0);
+    const heroWidth = await vipHero.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
+    assert.ok(heroWidth.scroll <= heroWidth.width + 1, `VIP source hero at ${width}: no overflow`);
+    await vipHero.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+    await page.screenshot({ path: `${output}/vip-source-${width}.png`, clip: await vipHero.boundingBox() });
+    await vipHero.getByRole('button', { name: 'Book appointment', exact: true }).click();
+    const panel = width >= 1024 ? page.locator('[data-template-customer-page]') : page.getByRole('dialog');
+    await panel.getByRole('button', { name: 'Continue', exact: true }).waitFor();
+    if (width >= 1024) await panel.getByRole('button', { name: 'Back to salon website' }).click();
+    else await page.keyboard.press('Escape');
     await page.locator('[data-template-customer-home]').evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
     assert.equal(await page.locator('[data-template-customer-home]').getByRole('button', { name: 'Book now', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(245, 158, 11)', 'VIP inline booking uses gold accent');
     assert.equal(await page.locator('[data-template-customer-home]').getByRole('button', { name: 'Book now', exact: true }).evaluate(el => getComputedStyle(el).color), 'rgb(9, 9, 11)', 'VIP gold button text has strong contrast');
     await page.screenshot({ path: `${output}/vip-inline-home-${width}.png`, clip: await page.locator('[data-template-customer-home]').boundingBox() });
     await page.getByRole('button', { name: 'Search salons & services', exact: true }).click();
-    const dialog = page.getByRole('dialog');
+    const dialog = width >= 1024 ? page.locator('[data-template-customer-page]') : page.getByRole('dialog');
     await dialog.getByText('Make time for yourself').waitFor();
     const size = await dialog.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
     assert.ok(size.scroll <= size.width + 1, `discovery at ${width}: no horizontal overflow`);
     await page.screenshot({ path: `${output}/vip-discovery-${width}.png` });
-    await dialog.getByRole('button', { name: 'Profile', exact: true }).click();
+    await dialog.getByRole('button', { name: width >= 1024 ? 'My profile' : 'Profile', exact: true }).click();
     await dialog.getByText('Your profile', { exact: true }).waitFor();
     await page.screenshot({ path: `${output}/vip-profile-${width}.png` });
-    await page.keyboard.press('Escape');
+    if (width >= 1024) await dialog.getByRole('button', { name: 'Back to salon website' }).click();
+    else await page.keyboard.press('Escape');
     console.log(`PASS VIP discovery/profile at ${width}px`);
   }
   await page.setViewportSize({ width: 390, height: 844 });

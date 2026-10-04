@@ -13,7 +13,7 @@ import { injectSocialMetadata } from '../src/lib/socialMetadata';
 
 const rich = { id: 'sale-service', name: 'Scalp Spa', category: 'Hair', description: 'A relaxing treatment.', price: 1200, sale_price: 800, duration: '60 mins', image_url: '' };
 
-test('all 27 templates seed exactly five rich services without replacing or sharing owner data', () => {
+test('all 28 templates seed exactly five rich services without replacing or sharing owner data', () => {
   for (const template of TEMPLATE_REGISTRY) {
     const services = addMissingStarterServices(undefined, template.id);
     assert.equal(services.length, 5, template.id);
