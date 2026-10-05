@@ -58,7 +58,15 @@ if (!existsSync(tsxBin)) {
   }
 }
 
-// 3. Start the dev server and forward its exit status.
+// 3. Load the existing/created .env BEFORE the server's module graph starts.
+// Some server imports reach supabaseClient before server/env executes. Without
+// this preload, the browser connects but the API stays in mock mode until the
+// next process restart. Import dotenv only after the dependency bootstrap, and
+// preserve explicit process variables (dotenv's default override=false).
+const { config } = await import('dotenv');
+config({ path: envPath, quiet: true });
+
+// 4. Start the full server (HTTP APIs + Vite), not standalone Vite.
 console.log('[dev-preview] starting npm run dev …');
 const child = spawn(npmCommand, ['run', 'dev'], { cwd: root, stdio: 'inherit' });
 child.on('exit', (code) => process.exit(code ?? 0));
