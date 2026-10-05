@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { InvestorsRoute } from './investors/InvestorsRoute';
 
 export { ErrorBoundary };
 
@@ -13,7 +14,9 @@ if (rootEl) {
     root.render(
       <StrictMode>
         <ErrorBoundary>
-          <App />
+          <InvestorsRoute>
+            <App />
+          </InvestorsRoute>
         </ErrorBoundary>
       </StrictMode>
     );

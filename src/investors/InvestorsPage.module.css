@@ -1,0 +1,279 @@
+.page {
+  --gold: #d4af37;
+  --gold-light: #e3c878;
+  --muted: #a5a49e;
+  --line: #ffffff12;
+  min-height: 100dvh;
+  background: #080808;
+  color: #f5f3ec;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.page :is(h1,h2,h3,p) { margin: 0; }
+.page :is(h1,h2,h3) { font-family: 'Manrope', sans-serif; text-shadow: none; hyphens: none; overflow-wrap: normal; }
+.page a { text-decoration: none; }
+.page a:focus-visible, .tableScroll:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 5px; }
+.page section { scroll-margin-top: 112px; }
+.page svg { flex-shrink: 0; }
+.skipLink { position: fixed; top: -100px; left: 20px; z-index: 100; padding: 12px 20px; background: var(--gold); color: #080808; }
+.skipLink:focus { top: 12px; }
+.header { position: sticky; top: 0; z-index: 30; background: #080808e8; border-bottom: 1px solid var(--line); backdrop-filter: blur(20px); }
+.headerInner { max-width: 1280px; padding: 0 48px; min-height: 90px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
+.brand { color: #f4f1e7; display: flex; gap: 12px; align-items: center; font-size: 23px; line-height: 1.1; letter-spacing: 3px; font-weight: 700; }
+.brand small { display: block; color: var(--gold-light); font-size: 8px; letter-spacing: 2.5px; margin-top: 7px; font-weight: 500; }
+.brandMark { width: 38px; height: 42px; border: 1px solid #d4af3750; display: grid; place-items: center; color: var(--gold-light); font-family: Georgia, serif; font-style: italic; font-size: 29px; letter-spacing: -2px; position: relative; }
+.brandMark span { width: 4px; height: 4px; position: absolute; right: -2px; bottom: -2px; background: var(--gold); }
+.nav { display: flex; gap: 30px; align-items: center; }
+.nav a { color: #aaa9a2; font-size: 13px; padding: 32px 0; position: relative; transition: color .2s; }
+.nav a:hover, .nav .activeLink { color: var(--gold-light); }
+.activeLink::after { content: ''; position: absolute; bottom: 20px; left: 50%; width: 4px; height: 4px; border-radius: 50%; background: var(--gold); }
+.headerAction { display: inline-flex; gap: 12px; align-items: center; justify-content: center; min-height: 40px; padding: 8px 16px; border: 1px solid #d4af3745; border-radius: 6px; font-size: 12px; color: var(--gold-light); transition: background .2s; }
+.headerAction:hover { background: #d4af3712; }
+.main { max-width: 1280px; margin: auto; padding: 0 48px 46px; }
+.hero { display: grid; grid-template-columns: 1.06fr 1fr; gap: 35px; align-items: center; min-height: 540px; padding: 62px 0 68px; }
+.heroCopy { position: relative; z-index: 1; }
+.heroLabel { display: flex; gap: 10px; align-items: center; font-size: 9px; letter-spacing: 2px; color: var(--gold-light); font-weight: 600; }
+.heroLabel > span, .imageTag > span { width: 5px; height: 5px; background: var(--gold); border-radius: 50%; box-shadow: 0 0 10px #d4af3770; }
+.heroLabel i { height: 10px; border-left: 1px solid #d4af3750; margin: 0 2px; }
+.hero h1 { font-size: clamp(37px, 4.05vw, 54px); font-weight: 500; letter-spacing: -2.7px; line-height: 1.22; margin: 23px 0 22px; }
+.hero h1 > span { color: var(--gold-light); }
+.heroDescription { color: #aaa9a2; font-size: 17px; line-height: 1.8; }
+.heroActions { display: flex; align-items: center; gap: 28px; margin-top: 31px; }
+.primaryButton { display: inline-flex; min-height: 47px; align-items: center; justify-content: center; gap: 20px; padding: 12px 20px; background: linear-gradient(115deg, #e2c46e, #c6a047); border: 1px solid #e4c776; border-radius: 6px; color: #15130c; font-size: 13px; font-weight: 700; box-shadow: 0 5px 30px #d4af3710; transition: filter .2s, transform .2s; }
+.primaryButton:hover { filter: brightness(1.1); transform: translateY(-2px); }
+.textButton { display: inline-flex; gap: 12px; align-items: center; color: #e5e2d9; font-size: 13px; min-height: 44px; }
+.textButton:hover { color: var(--gold-light); }
+.heroFootnote { display: flex; align-items: center; gap: 8px; color: #8a8983; font-size: 10px; margin-top: 28px; }
+.heroFootnote svg { color: #b29c61; }
+.heroVisual { height: 390px; position: relative; border-radius: 12px; border: 1px solid #d4af372c; box-shadow: 0 0 90px #ad802809; overflow: hidden; }
+.heroVisual > img { width: 100%; height: 100%; object-fit: cover; }
+.imageShade { position: absolute; inset: 0; background: linear-gradient(180deg, #08080835, transparent 45%, #08080899); }
+.imageTag { position: absolute; top: 23px; left: 23px; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 3px; border: 1px solid #ffffff25; background: #15130e75; backdrop-filter: blur(12px); font-size: 8px; letter-spacing: 1.7px; }
+.glassNote { position: absolute; bottom: 22px; left: 20px; right: 20px; background: linear-gradient(115deg, #202018c9, #11100dcc); backdrop-filter: blur(18px); border: 1px solid #d4af3740; border-radius: 8px; display: flex; align-items: center; gap: 13px; padding: 17px; }
+.noteIcon { display: grid; place-items: center; width: 45px; height: 45px; border: 1px solid #d4af3730; color: var(--gold-light); border-radius: 8px; background: #d4af3710; }
+.glassNote small { font-size: 8px; color: #c7c2b2; letter-spacing: 1.5px; }
+.glassNote strong { display: block; font-size: 25px; color: var(--gold-light); line-height: 1.3; font-weight: 500; }
+.glassNote strong span { font-size: 10px; color: #d8d4ca; margin-left: 5px; }
+.glassNote > svg { margin-left: auto; color: var(--gold-light); }
+.section { padding: 48px 0; border-top: 1px solid var(--line); }
+.eyebrow { display: flex; align-items: center; gap: 10px; color: var(--gold-light); font-size: 9px; font-weight: 600; letter-spacing: 2px; margin-bottom: 16px; }
+.eyebrow > span { font-size: 8px; color: #aaa08a; border: 1px solid #d4af3730; border-radius: 3px; letter-spacing: 0; padding: 1px 5px; }
+.section h2 { font-size: 29px; line-height: 1.4; letter-spacing: -.8px; font-weight: 500; }
+.sectionHeading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.sectionAside { font-size: 12px; color: var(--muted); padding-bottom: 5px; }
+.modelGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.modelCard { border-radius: 10px; padding: 25px 26px; background: linear-gradient(125deg, #1a1a1877, #11111099); border: 1px solid #ffffff12; backdrop-filter: blur(14px); }
+.goldCard { border-color: #d4af3745; background: radial-gradient(ellipse at top right, #d4af370e, transparent 70%), linear-gradient(125deg, #1a191577, #11111099); }
+.cardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 24px; color: var(--gold-light); }
+.cardTop span { color: #9a988d; font-size: 8px; letter-spacing: 1.6px; }
+.metric { font-size: 45px; line-height: 1; letter-spacing: -1px; color: var(--gold-light); font-weight: 400; margin-bottom: 20px; font-variant-numeric: tabular-nums; }
+.metric span { font-size: 17px; color: #aeab9f; letter-spacing: 0; margin-left: 6px; }
+.modelCard h3 { font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+.modelCard p { font-size: 12px; color: var(--muted); line-height: 1.75; max-width: 275px; }
+.onboarding { display: grid; grid-template-columns: .9fr 2fr; gap: 36px; align-items: center; }
+.onboardingIntro h2 { margin-bottom: 21px; }
+.pill { display: inline-flex; width: fit-content; align-items: center; gap: 7px; padding: 6px 10px; font-size: 8px; line-height: 1.5; letter-spacing: 1.2px; color: var(--gold-light); border: 1px solid #d4af3730; border-radius: 5px; background: #d4af3708; flex-shrink: 0; }
+.incentiveFlow { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 23px; background: #111110; border: 1px solid #ffffff12; border-radius: 10px; }
+.incentiveFlow small { display: block; color: #a6a191; font-size: 8px; letter-spacing: 1.4px; }
+.incentiveFlow strong { display: block; font-size: 31px; font-weight: 400; line-height: 1.7; letter-spacing: -.6px; }
+.incentiveFlow span { display: block; font-size: 10px; color: var(--muted); }
+.flowArrow { color: #a58e51; }
+.incentiveFinal strong, .incentiveFinal small { color: var(--gold-light); }
+.exactRule { color: #95928a; font-size: 11px; padding: 15px 3px 0; line-height: 1.8; }
+.sectionDescription { font-size: 13px; color: var(--muted); margin-top: 11px !important; max-width: 460px; line-height: 1.8; }
+.rewardPanel { background: linear-gradient(135deg, #141411, #101010 55%); border: 1px solid #ffffff15; border-radius: 10px; overflow: hidden; }
+.tableScroll { overflow-x: auto; }
+.rewardTable { border-collapse: collapse; width: 100%; text-align: left; }
+.rewardTable thead { background: #ffffff03; }
+.rewardTable thead th { padding: 19px 28px; font-size: 9px; font-weight: 500; letter-spacing: 1.4px; text-transform: uppercase; color: #a39e90; border-bottom: 1px solid #ffffff12; white-space: nowrap; }
+.rewardTable :is(td, tbody th) { padding: 15px 28px; border-bottom: 1px solid #ffffff09; font-weight: 400; font-size: 13px; }
+.rewardTable tbody tr:last-child :is(td, th) { border-bottom: 0; }
+.rewardTable tbody tr:hover { background: #d4af3706; }
+.milestone { font-size: 17px; color: #f5f1e7; font-variant-numeric: tabular-nums; }
+.shopsLabel { color: #8e8b82; font-size: 11px; margin-left: 5px; }
+.trigger { display: inline-flex; align-items: center; gap: 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: #aaa69a; padding: 4px 10px; border: 1px solid #d4af3720; border-radius: 5px; background: #d4af3704; }
+.trigger svg { color: #8f7c45; }
+.trigger strong { font-weight: 500; color: var(--gold-light); }
+.rewardName { display: flex; align-items: center; gap: 13px; }
+.rewardIcon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 6px; border: 1px solid #d4af371a; background: #d4af3708; color: #c3af77; }
+.rewardTable .rewardValue { color: var(--gold-light); text-align: right; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rewardTable thead th:last-child { text-align: right; }
+.tableFooter { display: flex; gap: 10px; align-items: center; border-top: 1px solid #ffffff10; padding: 17px 28px; background: #d4af3705; color: #a39c8a; font-size: 11px; }
+.tableFooter svg { color: #b9a367; }
+.eligibilityNotes { display: grid; grid-template-columns: 1.2fr 1fr; gap: 25px; padding-top: 21px; }
+.eligibilityNotes > div { display: flex; align-items: center; gap: 11px; color: #a7a398; font-size: 11px; }
+.eligibilityNotes svg { color: #b8a16b; }
+.calculation { display: grid; grid-template-columns: .95fr 1.2fr; gap: 75px; align-items: center; }
+.calculationIntro .sectionDescription { max-width: 330px; }
+.auditBadge { display: flex; align-items: center; gap: 7px; color: #c9b778; font-size: 11px; margin-top: 24px; }
+.formulaCard { padding: 25px 28px; border: 1px solid #d4af3730; border-radius: 10px; background: radial-gradient(ellipse at top right, #d4af370a, transparent 75%), #111110; }
+.formulaLabel { display: flex; align-items: center; gap: 8px; font-size: 8px; letter-spacing: 1.7px; color: #bcb397; margin-bottom: 22px; }
+.formula { font-size: 17px; line-height: 1.6; }
+.formula > span:first-child { display: block; font-size: 12px; color: var(--muted); }
+.formula .equals { display: block; font-size: 17px; color: var(--gold-light); margin: 2px 0; }
+.formula em { font-style: normal; color: var(--gold-light); }
+.days { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin-top: 20px; }
+.days span { display: grid; place-items: center; padding: 6px 0; font-size: 10px; color: #ccb774; border: 1px solid #d4af3730; background: #d4af370b; border-radius: 3px; }
+.dayCaption { display: flex; justify-content: space-between; gap: 10px; font-size: 7px; letter-spacing: 1px; color: #99907a; margin-top: 7px; }
+.dayCaption > span:last-child { display: flex; align-items: center; gap: 4px; }
+.formulaBottom { margin-top: 21px; padding-top: 15px; border-top: 1px solid #ffffff10; }
+.formulaBottom p { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 10px; color: #c7bd9e; }
+.formulaBottom small { display: block; font-size: 10px; color: #99958a; margin-top: 7px; line-height: 1.7; }
+.relevance { display: grid; grid-template-columns: 1fr 1.08fr; gap: 54px; align-items: center; }
+.salonVisual { position: relative; border: 1px solid #d4af3725; border-radius: 10px; overflow: hidden; height: 320px; }
+.salonVisual::after { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 45%, #080808aa); }
+.salonVisual img { width: 100%; height: 100%; object-fit: cover; }
+.salonVisual > span { position: absolute; z-index: 1; left: 20px; bottom: 21px; display: flex; align-items: center; gap: 8px; color: #e2d7b7; font-size: 8px; letter-spacing: 1.4px; }
+.relevanceList { list-style: none; padding: 0; margin: 20px 0 0; }
+.relevanceList li { display: flex; align-items: start; gap: 12px; padding: 12px 0; border-top: 1px solid #ffffff0c; color: #b5b0a3; font-size: 12px; }
+.relevanceList svg { color: #c5ac6b; margin-top: 1px; }
+.disclaimer { display: flex; align-items: start; gap: 15px; padding: 25px 28px; border-radius: 8px; background: #ffffff03; border: 1px solid #ffffff12; }
+.disclaimer > svg { color: #bca56a; margin-top: 2px; }
+.disclaimer h2 { font-size: 13px; font-weight: 500; color: #d8d1bf; margin-bottom: 6px; }
+.disclaimer p { font-size: 11px; color: #928e84; line-height: 1.9; }
+.footer { max-width: 1184px; margin: 0 auto; padding: 24px 0 29px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; font-size: 8px; letter-spacing: 1px; color: #817b6e; }
+.footerBrand { font-size: 15px; letter-spacing: 3px; color: #d1cbbd; }
+.footerBrand span { font-size: 8px; letter-spacing: 1px; color: #817b6e; margin-left: 12px; }
+.footer a { color: #c5b17a; display: flex; align-items: center; gap: 9px; min-height: 44px; font-size: 10px; letter-spacing: 0; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (min-width: 1400px) { .hero { min-height: 580px; } .heroVisual { height: 420px; } }
+@media (max-width: 1100px) {
+  .headerInner, .main { padding-left: 32px; padding-right: 32px; }
+  .nav { gap: 20px; }
+  .headerAction { display: none; }
+  .hero { gap: 24px; }
+  .hero h1 { letter-spacing: -2px; font-size: 43px; }
+  .heroVisual { height: 360px; }
+  .glassNote { left: 13px; right: 13px; padding: 12px; gap: 9px; }
+  .glassNote strong span { display: block; margin: 0; }
+  .modelCard { padding: 22px; }
+  .onboarding { grid-template-columns: .8fr 1.7fr; gap: 24px; }
+  .incentiveFlow { padding: 18px; gap: 10px; }
+  .incentiveFlow strong { font-size: 26px; }
+  .calculation { gap: 36px; }
+  .rewardTable :is(td, tbody th, thead th) { padding-left: 20px; padding-right: 20px; }
+  .relevance { gap: 32px; }
+  .footer { margin-left: 32px; margin-right: 32px; }
+}
+@media (max-width: 800px) {
+  .headerInner { min-height: 77px; gap: 14px; }
+  .brand { font-size: 20px; gap: 9px; }
+  .brand small { font-size: 7px; letter-spacing: 2px; }
+  .nav { gap: 20px; }
+  .nav a { font-size: 12px; }
+  .nav a:last-child { display: none; }
+  .hero { grid-template-columns: 1fr; gap: 35px; padding: 44px 0; }
+  .hero h1 { font-size: 52px; }
+  .heroVisual { height: 370px; }
+  .glassNote strong span { display: inline; margin-left: 5px; }
+  .section { padding: 37px 0; }
+  .section h2 { font-size: 26px; }
+  .sectionAside { display: none; }
+  .modelGrid { gap: 12px; }
+  .modelCard { padding: 20px 16px; }
+  .cardTop span { font-size: 7px; letter-spacing: 0; }
+  .modelCard h3 { font-size: 12px; }
+  .modelCard p { font-size: 11px; }
+  .metric { font-size: 36px; }
+  .onboarding { grid-template-columns: 1fr; gap: 22px; }
+  .onboardingIntro h2 br { display: none; }
+  .onboardingIntro h2 { margin-bottom: 14px; }
+  .incentiveFlow { padding: 24px; }
+  .incentiveFlow strong { font-size: 30px; }
+  .sectionHeading { flex-wrap: wrap; gap: 15px; }
+  .rewardTable :is(td, tbody th, thead th) { padding-left: 14px; padding-right: 14px; }
+  .rewardName { gap: 8px; }
+  .rewardTable :is(td, tbody th) { font-size: 12px; }
+  .rewardIcon { width: 30px; height: 34px; }
+  .rewardTable thead th { font-size: 8px; letter-spacing: .8px; }
+  .calculation { gap: 26px; grid-template-columns: 1fr; }
+  .calculationIntro .sectionDescription { max-width: none; }
+  .calculationIntro h2 br { display: none; }
+  .relevance { grid-template-columns: 1fr; }
+  .salonVisual { height: 300px; }
+  .relevanceCopy .sectionDescription { max-width: none; }
+}
+@media (max-width: 560px) {
+  .headerInner { padding: 14px 20px 0; flex-wrap: wrap; gap: 6px; }
+  .brandMark { width: 28px; height: 32px; font-size: 24px; }
+  .brand { font-size: 18px; }
+  .brand small { font-size: 6px; margin-top: 4px; }
+  .nav { width: 100%; justify-content: space-between; gap: 8px; }
+  .nav a { padding: 13px 0; font-size: 10px; }
+  .nav a:last-child { display: block; }
+  .activeLink::after { bottom: 5px; }
+  .main { padding: 0 20px 30px; }
+  .page section { scroll-margin-top: 130px; }
+  .hero { padding: 34px 0 32px; gap: 28px; }
+  .hero h1 { font-size: clamp(30px, 8.8vw, 48px); letter-spacing: -1.7px; margin: 20px 0 16px; }
+  .heroLabel { font-size: 8px; letter-spacing: 1.4px; }
+  .heroDescription { font-size: 15px; }
+  .heroActions { gap: 18px; margin-top: 23px; }
+  .primaryButton { padding: 11px 15px; gap: 12px; font-size: 12px; }
+  .textButton { font-size: 12px; gap: 7px; }
+  .heroFootnote { font-size: 9px; margin-top: 18px; gap: 6px; }
+  .heroVisual { height: 295px; }
+  .imageTag { left: 15px; top: 15px; font-size: 7px; }
+  .glassNote { bottom: 13px; }
+  .noteIcon { width: 33px; height: 40px; }
+  .glassNote small { font-size: 7px; letter-spacing: .7px; }
+  .glassNote strong { font-size: 21px; }
+  .glassNote strong span { font-size: 9px; }
+  .glassNote > svg { width: 17px; }
+  .section h2 { font-size: 23px; letter-spacing: -.6px; }
+  .desktopBreak { display: none; }
+  .eyebrow { font-size: 8px; letter-spacing: 1.6px; margin-bottom: 12px; }
+  .sectionHeading { margin-bottom: 22px; }
+  .modelGrid { grid-template-columns: 1fr; }
+  .modelCard { display: grid; grid-template-columns: 1fr auto; column-gap: 20px; padding: 21px; }
+  .cardTop { grid-column: 1 / -1; margin-bottom: 16px; }
+  .cardTop span { font-size: 8px; letter-spacing: 1.3px; }
+  .metric { grid-column: 2; grid-row: 2 / 4; align-self: center; margin: 0; font-size: 34px; }
+  .metric span { font-size: 12px; }
+  .modelCard h3 { font-size: 13px; }
+  .modelCard p { font-size: 11px; max-width: 200px; }
+  .incentiveFlow { flex-direction: column; align-items: stretch; padding: 22px; gap: 14px; }
+  .incentiveFlow > div { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; }
+  .incentiveFlow strong { grid-column: 2; grid-row: 1 / 3; align-self: center; line-height: 1; font-size: 28px; }
+  .incentiveFlow span { grid-column: 1; }
+  .flowArrow { transform: rotate(90deg); width: 16px; }
+  .incentiveFinal { border-top: 1px solid #d4af3720; padding-top: 18px; }
+  .exactRule { font-size: 10px; }
+  .rewardTable, .rewardTable tbody { display: block; width: 100%; }
+  .rewardTable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .rewardTable tbody tr { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px 12px; margin: 0 17px; padding: 19px 0; border-bottom: 1px solid #ffffff12; }
+  .rewardTable tbody tr:last-child { border-bottom: 0; }
+  .rewardTable :is(td, tbody th) { display: block; padding: 0; border-bottom: 0; text-align: left; font-size: 12px; }
+  .rewardTable :is(td, tbody th)::before { content: attr(data-label); display: block; color: #999283; font-size: 8px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 7px; }
+  .rewardTable tbody td:nth-child(2) { text-align: right; }
+  .rewardTable .rewardValue { font-size: 16px; }
+  .rewardName { min-height: 32px; }
+  .rewardIcon { width: 29px; height: 31px; }
+  .milestone { font-size: 19px; }
+  .trigger { gap: 10px; font-size: 12px; padding: 4px 8px; }
+  .tableFooter { padding: 16px 17px; align-items: start; font-size: 10px; }
+  .tableFooter svg { margin-top: 2px; }
+  .eligibilityNotes { grid-template-columns: 1fr; gap: 15px; }
+  .eligibilityNotes > div { align-items: start; font-size: 11px; }
+  .formulaCard { padding: 21px 18px; }
+  .formula { font-size: 16px; }
+  .formulaLabel { font-size: 7px; letter-spacing: 1.2px; }
+  .days { gap: 3px; }
+  .days span { font-size: 8px; }
+  .dayCaption { font-size: 6px; }
+  .formulaBottom p { font-size: 9px; }
+  .formulaBottom svg { width: 11px; }
+  .salonVisual { height: 250px; }
+  .salonVisual > span { font-size: 7px; letter-spacing: .9px; left: 15px; }
+  .disclaimer { padding: 20px 17px; gap: 11px; }
+  .disclaimer p { font-size: 10px; }
+  .footer { margin: 0 20px; flex-wrap: wrap; padding: 20px 0; gap: 10px; }
+  .footerBrand { font-size: 12px; letter-spacing: 2px; }
+  .footerBrand span { display: block; margin: 4px 0 0; font-size: 7px; }
+  .footer > span:nth-child(2) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page *, .page *::before, .page *::after { transition: none !important; animation: none !important; }
+}
