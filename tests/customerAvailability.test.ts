@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {customerAvailability,customerPaymentOrderHandler} from '../server/customerAvailability';
 import {readFileSync} from 'node:fs';
 const salon='10000000-0000-4000-8000-000000000001',staff='20000000-0000-4000-8000-000000000001';
-function database({enabled=true,verified=true,missing=false,slots=[{slot_start:'2026-10-10T02:30:00Z',slot_end:'2026-10-10T03:05:00Z',staff_id:staff,total_paise:45000}],failure=false}:any={}){
- const calls:any[]=[];const db:any={calls,auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from(table:string){const q:any={};for(const name of ['select','eq','is','maybeSingle'])q[name]=(...args:any[])=>{calls.push([table,name,...args]);return q;};q.then=(resolve:any)=>resolve(missing?{data:null}:{data:{id:salon,timezone:'Asia/Kolkata',verified,accepts_online_bookings:enabled}});return q;},rpc(name:string,args:any){calls.push([name,args]);return Promise.resolve(failure?{error:{code:'42501'}}:{data:slots});}};return db;
+function database({enabled=true,verified=true,missing=false,slots=[{slot_start:'2026-10-10T02:30:00Z',slot_end:'2026-10-10T03:05:00Z',staff_id:staff,total_paise:45000}],failure=false,hours=null}:any={}){
+ const calls:any[]=[];const db:any={calls,auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from(table:string){const q:any={};for(const name of ['select','eq','is','maybeSingle'])q[name]=(...args:any[])=>{calls.push([table,name,...args]);return q;};q.then=(resolve:any)=>resolve(table==='salon_hours'?{data:hours}:missing?{data:null}:{data:{id:salon,timezone:'Asia/Kolkata',verified,accepts_online_bookings:enabled}});return q;},rpc(name:string,args:any){calls.push([name,args]);return Promise.resolve(failure?{error:{code:'42501'}}:{data:slots});}};return db;
 }
 const input={subdomain:'mine',service_ids:['cut'],staff_id:staff,date:'2026-10-10'};
 test('availability resolves normalized IDs and returns only slot and quote information',async()=>{
@@ -13,9 +13,23 @@ test('availability resolves normalized IDs and returns only slot and quote infor
  const rpc=db.calls.find((c:any)=>c[0]==='nexora_customer_booking_options');assert.equal(rpc[1].p_salon_id,salon);assert.equal(rpc[1].p_service_ids.length,1);assert.notEqual(rpc[1].p_service_ids[0],'cut');
  assert.ok(!db.calls.some((c:any)=>c[0]==='bookings'||c[0]==='salon_customers'));
 });
+test('availability canonicalizes legacy DD-MM-YYYY dates before its database query',async()=>{
+ const db=database();
+ const result=await customerAvailability(db,{...input,date:'05-10-2026'});
+ assert.equal(result.date,'2026-10-05');
+ const rpc=db.calls.find((call:any)=>call[0]==='nexora_customer_booking_options');
+ assert.equal(rpc[1].p_date,'2026-10-05');
+});
 test('empty availability stays empty; permission failure is not reported as sold out',async()=>{
  assert.deepEqual((await customerAvailability(database({slots:[]}),input)).slots,[]);
  await assert.rejects(customerAvailability(database({failure:true}),input));
+});
+test('empty availability reports duration overflow with the actual requested duration and working window',async()=>{
+ const db=database({slots:{available_slots:[],available_staff:[{id:staff}],duration_minutes:270},hours:{opens_at:'09:00:00',closes_at:'12:00:00',is_closed:false}});
+ const result=await customerAvailability(db,input);
+ assert.equal(result.durationMinutes,270);
+ assert.equal(result.remainingMinutes,180);
+ assert.equal(result.availabilityReason,'duration_overflow');
 });
 test('disabled salons and invalid dates never call the slot RPC',async()=>{
   const db=database({enabled:false});await assert.rejects(customerAvailability(db,input),(e:any)=>{assert.equal(e.status,409);assert.equal(e.code,'online_booking_disabled');return true;});assert.ok(!db.calls.some((c:any)=>c[0]==='nexora_customer_booking_options'));

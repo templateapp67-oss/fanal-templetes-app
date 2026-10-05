@@ -62,6 +62,31 @@ test('YouTube add, edit, placement, playback, invalid URL, delete and remount us
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
 
+test('video quick setup adds editable demos without replacing existing videos and exposes the AI prompt', async () => {
+  const existing = { id: 'owner-video', videoId: 'aqz-KE-bpKQ', youtubeUrl: 'https://youtu.be/aqz-KE-bpKQ', title: 'My salon transformation', description: 'Owner footage', categoryTag: 'SHOWCASE', thumbnailUrl: 'https://example.com/video.jpg', isOwnerVideo: true } as const;
+  let saved = { businessType: 'hair_salon', socialVideos: [existing] } as unknown as SalonProfile;
+  function Harness() {
+    const [profile, setProfile] = useState(saved); saved = profile;
+    return React.createElement(YouTubeVideoEditor, { profile, setProfile, templateId: 'hair_salon' });
+  }
+  const container = document.createElement('div'); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(React.createElement(Harness)));
+    const prompt = container.querySelector('[aria-label="AI video content prompt"]') as HTMLTextAreaElement;
+    assert.match(prompt.value, /Hair Transformations, Balayage Color Process, and Keratin Treatments/);
+    assert.match(prompt.value, /Featured Showcases section/);
+    await act(async () => button(container, 'Add editable demo videos').click());
+    const expectedDemos = getDefaultVideosForTemplate('hair_salon');
+    assert.equal(saved.socialVideos?.length, expectedDemos.length + 1);
+    assert.equal(saved.socialVideos?.[0].id, 'owner-video', 'owner video remains untouched');
+    assert.ok(expectedDemos.every(demo => saved.socialVideos?.some(video => video.id === demo.id && video.isDemo)));
+    await act(async () => button(container, 'Add editable demo videos').click());
+    assert.equal(saved.socialVideos?.length, expectedDemos.length + 1, 'repeat clicks do not duplicate the demos');
+    assert.match(container.querySelector('[role="status"]')?.textContent || '', /already added/);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
 test('starter kit fills an empty menu but preserves custom services, identity and deleted media', async () => {
   let profile = { businessType: 'tattoo_studio', businessName: 'My real business', ownerName: 'Me', ownerRole: '', socialVideos: [], gallery: [] } as unknown as SalonProfile;
   let services: SalonService[] = [];

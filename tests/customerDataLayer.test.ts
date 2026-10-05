@@ -36,6 +36,8 @@ import {
   physicalTable,
   requiredPhysicalTables,
 } from '../src/lib/customer/schema';
+import { addBookingDays, normalizeBookingDate, todayInTimezone } from '../src/lib/customer/bookingDate';
+import { buildDevelopmentFallbackSlots } from '../src/lib/useCustomerAvailability';
 import {
   depositDueFor,
   depositPolicyPercent,
@@ -155,8 +157,33 @@ test('referral codes are derived from the account id, never typed free-hand', ()
 // Slot arithmetic — availability that has no table of its own
 // ---------------------------------------------------------------------------
 
+test('long continuous services fit working hours only when the full duration remains before closing', () => {
+  const slots = buildSlotGrid({ date: '2026-10-05', fromTime: '09:00', toTime: '21:00', stepMinutes: 30, durationMinutes: 270, takenTimes: [], now: new Date('2026-10-01T00:00:00Z') });
+  assert.equal(slots[0]?.time, '09:00');
+  assert.equal(slots.at(-1)?.time, '16:30', 'a 270-minute booking must finish by 21:00');
+  assert.equal(slots.some((slot) => slot.time === '17:00'), false, 'a slot that would end after closing is excluded');
+  assert.deepEqual(buildSlotGrid({ date: '2026-10-05', fromTime: '09:00', toTime: '21:00', durationMinutes: 721, takenTimes: [], now: new Date('2026-10-01T00:00:00Z') }), [], 'duration longer than the whole workday cannot fit');
+});
+
+test('development fallback slots still honor long duration and closing time', () => {
+  const slots = buildDevelopmentFallbackSlots('2026-10-05', 270, 'stylist-1', new Date('2026-10-01T00:00:00Z'));
+  assert.equal(slots[0]?.time, '09:00');
+  assert.equal(slots.at(-1)?.time, '16:30');
+  assert.ok(slots.every((slot) => slot.fallback));
+  assert.deepEqual(buildDevelopmentFallbackSlots('2026-10-05', 721, 'stylist-1', new Date('2026-10-01T00:00:00Z')), []);
+});
+
+test('booking dates normalize as calendar dates and IST midnight does not shift the selected day', () => {
+  assert.equal(normalizeBookingDate('05-10-2026'), '2026-10-05');
+  assert.equal(normalizeBookingDate('2026-10-05'), '2026-10-05');
+  assert.equal(normalizeBookingDate('31-02-2026'), null);
+  const afterUtcMidnightShift = new Date('2026-10-04T19:00:00.000Z');
+  assert.equal(todayInTimezone(afterUtcMidnightShift, 'Asia/Kolkata'), '2026-10-05');
+  assert.equal(addBookingDays('05-10-2026', 1), '2026-10-06');
+});
+
 test('a slot grid respects duration, held times and the clock', () => {
-  const now = new Date('2026-09-08T09:00:00');
+  const now = new Date('2026-09-08T09:00:00+05:30');
   const slots = buildSlotGrid({
     date: '2026-09-30',
     fromTime: '10:00',

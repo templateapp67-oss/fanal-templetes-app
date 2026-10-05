@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 import type { CustomerBooking } from '../../lib/customer/types';
 import {
-  cancelMyBooking,
   fetchSlotWindow,
   listMyBookings,
   normalizeCustomerErrorMessage,
@@ -45,13 +44,13 @@ import {
   validateReview,
 } from '../../lib/bookingTabs';
 import { payAdvanceWithRazorpay } from '../../lib/razorpayCheckout';
+import { CancellationPolicyModal } from '../../components/CancellationPolicyModal';
 import {
   Button,
   CARD_CLASS,
   Chip,
   EmptyState,
   ErrorState,
-  Field,
   MUTED_CLASS,
   SectionTitle,
   SourceChip,
@@ -247,7 +246,6 @@ const BookingCard: React.FC<{
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [mode, setMode] = useState<'none' | 'cancel' | 'reschedule' | 'review'>('none');
-  const [reason, setReason] = useState('');
   const [rating, setRating] = useState(booking.review?.rating || 0);
   const [text, setText] = useState('');
   const [proposedDate, setProposedDate] = useState('');
@@ -270,18 +268,10 @@ const BookingCard: React.FC<{
   const depositPercent = booking.depositPercent || 0;
   const depositDue = depositPercent > 0 ? booking.depositDue : 0;
 
-  async function run(action: 'cancel' | 'reschedule' | 'review' | 'deposit') {
+  async function run(action: 'reschedule' | 'review' | 'deposit') {
     setBusy(action);
     setError('');
     setNotice('');
-    if (action === 'cancel') {
-      const result = await cancelMyBooking(booking.id, reason);
-      setBusy('');
-      if (!result.ok) return void setError(normalizeCustomerErrorMessage(result));
-      setMode('none');
-      onChanged(result.data || null, 'Your booking was cancelled and the slot is free again.');
-      return;
-    }
     if (action === 'reschedule') {
       const result = await proposeMyBookingReschedule(booking.id, proposedDate, proposedTime);
       setBusy('');
@@ -435,20 +425,13 @@ const BookingCard: React.FC<{
               {error ? <p className="text-xs font-semibold text-rose-600">{error}</p> : null}
               {notice ? <p className="text-xs text-emerald-700">{notice}</p> : null}
 
-              {mode === 'cancel' ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-3 space-y-2">
-                  <p className="text-xs font-bold text-rose-900">Why are you cancelling? (optional)</p>
-                  <Field label="Reason" value={reason} onChange={setReason} placeholder="Change of plans, timing, budget…" />
-                  <div className="flex gap-2">
-                    <Button variant="danger" busy={busy === 'cancel'} onClick={() => run('cancel')}>
-                      Cancel booking
-                    </Button>
-                    <Button variant="ghost" onClick={() => setMode('none')}>
-                      Keep it
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
+              <CancellationPolicyModal
+                open={mode === 'cancel'}
+                bookingId={booking.id}
+                accentHex={accentHex}
+                onClose={() => setMode('none')}
+                onCancelled={(updated, message) => onChanged(updated, message)}
+              />
 
               {mode === 'reschedule' ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-3 space-y-3">
@@ -532,7 +515,7 @@ const BookingCard: React.FC<{
                       <Clock className="w-4 h-4" /> Propose new time
                     </Button>
                   ) : null}
-                  <Button variant={cancelDecision.allowed ? 'danger' : 'ghost'} disabled={!cancelDecision.allowed} title={cancelDecision.allowed ? '' : cancelDecision.reason} onClick={() => setMode('cancel')} busy={busy === 'cancel'}>
+                  <Button variant={cancelDecision.allowed ? 'danger' : 'ghost'} disabled={!cancelDecision.allowed} title={cancelDecision.allowed ? '' : cancelDecision.reason} onClick={() => setMode('cancel')}>
                     <X className="w-4 h-4" /> Cancel
                   </Button>
                   {onOpenSalon && booking.salonId ? (

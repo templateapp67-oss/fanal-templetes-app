@@ -1,5 +1,6 @@
 import { BookingPriceBreakdown } from './BookingPriceBreakdown';
 import { useCustomerAvailability } from '../lib/useCustomerAvailability';
+import { addBookingDays, normalizeBookingDate, todayInTimezone } from '../lib/customer/bookingDate';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { postBookingWithRetry, getBookingAccessToken } from '../lib/bookingApi';
@@ -254,10 +255,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   // Step 2: Date & Time Slot
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = todayInTimezone();
   const [bookingDate, setBookingDate] = useState<string>(todayStr);
+  const canonicalBookingDate = normalizeBookingDate(bookingDate) || todayStr;
   const [bookingTime, setBookingTime] = useState<string>('');
-  const availability = useCustomerAvailability(isOpen && ['datetime','guest','payment'].includes(currentStep),profile.subdomain,[...selectedServices,...selectedUpgrades].map(s=>s.id).sort().join(','),selectedStylist.id,bookingDate);
+  const availabilityDurationMinutes = [...selectedServices,...selectedUpgrades].reduce((total,service)=>total+(Number(service.durationMinutes)||0),0);
+  const availability = useCustomerAvailability(isOpen && ['datetime','guest','payment'].includes(currentStep),profile.subdomain,[...selectedServices,...selectedUpgrades].map(s=>s.id).sort().join(','),selectedStylist.id,canonicalBookingDate,availabilityDurationMinutes);
   const [slotStaffId,setSlotStaffId]=useState('');
   const availableTimes=Array.from(new Set(availability.slots.map(slot=>slot.time)));
   const selectedSlot=availability.slots.find(slot=>slot.time===bookingTime && slot.staffId===slotStaffId);
@@ -1120,6 +1123,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     // sees ONE booking reference across retries.
     const refNum = bookingRef || `NX-${cityCode}-${Math.floor(10000 + Math.random() * 90000)}`;
     if (!selectedSlot) { setSubmitError('Refresh availability and choose a current slot.');setCurrentStep('datetime');return; }
+    if (selectedSlot.fallback) { setSubmitError('This development-only preview slot cannot be booked. Configure real salon hours and refresh availability.');setCurrentStep('datetime');return; }
     const fresh = buildDraftFromForm(refNum);
     fresh.stylist={...fresh.stylist,id:selectedSlot.staffId,name:stylists.find(s=>s.id===selectedSlot.staffId)?.name || fresh.stylist.name};
     if (Math.round(fresh.pricing.total*100)!==selectedSlot.totalPaise) {setSubmitError('The current specialist price differs from the menu. Reload the salon menu before paying.');return;}
@@ -1890,9 +1894,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const d = new Date();
-                      d.setDate(d.getDate() + 1);
-                      setBookingDate(d.toISOString().split('T')[0]);
+                      setBookingDate(addBookingDays(todayStr, 1));
                     }}
                     className={`px-3 py-1.5 text-xs font-bold rounded-lg border cursor-pointer ${
                       bookingDate !== todayStr ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
@@ -1926,8 +1928,23 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <p className="mt-1">Check the link and try again.</p>
                 </div>
               )}
-              {availability.error && availability.code!=='online_booking_disabled' && availability.code!=='salon_not_found' && <p role="alert">{availability.error} <button type="button" onClick={availability.refetchSlots} className="underline">Retry availability</button></p>}
-              {!availability.loading && !availability.error && !availableTimes.length && <p>No available time slots for this date. Choose another date or specialist.</p>}
+              {availability.error && availability.code!=='online_booking_disabled' && availability.code!=='salon_not_found' && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{availability.error} <button type="button" onClick={availability.refetchSlots} className="ml-1 underline font-semibold">Retry availability</button></div>}
+              {availability.fallback && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800">Development preview slots only — schedule data was empty. These times are not reservable.</p>}
+              {!availability.loading && !availability.error && !availableTimes.length && availability.reason==='duration_overflow' && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  Selected services require {((availability.durationMinutes || availabilityDurationMinutes) / 60).toFixed(1)} hours continuous duration. Please select an earlier time or adjust add-ons.
+                </div>
+              )}
+              {!availability.loading && !availability.error && !availableTimes.length && availability.reason==='schedule_missing' && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Availability could not be calculated because the salon schedule is missing or closed for this date. Please contact the salon or choose another date.</div>
+              )}
+              {!availability.loading && !availability.error && !availableTimes.length && availability.reason==='no_specialist' && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">No specialist is scheduled and qualified for all selected services on this date. Choose another specialist or date.</div>
+              )}
+              {!availability.loading && !availability.error && !availableTimes.length && availability.reason==='fully_booked' && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">No continuous appointment slots are available; this date may be fully booked. Choose another date or specialist.</div>
+              )}
+              {!availability.loading && !availability.error && !availableTimes.length && !['duration_overflow','schedule_missing','no_specialist','fully_booked'].includes(availability.reason) && <p role="alert">No available time slots for this date. Choose another date or specialist.</p>}
               {/* Time Slot Availability Grid */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
