@@ -153,14 +153,16 @@ export const Field: React.FC<{
 };
 
 export const Avatar: React.FC<{ src?: string; name: string; size?: number }> = ({ src, name, size = 40 }) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => setImageFailed(false), [src]);
   const initials = String(name || '?')
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0] || '')
     .join('')
     .toUpperCase();
-  if (src) {
-    return <img src={src} alt={name} className="rounded-2xl object-cover bg-slate-100" style={{ width: size, height: size }} />;
+  if (src && !imageFailed) {
+    return <img src={src} alt={name} onError={() => setImageFailed(true)} className="rounded-2xl object-cover bg-slate-100" style={{ width: size, height: size }} />;
   }
   return (
     <span

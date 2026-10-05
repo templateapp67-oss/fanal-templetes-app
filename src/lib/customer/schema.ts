@@ -1,3 +1,5 @@
+import { BOOKING_TIMEZONE, minutesNowInTimezone, todayInTimezone, weekdayForBookingDate } from './bookingDate';
+
 // ============================================================================
 // Nexora SalonOS — Customer App schema map.
 //
@@ -673,11 +675,15 @@ export function buildSlotGrid(input: {
   takenTimes: string[];
   now?: Date;
   staffId?: string;
+  /** Working-hour timezone; salon bookings default to India Standard Time. */
+  timeZone?: string;
 }): SlotDefinition[] {
   const step = Math.max(5, Number(input.stepMinutes ?? 30));
   const duration = Math.max(0, Number(input.durationMinutes ?? 0));
   const now = input.now ?? new Date();
-  const todayIso = toIsoDate(now);
+  const timeZone = input.timeZone || BOOKING_TIMEZONE;
+  const todayIso = todayInTimezone(now, timeZone);
+  const nowMinutes = minutesNowInTimezone(now, timeZone);
   const startMin = minutesFromClock(input.fromTime);
   const endMin = minutesFromClock(input.toTime);
   if (startMin === null || endMin === null || endMin <= startMin) return [];
@@ -689,7 +695,7 @@ export function buildSlotGrid(input: {
   const out: SlotDefinition[] = [];
   for (let cursor = startMin; cursor + duration <= endMin; cursor += step) {
     const time = clockFromMinutes(cursor);
-    const inPast = input.date < todayIso || (input.date === todayIso && cursor <= now.getHours() * 60 + now.getMinutes());
+    const inPast = input.date < todayIso || (input.date === todayIso && cursor <= nowMinutes);
     out.push({ date: input.date, time, staffId, available: !inPast && !taken.has(time) });
   }
   return out;
@@ -706,7 +712,7 @@ export function toIsoDate(value: Date): string {
  * date here is an instant 400 on every booking made after 6pm.
  */
 export function todayIsoDate(now: Date = new Date()): string {
-  return toIsoDate(now);
+  return todayInTimezone(now, BOOKING_TIMEZONE);
 }
 
 /**
@@ -750,7 +756,7 @@ export function clockFromMinutes(totalMinutes: number): string {
 /** Weekly opening hours for one day, from a stylist's `schedule` jsonb. */
 export function dayWindowFor(schedule: unknown, date: string): { fromTime: string; toTime: string } | null {
   const rows = Array.isArray(schedule) ? (schedule as any[]) : [];
-  const dayName = DAY_NAMES[new Date(`${date}T12:00:00`).getDay()];
+  const dayName = DAY_NAMES[weekdayForBookingDate(date)];
   const found = rows.find((row) => String(row?.day ?? '') === dayName && row?.enabled !== false);
   if (!found) return null;
   const fromTime = String(found.fromTime ?? '').trim();
@@ -771,7 +777,7 @@ export function salonWindowFromHours(
   date: string
 ): { fromTime: string; toTime: string } | null {
   if (!workingHours) return null;
-  const day = new Date(`${date}T12:00:00`).getDay();
+  const day = weekdayForBookingDate(date);
   const raw = day === 0 ? workingHours.sunday : day === 6 ? workingHours.saturday : workingHours.monFri;
   return parseWindow(String(raw ?? ''));
 }
