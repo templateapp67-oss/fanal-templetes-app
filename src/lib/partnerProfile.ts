@@ -5,13 +5,11 @@ export function normalizeWhatsApp(value: string, required: boolean = false): str
   }
   const digits = value.replace(/[\s()+-]/g, '');
   if (!digits || digits === '91') {
-    if (required) throw new Error('WhatsApp number is required.');
-    return '';
+    throw new Error('Enter a valid WhatsApp number.');
   }
   const normalized = digits.length === 10 ? `91${digits}` : /^[6-9]\d{9}$/.test(digits) ? `91${digits}` : digits;
   if (!/^[1-9]\d{7,14}$/.test(normalized)) {
-    if (required) throw new Error('Enter a valid 10-digit WhatsApp number.');
-    return value.trim();
+    throw new Error('Enter a valid WhatsApp number.');
   }
   return `+${normalized}`;
 }

@@ -436,6 +436,7 @@ export async function insertBookingRow(
       label: `booking insert (${requestId})`,
       timeoutMs: DEFAULT_DB_TIMEOUT_MS,
       deadlineAt,
+      retryOnTimeout: false,
     });
     if (!error) return { data, error: null, droppedColumns };
 

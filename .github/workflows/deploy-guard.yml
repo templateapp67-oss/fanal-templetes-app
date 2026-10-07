@@ -62,3 +62,9 @@ jobs:
           tests/growthPartnerShell.test.ts
           tests/middlewareEdgeSafety.test.ts
           tests/partnerEdgeRouting.test.ts
+
+      - name: Booking, contact validation and referral regressions
+        run: npm run test:checkout
+
+      - name: Complete component interaction suite
+        run: npm run test:dom

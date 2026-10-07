@@ -9,10 +9,10 @@ export const NEXORA_REFERRAL_EVENT = 'nexora_referral_detected';
 export function getStoredReferralCode(): string {
   if (typeof window === 'undefined') return '';
   try {
-    const sessionVal = sessionStorage.getItem(NEXORA_REFERRAL_KEY);
+    const sessionVal = window.sessionStorage.getItem(NEXORA_REFERRAL_KEY);
     if (sessionVal && sessionVal.trim()) return sessionVal.trim();
 
-    const localVal = localStorage.getItem(NEXORA_REFERRAL_KEY);
+    const localVal = window.localStorage.getItem(NEXORA_REFERRAL_KEY);
     if (localVal && localVal.trim()) return localVal.trim();
   } catch (err) {
     console.warn('Failed to read referral code from storage:', err);
@@ -29,8 +29,8 @@ export function storeReferralCode(rawCode: string): string {
   if (!cleaned) return '';
 
   try {
-    sessionStorage.setItem(NEXORA_REFERRAL_KEY, cleaned);
-    localStorage.setItem(NEXORA_REFERRAL_KEY, cleaned);
+    window.sessionStorage.setItem(NEXORA_REFERRAL_KEY, cleaned);
+    window.localStorage.setItem(NEXORA_REFERRAL_KEY, cleaned);
   } catch (err) {
     console.warn('Failed to store referral code:', err);
   }
@@ -84,6 +84,7 @@ export function useReferralTracker(options?: {
 }): UseReferralTrackerResult {
   const [referralCode, setReferralCode] = useState<string>(() => getStoredReferralCode());
   const [isReferralDetected, setIsReferralDetected] = useState<boolean>(false);
+  const onReferralDetected = options?.onReferralDetected;
 
   const checkUrlParams = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -101,22 +102,22 @@ export function useReferralTracker(options?: {
         const stored = storeReferralCode(paramCode);
         setReferralCode(stored);
         setIsReferralDetected(true);
-        if (options?.onReferralDetected) {
-          options.onReferralDetected(stored);
+        if (onReferralDetected) {
+          onReferralDetected(stored);
         }
       } else {
         const existing = getStoredReferralCode();
         if (existing) {
           setReferralCode(existing);
         }
-        if (isSignupPath && options?.onReferralDetected) {
-          options.onReferralDetected(existing);
+        if (isSignupPath && onReferralDetected) {
+          onReferralDetected(existing);
         }
       }
     } catch (err) {
       console.warn('Error parsing referral URL parameters:', err);
     }
-  }, [options]);
+  }, [onReferralDetected]);
 
   useEffect(() => {
     checkUrlParams();
@@ -139,8 +140,8 @@ export function useReferralTracker(options?: {
 
   const clearReferralCode = useCallback(() => {
     try {
-      sessionStorage.removeItem(NEXORA_REFERRAL_KEY);
-      localStorage.removeItem(NEXORA_REFERRAL_KEY);
+      window.sessionStorage.removeItem(NEXORA_REFERRAL_KEY);
+      window.localStorage.removeItem(NEXORA_REFERRAL_KEY);
     } catch {}
     setReferralCode('');
     setIsReferralDetected(false);

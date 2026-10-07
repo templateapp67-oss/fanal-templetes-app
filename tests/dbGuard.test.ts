@@ -156,3 +156,24 @@ test('newRequestId produces unique, prefixed correlation ids', () => {
   assert.match(a, /^bk_/);
   assert.notEqual(a, b);
 });
+
+
+test('a timed-out write is not submitted again when retryOnTimeout is false', async () => {
+  let attempts = 0;
+  const result = await runDb(() => { attempts += 1; return never() as any; }, {
+    label: 'uncertain write', timeoutMs: 30, retryDelayMs: 1, retryOnTimeout: false,
+  });
+  assert.equal(result.error.code, 'db_timeout');
+  assert.equal(result.timedOut, true);
+  assert.equal(attempts, 1);
+});
+
+test('retryOnTimeout false preserves retries for quick transport failures', async () => {
+  let attempts = 0;
+  const result = await runDb(() => {
+    attempts += 1;
+    return Promise.resolve(attempts === 1 ? { data: null, error: { code: 'ECONNRESET', message: 'network reset' } } : { data: 'saved', error: null });
+  }, { label: 'recoverable write', timeoutMs: 100, retryDelayMs: 1, retryOnTimeout: false });
+  assert.equal(attempts, 2);
+  assert.equal(result.data, 'saved');
+});

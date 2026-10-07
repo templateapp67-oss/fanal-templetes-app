@@ -12,7 +12,6 @@ import {
   Phone,
   Mail,
   MessageSquare,
-  ShieldCheck,
   CheckCircle2,
   Check,
   ArrowRight,
@@ -50,6 +49,8 @@ import {
   buildWhatsappConfirmationMessage,
   formatSalonAddress,
   resolveConfirmationStatus,
+  sanitizeIndianPhone,
+  salonBookingDate,
 } from '../lib/bookingConfirmation';
 
 export interface BookingModalProps {
@@ -95,7 +96,7 @@ export interface BookingModalProps {
   loyalty?: SalonLoyaltySnapshot | null;
 }
 
-type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'otp' | 'payment' | 'confirmed';
+type BookingStep = 'service' | 'upgrades' | 'datetime' | 'guest' | 'payment' | 'confirmed';
 
 const ANY_SPECIALIST: Stylist = {
   id: 'any_available',
@@ -161,7 +162,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     });
   } : () => {});
 
-  // Navigation Steps: 'service' -> 'datetime' -> 'guest' -> 'otp' -> 'payment' -> 'confirmed'
+  // Navigation Steps: service -> upgrades -> datetime -> guest -> payment -> confirmed
   const [currentStep, setCurrentStep] = useState<BookingStep>('service');
 
   // Step 1: Branch, Service & Specialist
@@ -254,7 +255,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   // Step 2: Date & Time Slot
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = salonBookingDate();
   const [bookingDate, setBookingDate] = useState<string>(todayStr);
   const [bookingTime, setBookingTime] = useState<string>('');
   const availability = useCustomerAvailability(isOpen && ['datetime','guest','payment'].includes(currentStep),profile.subdomain,[...selectedServices,...selectedUpgrades].map(s=>s.id).sort().join(','),selectedStylist.id,bookingDate);
@@ -280,18 +281,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [homeServicePinCode, setHomeServicePinCode] = useState<string>('');
   const [distanceInfo, setDistanceInfo] = useState<{distance: number, ok: boolean, message: string} | null>(null);
 
-  // Step 4: Mock OTP (Static Code: '1234')
-  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
-  const [otpError, setOtpError] = useState<string>('');
   const [submitError, setSubmitError] = useState<string>('');
-  const [resendTimer, setResendTimer] = useState<number>(30);
-  const [otpResentNotice, setOtpResentNotice] = useState<boolean>(false);
-  const otpInputRefs = [
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null)
-  ];
 
   // Step 5: Payment Method
   // The payment step renders the "Pay Advance Token (25%)" card as already
@@ -299,7 +289,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // 'pay_at_salon', which silently sent advance_paid_amount: 0 (and skipped
   // the gateway) even though the customer saw the advance card ticked.
   const [paymentMethod, setPaymentMethod] = useState<'pay_at_salon' | 'pay_advance_token'>('pay_advance_token');
-  const [isWhatsappVerified, setIsWhatsappVerified] = useState<boolean>(false);
 
   // Step 6: Confirmation State
   const [bookingRef, setBookingRef] = useState<string>('');
@@ -414,29 +403,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (found && found.payment.attempts > 0) setResumableDraft(found);
   }, [isOpen, profile.ownerId, profile.subdomain, profile.businessName]);
 
-  // Resend OTP countdown (30s)
-  useEffect(() => {
-    if (currentStep !== 'otp') return;
-    if (resendTimer <= 0) return;
-    const timer = setInterval(() => {
-      setResendTimer((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [currentStep, resendTimer]);
-
   if (!isOpen) return null;
-
-  // Format seconds to mm:ss
-  const formatTimer = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remainder = secs % 60;
-    return `${String(mins).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
-  };
-
-  // Clean and validate Indian 10-digit mobile number
-  const sanitizeIndianPhone = (raw: string) => {
-    return raw.replace(/\D/g, '').replace(/^(91|0)/, '');
-  };
 
   const validatePhone = (num: string): boolean => {
     const clean = sanitizeIndianPhone(num);
@@ -448,8 +415,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     return false;
   };
 
-  // Handle Proceed from Guest Info to OTP Step
-  const handleProceedToOtp = (e: React.FormEvent) => {
+  // Validate guest details before the payment summary
+  const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!guestName.trim()) {
       return;
@@ -474,87 +441,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       }
     }
 
-    // Reset OTP inputs and go to OTP step
-    setOtpDigits(['', '', '', '']);
-    setOtpError('');
-    setResendTimer(30);
-    setIsWhatsappVerified(false);
     setCurrentStep('payment');
-
-    // Focus first OTP digit
-    setTimeout(() => {
-      otpInputRefs[0].current?.focus();
-    }, 150);
-  };
-
-  // Handle individual OTP digit change
-  const handleOtpChange = (index: number, val: string) => {
-    const char = val.slice(-1);
-    if (char && !/^\d$/.test(char)) return; // Only allow digits
-
-    const nextDigits = [...otpDigits];
-    nextDigits[index] = char;
-    setOtpDigits(nextDigits);
-    setOtpError('');
-
-    // Move to next box if filled
-    if (char && index < 3) {
-      otpInputRefs[index + 1].current?.focus();
-    }
-  };
-
-  // Handle backspace navigation in OTP
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
-      otpInputRefs[index - 1].current?.focus();
-    }
-  };
-
-  // Support pasting OTP code
-  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').trim();
-    if (/^\d{4}$/.test(pasted)) {
-      const digits = pasted.split('');
-      setOtpDigits(digits);
-      setOtpError('');
-      otpInputRefs[3].current?.focus();
-    }
-  };
-
-  // Autofill mock code 1234 helper
-  const handleAutofillMockOtp = () => {
-    setOtpDigits(['1', '2', '3', '4']);
-    setOtpError('');
-    otpInputRefs[3].current?.focus();
-  };
-
-  // Resend OTP trigger
-  const handleResendOtp = () => {
-    setResendTimer(30);
-    setOtpDigits(['', '', '', '']);
-    setOtpError('');
-    setOtpResentNotice(true);
-    setTimeout(() => setOtpResentNotice(false), 3000);
-    otpInputRefs[0].current?.focus();
-  };
-
-  // Verify OTP submission
-  const handleVerifyOtp = () => {
-    const enteredCode = otpDigits.join('');
-    if (enteredCode.length < 4) {
-      setOtpError('Please enter the complete 4-digit code.');
-      return;
-    }
-
-    // Static Mock OTP Verification: code must match '1234'
-    if (enteredCode === '1234') {
-      setIsWhatsappVerified(true);
-      setOtpError('');
-      setCurrentStep('payment');
-    } else {
-      setOtpError('Invalid OTP code. Please enter 1234 to verify.');
-    }
   };
 
   // Calculate advance token amount (25%). The same helper runs on the server
@@ -640,7 +527,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   const whatsappStatus = describeWhatsappConfirmation({
     phone: guestPhone,
-    otpVerified: isWhatsappVerified,
+    otpVerified: false,
     confirmationSent: whatsappConfirmationSent,
   });
 
@@ -1192,7 +1079,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const handleResumeDraft = () => {
     if (!resumableDraft) return;
     applyDraftToForm(resumableDraft);
-    setIsWhatsappVerified(true);
     setResumableDraft(null);
     setPaymentFailure({
       title: 'Advance payment incomplete',
@@ -1279,9 +1165,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setPaymentMethod('pay_advance_token');
     setBookingTime('');
     setSlotStaffId('');
-    setOtpDigits(['', '', '', '']);
-    setOtpError('');
-    setIsWhatsappVerified(false);
     setBookingRef('');
 
     setSubmitError('');
@@ -1330,7 +1213,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </h3>
                 {currentStep !== 'confirmed' && (
                   <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                    Step {currentStep === 'service' ? '1/5' : currentStep === 'datetime' ? '2/5' : currentStep === 'guest' ? '3/5' : currentStep === 'otp' ? '4/5' : '5/5'}
+                    Step {currentStep === 'service' ? '1/5' : currentStep === 'upgrades' ? '2/5' : currentStep === 'datetime' ? '3/5' : currentStep === 'guest' ? '4/5' : '5/5'}
                   </span>
                 )}
               </div>
@@ -1862,7 +1745,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* STEP 2: SELECT DATE & TIME SLOT (WITH 5-MIN LOCK TIMER) */}
+          {/* SELECT DATE & TIME SLOT */}
           {/* ========================================================= */}
           {currentStep === 'datetime' && (
             <motion.div
@@ -1890,12 +1773,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const d = new Date();
-                      d.setDate(d.getDate() + 1);
-                      setBookingDate(d.toISOString().split('T')[0]);
+                      setBookingDate(salonBookingDate(new Date(), 1));
                     }}
                     className={`px-3 py-1.5 text-xs font-bold rounded-lg border cursor-pointer ${
-                      bookingDate !== todayStr ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
+                      bookingDate === salonBookingDate(new Date(), 1) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
                     }`}
                   >
                     Tomorrow
@@ -2013,7 +1894,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           {/* ========================================================= */}
           {currentStep === 'guest' && (
             <motion.form
-              onSubmit={handleProceedToOtp}
+              onSubmit={handleProceedToPayment}
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
@@ -2069,7 +1950,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     <input
                       type="tel"
                       required
-                      maxLength={14}
+                      maxLength={20}
                       value={guestPhone}
                       onChange={(e) => {
                         setGuestPhone(e.target.value);
@@ -2090,7 +1971,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-400 mt-1">
-                    We will send a 4-digit verification code to this WhatsApp number on the next step.
+                    Please enter the number the salon can use to contact you about this appointment.
                   </p>
                 )}
               </div>
@@ -2157,139 +2038,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   className="flex-1 py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95"
                   style={{ backgroundColor: themeAccentHex }}
                 >
-                  <span>Proceed to WhatsApp OTP</span>
+                  <span>Continue to payment</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </motion.form>
-          )}
-
-          {/* ========================================================= */}
-          {/* STEP 4: WHATSAPP OTP VERIFICATION (MOCK STEP: '1234') */}
-          {/* ========================================================= */}
-          {currentStep === 'otp' && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              className="flex flex-col items-center text-center gap-4 py-2"
-            >
-              {/* WhatsApp Security Icon */}
-              <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shadow-xs">
-                <MessageSquare className="w-7 h-7" />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-center gap-1.5">
-                  <h4 className="font-bold text-lg text-slate-900">Verify WhatsApp Number</h4>
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                </div>
-                <p className="text-xs text-slate-500 max-w-sm mt-1">
-                  We've sent a 4-digit verification code via WhatsApp to:
-                </p>
-                <div className="flex items-center justify-center gap-2 mt-1.5">
-                  <span className="font-mono font-bold text-sm text-slate-800 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
-                    +91 {sanitizeIndianPhone(guestPhone)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep('guest')}
-                    className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
-                  >
-                    Change Mobile Number
-                  </button>
-                </div>
-              </div>
-
-              {/* Helper Test Badge */}
-              <div
-                onClick={handleAutofillMockOtp}
-                className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl px-3.5 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-amber-100 transition-colors shadow-2xs"
-                title="Click to autofill 1234"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>Test OTP Code: <strong className="font-mono font-bold text-amber-950">1234</strong></span>
-                <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded font-mono font-bold">
-                  Click to fill
-                </span>
-              </div>
-
-              {/* 4-Digit OTP Input Boxes */}
-              <div className="flex items-center justify-center gap-3 my-2">
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={otpInputRefs[idx]}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    onPaste={idx === 0 ? handleOtpPaste : undefined}
-                    className={`w-12 h-14 sm:w-14 sm:h-16 rounded-xl border text-center font-mono font-extrabold text-xl sm:text-2xl transition-all outline-none ${
-                      otpError
-                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-400'
-                        : digit
-                        ? 'border-emerald-600 bg-emerald-50/40 text-slate-900 ring-1 ring-emerald-600'
-                        : 'border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-slate-900'
-                    }`}
-                  />
-                ))}
-              </div>
-
-              {/* Validation Error Message */}
-              {otpError && (
-                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 px-3.5 py-2 rounded-xl flex items-center gap-1.5 animate-shake">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{otpError}</span>
-                </div>
-              )}
-
-              {/* Resend Notice */}
-              {otpResentNotice && (
-                <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                  ✓ Fresh verification code sent to +91 {sanitizeIndianPhone(guestPhone)}!
-                </div>
-              )}
-
-              {/* Resend OTP Timer Controls */}
-              <div className="flex items-center justify-center gap-2 text-xs text-slate-500 font-mono">
-                {resendTimer > 0 ? (
-                  <span>Resend code in <strong className="text-slate-700">{resendTimer}s</strong></span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendOtp}
-                    className="font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Resend OTP on WhatsApp</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="w-full flex items-center gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('guest')}
-                  className="px-4 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer flex items-center gap-1.5"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Change Number</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleVerifyOtp}
-                  className="flex-1 py-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-opacity hover:opacity-95"
-                  style={{ backgroundColor: themeAccentHex }}
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Verify WhatsApp & Continue</span>
-                </button>
-              </div>
-            </motion.div>
           )}
 
           {/* ========================================================= */}
@@ -2302,15 +2055,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               exit={{ opacity: 0, x: -10 }}
               className="flex flex-col gap-4"
             >
-              {/* WhatsApp Verified Ribbon */}
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>WhatsApp Verified: <strong>+91 {sanitizeIndianPhone(guestPhone)}</strong></span>
-                </div>
-                <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
-                  OTP VERIFIED
-                </span>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
+                Contact number: <strong>+91 {sanitizeIndianPhone(guestPhone)}</strong>
               </div>
 
               {/* Comprehensive Booking Summary Card — itemises EVERY chosen
