@@ -422,7 +422,7 @@ test('9. the approval SQL only touches columns growth_partners actually has', as
         order by column_name`
     );
     const actual = columns.rows.map((row: any) => row.column_name);
-    assert.deepEqual(actual, ['created_at', 'is_active', 'referral_code', 'updated_at', 'user_id']);
+    assert.deepEqual(actual, ['created_at', 'is_active', 'partner_code', 'referral_code', 'status', 'updated_at', 'user_id']);
 
     // The old body inserted partner_code/status and a 'REF-…' code that the
     // growth_partners_code_format CHECK would have rejected anyway.
@@ -542,43 +542,21 @@ test('11. every RPC the Growth Partner area calls works for an approved partner'
   }
 });
 
-test('12. the older "production" partner read cannot be applied to this schema', async () => {
+test('12. the production partner read supports the aligned schema and preserves own-row RLS', async () => {
   const db = await setup();
   try {
-    // Documents why get_my_growth_partner() lives in 20260919: the 092650
-    // version is a `language sql` body over gp.status, which Postgres resolves
-    // at CREATE time — so it fails against the growth_partners this repository
-    // ships, and re-adding it would break the area's first read again.
-    const err = await captureError(
-      db.exec(
-        readFileSync(
-          new URL(
-            '../supabase/migrations/20260911092650_growth_partner_referred_users_production.sql',
-            import.meta.url
-          ),
-          'utf8'
-        )
-      )
-    );
-    // 42703 = undefined column: the table exists (20260912 created it) but has
-    // no `status` column, and a `language sql` body is resolved at CREATE time.
-    assert.equal(err.code, '42703');
-    assert.match(err.message, /status/);
-
-    // The area's gate read still resolves to the 20260919 definition.
-    const owner = await db.query(
-      `select p.prosecdef, pg_get_functiondef(p.oid) as def
-         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public' and p.proname = 'get_my_growth_partner'`
-    );
-    assert.equal(owner.rows.length, 1);
-    assert.ok(owner.rows[0].def.includes('is_active'), 'the gate read must use the committed column');
-    // prosecdef false = SECURITY INVOKER (pg_get_functiondef omits the default),
-    // so the SELECT-own-row RLS policy stays the access control.
-    assert.equal(owner.rows[0].prosecdef, false, 'RLS must stay the access control');
-  } finally {
-    await db.close();
-  }
+    await db.exec(readFileSync(new URL('../supabase/migrations/20260911092650_growth_partner_referred_users_production.sql', import.meta.url), 'utf8'));
+    const submitted = await rpc(db, APPLICANT, 'submit_growth_partner_application', ['Asha Sharma', '9876543210', 'pan', 'ABCDE1234F']);
+    await rpcAsAdmin(db, ADMIN, 'review_growth_partner_application', [submitted.id, true, null]);
+    const row = await rpc(db, APPLICANT, 'get_my_growth_partner');
+    assert.equal(row.user_id, APPLICANT);
+    assert.equal(row.is_active, false, 'a non-approved lifecycle cannot be inferred from is_active alone');
+    await db.query("update public.growth_partners set status='approved' where user_id=$1", [APPLICANT]);
+    assert.equal((await rpc(db, APPLICANT, 'get_my_growth_partner')).is_active, true);
+    assert.equal(await rpc(db, APPLICANT_2, 'get_my_growth_partner'), null, 'another account cannot read this partner');
+    const definition = await db.query("select prosecdef from pg_proc where oid='public.get_my_growth_partner()'::regprocedure");
+    assert.equal(definition.rows[0].prosecdef, false, 'the compatibility read retains RLS');
+  } finally { await db.close(); }
 });
 
 test('13. the admin queue lists waiting applications and stays closed to non-admins', async () => {

@@ -32,7 +32,7 @@ test('Referral code in URL persists through multiple login/auth redirects and li
   // Safe window environment that retains all standard global functions
   const originalWindow = (globalThis as any).window;
   (globalThis as any).window = Object.assign(Object.create(globalThis), {
-    localStorage: mockStorage,
+    sessionStorage: mockStorage,
     location: mockLocation,
   });
 

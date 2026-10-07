@@ -62,7 +62,10 @@ test('approval migration stores only the authenticated caller application and ne
 
 test('both portal and owner-dashboard partner entry render open enrollment for unauthorized users', () => {
   const page = readFileSync(new URL('../src/components/GrowthPartnerPage.tsx', import.meta.url), 'utf8');
-  assert.match(page, /if \(gate === 'unauthorized'\)/);
+  assert.match(page, /if \(gate !== 'ready'\) return <PartnerRouteGuard/);
+  const guard = readFileSync(new URL('../src/components/PartnerRouteGuard.tsx', import.meta.url), 'utf8');
+  assert.match(guard, /gate === 'unauthorized'/);
+  assert.match(page, /onApply=\{\(\) => navigate\?\.\(loginRoute\)\}/);
   assert.doesNotMatch(page, /isPartnerNamespace && gate === 'unauthorized'/);
 });
 

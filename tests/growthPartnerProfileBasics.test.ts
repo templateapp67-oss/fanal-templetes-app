@@ -60,8 +60,10 @@ test('profile client only sends basic fields, uploads to the session owner and u
     storage:{from:bucket=>({upload:async(path,file,options)=>{uploads.push({bucket,path,file,options});return{error:null};},remove:async(paths)=>{removed.push(paths);return{error:null};},getPublicUrl:path=>({data:{publicUrl:`https://example.supabase.co/storage/v1/object/public/${bucket}/${path}`}})})},
   };
   await saveGrowthPartnerProfile({fullName:'Rahul Kumar',phone:'+91 98765 43210',expectedUserId:id},client);
-  // A temporary offline/demo partner id must not override the authenticated user.
-  await saveGrowthPartnerProfile({fullName:'Rahul Kumar',phone:'+91 98765 43210',expectedUserId:'ptr-active-partner'},client);
+  // A stale UI identity must never authorize a save under a different session.
+  const callsBeforeMismatch=calls.length;
+  await assert.rejects(saveGrowthPartnerProfile({fullName:'Rahul Kumar',phone:'+91 98765 43210',expectedUserId:'ptr-active-partner'},client), /Your session changed/);
+  assert.equal(calls.length,callsBeforeMismatch,'a mismatched identity causes no RPC or upload');
   const patchCall=calls.find(c=>c.fn==='save_my_growth_partner_profile');
   assert.deepEqual(patchCall.args,{p_patch:{full_name:'Rahul Kumar',phone:'+919876543210'}});
   const photo=new Blob(['image bytes'],{type:'image/webp'});

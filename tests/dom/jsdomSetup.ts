@@ -1,8 +1,7 @@
 // ============================================================================
 // jsdom bootstrap for DOM-level (click) tests.
 //
-// A real Chromium cannot be installed in this sandbox (the browser CDNs and the
-// apt mirrors are unreachable), so these tests mount the REAL components with
+// These tests mount the REAL components with
 // react-dom/client into jsdom and dispatch REAL click/input events. That covers
 // what a browser would do for wiring — handlers firing, state updating, the
 // right navigation callback being called — without pretending to be a pixel
@@ -11,6 +10,20 @@
 // ============================================================================
 
 import { JSDOM } from 'jsdom';
+import { BroadcastChannel as NodeBroadcastChannel } from 'node:worker_threads';
+
+// Supabase uses BroadcastChannel for cross-tab session updates. Node's version
+// owns a referenced MessagePort, whereas a browser channel does not keep a
+// closed page alive. Keep delivery behavior while allowing test workers to exit.
+class TestBroadcastChannel extends NodeBroadcastChannel {
+  constructor(name: string) {
+    super(name);
+    this.unref();
+  }
+}
+Object.defineProperty(globalThis, 'BroadcastChannel', {
+  value: TestBroadcastChannel, writable: true, configurable: true,
+});
 
 // Integration tests may explicitly opt into this transport for a local HTTP
 // server. Unit DOM tests remain network-disabled by default below.

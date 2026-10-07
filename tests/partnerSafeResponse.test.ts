@@ -460,7 +460,7 @@ test('5.2. the client validation wrapper drops everything outside the allowlist'
         headers: { 'content-type': 'application/json' },
       })) as typeof fetch;
     assert.equal(await getMyGrowthReferral(), null);
-    await assert.rejects(linkMyGrowthReferral(CODE), /incomplete relationship/i);
+    await assert.rejects(linkMyGrowthReferral(CODE), /no relationship returned/i);
   } finally {
     restore();
   }
@@ -473,7 +473,8 @@ test('5.2. the onboarding client keeps only the code and the one-use capability'
     // Both helpers return a single scalar: `referralCode` is re-validated as a
     // canonical code, and the capability as an opaque 64-hex value.
     assert.equal(await captureSignupReferral('NEXORA-RAHUL25'), CODE);
-    assert.equal(await prepareSignupAttribution(), CAPABILITY);
+    assert.equal(await prepareSignupAttribution(), undefined, 'an organic signup ignores an old cookie');
+    assert.equal(await prepareSignupAttribution(CODE), CAPABILITY);
 
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ valid: true, referralCode: 'partner.private@example.com', token: 'forged' }), {

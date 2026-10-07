@@ -31,6 +31,8 @@ test('analytics safely upgrades populated schema: bounded private recent users, 
     }
     await db.query("update public.growth_onboarding set status='template_started',template_started_at=now() where user_id=$1",[ids[1]]);
     const snapshot=async()=>{
+      // JSON timestamps use the session timezone; compare stored rows in one zone.
+      await db.exec("set time zone 'UTC'");
       const rows:any={};for(const table of ['auth.users','public.profiles','public.growth_partners','public.growth_onboarding','public.partner_referrals','public.partner_referral_events','public.salons','public.bookings','public.services'])rows[table]=(await db.query(`select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text),'[]'::jsonb) as rows from ${table} t`)).rows[0].rows;
       return rows;
     };

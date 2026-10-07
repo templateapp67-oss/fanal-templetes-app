@@ -9,6 +9,9 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
   // Catch accidentally pasted privileged keys before Vite puts them in a bundle.
   for (const [name, value] of Object.entries(env)) {
+    if (/^(?:VITE_|NEXT_PUBLIC_).*(?:SERVICE_ROLE|SERVICE_KEY|SECRET|PRIVATE)/i.test(name) && value.trim()) {
+      throw new Error(`${name} is a server-only variable. Remove its public prefix before building the browser.`);
+    }
     if (!/^(?:VITE_|NEXT_PUBLIC_).*SUPABASE.*KEY$/.test(name) &&
         !['SUPABASE_ANON_KEY', 'SUPABASE_KEY', 'SUPABASE_PUBLISHABLE_KEY'].includes(name)) continue;
     let role = '';

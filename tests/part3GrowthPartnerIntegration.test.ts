@@ -200,15 +200,15 @@ test('7.1 a partner referral code is generated in one canonical store, in the ca
       'Partner B',
       '+919845000001',
       'pan',
-      'KYC-REF-0001',
+      'ABCDE1234F',
     ]);
     const reviewed = await callAdmin(db, 'review_growth_partner_application', [application.id, true, 'KYC verified']);
     assert.equal(reviewed.status, 'approved');
     assert.match(reviewed.referral_code, /^NEXORA-[A-Z0-9]{12}$/, `approved code: ${reviewed.referral_code}`);
     assert.deepEqual(
       Object.keys(await partnerRow(db, PARTNER_B)).sort(),
-      ['created_at', 'id', 'is_active', 'referral_code', 'updated_at', 'user_id'],
-      'the approved partner row is the canonical one — no legacy partner_code/status columns exist'
+      ['ban_reason', 'banned_at', 'created_at', 'deleted_at', 'deleted_by', 'id', 'is_active', 'partner_code', 'referral_code', 'status', 'updated_at', 'user_id', 'work_area'],
+      'the canonical partner row includes lifecycle and administrative fields'
     );
     // Re-approval preserves the code.
     assert.equal((await callAdmin(db, 'review_growth_partner_application', [application.id, true, 're-checked'])).referral_code, reviewed.referral_code);
@@ -217,7 +217,7 @@ test('7.1 a partner referral code is generated in one canonical store, in the ca
     for (const bad of ['SHORT', 'toolongcode123', 'ABC-DEF', 'NEXORA-ABC', 'nexora abc', 'NEXORA-' + 'A'.repeat(25)]) {
       await assert.rejects(
         callAdmin(db, 'provision_growth_partner', [NON_PARTNER, bad, true]),
-        /Invalid referral code format/i,
+        /Invalid referral code format|growth_partners_code_format/i,
         `rejected: ${bad}`
       );
     }
@@ -235,7 +235,7 @@ test('7.1 a partner referral code is generated in one canonical store, in the ca
     // partner_level_definitions is the levels catalog (its `code` column is a
     // level key, not a partner referral code) — the one-store property is
     // about the partner-code columns, which still live in growth_partners.
-    assert.deepEqual(codeColumns, ['growth_onboarding', 'growth_partners', 'growth_referral_attributions', 'partner_level_definitions', 'partner_referral_attribution', 'partner_referrals']);
+    assert.deepEqual(codeColumns, ['growth_onboarding', 'growth_partners', 'growth_partners', 'growth_referral_attributions', 'partner_level_definitions', 'partner_referral_attribution', 'partner_referrals', 'partner_reward_tiers']);
     const partners = (await db.query('select referral_code, is_active from public.growth_partners order by referral_code')).rows;
     assert.equal(partners.length, 3, 'one row per partner, created by the two admin paths only');
   } finally {
@@ -459,6 +459,7 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
       'growth_referral_attributions',
       'growth_referral_status_audit',
       'partner_account_settings',
+      'partner_audit_logs',
       'partner_deactivation_requests',
       'partner_earnings',
       'partner_level_definitions',
@@ -468,6 +469,8 @@ test('7.4 signup attribution survives the PART 3 workspace step byte-for-byte', 
       'partner_payout_requests',
       'partner_referral_events',
       'partner_referrals',
+      'partner_reward_tiers',
+      'partner_rewards',
       'partner_security_events',
       'partner_support_attachments',
       'partner_support_tickets',

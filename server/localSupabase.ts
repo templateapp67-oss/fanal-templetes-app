@@ -128,12 +128,9 @@ export const LOCAL_GROWTH_CHAIN = [
   // "Could not verify your Growth Partner access" path could not be exercised
   // or regression-tested at all.
   //
-  // Deliberately NOT included: 20260922085236_enable_growth_partner_open_enrollment.sql.
-  // That migration makes submit_growth_partner_application() auto-approve, and
-  // the local feature is the *manual* approval flow that
-  // tests/growthPartnerApproval.test.ts verifies end to end (submit → pending →
-  // admin review). Loading it here would silently rewrite those expectations.
-  // Its SQL is still validated directly by tests/growthPartnerOpenEnrollment.test.ts.
+  // The older auto-approval migration is superseded below by instant enrollment
+  // after a validated application; dashboard eligibility and KYC review remain
+  // separate. Historical approval behavior has its own isolated test fixture.
   '20260922091000_direct_growth_partner_dashboard_access.sql',
   // Canonical Growth Partner referral source: stored growth_partners.referral_code
   // plus the authenticated get_my_referral_code() read used by the UI hook.
@@ -180,6 +177,7 @@ export const LOCAL_GROWTH_CHAIN = [
   // "Claim Super Admin access" button, so a fresh project needs no hand-written
   // INSERT to get its first staff account.
   '20261101000200_admin_first_super_admin_claim.sql',
+  '20261102000000_restore_referral_integrity.sql',
 ];
 
 /**
