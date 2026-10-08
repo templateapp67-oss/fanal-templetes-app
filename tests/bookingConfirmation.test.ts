@@ -32,6 +32,7 @@ import {
   formatUtcZ,
   resolveConfirmationStatus,
   sanitizeIndianPhone,
+  salonBookingDate,
   toUtcTimestamp,
 } from '../src/lib/bookingConfirmation';
 
@@ -495,4 +496,19 @@ test('an unsubmitted booking tells the customer to confirm it manually', () => {
   const message = buildWhatsappConfirmationMessage({ summary: SUMMARY, status: 'not_submitted' });
   assert.ok(message.includes('saved on this device only'));
   assert.ok(message.includes('Please reply to confirm the slot with the salon.'));
+});
+
+
+test('booking contacts preserve national numbers starting with 91 and accept full dialling prefixes', () => {
+  for (const value of ['9123456789', '+91 91234 56789', '0091-91234-56789', '09123456789']) {
+    assert.equal(sanitizeIndianPhone(value), '9123456789');
+    assert.equal(formatIndianPhone(value), '+91 91234 56789');
+  }
+  assert.equal(sanitizeIndianPhone('91912345678'), '91912345678', 'invalid lengths must remain invalid');
+});
+
+test('booking Today and Tomorrow follow the salon date across IST midnight and year rollover', () => {
+  assert.equal(salonBookingDate(new Date('2026-10-07T18:29:59Z')), '2026-10-07');
+  assert.equal(salonBookingDate(new Date('2026-10-07T18:30:00Z')), '2026-10-08');
+  assert.equal(salonBookingDate(new Date('2026-12-31T18:30:00Z'), 1), '2027-01-02');
 });

@@ -70,9 +70,11 @@ test('ensure_my_growth_partner() provisions the caller, is idempotent, never tou
 
     // 1. Provisioning: a brand-new signed-in account becomes an active partner.
     const partner = await user('Partner Anita');
+    await assert.rejects(rpc(partner, 'ensure_my_growth_partner'), /Submit your Growth Partner application first/);
+    await rpc(partner, 'submit_growth_partner_application', ['Partner Anita', '9876543210', 'pan', 'ABCDE1234F']);
     const first = await rpc(partner, 'ensure_my_growth_partner');
     assert.equal(first.user_id, partner);
-    assert.match(String(first.referral_code), /^NEXORA-/, 'a usable referral code is issued');
+    assert.match(String(first.referral_code), /^(?:NEXORA-|NEX-)/, 'a usable referral code is issued');
     assert.equal(first.is_active, true);
 
     // 2. Idempotent: calling it again returns the same row, never a second one.
@@ -115,6 +117,7 @@ test('ensure_my_growth_partner() provisions the caller, is idempotent, never tou
     //    answers for that same caller. This is what a partner sees after the
     //    "Instantly Approve & Access" action.
     const fresh = await user('Partner Bala');
+    await rpc(fresh, 'submit_growth_partner_application', ['Partner Bala', '9876543211', 'pan', 'ABCDE1235F']);
     await rpc(fresh, 'ensure_my_growth_partner');
     const dashboard = await rpc(fresh, 'get_my_partner_dashboard');
     assert.ok(dashboard && typeof dashboard === 'object', 'the dashboard RPC answers for the enrolled partner');

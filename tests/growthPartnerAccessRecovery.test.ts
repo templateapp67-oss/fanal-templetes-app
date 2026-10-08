@@ -83,7 +83,7 @@ test('ensureMyGrowthPartner() reports a missing migration as such, and a real ro
   try {
     await assert.rejects(ensureMyGrowthPartner(), (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.match((error as Error).message, /Growth Partner activation failed/);
+      assert.match((error as Error).message, /Growth Partner enrollment failed/);
       assert.equal(isMissingPartnerSchemaError(error), true, 'the caller can tell this is a setup problem');
       return true;
     });
@@ -122,7 +122,7 @@ test('approveDemoGrowthPartnerAccount() never resolves as a silent no-op', async
   // button must not reload the page onto the same denial.
   const empty = stubTransport(() => ({ body: null }));
   try {
-    await assert.rejects(approveDemoGrowthPartnerAccount(), /no partner row/i);
+    await assert.rejects(approveDemoGrowthPartnerAccount(), /Could not finish partner dashboard setup/i);
   } finally {
     empty();
   }
@@ -144,7 +144,7 @@ test('approveDemoGrowthPartnerAccount() never resolves as a silent no-op', async
     status: 403,
   }));
   try {
-    await assert.rejects(approveDemoGrowthPartnerAccount(), /Growth Partner activation failed/);
+    await assert.rejects(approveDemoGrowthPartnerAccount(), /Growth Partner enrollment failed/);
   } finally {
     denied();
   }

@@ -47,15 +47,20 @@ test('search/filter controls send server parameters; user opens read-only access
     assert.equal(listCall().args.p_joined_from,new Date(2026,8,1).toISOString());
     assert.equal(listCall().args.p_joined_before,new Date(2026,8,14).toISOString());
     assert.equal(listCall().args.p_sort,'recently_active');assert.equal(listCall().args.p_conversion,'not_converted');
-    const beforeInvalid=calls.length;
+    // Auth/dashboard background reads are independent of the filter form.
+    // Pin the relevant contract: invalid dates must not issue a referral query.
+    const referralQueryCount=()=>calls.filter(call=>call.fn.startsWith('get_my_partner_referrals')).length;
+    const beforeInvalid=referralQueryCount();
     await set(control('Start date'),'2026-09-14');await apply();
-    assert.match(host.textContent!,/Start date must be on or before/);assert.equal(calls.length,beforeInvalid);
+    assert.match(host.textContent!,/Start date must be on or before/);assert.equal(referralQueryCount(),beforeInvalid);
     await click(btn('Clear filters'));await wait(()=>host.textContent!.includes('Showing 1–20 of 21'));
     assert.equal(control('Search referrals').value,'');assert.equal(control('Joined Date').value,'all');assert.equal(control('Sort by').value,'newest');
     const opener=host.querySelector<HTMLElement>('[aria-label="View referral details for Rahul"]')!;opener.focus();
     await click(opener);await wait(()=>!!document.querySelector('dialog')?.textContent?.includes('Status timeline'));
     const modal=document.querySelector('dialog')!;
-    assert.equal(calls.at(-1)!.fn,'get_my_partner_referral_detail');assert.equal(calls.at(-1)!.args.p_referral_id,rows[0].referral_id);
+    const detailCall=calls.filter(call=>call.fn==='get_my_partner_referral_detail').at(-1);
+    assert.ok(detailCall,'opening the drawer must request referral details');
+    assert.equal(detailCall.args.p_referral_id,rows[0].referral_id);
     assert.match(modal.textContent!,/ra\*\*\*@gmail.com/);assert.ok(!modal.textContent!.includes('rahul@gmail.com'));
     for(const label of ['User Name','Referral Date','Signup Date','Current Status','Conversion Status','Last Activity','Referral Code Used','Referral Clicked','Account Registered','Account Activated','Converted','Not recorded','Not yet recorded'])assert.ok(modal.textContent!.includes(label),label);
     assert.equal(modal.querySelectorAll('input,select,textarea').length,0,'details cannot edit referral status');

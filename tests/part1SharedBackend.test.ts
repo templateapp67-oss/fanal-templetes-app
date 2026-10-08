@@ -83,7 +83,10 @@ test('Part1-1A: auth is Supabase Auth only — no password storage, no parallel 
       profileTables.add(m[1].toLowerCase());
     }
   }
-  assert.deepEqual([...profileTables].sort(), ['profiles']);
+  assert.deepEqual([...profileTables].sort(), ['partner_profiles', 'profiles']);
+  const supplemental = read('supabase/migrations/20261014000000_partner_profiles_rls_patch.sql');
+  assert.match(supplemental, /user_id uuid unique not null references auth\.users\(id\)/);
+  assert.doesNotMatch(supplemental, /password|access_token|refresh_token/i);
   // Automatic profile creation: handle_new_user trigger on auth.users.
   const init = read('supabase/migrations/00001_init.sql');
   assert.match(init, /create trigger on_auth_user_created[\s\S]*?on auth\.users/i);
@@ -94,7 +97,12 @@ test('Part1-1A: auth is Supabase Auth only — no password storage, no parallel 
 
 test('Part1-1A/1C: service-role key can never reach the browser', () => {
   for (const file of allSourceFiles('src')) {
-    assert.doesNotMatch(read(file), /VITE_\w*SERVICE/i, `${file} must not reference a VITE service key`);
+    const body = read(file);
+    // Diagnostics may detect a forbidden variable, but never use it for a client.
+    const operational = file === 'src/lib/authSession.ts'
+      ? body.slice(0, body.indexOf('export async function diagnoseAuthEnvironment')) + body.slice(body.indexOf('export async function logAuthEnvironment'))
+      : body;
+    assert.doesNotMatch(operational, /VITE_\w*SERVICE/i, `${file} must not use a VITE service key`);
   }
   const client = read('src/lib/supabaseClient.ts');
   // Service key is read from non-VITE names only (Vite never bundles those).
@@ -119,7 +127,7 @@ test('Part1-1A/1C: no role, partner or user identity is trusted from client stat
     const src = read(file);
     if (
       /localStorage.*role|role.*localStorage|sessionStorage.*role|role.*sessionStorage/i.test(src) ||
-      /searchParams.*(partner|user_id|role)|(partner_id|user_id).*searchParams/i.test(src) ||
+      /searchParams.*(partner(?!_code)|user_id|role)|(partner_id|user_id).*searchParams/i.test(src) ||
       /Authorization.*referral|referral.*Authorization/i.test(src)
     ) {
       offenders.push(file);

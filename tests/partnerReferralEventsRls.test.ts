@@ -27,6 +27,10 @@ test('referral events record real first milestones atomically with safe metadata
     await rpc(null,'capture_growth_referral',['NEXORA-EVENT01',cap.token]);
     await rpc(null,'prepare_growth_referral_signup',[cap.token]);await rpc(null,'prepare_growth_referral_signup',[cap.token]);
     assert.deepEqual((await events(ref)).map((e:any)=>e.event_type),['link_clicked','signup_started']);
+    const started=await events(ref);
+    await db.exec(readFileSync(new URL('../supabase/migrations/20261102000000_restore_referral_integrity.sql',import.meta.url),'utf8'));
+    await rpc(null,'prepare_growth_referral_signup',[cap.token]);
+    assert.deepEqual(await events(ref),started,'repeat migration and preparation preserve first event timestamps');
     await db.exec('begin');await addUser(db,cap.token);
     assert.ok((await events(ref)).some((e:any)=>e.event_type==='signup_completed'));
     await db.exec('rollback');assert.equal((await events(ref)).length,2,'failed account transaction leaves no successful-signup event');
@@ -59,6 +63,11 @@ test('referral events record real first milestones atomically with safe metadata
     const expired=await rpc(null,'capture_growth_referral',['NEXORA-EVENT01',null]);
     await db.query("update public.growth_referral_attributions set expires_at=now()-interval '1 second' where token_hash=md5($1)",[expired.token]);
     assert.deepEqual(await rpc(null,'prepare_growth_referral_signup',[expired.token]),{valid:false});
+    const banned=await rpc(null,'capture_growth_referral',['NEXORA-EVENT01',null]);
+    const bannedRef=(await db.query('select referral_id from public.growth_referral_attributions where token_hash=md5($1)',[banned.token])).rows[0].referral_id;
+    await db.query("update auth.users set banned_until=now()+interval '1 day' where id=$1",[partner]);
+    assert.deepEqual(await rpc(null,'prepare_growth_referral_signup',[banned.token]),{valid:false});
+    assert.deepEqual((await events(bannedRef)).map((e:any)=>e.event_type),['link_clicked'],'banned tokens do not emit signup-start');
     await db.query('delete from auth.users where id=$1',[user]);assert.deepEqual(await events(ref),[],'deletion cascades to events');
   }finally{await local.close();}
 });
@@ -84,6 +93,10 @@ test('RLS isolates owned partners, referrals, events and legacy reads even after
       assert.deepEqual(await read(ua,'partner_referrals'),[]);assert.deepEqual(await read(ua,'partner_referral_events'),[]);
       assert.deepEqual((await read(ua,'growth_onboarding')).map(r=>r.user_id),[ua],'personal onboarding stays available');
     };
+    // The admin hardening layer now exposes events through safe RPCs only.
+    await assert.rejects(read(a,'partner_referral_events'),/permission denied/);
+    // An accidental SELECT grant must still be fenced by ownership RLS.
+    await db.exec('grant select on public.partner_referral_events to authenticated');
     await verify();
     for(const table of ['growth_partners','partner_referrals','partner_referral_events','growth_onboarding']){
       await assert.rejects(read(null,table),/permission denied/);

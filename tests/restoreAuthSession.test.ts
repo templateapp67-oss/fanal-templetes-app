@@ -37,3 +37,22 @@ for (const expired of [false,true]) test(`real Supabase SDK restores ${expired?'
  assert.equal(calls.filter(c=>c.includes('grant_type=password')).length,1,'no second login is needed');assert.equal(calls.filter(c=>c.includes('grant_type=refresh_token')).length,expired?1:0);
  assert.ok(map.get(`reload-${expired}`),'session stays persisted');
 });
+
+test('failed startup exposes a connection error until a successful retry establishes signed-out state', async () => {
+ let offline=true;
+ const auth=fakeAuth(async()=>offline?{error:new Error('offline')}:{data:{session:null}});
+ const states:any[]=[];const controller=observeAuthSession(auth,s=>states.push(s));
+ try {
+  await tick();assert.equal(states.at(-1).status,'error');assert.equal(states.at(-1).user,null);
+  assert.ok(!states.some(s=>s.status==='ready'),'failed reads never masquerade as a verified sign-out');
+  offline=false;controller.retry();await tick();assert.deepEqual(states.at(-1),{user:null,status:'ready'});
+ } finally {controller.dispose();}
+});
+test('a stalled startup times out to a retryable error', async () => {
+ const auth=fakeAuth(()=>new Promise(()=>{}));const states:any[]=[];
+ const controller=observeAuthSession(auth,s=>states.push(s));
+ try {
+  await new Promise(resolve=>setTimeout(resolve,3100));
+  assert.equal(states.at(-1).status,'error');assert.equal(states.at(-1).user,null);
+ } finally {controller.dispose();}
+});

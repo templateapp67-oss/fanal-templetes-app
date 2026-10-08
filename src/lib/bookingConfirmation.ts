@@ -31,6 +31,12 @@ import {
  */
 export const SALON_UTC_OFFSET_MINUTES = 330;
 
+/** The Indian salon's civil date, independent of the visitor's timezone. */
+export function salonBookingDate(now: Date = new Date(), daysAhead = 0): string {
+  return new Date(now.getTime() + SALON_UTC_OFFSET_MINUTES * 60_000 + daysAhead * 86_400_000)
+    .toISOString().slice(0, 10);
+}
+
 export interface ConfirmationSummaryInput {
   bookingId?: string | null;
   salonName?: string | null;
@@ -458,9 +464,11 @@ export interface WhatsappConfirmationStatus {
 
 /** Strip a phone number down to the 10-digit Indian subscriber number. */
 export function sanitizeIndianPhone(raw: string): string {
-  return String(raw ?? '')
-    .replace(/\D/g, '')
-    .replace(/^(91|0)/, '');
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (/^0091\d{10}$/.test(digits)) return digits.slice(4);
+  if (/^91\d{10}$/.test(digits)) return digits.slice(2);
+  if (/^0\d{10}$/.test(digits)) return digits.slice(1);
+  return digits;
 }
 
 /** Format a 10-digit number the way Indian users read it: "+91 98765 43210". */

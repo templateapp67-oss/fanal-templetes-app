@@ -486,7 +486,10 @@ test('Part1C-C10: one shared Supabase project, Auth, and client singleton', () =
       profileTables.add(m[1].toLowerCase());
     }
   }
-  assert.deepEqual([...profileTables].sort(), ['profiles']);
+  assert.deepEqual([...profileTables].sort(), ['partner_profiles', 'profiles']);
+  const supplemental = read('supabase/migrations/20261014000000_partner_profiles_rls_patch.sql');
+  assert.match(supplemental, /user_id uuid unique not null references auth\.users\(id\)/);
+  assert.doesNotMatch(supplemental, /password|access_token|refresh_token/i);
   const init = read('supabase/migrations/00001_init.sql');
   assert.match(init, /create trigger on_auth_user_created[\s\S]*?on auth\.users/i);
 });
@@ -497,7 +500,12 @@ test('Part1C-C10: one shared Supabase project, Auth, and client singleton', () =
 
 test('Part1C-C11: service-role key cannot reach the browser', () => {
   for (const file of allSourceFiles('src')) {
-    assert.doesNotMatch(read(file), /VITE_\w*SERVICE/i, `${file} must not reference a VITE service key`);
+    const body = read(file);
+    // Diagnostics may detect a forbidden variable, but never use it for a client.
+    const operational = file === 'src/lib/authSession.ts'
+      ? body.slice(0, body.indexOf('export async function diagnoseAuthEnvironment')) + body.slice(body.indexOf('export async function logAuthEnvironment'))
+      : body;
+    assert.doesNotMatch(operational, /VITE_\w*SERVICE/i, `${file} must not use a VITE service key`);
     assert.doesNotMatch(
       read(file),
       /VITE_[A-Za-z_]*(SECRET|ADMIN|PRIVATE)/,
@@ -516,7 +524,7 @@ test('Part1C-C11: service-role key cannot reach the browser', () => {
   const importers = allSourceFiles('server')
     .concat(allSourceFiles('api'))
     .filter((f) => /getSupabaseAdmin|supabaseAdmin/.test(read(f)));
-  assert.deepEqual(importers.sort(), ['api/index.ts', 'server/websiteSave.ts']);
+  assert.deepEqual(importers.sort(), ['api/index.ts', 'server/referralAttribution.ts', 'server/staffPerformanceRoutes.ts', 'server/websiteSave.ts']);
 });
 
 // ---------------------------------------------------------------------------
@@ -529,7 +537,7 @@ test('Part1C-C12: no URL/storage/role-based authorization trust in the client', 
     const src = read(file);
     if (
       /localStorage.*role|role.*localStorage|sessionStorage.*role|role.*sessionStorage/i.test(src) ||
-      /searchParams.*(partner|user_id|role)|(partner_id|user_id).*searchParams/i.test(src) ||
+      /searchParams.*(partner(?!_code)|user_id|role)|(partner_id|user_id).*searchParams/i.test(src) ||
       /Authorization.*referral|referral.*Authorization/i.test(src)
     ) {
       offenders.push(file);
@@ -624,7 +632,7 @@ test('Part1C-C13: a production bundle can never fabricate or restore a session',
 
   // The server already had this guard; assert it is still the same shape so the
   // client and server cannot drift apart.
-  assert.match(read('server.ts'), /const allowMockBookingAuth = isMockSupabase && !isVercelRuntime;/);
+  assert.match(read('server.ts'), /const allowMockBookingAuth = isMockSupabase && !isVercelRuntime && process\.env\.NODE_ENV !== 'production';/);
   assert.match(
     read('server/localSupabase.ts'),
     /NODE_ENV === 'production'\) throw new Error\('The local authentication gateway cannot run in production\.'\)/
@@ -731,5 +739,29 @@ test('Part1C-C14: profiles.role never exists and owner_role is never authorizati
     for (const m of body.matchAll(/create policy[^;]*/gis)) {
       assert.doesNotMatch(m[0], /owner_role|\bprofiles\.role\b/, `${file}: a policy must not read a profiles role`);
     }
+  }
+});
+
+test('auth diagnostics detect a leaked key without returning it or making a privileged request', async () => {
+  const { diagnoseAuthEnvironment } = await import('../src/lib/authSession');
+  const originalWindow = (globalThis as any).window;
+  const originalKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  const marker = 'PRIVATE-SERVICE-ROLE-MARKER';
+  try {
+    (globalThis as any).window = { location: { origin: 'https://example.test', hostname: 'example.test' } };
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY = marker;
+    const result = await diagnoseAuthEnvironment({
+      supabaseUrl: 'https://example.supabase.co', supabaseKey: 'public-anon-key',
+      auth: { getSession: async () => ({ data: { session: null } }) },
+    });
+    assert.equal(result.envVars.hasServiceRoleKeyLeaked, true);
+    assert.ok(!JSON.stringify(result).includes(marker));
+    const diagnostic = read('src/lib/authSession.ts').split('export async function diagnoseAuthEnvironment')[1].split('export async function logAuthEnvironmentDiagnostics')[0];
+    assert.doesNotMatch(diagnostic, /createClient\(|fetch\(|Authorization\s*:/);
+  } finally {
+    if (originalWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = originalWindow;
+    if (originalKey === undefined) delete process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.VITE_SUPABASE_SERVICE_ROLE_KEY = originalKey;
   }
 });

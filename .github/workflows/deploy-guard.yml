@@ -11,8 +11,8 @@
 # Vercel does not typecheck, so a broken type/import graph can sit on a branch
 # until the deploy fails. This workflow runs the two things a deploy needs —
 # `tsc --noEmit` and the exact production build command from vercel.json —
-# plus the router/partner-section suites that pin the registry invariants.
-# Keep it fast and deterministic: it must never be red on `main`.
+# plus the complete backend/migration and component interaction suites.
+# Node 22 and bounded workers keep PostgreSQL/WASM tests reproducible.
 # ============================================================================
 name: Deploy guard
 
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck, build and section-registry tests
+    name: Typecheck, build, backend and component tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -47,18 +47,11 @@ jobs:
       - name: Production build (vite build + server bundle)
         run: npm run build
 
-      # middlewareEdgeSafety pins the root middleware invariant: Vercel builds
-      # middleware.ts per-file for the Edge runtime, so a single local import
-      # makes the module fail to LOAD and every matched route answers
-      # 500 MIDDLEWARE_INVOCATION_FAILED (see MIDDLEWARE_500_FIX.md).
-      - name: Router / partner-section registry tests
-        run: >
-          node --import ./scripts/testEnv.mjs --import tsx --test
-          --disable-warning=ExperimentalWarning
-          tests/routerSectionRegistry.test.ts
-          tests/partnerReferralHistory.test.ts
-          tests/partnerPortalShell.test.ts
-          tests/growthPartnerPage.test.ts
-          tests/growthPartnerShell.test.ts
-          tests/middlewareEdgeSafety.test.ts
-          tests/partnerEdgeRouting.test.ts
+      - name: Complete backend and migration suite
+        run: npm test
+
+      - name: Booking, contact validation and referral regressions
+        run: npm run test:checkout
+
+      - name: Complete component interaction suite
+        run: npm run test:dom

@@ -122,6 +122,8 @@ export interface RunDbOptions {
   deadlineAt?: number;
   /** Retry a transient failure once (default true). */
   retry?: boolean;
+  /** A timed-out write may have committed. Do not blindly submit it again. */
+  retryOnTimeout?: boolean;
   /** Delay before the retry (ms, default 250). */
   retryDelayMs?: number;
 }
@@ -140,7 +142,7 @@ export async function runDb<T = any>(
   build: () => PromiseLike<{ data: T | null; error: any }>,
   options: RunDbOptions
 ): Promise<DbResult<T>> {
-  const { label, timeoutMs = DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry = true, retryDelayMs = 250 } = options;
+  const { label, timeoutMs = DEFAULT_DB_TIMEOUT_MS, deadlineAt, retry = true, retryOnTimeout = true, retryDelayMs = 250 } = options;
   const startedAt = Date.now();
   const maxAttempts = retry ? 2 : 1;
   let lastError: any = null;
@@ -164,7 +166,7 @@ export async function runDb<T = any>(
     try {
       const result = await withDbTimeout(build(), label, attemptTimeout);
       const error = (result as any)?.error ?? null;
-      if (error && isTransientDbError(error) && attempt < maxAttempts) {
+      if (error && isTransientDbError(error) && (retryOnTimeout || error.code !== 'db_timeout') && attempt < maxAttempts) {
         lastError = error;
         const retryRemaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : retryDelayMs;
         if (retryRemaining <= 0) break;
@@ -182,7 +184,7 @@ export async function runDb<T = any>(
     } catch (err: any) {
       lastError = err;
       timedOut = err instanceof DbTimeoutError;
-      if (isTransientDbError(err) && attempt < maxAttempts) {
+      if (isTransientDbError(err) && (retryOnTimeout || !timedOut && err?.code !== 'db_timeout') && attempt < maxAttempts) {
         const retryRemaining = typeof deadlineAt === 'number' ? deadlineAt - Date.now() : retryDelayMs;
         if (retryRemaining <= 0) break;
         console.warn(`[DB] ${label} attempt ${attempt} threw (${err?.message || err}); retrying…`);

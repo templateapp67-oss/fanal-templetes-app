@@ -175,7 +175,8 @@ test('6. the mobile menu starts closed and its trigger is wired to it', () => {
 
   assert.ok(html.includes('aria-expanded="false"'), 'the trigger reports the closed menu');
   assert.ok(html.includes('aria-controls="global-nav-mobile"'));
-  assert.ok(html.includes('lg:hidden w-10 h-10'), 'the trigger must stay below the lg breakpoint');
+  const trigger = html.match(/<button[^>]*aria-controls="global-nav-mobile"[^>]*>/)?.[0] || '';
+  assert.match(trigger, /class="[^"]*\blg:hidden\b/, 'the trigger must stay below the lg breakpoint');
   // The desktop row stays hidden below `lg`, so the menu is the only way in there.
   assert.ok(desktopNav(html).includes('hidden lg:flex'));
 });

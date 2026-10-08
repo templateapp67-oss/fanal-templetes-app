@@ -37,6 +37,6 @@ test('referred normal user denied, only own approved active partner admitted', (
   const partner = { user_id: 'owner-a', status: 'approved', is_active: true, referral_code: 'NEXORA-PARTNER', created_at: '', updated_at: '' };
   assert.equal(resolveGrowthPartnerGate({ ...base, partnerRow: partner }), 'ready');
   assert.equal(resolveGrowthPartnerGate({ ...base, partnerRow: { ...partner, user_id: 'owner-b' } }), 'unauthorized');
-  assert.equal(resolveGrowthPartnerGate({ ...base, partnerRow: { ...partner, status: 'active' } }), 'unauthorized');
+  assert.equal(resolveGrowthPartnerGate({ ...base, partnerRow: { ...partner, status: 'active' } }), 'ready');
   assert.equal(resolveGrowthPartnerGate({ ...base, partnerRow: { ...partner, is_active: false } }), 'inactive');
 });

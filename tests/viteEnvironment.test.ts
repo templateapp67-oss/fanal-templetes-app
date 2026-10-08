@@ -34,6 +34,12 @@ test('production config loads dotenv aliases, mode overrides and shell overrides
       process.env.SUPABASE_ANON_KEY = secret;
       await assert.rejects(readConfig(), /server-only Supabase key/);
     }
+    delete process.env.SUPABASE_ANON_KEY;
+    for (const name of ['VITE_SUPABASE_SERVICE_ROLE_KEY', 'NEXT_PUBLIC_SUPABASE_SERVICE_KEY', 'VITE_PRIVATE_KEY']) {
+      process.env[name] = 'opaque-secret-marker';
+      try { await assert.rejects(readConfig(), /server-only variable/); }
+      finally { delete process.env[name]; }
+    }
   } finally {
     process.chdir(originalCwd);
     delete process.env.SUPABASE_ANON_KEY;

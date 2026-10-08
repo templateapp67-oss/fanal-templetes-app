@@ -7,12 +7,37 @@
 // about the developer environment, not about the code under test, and printing
 // them once per test file buries real failures.
 //
-// Nothing here changes behaviour — the same code paths run, the same values are
-// returned; only the console noise is suppressed. Dev (`npm run dev`) and
-// production are untouched because they never load this file.
+// Application behavior is unchanged while tests run; background timers are
+// disposed after each file and known console noise is suppressed.
+// Dev (`npm run dev`) and production never load this file.
 // ============================================================================
 
 import { register } from 'node:module';
+import { after } from 'node:test';
+
+// SDK refresh timers and jsdom windows may outlive the tests that created them.
+// Clean them up only after the file's tests finish. --test-force-exit can cut
+// off buffered worker reports, making a green run omit completed test cases.
+const pendingTimers = new Set();
+const originalClearTimeout = globalThis.clearTimeout;
+const originalClearInterval = globalThis.clearInterval;
+for (const name of ['setTimeout', 'setInterval']) {
+  globalThis[name] = new Proxy(globalThis[name], {
+    apply(target, receiver, args) {
+      const timer = Reflect.apply(target, receiver, args);
+      pendingTimers.add(timer);
+      return timer;
+    },
+  });
+}
+function disposeTestResources() {
+  for (const timer of pendingTimers) {
+    originalClearTimeout(timer);
+    originalClearInterval(timer);
+  }
+  pendingTimers.clear();
+}
+after(disposeTestResources);
 
 try {
   register('./imageLoader.mjs', import.meta.url);

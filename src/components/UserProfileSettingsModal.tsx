@@ -218,11 +218,11 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
     if (!formData.ownerName.trim()) newErrors.ownerName = 'Full Name is required.';
     
-    // Strip formatting from phone numbers (leave only digits)
-    const rawWhatsapp = formData.whatsapp.replace(/\D/g, '');
-    const hasEnteredWhatsapp = rawWhatsapp.length > 0 && rawWhatsapp !== '91';
-    if (hasEnteredWhatsapp && rawWhatsapp.slice(-10).length < 10) {
-      newErrors.whatsapp = 'Valid 10-digit WhatsApp number required.';
+    let cleanWhatsapp = '';
+    try {
+      cleanWhatsapp = normalizeWhatsApp(formData.whatsapp, false);
+    } catch (error) {
+      newErrors.whatsapp = error instanceof Error ? error.message : 'Enter a valid WhatsApp number.';
     }
     
     const cleanPostal = formData.postalCode.trim();
@@ -254,7 +254,6 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
     setIsSaving(true);
 
-    const cleanWhatsapp = hasEnteredWhatsapp ? normalizeWhatsApp(formData.whatsapp, false) : '';
     const cleanPhone = cleanWhatsapp;
 
     const updatedProfile: SalonProfile = {

@@ -57,6 +57,10 @@ const FIXTURE_GAPS = `
     if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
   end $$;
   alter default privileges in schema public grant execute on functions to service_role;
+  create table if not exists public.staff_schedules (
+    id uuid primary key default gen_random_uuid(), staff_id uuid references public.staff(id),
+    day_of_week integer, start_time time, end_time time, is_working boolean
+  );
   create schema if not exists private;
   create or replace function private.is_admin() returns boolean language sql stable as
     $$ select coalesce(nullif(current_setting('app.is_admin', true), ''), 'false') = 'true' $$;
@@ -107,8 +111,11 @@ let db: any;
 before(async () => {
   db = await liveSchemaDb();
   await db.exec(FIXTURE_GAPS);
-  for (const file of LOCAL_GROWTH_CHAIN) await db.exec(MIGRATION(file));
+  // Install the original editor schema first; newer growth migrations replace
+  // its RPCs with the current authorization and persistence contracts.
   for (const file of OWNER_STATE_MIGRATIONS) await db.exec(MIGRATION(file));
+  for (const file of LOCAL_GROWTH_CHAIN) await db.exec(MIGRATION(file));
+  await db.exec(MIGRATION('20261028000000_complete_website_editor_persistence.sql'));
 });
 
 const PARTNER = 'f0000000-0000-4000-8000-0000000000c1';
@@ -163,7 +170,7 @@ async function referredOwner(email: string) {
 async function saveBusiness(who: string, extra: Record<string, unknown> = {}) {
   await rpc(who, 'ensure_owner_workspace');
   await rpc(who, 'save_owner_editor_state', [{
-    profile: { businessName: 'Owner Salon', ownerName: 'Owner', phone: '+919000000000', subdomain: 'owner-salon' },
+    profile: { businessName: 'Owner Salon', businessType: 'hair_salon', address: 'Studio Road', city: 'Jaipur', ownerName: 'Owner', phone: '+919000000000', subdomain: `owner-${who.slice(-12)}` },
     services: [{ id: 'svc-1', name: 'Signature Cut', price: 500, durationMinutes: 30 }],
     stylists: [],
     loyaltyConfig: { pointsPerVisit: 10 },
@@ -203,7 +210,7 @@ test('9.1a the same-origin continuation needs the session and the backend state 
   assert.equal(workspace.resolved, true, 'owner workspace resolved from membership + salon');
   assert.ok(workspace.salon_id && workspace.slug);
   const editorState = await rpc(owner, 'get_owner_editor_state');
-  assert.equal(editorState.selectedTemplateId, undefined);
+  assert.equal(editorState.selectedTemplateId, null, 'the canonical save records an unselected template explicitly');
 
   // Every one of those reads derived the caller from the session. And the
   // same-app path minted nothing: no one-time token was needed to continue
@@ -277,7 +284,7 @@ test('9.1c the referral and workspace gates are backend state, not URL claims', 
   const linked = await referredOwner('handoff.no-workspace@example.com');
   assert.equal((await rpc(linked, 'get_my_owner_workspace')).resolved, false);
   await assert.rejects(
-    () => rpc(linked, 'save_owner_editor_state', [{ profile: { businessName: 'X' }, services: [], stylists: [] }]),
+    () => rpc(linked, 'save_owner_editor_state', [{ profile: { businessName: 'Unprovisioned Studio', businessType: 'hair_salon', address: 'Studio Road', city: 'Jaipur', phone: '+919000000000', subdomain: 'unprovisioned' }, services: [], stylists: [] }]),
     /Select a salon owned by this account/i,
     'the save cannot imagine a workspace into existence'
   );

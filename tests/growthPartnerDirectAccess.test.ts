@@ -24,8 +24,13 @@ for (const source of [
   '../src/components/PartnerPortalLogin.tsx',
   '../src/components/GrowthPartnerPage.tsx',
 ]) {
-  test(`${source} auto-activates a signed-in account before rendering a denial`, () => {
+  test(`${source} retains a guarded enrollment or application path`, () => {
     const code = readFileSync(new URL(source, import.meta.url), 'utf8');
-    assert.match(code, /ensureMyGrowthPartner\(\)/);
+    if (source.endsWith('GrowthPartnerPage.tsx')) {
+      assert.match(code, /<PartnerRouteGuard/);
+      assert.match(code, /onApply=\{\(\) => navigate\?\.\(loginRoute\)\}/);
+    } else {
+      assert.match(code, /await \(client\?\.ensurePartnerRow \?\? ensureMyGrowthPartner\)\(\)/);
+    }
   });
 }

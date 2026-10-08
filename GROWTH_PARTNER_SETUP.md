@@ -1199,3 +1199,16 @@ section got a real page under `src/components/partner/`, a real path in
 needed; like its predecessor it has **not** been applied to any project by these
 code changes — applying migrations stays an operator step (§3). No production
 data was modified.
+
+## Referral integrity repair
+
+After the existing referral lookup, event-ledger and admin migrations, apply
+`supabase/migrations/20261102000000_restore_referral_integrity.sql` as a whole.
+It records the real `signup_started` milestone once, rejects expired/consumed,
+rotated or banned-partner capabilities, and makes idempotent provisioning return
+the codes actually stored in `growth_partners`. It does not rotate codes,
+backfill invented milestones, create tables or broaden client write permissions.
+
+The local gateway includes this migration. Use Node 22 (`nvm use`) and run
+`npm test`, `npm run test:dom`, `npm run typecheck` and `npm run build` before
+shipping. The deploy guard runs the complete backend/migration and DOM suites.

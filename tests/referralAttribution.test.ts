@@ -53,7 +53,10 @@ test('attribution is validated anonymously, consumed on account creation and imm
     assert.deepEqual(await capture('NEXORA-OTHER25'), { valid: false });
     assert.equal(await row(await user(inactive.token)), undefined);
     const rotated = await capture('NEXORA-RAHUL25');
-    await db.query("select public.provision_growth_partner($1, 'NEXORA-NEWCODE')", [a]);
+    const preserved=(await db.query("select public.provision_growth_partner($1, 'NEXORA-NEWCODE') as r", [a])).rows[0].r;
+    assert.equal(preserved.referral_code,'NEXORA-RAHUL25','idempotent provisioning reports the stored code, never the requested unsaved one');
+    // An explicit administrator rotation, rather than idempotent provisioning.
+    await db.query("update public.growth_partners set referral_code='NEXORA-NEWCODE' where user_id=$1",[a]);
     await db.query("select public.provision_growth_partner($1, 'NEXORA-RAHUL25')", [b]);
     assert.equal(await row(await user(rotated.token)), undefined, 'rotation/reassignment cannot redirect old attribution');
     assert.equal((await row(id)).partner_id, a, 'permanent relationship survives rotation');

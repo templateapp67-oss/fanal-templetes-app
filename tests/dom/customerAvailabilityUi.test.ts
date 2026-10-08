@@ -155,3 +155,32 @@ test('a transient availability failure still offers a working Retry availability
   act(() => root.unmount());
   container.remove();
 });
+
+test('guest details reach payment with an intact 91 mobile and no fabricated OTP verification', async () => {
+  stubFetch(() => ({ ok: true, status: 200, json: async () => ({ success: true, slots: [
+    { time: '11:30', start: '2026-10-08T06:00:00Z', end: '2026-10-08T06:30:00Z', staffId: 'stylist-1', totalPaise: 50000 },
+  ] }) }));
+  const { container, root } = mountModal();
+  try {
+    await renderOpen(root);
+    await driveToDateTime(container);
+    await act(async () => clickByText(container, '11:30').click());
+    await act(async () => clickByText(container, 'Continue to Guest Details').click());
+    for (const [selector, value] of [['input[placeholder="e.g. Aarti Sharma"]', 'Aarti Sharma'], ['input[type=tel]', '9123456789']]) {
+      const input = container.querySelector<HTMLInputElement>(selector)!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+    assert.doesNotMatch(container.textContent || '', /verification code|OTP/i);
+    await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    assert.match(container.textContent || '', /Contact number: \+91 9123456789/);
+    assert.match(container.textContent || '', /Step 5\/5/);
+    assert.doesNotMatch(container.textContent || '', /WhatsApp Verified|OTP VERIFIED|Test OTP/i);
+    assert.match(container.textContent || '', /25%/);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

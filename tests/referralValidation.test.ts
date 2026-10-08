@@ -200,7 +200,7 @@ test('5/6/7/8. the code has no per-code active flag, expiry, block flag or usage
     const names = columns.map((row: any) => row.column_name);
     assert.deepEqual(
       names,
-      ['created_at', 'id', 'is_active', 'referral_code', 'updated_at', 'user_id'],
+      ['ban_reason', 'banned_at', 'created_at', 'deleted_at', 'deleted_by', 'id', 'is_active', 'partner_code', 'referral_code', 'status', 'updated_at', 'user_id', 'work_area'],
       'the whole partner table — there is nowhere to put a code-level rule'
     );
 
